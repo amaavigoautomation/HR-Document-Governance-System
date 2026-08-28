@@ -1,0 +1,115 @@
+{
+  "entities": {
+    "documents": {
+      "title": "Document Master Records",
+      "description": "Top-level metadata for HR policies, handbooks, benefit guides, and compliance documents.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "docNumber": { "type": "string" },
+        "title": { "type": "string" },
+        "category": { "type": "string" },
+        "department": { "type": "string" },
+        "confidentiality": { "type": "string" },
+        "ownerName": { "type": "string" },
+        "ownerEmail": { "type": "string" },
+        "effectiveVersionId": { "type": "string" },
+        "effectiveVersionNumber": { "type": "string" },
+        "latestVersionId": { "type": "string" },
+        "latestVersionNumber": { "type": "string" },
+        "status": { "type": "string" },
+        "tags": { "type": "array" },
+        "requiresAcknowledgment": { "type": "boolean" },
+        "acknowledgmentDeadlineDays": { "type": "number" },
+        "createdAt": { "type": "string" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["id", "docNumber", "title", "category", "status"]
+    },
+    "versions": {
+      "title": "Document Revisions & Versions",
+      "description": "Specific semantic versions with approvals, content, changelog, and validity dates.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "documentId": { "type": "string" },
+        "versionNumber": { "type": "string" },
+        "versionType": { "type": "string" },
+        "authorName": { "type": "string" },
+        "authorEmail": { "type": "string" },
+        "authorRole": { "type": "string" },
+        "changeSummary": { "type": "string" },
+        "approvalStatus": { "type": "string" },
+        "effectiveDate": { "type": "string" },
+        "expiryDate": { "type": "string" },
+        "rawContent": { "type": "string" },
+        "fileName": { "type": "string" },
+        "fileSize": { "type": "number" },
+        "fileDataUrl": { "type": "string" },
+        "isPdf": { "type": "boolean" },
+        "approvalChain": { "type": "array" },
+        "sha256Hash": { "type": "string" },
+        "previousVersionHash": { "type": "string" },
+        "createdAt": { "type": "string" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["id", "documentId", "versionNumber", "approvalStatus"]
+    },
+    "auditLogs": {
+      "title": "Chained Immutable Audit Trail",
+      "description": "Cryptographically chained compliance audit events.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "documentId": { "type": "string" },
+        "versionId": { "type": "string" },
+        "versionNumber": { "type": "string" },
+        "action": { "type": "string" },
+        "actorName": { "type": "string" },
+        "actorEmail": { "type": "string" },
+        "actorRole": { "type": "string" },
+        "timestamp": { "type": "string" },
+        "details": { "type": "string" },
+        "previousHash": { "type": "string" },
+        "sha256Hash": { "type": "string" }
+      },
+      "required": ["id", "action", "timestamp", "sha256Hash"]
+    },
+    "acknowledgments": {
+      "title": "Employee Policy Sign-offs",
+      "description": "Records of employee policy reading and electronic signatures.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "documentId": { "type": "string" },
+        "versionId": { "type": "string" },
+        "versionNumber": { "type": "string" },
+        "employeeName": { "type": "string" },
+        "employeeEmail": { "type": "string" },
+        "employeeDepartment": { "type": "string" },
+        "acknowledgedAt": { "type": "string" },
+        "ipAddress": { "type": "string" },
+        "signatureHash": { "type": "string" }
+      },
+      "required": ["id", "documentId", "versionId", "employeeEmail", "acknowledgedAt"]
+    },
+    "notifications": {
+      "title": "Governance Alerts & Action Items",
+      "description": "Pending reviews and system alerts for role-based governance.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "targetUserEmail": { "type": "string" },
+        "targetRole": { "type": "string" },
+        "title": { "type": "string" },
+        "message": { "type": "string" },
+        "type": { "type": "string" },
+        "read": { "type": "boolean" },
+        "documentId": { "type": "string" },
+        "versionId": { "type": "string" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["id", "title", "message", "read", "createdAt"]
+    }
+  }
+}
