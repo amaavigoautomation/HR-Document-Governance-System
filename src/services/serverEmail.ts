@@ -125,23 +125,23 @@ ${cleanBody}
   // Live Gmail SMTP Dispatch with App Password
   if (smtpUser && smtpPass) {
     try {
-      const transporter = smtpHost === 'smtp.gmail.com'
-        ? nodemailer.createTransport({
-            service: 'gmail',
-            auth: {
-              user: smtpUser,
-              pass: smtpPass,
-            },
-          })
-        : nodemailer.createTransport({
-            host: smtpHost,
-            port: parseInt(process.env.SMTP_PORT || '587', 10),
-            secure: process.env.SMTP_SECURE === 'true',
-            auth: {
-              user: smtpUser,
-              pass: smtpPass,
-            },
-          });
+      const port = parseInt(process.env.SMTP_PORT || '465', 10);
+      const isSecure = process.env.SMTP_SECURE !== undefined
+        ? process.env.SMTP_SECURE === 'true'
+        : port === 465;
+
+      const transporter = nodemailer.createTransport({
+        host: smtpHost || 'smtp.gmail.com',
+        port: port,
+        secure: isSecure,
+        auth: {
+          user: smtpUser,
+          pass: smtpPass,
+        },
+        connectionTimeout: 10000,
+        greetingTimeout: 10000,
+        socketTimeout: 15000,
+      });
 
       const info = await transporter.sendMail({
         from: emailFrom,

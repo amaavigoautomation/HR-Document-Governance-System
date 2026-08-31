@@ -54,7 +54,7 @@ export class EnterpriseEmailProvider implements EmailProvider {
 
     this.notifications.unshift(notification);
 
-    // Call server API for live outbound delivery if running in full-stack mode
+    // Call server API for live outbound delivery if running in full-stack mode / Vercel Serverless
     try {
       const response = await fetch('/api/email/send', {
         method: 'POST',
@@ -73,10 +73,21 @@ export class EnterpriseEmailProvider implements EmailProvider {
         return {
           success: true,
           messageId: resData.messageId || notification.id,
-          provider: resData.provider,
+          provider: resData.provider || 'Gmail SMTP',
         };
+      } else {
+        const errData = await response.json().catch(() => null);
+        console.warn('Live email API returned error status:', response.status, errData);
+        if (errData?.error) {
+          return {
+            success: false,
+            messageId: notification.id,
+            provider: 'SMTP Error',
+            error: errData.error,
+          };
+        }
       }
-    } catch (e) {
+    } catch (e: any) {
       console.warn('Live email delivery API call note (internal queued):', e);
     }
 
