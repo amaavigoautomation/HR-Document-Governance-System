@@ -121,13 +121,13 @@ export const DemoWorkflowModal: React.FC<DemoWorkflowModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-60 overflow-y-auto bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-3 sm:p-6">
-      <div className="glass-panel-dark rounded-2xl shadow-2xl border border-slate-800 w-full max-w-4xl max-h-[92vh] flex flex-col overflow-hidden animate-in zoom-in-95 duration-150">
+    <div className="fixed inset-0 z-60 overflow-y-auto bg-black/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-6">
+      <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-4xl max-h-[92vh] flex flex-col overflow-hidden animate-in zoom-in-95 duration-150">
         {/* HEADER */}
-        <div className="bg-slate-900/90 text-white px-6 py-4 flex items-center justify-between border-b border-slate-800 shrink-0">
+        <div className="bg-slate-900 text-white px-6 py-4 flex items-center justify-between border-b border-slate-800 shrink-0">
           <div className="flex items-center space-x-3">
-            <div className="w-10 h-10 rounded-xl bg-amber-500/20 border border-amber-500/40 flex items-center justify-center shadow-inner">
-              <Sparkles className="w-5 h-5 text-amber-400" />
+            <div className="w-10 h-10 rounded-xl bg-[#FA7014]/20 border border-[#FA7014]/40 flex items-center justify-center shadow-inner">
+              <Sparkles className="w-5 h-5 text-[#FA7014]" />
             </div>
             <div>
               <h2 className="text-base font-bold text-white">HR Document Governance Specification Demo Walkthrough</h2>
@@ -146,10 +146,10 @@ export const DemoWorkflowModal: React.FC<DemoWorkflowModalProps> = ({
         </div>
 
         {/* STEP PROGRESS BAR */}
-        <div className="bg-slate-950/70 border-b border-slate-800 px-6 py-3.5 shrink-0">
-          <div className="flex items-center justify-between text-xs font-semibold text-slate-400 mb-2">
+        <div className="bg-slate-50 border-b border-slate-200 px-6 py-3.5 shrink-0">
+          <div className="flex items-center justify-between text-xs font-semibold text-slate-600 mb-2">
             <span>Workflow Progress: Step {currentStep + 1} of {steps.length}</span>
-            <span className="text-amber-300 bg-amber-950/60 border border-amber-800/60 px-2.5 py-0.5 rounded-full font-mono text-[11px]">
+            <span className="text-[#FA7014] bg-orange-50 border border-orange-200 px-2.5 py-0.5 rounded-full font-mono text-[11px] font-bold">
               Active Role: {steps[currentStep].role}
             </span>
           </div>
@@ -160,10 +160,10 @@ export const DemoWorkflowModal: React.FC<DemoWorkflowModalProps> = ({
                 onClick={() => handleStepClick(i)}
                 className={`h-2 rounded-full transition-all cursor-pointer ${
                   i === currentStep
-                    ? 'bg-amber-400 ring-2 ring-amber-500/50'
+                    ? 'bg-[#FA7014] ring-2 ring-[#FA7014]/30'
                     : i < currentStep
-                    ? 'bg-emerald-500'
-                    : 'bg-slate-800'
+                    ? 'bg-slate-900'
+                    : 'bg-slate-200'
                 }`}
                 title={s.title}
               />
@@ -172,20 +172,20 @@ export const DemoWorkflowModal: React.FC<DemoWorkflowModalProps> = ({
         </div>
 
         {/* ACTIVE STEP CARD */}
-        <div className="flex-1 overflow-y-auto p-6 bg-slate-950 space-y-6">
-          <div className="glass-panel-dark border border-amber-500/30 rounded-2xl p-5 shadow-lg bg-amber-950/20">
-            <div className="flex items-center space-x-2.5 text-amber-300 font-bold text-base mb-1">
-              <ShieldCheck className="w-5 h-5 text-amber-400 shrink-0" />
+        <div className="flex-1 overflow-y-auto p-6 bg-slate-50 space-y-6">
+          <div className="bg-white border border-orange-200 rounded-2xl p-5 shadow-xs bg-orange-50/20">
+            <div className="flex items-center space-x-2.5 text-slate-900 font-bold text-base mb-1">
+              <ShieldCheck className="w-5 h-5 text-[#FA7014] shrink-0" />
               <span>{steps[currentStep].title}</span>
             </div>
-            <p className="text-sm text-slate-300 leading-relaxed mt-2">
+            <p className="text-sm text-slate-700 leading-relaxed mt-2">
               {steps[currentStep].desc}
             </p>
           </div>
 
           {/* SUMMARY OF ALL 7 CORE LIFECYCLE PHASES */}
           <div className="space-y-3">
-            <h3 className="text-xs font-bold uppercase tracking-wider text-slate-400">
+            <h3 className="text-xs font-bold uppercase tracking-wider text-slate-600">
               Complete End-to-End Governance Milestones
             </h3>
 
@@ -196,30 +196,30 @@ export const DemoWorkflowModal: React.FC<DemoWorkflowModalProps> = ({
                   onClick={() => handleStepClick(idx)}
                   className={`p-3.5 rounded-xl border text-xs flex items-center justify-between cursor-pointer transition-all ${
                     idx === currentStep
-                      ? 'border-amber-500/80 bg-amber-950/30 shadow-md ring-1 ring-amber-500/20'
+                      ? 'border-[#FA7014] bg-white shadow-xs ring-1 ring-[#FA7014]/30'
                       : idx < currentStep
-                      ? 'border-emerald-900/60 bg-emerald-950/20 text-emerald-300'
-                      : 'border-slate-800/80 glass-panel-dark hover:border-slate-700 text-slate-400'
+                      ? 'border-slate-300 bg-white text-slate-900'
+                      : 'border-slate-200 bg-white hover:border-slate-300 text-slate-600'
                   }`}
                 >
                   <div className="flex items-center space-x-3">
                     <span
                       className={`w-6 h-6 rounded-full flex items-center justify-center font-bold text-[11px] ${
                         idx === currentStep
-                          ? 'bg-amber-400 text-slate-950 font-extrabold'
+                          ? 'bg-[#FA7014] text-white font-extrabold'
                           : idx < currentStep
-                          ? 'bg-emerald-500 text-white'
-                          : 'bg-slate-800 text-slate-400 border border-slate-700'
+                          ? 'bg-slate-900 text-white'
+                          : 'bg-slate-100 text-slate-500 border border-slate-200'
                       }`}
                     >
                       {idx < currentStep ? <Check className="w-3.5 h-3.5" /> : idx + 1}
                     </span>
-                    <span className={`font-semibold ${idx === currentStep ? 'text-white' : idx < currentStep ? 'text-emerald-200' : 'text-slate-300'}`}>
+                    <span className={`font-semibold ${idx === currentStep ? 'text-slate-900' : idx < currentStep ? 'text-slate-900' : 'text-slate-600'}`}>
                       {s.title}
                     </span>
                   </div>
 
-                  <span className="text-[11px] font-medium text-slate-400 bg-slate-800/80 px-2.5 py-1 rounded-lg border border-slate-700">
+                  <span className="text-[11px] font-medium text-slate-700 bg-slate-100 px-2.5 py-1 rounded-lg border border-slate-200">
                     {s.role}
                   </span>
                 </div>
@@ -229,11 +229,11 @@ export const DemoWorkflowModal: React.FC<DemoWorkflowModalProps> = ({
         </div>
 
         {/* FOOTER ACTIONS */}
-        <div className="bg-slate-900/90 px-6 py-4 border-t border-slate-800 flex items-center justify-between shrink-0">
+        <div className="bg-white px-6 py-4 border-t border-slate-200 flex items-center justify-between shrink-0">
           <button
             onClick={handlePrev}
             disabled={currentStep === 0}
-            className="px-4 py-2 text-xs font-semibold text-slate-400 hover:text-white disabled:opacity-30 transition-colors"
+            className="px-4 py-2 text-xs font-semibold text-slate-600 hover:text-slate-900 disabled:opacity-30 transition-colors"
           >
             Previous Milestone
           </button>
@@ -241,7 +241,7 @@ export const DemoWorkflowModal: React.FC<DemoWorkflowModalProps> = ({
           <div className="flex items-center space-x-3">
             <button
               onClick={onClose}
-              className="bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold px-4 py-2 rounded-xl transition-colors border border-slate-700"
+              className="bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-semibold px-4 py-2 rounded-xl transition-colors border border-slate-300"
             >
               Resume Testing in App
             </button>
@@ -249,7 +249,7 @@ export const DemoWorkflowModal: React.FC<DemoWorkflowModalProps> = ({
             <button
               onClick={handleNext}
               disabled={currentStep === steps.length - 1}
-              className="bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 text-slate-950 text-xs font-bold px-4 py-2 rounded-xl transition-all flex items-center space-x-1.5 disabled:opacity-40 shadow-md shadow-amber-900/30"
+              className="bg-[#FA7014] hover:bg-[#E65A05] text-white text-xs font-bold px-4 py-2 rounded-xl transition-all flex items-center space-x-1.5 disabled:opacity-40 shadow-sm shadow-[#FA7014]/20"
             >
               <span>Next Milestone</span>
               <ArrowRight className="w-3.5 h-3.5" />

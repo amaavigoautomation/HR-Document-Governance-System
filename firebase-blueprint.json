@@ -1,5 +1,29 @@
 {
   "entities": {
+    "employees": {
+      "title": "Employee Directory & Workforce Profiles",
+      "description": "Records for organizational employees, logins, credentials, and departmental profiles.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "empId": { "type": "string" },
+        "loginId": { "type": "string" },
+        "name": { "type": "string" },
+        "email": { "type": "string" },
+        "role": { "type": "string" },
+        "companyId": { "type": "string" },
+        "companyName": { "type": "string" },
+        "departmentId": { "type": "string" },
+        "departmentName": { "type": "string" },
+        "title": { "type": "string" },
+        "avatar": { "type": "string" },
+        "password": { "type": "string" },
+        "active": { "type": "boolean" },
+        "createdAt": { "type": "string" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["id", "name", "email", "role", "active"]
+    },
     "documents": {
       "title": "Document Master Records",
       "description": "Top-level metadata for HR policies, handbooks, benefit guides, and compliance documents.",

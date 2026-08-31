@@ -7,14 +7,16 @@ import {
   VersionStatus,
 } from './types';
 import { governanceEngine } from './services/governance';
+import { auditService } from './services/audit';
 import { defaultEmailProvider } from './services/email';
 import { firestoreService } from './services/firestoreService';
-import { SEED_DOCUMENTS, SEED_VERSIONS, SEED_AUDIT_LOGS } from './data/seedData';
+import { SEED_DOCUMENTS, SEED_VERSIONS, SEED_AUDIT_LOGS, SEED_USERS } from './data/seedData';
 import { Header } from './components/Header';
 import { LoginView } from './components/LoginView';
 import { CreatorDashboard } from './components/CreatorDashboard';
 import { ReviewerDashboard } from './components/ReviewerDashboard';
 import { EmployeePortalView } from './components/EmployeePortalView';
+import { EmployeeComplianceModule } from './components/EmployeeComplianceModule';
 import { AuditLogView } from './components/AuditLogView';
 import { CreateDocumentModal } from './components/CreateDocumentModal';
 import { CreateVersionModal } from './components/CreateVersionModal';
@@ -28,13 +30,14 @@ import { StatusBadge } from './components/StatusBadge';
 
 export default function App() {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
-  const [activeTab, setActiveTab] = useState<'creator' | 'reviewer' | 'employee' | 'audit' | 'notifications'>('creator');
+  const [activeTab, setActiveTab] = useState<'creator' | 'reviewer' | 'employee' | 'compliance' | 'audit' | 'notifications'>('creator');
 
   // Governance Data State
   const [allUsers, setAllUsers] = useState<User[]>([]);
   const [documents, setDocuments] = useState<DocumentMaster[]>([]);
   const [versions, setVersions] = useState<DocumentVersion[]>([]);
   const [notificationCount, setNotificationCount] = useState(0);
+  const [pendingComplianceCount, setPendingComplianceCount] = useState(0);
 
   // Modals
   const [showCreateDocModal, setShowCreateDocModal] = useState(false);
@@ -48,40 +51,114 @@ export default function App() {
 
   // Sync data from governance engine
   const refreshData = () => {
-    setAllUsers(governanceEngine.getUsers());
-    setDocuments(governanceEngine.getDocumentMasters());
+    const users = [...governanceEngine.getUsers()];
+    setAllUsers(users);
+    setCurrentUser((prev) => {
+      if (!prev) return null;
+      const match = users.find((u) => u.id === prev.id);
+      return match ? { ...match } : prev;
+    });
+    const docs = [...governanceEngine.getDocumentMasters()];
+    setDocuments(docs);
     const allVers: DocumentVersion[] = [];
-    governanceEngine.getDocumentMasters().forEach((doc) => {
+    docs.forEach((doc) => {
       allVers.push(...governanceEngine.getDocumentVersions(doc.id));
     });
-    setVersions(allVers);
+    const existingIds = new Set(allVers.map((v) => v.id));
+    for (const v of (governanceEngine as any).documentVersions || []) {
+      if (!existingIds.has(v.id)) {
+        allVers.push(v);
+      }
+    }
+    setVersions([...allVers]);
     setNotificationCount(defaultEmailProvider.getNotifications().length);
+    const acks = governanceEngine.getAcknowledgements();
+    setPendingComplianceCount(acks.filter((a) => a.status === 'PENDING').length);
   };
 
   useEffect(() => {
     refreshData();
     // Seed and sync with Firestore cloud database
-    firestoreService.seedFirestoreIfEmpty(
-      SEED_DOCUMENTS,
-      SEED_VERSIONS,
-      SEED_AUDIT_LOGS,
-      governanceEngine.getAcknowledgements()
-    ).then(async () => {
-      try {
-        const cloudDocs = await firestoreService.getDocuments();
-        const cloudVers = await firestoreService.getVersions();
-        if (cloudDocs && cloudDocs.length > 0) {
-          // Hydrate in-memory engine from Firestore
-          (governanceEngine as any).documentMasters = cloudDocs;
+    firestoreService
+      .seedFirestoreIfEmpty(
+        SEED_DOCUMENTS,
+        SEED_VERSIONS,
+        SEED_AUDIT_LOGS,
+        governanceEngine.getAcknowledgements(),
+        SEED_USERS
+      )
+      .then(async () => {
+        try {
+          const [cloudEmps, cloudDocs, cloudVers, cloudAcks] = await Promise.all([
+            firestoreService.getEmployees(),
+            firestoreService.getDocuments(),
+            firestoreService.getVersions(),
+            firestoreService.getAcknowledgements(),
+          ]);
+
+          if (cloudEmps && cloudEmps.length > 0) {
+            governanceEngine.setEmployees(cloudEmps);
+          }
+          if (cloudDocs !== undefined) {
+            (governanceEngine as any).documentMasters = cloudDocs;
+          }
+          if (cloudVers !== undefined) {
+            (governanceEngine as any).documentVersions = cloudVers;
+            governanceEngine.syncVersionsToStorage(cloudVers);
+          }
+          if (cloudAcks !== undefined) {
+            governanceEngine.setAcknowledgements(cloudAcks);
+          }
+          refreshData();
+        } catch (e) {
+          console.warn('Firestore hydration note:', e);
         }
-        if (cloudVers && cloudVers.length > 0) {
-          (governanceEngine as any).documentVersions = cloudVers;
-        }
+      });
+
+    // Real-time synchronization listeners
+    const unsubEmployees = firestoreService.subscribeToEmployees((cloudEmployees) => {
+      if (cloudEmployees && cloudEmployees.length > 0) {
+        governanceEngine.setEmployees(cloudEmployees);
         refreshData();
-      } catch (e) {
-        console.warn('Firestore hydration note:', e);
       }
     });
+
+    const unsubDocs = firestoreService.subscribeToDocuments((cloudDocs) => {
+      if (cloudDocs !== undefined) {
+        (governanceEngine as any).documentMasters = cloudDocs;
+        refreshData();
+      }
+    });
+
+    const unsubVers = firestoreService.subscribeToVersions((cloudVers) => {
+      if (cloudVers !== undefined) {
+        (governanceEngine as any).documentVersions = cloudVers;
+        governanceEngine.syncVersionsToStorage(cloudVers);
+        refreshData();
+      }
+    });
+
+    const unsubAcks = firestoreService.subscribeToAcknowledgements((cloudAcks) => {
+      if (cloudAcks !== undefined) {
+        governanceEngine.setAcknowledgements(cloudAcks);
+        refreshData();
+      }
+    });
+
+    const unsubAudit = firestoreService.subscribeToAuditLogs((cloudLogs) => {
+      if (cloudLogs && cloudLogs.length > 0) {
+        auditService.seedLogs(cloudLogs);
+        refreshData();
+      }
+    });
+
+    return () => {
+      unsubEmployees();
+      unsubDocs();
+      unsubVers();
+      unsubAcks();
+      unsubAudit();
+    };
   }, []);
 
   const handleLogin = (user: User) => {
@@ -110,11 +187,26 @@ export default function App() {
     setCurrentUser(null);
   };
 
-  const handleResetSeed = () => {
+  const handleResetSeed = async () => {
     if (window.confirm('Reset all HR document masters, versions, and audit logs to clean seed state?')) {
-      governanceEngine.resetToSeed();
+      await governanceEngine.restoreDefaultSeed();
       refreshData();
     }
+  };
+
+  const handleDeleteDocument = async (docId: string) => {
+    await governanceEngine.deleteDocument(docId, currentUser || undefined);
+    refreshData();
+  };
+
+  const handleClearAllDocuments = async () => {
+    await governanceEngine.clearAllDocuments(currentUser || undefined);
+    refreshData();
+  };
+
+  const handleRestoreSeedDocuments = async () => {
+    await governanceEngine.restoreDefaultSeed();
+    refreshData();
   };
 
   const handleOpenCreateVersion = (doc?: DocumentMaster) => {
@@ -130,7 +222,7 @@ export default function App() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-950 bg-[radial-gradient(ellipse_80%_80%_at_50%_-20%,rgba(59,130,246,0.08),rgba(255,255,255,0))] flex flex-col font-sans text-slate-100">
+    <div className="min-h-screen bg-[#F8FAFC] bg-[radial-gradient(ellipse_80%_80%_at_50%_-20%,rgba(250,112,20,0.05),rgba(255,255,255,0))] flex flex-col font-sans text-slate-900">
       {/* Top Application Header with 1-Click Role Switcher */}
       <Header
         currentUser={currentUser}
@@ -140,6 +232,7 @@ export default function App() {
         activeTab={activeTab}
         setActiveTab={setActiveTab}
         notificationCount={notificationCount}
+        pendingComplianceCount={pendingComplianceCount}
         onOpenNotifications={() => setIsNotifDrawerOpen(true)}
         onResetSeed={handleResetSeed}
         onOpenDemoTour={() => setIsDemoTourOpen(true)}
@@ -161,6 +254,10 @@ export default function App() {
                 onOpenCreateVersion={handleOpenCreateVersion}
                 onOpenDocumentDetail={(doc) => setDetailDocument(doc)}
                 onOpenComparison={handleOpenComparison}
+                onOpenComplianceTracker={() => setActiveTab('compliance')}
+                onDeleteDocument={handleDeleteDocument}
+                onClearAllDocuments={handleClearAllDocuments}
+                onRestoreSeedDocuments={handleRestoreSeedDocuments}
               />
             )}
 
@@ -171,6 +268,17 @@ export default function App() {
                 versions={versions}
                 onOpenReviewModal={(ver) => setReviewVersion(ver)}
                 onOpenDocumentDetail={(doc) => setDetailDocument(doc)}
+                onOpenComplianceTracker={() => setActiveTab('compliance')}
+              />
+            )}
+
+            {activeTab === 'compliance' && (
+              <EmployeeComplianceModule
+                currentUser={currentUser}
+                users={allUsers}
+                documents={documents}
+                versions={versions}
+                onOpenDocumentView={(ver) => setReaderVersion(ver)}
               />
             )}
 
@@ -183,7 +291,7 @@ export default function App() {
               />
             )}
 
-            {activeTab === 'audit' && <AuditLogView />}
+            {activeTab === 'audit' && <AuditLogView users={allUsers} />}
           </>
         )}
       </main>
@@ -240,6 +348,7 @@ export default function App() {
           onClose={() => setDetailDocument(null)}
           onOpenCreateVersion={handleOpenCreateVersion}
           onOpenComparison={handleOpenComparison}
+          onDeleteDocument={handleDeleteDocument}
         />
       )}
 

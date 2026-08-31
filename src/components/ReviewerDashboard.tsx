@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import {
   ShieldCheck,
   Clock,
@@ -14,9 +14,18 @@ import {
   Layers,
   Sparkles,
   GitCompare,
+  Users,
+  ChevronRight,
+  Lock,
+  Filter,
+  Check,
+  Building,
+  Calendar,
 } from 'lucide-react';
-import { DocumentMaster, DocumentVersion, User, VersionStatus } from '../types';
+import { ConfidentialityLevel, DocumentMaster, DocumentVersion, User, VersionStatus } from '../types';
 import { StatusBadge } from './StatusBadge';
+import { governanceEngine } from '../services/governance';
+import { formatISTDate } from '../utils/dateFormat';
 
 interface ReviewerDashboardProps {
   currentUser: User;
@@ -24,6 +33,7 @@ interface ReviewerDashboardProps {
   versions: DocumentVersion[];
   onOpenReviewModal: (version: DocumentVersion) => void;
   onOpenDocumentDetail: (doc: DocumentMaster) => void;
+  onOpenComplianceTracker?: () => void;
 }
 
 export const ReviewerDashboard: React.FC<ReviewerDashboardProps> = ({
@@ -32,42 +42,106 @@ export const ReviewerDashboard: React.FC<ReviewerDashboardProps> = ({
   versions,
   onOpenReviewModal,
   onOpenDocumentDetail,
+  onOpenComplianceTracker,
 }) => {
+  const [activeView, setActiveView] = useState<'queue' | 'consolidated' | 'history'>('queue');
   const [searchTerm, setSearchTerm] = useState('');
+  const [selectedCategory, setSelectedCategory] = useState<string>('ALL');
+  const [selectedDept, setSelectedDept] = useState<string>('ALL');
+  const [selectedStatus, setSelectedStatus] = useState<string>('ALL');
 
-  // Queue of pending reviews
-  const reviewQueue = versions.filter((v) => v.status === VersionStatus.IN_REVIEW);
-  const approvedVersions = versions.filter((v) => v.status === VersionStatus.PUBLISHED);
-  const rejectedVersions = versions.filter((v) => v.status === VersionStatus.REVISION_REQUIRED);
+  const acks = governanceEngine.getAcknowledgements();
+  const pendingAcks = acks.filter((a) => a.status === 'PENDING').length;
+  const totalAcks = acks.length;
+  const compliantPercent = totalAcks > 0 ? Math.round(((totalAcks - pendingAcks) / totalAcks) * 100) : 100;
 
-  const filteredQueue = reviewQueue.filter((v) => {
-    const q = searchTerm.toLowerCase();
-    return (
-      v.documentTitle.toLowerCase().includes(q) ||
-      v.documentId.toLowerCase().includes(q) ||
-      v.createdByName.toLowerCase().includes(q)
-    );
-  });
+  // Queue of pending reviews (only versions that are actively IN_REVIEW and pending decision)
+  const reviewQueue = useMemo(() => {
+    return versions.filter((v) => {
+      if (v.status !== VersionStatus.IN_REVIEW) return false;
+      if (v.reviewedAt || v.reviewedById) return false;
+      const parentMaster = documents.find((d) => d.id === v.documentMasterId || d.documentId === v.documentId);
+      if (parentMaster && parentMaster.currentPublishedVersionId === v.id) return false;
+      return true;
+    });
+  }, [versions, documents]);
+
+  const approvedVersions = useMemo(() => {
+    return versions.filter((v) => v.status === VersionStatus.PUBLISHED || v.status === VersionStatus.SUPERSEDED);
+  }, [versions]);
+
+  const rejectedVersions = useMemo(() => {
+    return versions.filter((v) => v.status === VersionStatus.REVISION_REQUIRED);
+  }, [versions]);
+
+  // Review history (all versions where decision has been rendered)
+  const decidedHistory = useMemo(() => {
+    return versions.filter((v) => {
+      if (v.status !== VersionStatus.IN_REVIEW || !!v.reviewedAt || !!v.reviewedById) return true;
+      const parentMaster = documents.find((d) => d.id === v.documentMasterId || d.documentId === v.documentId);
+      if (parentMaster && parentMaster.currentPublishedVersionId === v.id) return true;
+      return false;
+    });
+  }, [versions, documents]);
+
+  // Filtered Queue
+  const filteredQueue = useMemo(() => {
+    return reviewQueue.filter((v) => {
+      const q = searchTerm.toLowerCase();
+      return (
+        v.documentTitle.toLowerCase().includes(q) ||
+        v.documentId.toLowerCase().includes(q) ||
+        v.createdByName.toLowerCase().includes(q)
+      );
+    });
+  }, [reviewQueue, searchTerm]);
+
+  // Consolidated documents list filter
+  const filteredConsolidatedDocs = useMemo(() => {
+    return documents.filter((doc) => {
+      const q = searchTerm.toLowerCase();
+      const matchesSearch =
+        doc.title.toLowerCase().includes(q) ||
+        doc.documentId.toLowerCase().includes(q) ||
+        doc.departmentName.toLowerCase().includes(q) ||
+        doc.category.toLowerCase().includes(q);
+
+      const matchesCategory = selectedCategory === 'ALL' || doc.category === selectedCategory;
+      const matchesDept = selectedDept === 'ALL' || doc.departmentName === selectedDept;
+      const matchesStatus = selectedStatus === 'ALL' || doc.currentStatus === selectedStatus;
+
+      return matchesSearch && matchesCategory && matchesDept && matchesStatus;
+    });
+  }, [documents, searchTerm, selectedCategory, selectedDept, selectedStatus]);
+
+  // Unique departments for filter
+  const departments = useMemo(() => {
+    const set = new Set<string>();
+    documents.forEach((d) => {
+      if (d.departmentName) set.add(d.departmentName);
+    });
+    return Array.from(set);
+  }, [documents]);
 
   return (
     <div className="space-y-6">
       {/* Reviewer Header */}
-      <div className="glass-panel-dark rounded-2xl p-6 shadow-xl flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+      <div className="bg-white rounded-2xl p-6 shadow-sm border border-slate-200 flex flex-col md:flex-row md:items-center md:justify-between gap-4">
         <div>
           <div className="flex items-center space-x-2.5">
-            <h1 className="text-2xl font-bold text-white tracking-tight">Approver & Governance Portal</h1>
-            <span className="bg-emerald-500/15 text-emerald-300 text-xs px-3 py-0.5 rounded-full font-semibold border border-emerald-500/30">
+            <h1 className="text-2xl font-bold text-slate-900 tracking-tight">Approver & Governance Portal</h1>
+            <span className="bg-[#FA7014]/10 text-[#FA7014] text-xs px-3 py-0.5 rounded-full font-semibold border border-[#FA7014]/30">
               Authorized Approver Queue
             </span>
           </div>
-          <p className="text-sm text-slate-400 mt-1.5">
-            Logged in as <span className="font-semibold text-slate-200">{currentUser.name}</span> ({currentUser.title}) • Review pending policy submissions, inspect side-by-side version diffs, approve to auto-publish or return with mandatory governance notes.
+          <p className="text-sm text-slate-500 mt-1.5">
+            Logged in as <span className="font-semibold text-slate-900">{currentUser.name}</span> ({currentUser.title}) • Review pending policy submissions, inspect side-by-side version diffs, approve to auto-publish or return with mandatory governance notes.
           </p>
         </div>
 
-        <div className="flex items-center space-x-2 bg-emerald-950/60 border border-emerald-800/60 px-4 py-2.5 rounded-xl shadow-inner">
-          <Clock className="w-5 h-5 text-emerald-400 animate-pulse" />
-          <span className="text-xs font-bold text-emerald-300">
+        <div className="flex items-center space-x-2 bg-slate-50 border border-slate-200 px-4 py-2.5 rounded-xl shadow-xs">
+          <Clock className="w-5 h-5 text-[#FA7014]" />
+          <span className="text-xs font-bold text-slate-900">
             {reviewQueue.length} {reviewQueue.length === 1 ? 'Document' : 'Documents'} Waiting for Review
           </span>
         </div>
@@ -75,225 +149,572 @@ export const ReviewerDashboard: React.FC<ReviewerDashboardProps> = ({
 
       {/* METRIC STATS */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-        <div className="glass-panel-dark p-5 rounded-2xl shadow-md border border-amber-900/40">
-          <div className="flex items-center justify-between text-amber-400 text-xs font-semibold uppercase tracking-wider">
+        <div
+          onClick={() => setActiveView('queue')}
+          className={`bg-white p-5 rounded-2xl shadow-sm border transition-all cursor-pointer ${
+            activeView === 'queue' ? 'border-[#FA7014] ring-2 ring-[#FA7014]/20' : 'border-slate-200 hover:border-slate-300'
+          }`}
+        >
+          <div className="flex items-center justify-between text-slate-500 text-xs font-semibold uppercase tracking-wider">
             <span>Pending Review</span>
-            <Clock className="w-4 h-4 text-amber-400" />
+            <Clock className="w-4 h-4 text-[#FA7014]" />
           </div>
-          <div className="mt-2 text-2xl font-extrabold text-amber-400">{reviewQueue.length}</div>
-          <div className="text-[11px] text-amber-500/80 mt-1">Action Required</div>
+          <div className="mt-2 text-2xl font-extrabold text-[#FA7014]">{reviewQueue.length}</div>
+          <div className="text-[11px] text-slate-500 mt-1">Action Required</div>
         </div>
 
-        <div className="glass-panel-dark p-5 rounded-2xl shadow-md border border-emerald-900/40">
-          <div className="flex items-center justify-between text-emerald-400 text-xs font-semibold uppercase tracking-wider">
-            <span>Approved & Published</span>
-            <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+        <div
+          onClick={() => setActiveView('history')}
+          className={`bg-white p-5 rounded-2xl shadow-sm border transition-all cursor-pointer ${
+            activeView === 'history' ? 'border-slate-900 ring-2 ring-slate-900/20' : 'border-slate-200 hover:border-slate-300'
+          }`}
+        >
+          <div className="flex items-center justify-between text-slate-500 text-xs font-semibold uppercase tracking-wider">
+            <span>Decisions Rendered</span>
+            <CheckCircle2 className="w-4 h-4 text-emerald-600" />
           </div>
-          <div className="mt-2 text-2xl font-extrabold text-emerald-400">{approvedVersions.length}</div>
-          <div className="text-[11px] text-emerald-500/80 mt-1">Live Operational Versions</div>
+          <div className="mt-2 text-2xl font-extrabold text-slate-900">{decidedHistory.length}</div>
+          <div className="text-[11px] text-slate-500 mt-1">Immutable Finalized Decisions</div>
         </div>
 
-        <div className="glass-panel-dark p-5 rounded-2xl shadow-md border border-rose-900/40">
-          <div className="flex items-center justify-between text-rose-400 text-xs font-semibold uppercase tracking-wider">
+        <div
+          onClick={() => setActiveView('history')}
+          className="bg-white p-5 rounded-2xl shadow-sm border border-slate-200"
+        >
+          <div className="flex items-center justify-between text-slate-500 text-xs font-semibold uppercase tracking-wider">
             <span>Revisions Requested</span>
-            <XCircle className="w-4 h-4 text-rose-400" />
+            <XCircle className="w-4 h-4 text-rose-600" />
           </div>
-          <div className="mt-2 text-2xl font-extrabold text-rose-400">{rejectedVersions.length}</div>
-          <div className="text-[11px] text-rose-500/80 mt-1">Returned with Feedback</div>
+          <div className="mt-2 text-2xl font-extrabold text-slate-900">{rejectedVersions.length}</div>
+          <div className="text-[11px] text-slate-500 mt-1">Returned with Feedback</div>
         </div>
 
-        <div className="glass-panel-dark p-5 rounded-2xl shadow-md border border-slate-800/80">
-          <div className="flex items-center justify-between text-slate-400 text-xs font-semibold uppercase tracking-wider">
-            <span>Total Masters Monitored</span>
-            <ShieldCheck className="w-4 h-4 text-blue-400" />
+        <div
+          onClick={() => setActiveView('consolidated')}
+          className={`bg-white p-5 rounded-2xl shadow-sm border transition-all cursor-pointer ${
+            activeView === 'consolidated' ? 'border-[#FA7014] ring-2 ring-[#FA7014]/20' : 'border-slate-200 hover:border-slate-300'
+          }`}
+        >
+          <div className="flex items-center justify-between text-slate-500 text-xs font-semibold uppercase tracking-wider">
+            <span>Consolidated Repository</span>
+            <ShieldCheck className="w-4 h-4 text-slate-900" />
           </div>
-          <div className="mt-2 text-2xl font-extrabold text-white">{documents.length}</div>
-          <div className="text-[11px] text-slate-500 mt-1">Active Governance Registry</div>
+          <div className="mt-2 text-2xl font-extrabold text-slate-900">{documents.length}</div>
+          <div className="text-[11px] text-slate-500 mt-1">All Uploaded Documents</div>
         </div>
       </div>
 
-      {/* PENDING REVIEW QUEUE SECTION */}
-      <div className="glass-panel-dark rounded-2xl border border-emerald-500/40 shadow-xl overflow-hidden">
-        <div className="px-6 py-4 bg-emerald-950/30 border-b border-emerald-500/30 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+      {/* EMPLOYEE COMPLIANCE BANNER */}
+      <div className="bg-white border border-slate-200 rounded-2xl p-4 shadow-sm flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+        <div className="flex items-center space-x-3">
+          <div className="w-10 h-10 rounded-xl bg-[#FA7014]/10 border border-[#FA7014]/20 flex items-center justify-center shrink-0 text-[#FA7014]">
+            <Users className="w-5 h-5" />
+          </div>
           <div>
             <div className="flex items-center space-x-2">
-              <ShieldCheck className="w-5 h-5 text-emerald-400" />
-              <h2 className="text-base font-bold text-white">Pending Review Queue (Action Required)</h2>
-              <span className="bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 text-xs px-2.5 py-0.5 rounded-full font-bold">
-                {reviewQueue.length}
+              <h3 className="text-sm font-bold text-slate-900">Employee Compliance & Acknowledgement Radar</h3>
+              <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-full ${
+                compliantPercent >= 80 ? 'bg-slate-100 text-slate-900 border border-slate-200' : 'bg-[#FA7014]/10 text-[#FA7014] border border-[#FA7014]/30'
+              }`}>
+                {compliantPercent}% Completed
               </span>
             </div>
-            <p className="text-xs text-slate-400 mt-0.5">
-              Reviewers inspect changed content against the current published baseline and make binding approval or rejection decisions.
+            <p className="text-xs text-slate-500 mt-0.5">
+              {pendingAcks > 0 ? (
+                <span><strong>{pendingAcks} pending employee acknowledgement(s)</strong> require follow-up or automatic reminder dispatch.</span>
+              ) : (
+                <span>All employee acknowledgements are fully compliant.</span>
+              )}
             </p>
-          </div>
-
-          <div className="relative w-full sm:w-64">
-            <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
-            <input
-              id="search-review-queue"
-              type="text"
-              placeholder="Search queue..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full pl-8 pr-3 py-1.5 bg-slate-950/60 border border-slate-800 rounded-xl text-xs text-slate-200 focus:outline-hidden focus:ring-2 focus:ring-emerald-500 placeholder:text-slate-500"
-            />
           </div>
         </div>
 
-        <div className="overflow-x-auto">
-          <table className="min-w-full divide-y divide-slate-800/80">
-            <thead className="bg-slate-950/70 text-slate-400 text-xs uppercase tracking-wider font-semibold">
-              <tr>
-                <th scope="col" className="px-6 py-3.5 text-left">Document ID & Title</th>
-                <th scope="col" className="px-6 py-3.5 text-left">Submitted Version</th>
-                <th scope="col" className="px-6 py-3.5 text-left">Baseline (Published)</th>
-                <th scope="col" className="px-6 py-3.5 text-left">Creator</th>
-                <th scope="col" className="px-6 py-3.5 text-left">Change Type & Summary</th>
-                <th scope="col" className="px-6 py-3.5 text-left">Submission Date</th>
-                <th scope="col" className="px-6 py-3.5 text-right">Decision</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-800/60 text-sm">
-              {filteredQueue.length === 0 ? (
+        {onOpenComplianceTracker && (
+          <button
+            id="btn-reviewer-goto-compliance"
+            onClick={onOpenComplianceTracker}
+            className="px-4 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-semibold shadow-sm flex items-center space-x-1.5 transition-colors self-start sm:self-center shrink-0"
+          >
+            <span>Open Compliance Tracker</span>
+            <ChevronRight className="w-4 h-4" />
+          </button>
+        )}
+      </div>
+
+      {/* VIEW TABS SELECTOR */}
+      <div className="flex items-center space-x-2 border-b border-slate-200 pb-2">
+        <button
+          id="tab-reviewer-queue"
+          onClick={() => setActiveView('queue')}
+          className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center space-x-2 ${
+            activeView === 'queue'
+              ? 'bg-[#FA7014] text-white shadow-sm'
+              : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
+          }`}
+        >
+          <Clock className="w-3.5 h-3.5" />
+          <span>Pending Review Queue ({reviewQueue.length})</span>
+        </button>
+
+        <button
+          id="tab-reviewer-consolidated"
+          onClick={() => setActiveView('consolidated')}
+          className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center space-x-2 ${
+            activeView === 'consolidated'
+              ? 'bg-slate-900 text-white shadow-sm'
+              : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
+          }`}
+        >
+          <Layers className="w-3.5 h-3.5" />
+          <span>Consolidated Documents List ({documents.length})</span>
+        </button>
+
+        <button
+          id="tab-reviewer-history"
+          onClick={() => setActiveView('history')}
+          className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center space-x-2 ${
+            activeView === 'history'
+              ? 'bg-slate-900 text-white shadow-sm'
+              : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
+          }`}
+        >
+          <History className="w-3.5 h-3.5" />
+          <span>Decision History ({decidedHistory.length})</span>
+        </button>
+      </div>
+
+      {/* VIEW 1: PENDING REVIEW QUEUE */}
+      {activeView === 'queue' && (
+        <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+          <div className="px-6 py-4 bg-slate-50 border-b border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div>
+              <div className="flex items-center space-x-2">
+                <ShieldCheck className="w-5 h-5 text-[#FA7014]" />
+                <h2 className="text-base font-bold text-slate-900">Pending Review Queue (Action Required)</h2>
+                <span className="bg-[#FA7014]/10 text-[#FA7014] border border-[#FA7014]/30 text-xs px-2.5 py-0.5 rounded-full font-bold">
+                  {reviewQueue.length}
+                </span>
+              </div>
+              <p className="text-xs text-slate-500 mt-0.5">
+                Reviewers inspect changed content against the published baseline. Once decided, further decisions are locked to preserve audit integrity.
+              </p>
+            </div>
+
+            <div className="relative w-full sm:w-64">
+              <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+              <input
+                id="search-review-queue"
+                type="text"
+                placeholder="Search queue..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="w-full pl-8 pr-3 py-1.5 bg-white border border-slate-200 rounded-xl text-xs text-slate-900 focus:outline-hidden focus:ring-2 focus:ring-[#FA7014] placeholder:text-slate-400"
+              />
+            </div>
+          </div>
+
+          <div className="overflow-x-auto">
+            <table className="min-w-full divide-y divide-slate-200">
+              <thead className="bg-slate-50 text-slate-700 text-xs uppercase tracking-wider font-semibold">
                 <tr>
-                  <td colSpan={7} className="px-6 py-12 text-center text-slate-500">
-                    <CheckCircle2 className="w-10 h-10 mx-auto mb-2 text-emerald-500" />
-                    All clear! No documents are currently pending reviewer action.
-                  </td>
+                  <th scope="col" className="px-6 py-3.5 text-left">Document ID & Title</th>
+                  <th scope="col" className="px-6 py-3.5 text-left">Submitted Version</th>
+                  <th scope="col" className="px-6 py-3.5 text-left">Baseline (Published)</th>
+                  <th scope="col" className="px-6 py-3.5 text-left">Creator</th>
+                  <th scope="col" className="px-6 py-3.5 text-left">Change Type & Summary</th>
+                  <th scope="col" className="px-6 py-3.5 text-left">Submission Date</th>
+                  <th scope="col" className="px-6 py-3.5 text-right">Decision</th>
                 </tr>
-              ) : (
-                filteredQueue.map((ver) => {
-                  const parentMaster = documents.find((d) => d.id === ver.documentMasterId);
-                  return (
-                    <tr key={ver.id} className="hover:bg-emerald-950/20 transition-colors">
+              </thead>
+              <tbody className="divide-y divide-slate-100 text-sm">
+                {filteredQueue.length === 0 ? (
+                  <tr>
+                    <td colSpan={7} className="px-6 py-12 text-center text-slate-500">
+                      <CheckCircle2 className="w-10 h-10 mx-auto mb-2 text-emerald-500" />
+                      <p className="font-semibold text-slate-700">All clear!</p>
+                      <p className="text-xs text-slate-500 mt-1">No documents are currently pending reviewer action. All submissions have received binding decisions.</p>
+                    </td>
+                  </tr>
+                ) : (
+                  filteredQueue.map((ver) => {
+                    const parentMaster = documents.find((d) => d.id === ver.documentMasterId);
+                    const isDecided = ver.status !== VersionStatus.IN_REVIEW || !!ver.reviewedAt;
+
+                    return (
+                      <tr key={ver.id} className="hover:bg-slate-50/80 transition-colors">
+                        <td className="px-6 py-4">
+                          <div className="flex items-center space-x-2 mb-1">
+                            <span className="font-mono text-xs font-bold text-slate-900 bg-slate-100 px-2.5 py-0.5 rounded-lg inline-block border border-slate-200">
+                              {ver.documentId}
+                            </span>
+                            {parentMaster?.confidentiality === ConfidentialityLevel.INTERNAL ? (
+                              <span className="text-[10px] text-amber-800 bg-amber-50 border border-amber-200/80 px-2 py-0.5 rounded-md font-semibold">
+                                🔒 Internal Company
+                              </span>
+                            ) : (
+                              <span className="text-[10px] text-emerald-800 bg-emerald-50 border border-emerald-200/80 px-2 py-0.5 rounded-md font-semibold">
+                                📢 Public (All Employees)
+                              </span>
+                            )}
+                          </div>
+                          <div className="font-semibold text-slate-900">{ver.documentTitle}</div>
+                        </td>
+
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          <span className="font-bold text-xs text-[#FA7014] bg-[#FA7014]/10 border border-[#FA7014]/25 px-2.5 py-1 rounded-lg">
+                            v{ver.versionNumber}
+                          </span>
+                        </td>
+
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          {ver.previousVersionNumber && ver.previousVersionNumber !== ver.versionNumber ? (
+                            <span className="font-medium text-xs text-slate-700 bg-slate-100 px-2 py-1 rounded-md border border-slate-200">
+                              v{ver.previousVersionNumber} (Baseline)
+                            </span>
+                          ) : parentMaster?.currentPublishedVersionNumber && parentMaster.currentPublishedVersionNumber !== ver.versionNumber ? (
+                            <span className="font-medium text-xs text-slate-700 bg-slate-100 px-2 py-1 rounded-md border border-slate-200">
+                              v{parentMaster.currentPublishedVersionNumber} (Published)
+                            </span>
+                          ) : (
+                            <span className="text-xs text-slate-500 italic">Initial Baseline (None)</span>
+                          )}
+                        </td>
+
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          <div className="text-xs font-semibold text-slate-900">{ver.createdByName}</div>
+                          <div className="text-[11px] text-slate-500">HR Operations</div>
+                        </td>
+
+                        <td className="px-6 py-4 max-w-xs">
+                          <span className="text-xs font-semibold uppercase tracking-wider text-slate-800 bg-slate-100 px-2 py-0.5 rounded border border-slate-200">
+                            {ver.versionType}
+                          </span>
+                          <p className="text-xs text-slate-600 mt-1 line-clamp-2" title={ver.changeSummary}>
+                            {ver.changeSummary || 'No change summary provided.'}
+                          </p>
+                        </td>
+
+                        <td className="px-6 py-4 whitespace-nowrap text-xs text-slate-500">
+                          {formatISTDate(ver.createdAt)}
+                        </td>
+
+                        <td className="px-6 py-4 whitespace-nowrap text-right">
+                          {isDecided ? (
+                            <span className="inline-flex items-center space-x-1.5 text-xs font-semibold text-slate-700 bg-slate-100 border border-slate-200 px-3 py-1.5 rounded-xl">
+                              <Lock className="w-3.5 h-3.5 text-slate-500" />
+                              <span>Decision Given ({ver.status})</span>
+                            </span>
+                          ) : (
+                            <button
+                              id={`btn-review-${ver.id}`}
+                              onClick={() => onOpenReviewModal(ver)}
+                              className="inline-flex items-center space-x-1.5 bg-[#FA7014] hover:bg-[#E65A05] text-white font-semibold text-xs px-4 py-2 rounded-xl shadow-md shadow-[#FA7014]/20 transition-all border border-orange-500/30 cursor-pointer"
+                            >
+                              <GitCompare className="w-3.5 h-3.5" />
+                              <span>Review & Decide</span>
+                              <ArrowRight className="w-3.5 h-3.5 ml-0.5" />
+                            </button>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* VIEW 2: CONSOLIDATED DOCUMENTS LIST */}
+      {activeView === 'consolidated' && (
+        <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+          <div className="p-6 bg-slate-50 border-b border-slate-200 flex flex-col gap-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div>
+                <div className="flex items-center space-x-2">
+                  <Layers className="w-5 h-5 text-slate-900" />
+                  <h2 className="text-base font-bold text-slate-900">Consolidated Uploaded Documents Repository</h2>
+                  <span className="bg-slate-200 text-slate-800 text-xs px-2.5 py-0.5 rounded-full font-bold">
+                    {filteredConsolidatedDocs.length} Total
+                  </span>
+                </div>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  Consolidated master registry of all policies, SOPs, and employee governance records across departments.
+                </p>
+              </div>
+
+              <div className="relative w-full sm:w-72">
+                <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                <input
+                  id="search-consolidated-docs"
+                  type="text"
+                  placeholder="Search by ID, title, or department..."
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  className="w-full pl-8 pr-3 py-2 bg-white border border-slate-200 rounded-xl text-xs text-slate-900 focus:outline-hidden focus:ring-2 focus:ring-[#FA7014] placeholder:text-slate-400"
+                />
+              </div>
+            </div>
+
+            {/* Filter Bar */}
+            <div className="flex flex-wrap items-center gap-3 pt-2 border-t border-slate-200 text-xs">
+              <div className="flex items-center space-x-1.5 text-slate-500">
+                <Filter className="w-3.5 h-3.5" />
+                <span className="font-semibold">Filters:</span>
+              </div>
+
+              <select
+                value={selectedCategory}
+                onChange={(e) => setSelectedCategory(e.target.value)}
+                className="bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs text-slate-700 focus:outline-hidden focus:ring-1 focus:ring-[#FA7014]"
+              >
+                <option value="ALL">All Categories</option>
+                <option value="HR_POLICIES">HR Policies</option>
+                <option value="LEAVE_ATTENDANCE">Leave & Attendance</option>
+                <option value="CODE_OF_CONDUCT">Code of Conduct</option>
+                <option value="HEALTH_SAFETY">Health & Safety</option>
+                <option value="REMOTE_WORK">Remote Work</option>
+                <option value="IT_SECURITY">IT & Security</option>
+                <option value="COMPENSATION_BENEFITS">Compensation & Benefits</option>
+              </select>
+
+              <select
+                value={selectedDept}
+                onChange={(e) => setSelectedDept(e.target.value)}
+                className="bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs text-slate-700 focus:outline-hidden focus:ring-1 focus:ring-[#FA7014]"
+              >
+                <option value="ALL">All Departments</option>
+                {departments.map((d) => (
+                  <option key={d} value={d}>
+                    {d}
+                  </option>
+                ))}
+              </select>
+
+              <select
+                value={selectedStatus}
+                onChange={(e) => setSelectedStatus(e.target.value)}
+                className="bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs text-slate-700 focus:outline-hidden focus:ring-1 focus:ring-[#FA7014]"
+              >
+                <option value="ALL">All Statuses</option>
+                <option value="PUBLISHED">Published / Live</option>
+                <option value="IN_REVIEW">In Review</option>
+                <option value="REVISION_REQUIRED">Revision Required</option>
+                <option value="DRAFT">Draft</option>
+              </select>
+            </div>
+          </div>
+
+          <div className="overflow-x-auto">
+            <table className="min-w-full divide-y divide-slate-200">
+              <thead className="bg-slate-50 text-slate-700 text-xs uppercase tracking-wider font-semibold">
+                <tr>
+                  <th scope="col" className="px-6 py-3.5 text-left">Document ID</th>
+                  <th scope="col" className="px-6 py-3.5 text-left">Title & Category</th>
+                  <th scope="col" className="px-6 py-3.5 text-left">Department</th>
+                  <th scope="col" className="px-6 py-3.5 text-left">Live Version</th>
+                  <th scope="col" className="px-6 py-3.5 text-left">Governance Status</th>
+                  <th scope="col" className="px-6 py-3.5 text-left">Decision State</th>
+                  <th scope="col" className="px-6 py-3.5 text-right">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100 text-sm">
+                {filteredConsolidatedDocs.length === 0 ? (
+                  <tr>
+                    <td colSpan={7} className="px-6 py-12 text-center text-slate-500">
+                      <FileText className="w-10 h-10 mx-auto mb-2 text-slate-400" />
+                      No documents found matching the filter criteria.
+                    </td>
+                  </tr>
+                ) : (
+                  filteredConsolidatedDocs.map((doc) => {
+                    const docVers = versions.filter((v) => v.documentMasterId === doc.id);
+                    const latestVer = docVers[0];
+                    const hasPendingReview = docVers.some((v) => v.status === VersionStatus.IN_REVIEW && !v.reviewedAt);
+
+                    return (
+                      <tr key={doc.id} className="hover:bg-slate-50/80 transition-colors">
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          <span className="font-mono text-xs font-bold text-slate-900 bg-slate-100 px-2.5 py-1 rounded-lg border border-slate-200">
+                            {doc.documentId}
+                          </span>
+                        </td>
+
+                        <td className="px-6 py-4">
+                          <div className="font-semibold text-slate-900">{doc.title}</div>
+                          <div className="text-xs text-slate-500 mt-1 flex items-center space-x-2">
+                            <span className="bg-slate-100 px-1.5 py-0.5 rounded text-[11px] font-medium text-slate-700 border border-slate-200">{doc.category}</span>
+                            {doc.confidentiality === ConfidentialityLevel.INTERNAL ? (
+                              <span className="text-[10px] text-amber-800 bg-amber-50 border border-amber-200/80 px-2 py-0.5 rounded-md font-semibold">
+                                🔒 Internal Company
+                              </span>
+                            ) : (
+                              <span className="text-[10px] text-emerald-800 bg-emerald-50 border border-emerald-200/80 px-2 py-0.5 rounded-md font-semibold">
+                                📢 Public (All Employees)
+                              </span>
+                            )}
+                          </div>
+                        </td>
+
+                        <td className="px-6 py-4 whitespace-nowrap text-xs text-slate-700">
+                          {doc.departmentName}
+                        </td>
+
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          {doc.currentPublishedVersionNumber ? (
+                            <span className="font-bold text-xs text-emerald-800 bg-emerald-50 border border-emerald-200 px-2.5 py-1 rounded-full">
+                              v{doc.currentPublishedVersionNumber} (Live)
+                            </span>
+                          ) : (
+                            <span className="text-xs text-slate-500 italic">No published version</span>
+                          )}
+                        </td>
+
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          <StatusBadge status={doc.currentStatus} size="sm" />
+                        </td>
+
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          {hasPendingReview ? (
+                            <span className="inline-flex items-center space-x-1 text-xs font-semibold text-[#FA7014] bg-[#FA7014]/10 border border-[#FA7014]/30 px-2.5 py-1 rounded-lg">
+                              <Clock className="w-3.5 h-3.5 animate-pulse" />
+                              <span>Pending Review</span>
+                            </span>
+                          ) : doc.currentStatus === VersionStatus.PUBLISHED ? (
+                            <span className="inline-flex items-center space-x-1 text-xs font-semibold text-slate-900 bg-slate-100 border border-slate-200 px-2.5 py-1 rounded-lg">
+                              <Check className="w-3.5 h-3.5 text-emerald-600 stroke-[3]" />
+                              <span>Approved & Published</span>
+                            </span>
+                          ) : doc.currentStatus === VersionStatus.REVISION_REQUIRED ? (
+                            <span className="inline-flex items-center space-x-1 text-xs font-semibold text-rose-700 bg-rose-50 border border-rose-200 px-2.5 py-1 rounded-lg">
+                              <XCircle className="w-3.5 h-3.5 text-rose-600" />
+                              <span>Revision Requested</span>
+                            </span>
+                          ) : (
+                            <span className="text-xs text-slate-500">Draft Baseline</span>
+                          )}
+                        </td>
+
+                        <td className="px-6 py-4 text-right whitespace-nowrap">
+                          <button
+                            id={`btn-reviewer-consolidated-view-${doc.id}`}
+                            onClick={() => onOpenDocumentDetail(doc)}
+                            className="inline-flex items-center space-x-1 text-xs font-semibold text-slate-800 hover:text-slate-950 bg-slate-100 hover:bg-slate-200 px-3 py-1.5 rounded-lg transition-colors border border-slate-200"
+                          >
+                            <Eye className="w-3.5 h-3.5" />
+                            <span>Audit & Versions ({docVers.length})</span>
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* VIEW 3: DECISIONS HISTORY */}
+      {activeView === 'history' && (
+        <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+          <div className="px-6 py-4 bg-slate-50 border-b border-slate-200 flex items-center justify-between">
+            <div>
+              <div className="flex items-center space-x-2">
+                <History className="w-5 h-5 text-slate-900" />
+                <h2 className="text-base font-bold text-slate-900">Finalized Decisions & Audit Log</h2>
+                <span className="bg-slate-200 text-slate-800 text-xs px-2.5 py-0.5 rounded-full font-bold">
+                  {decidedHistory.length}
+                </span>
+              </div>
+              <p className="text-xs text-slate-500 mt-0.5">
+                Permanent log of all approved, published, and returned versions. Decisions here are immutable and cannot be re-reviewed.
+              </p>
+            </div>
+          </div>
+
+          <div className="overflow-x-auto">
+            <table className="min-w-full divide-y divide-slate-200">
+              <thead className="bg-slate-50 text-slate-700 text-xs uppercase tracking-wider font-semibold">
+                <tr>
+                  <th scope="col" className="px-6 py-3.5 text-left">Document ID & Title</th>
+                  <th scope="col" className="px-6 py-3.5 text-left">Version</th>
+                  <th scope="col" className="px-6 py-3.5 text-left">Final Decision</th>
+                  <th scope="col" className="px-6 py-3.5 text-left">Decided By</th>
+                  <th scope="col" className="px-6 py-3.5 text-left">Decision Date</th>
+                  <th scope="col" className="px-6 py-3.5 text-left">Comments / Notes</th>
+                  <th scope="col" className="px-6 py-3.5 text-right">Inspection</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100 text-sm">
+                {decidedHistory.length === 0 ? (
+                  <tr>
+                    <td colSpan={7} className="px-6 py-12 text-center text-slate-500">
+                      No decision records found yet.
+                    </td>
+                  </tr>
+                ) : (
+                  decidedHistory.map((ver) => (
+                    <tr key={ver.id} className="hover:bg-slate-50/80 transition-colors">
                       <td className="px-6 py-4">
-                        <div className="font-mono text-xs font-bold text-blue-300 bg-blue-950/60 px-2.5 py-0.5 rounded-lg inline-block border border-blue-800/60 mb-1">
+                        <span className="font-mono text-xs font-bold text-slate-900 bg-slate-100 px-2 py-0.5 rounded border border-slate-200">
                           {ver.documentId}
-                        </div>
-                        <div className="font-semibold text-white">{ver.documentTitle}</div>
+                        </span>
+                        <div className="font-semibold text-slate-900 mt-1">{ver.documentTitle}</div>
                       </td>
 
                       <td className="px-6 py-4 whitespace-nowrap">
-                        <span className="font-bold text-xs text-amber-300 bg-amber-950/60 border border-amber-800/60 px-2.5 py-1 rounded-lg">
+                        <span className="font-bold text-xs text-slate-800 bg-slate-100 px-2.5 py-1 rounded-md border border-slate-200">
                           v{ver.versionNumber}
                         </span>
                       </td>
 
                       <td className="px-6 py-4 whitespace-nowrap">
-                        {ver.previousVersionNumber ? (
-                          <span className="font-medium text-xs text-slate-300 bg-slate-800 px-2 py-1 rounded-md border border-slate-700">
-                            v{ver.previousVersionNumber} (Baseline)
+                        {ver.status === VersionStatus.PUBLISHED ? (
+                          <span className="inline-flex items-center space-x-1 text-xs font-semibold text-emerald-800 bg-emerald-50 border border-emerald-200 px-2.5 py-1 rounded-full">
+                            <Check className="w-3.5 h-3.5 text-emerald-600 stroke-[3]" />
+                            <span>Approved & Published</span>
                           </span>
-                        ) : parentMaster?.currentPublishedVersionNumber ? (
-                          <span className="font-medium text-xs text-slate-300 bg-slate-800 px-2 py-1 rounded-md border border-slate-700">
-                            v{parentMaster.currentPublishedVersionNumber} (Published)
+                        ) : ver.status === VersionStatus.REVISION_REQUIRED ? (
+                          <span className="inline-flex items-center space-x-1 text-xs font-semibold text-rose-800 bg-rose-50 border border-rose-200 px-2.5 py-1 rounded-full">
+                            <XCircle className="w-3.5 h-3.5 text-rose-600" />
+                            <span>Revision Requested</span>
                           </span>
                         ) : (
-                          <span className="text-xs text-slate-500 italic">Initial Document</span>
+                          <StatusBadge status={ver.status} size="sm" />
                         )}
                       </td>
 
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <div className="text-xs font-semibold text-slate-200">{ver.createdByName}</div>
-                        <div className="text-[11px] text-slate-500">HR Operations</div>
+                      <td className="px-6 py-4 whitespace-nowrap text-xs text-slate-700">
+                        {ver.reviewedByName || ver.publishedByName || 'Reviewer'}
                       </td>
 
-                      <td className="px-6 py-4 max-w-xs">
-                        <span className="text-xs font-semibold uppercase tracking-wider text-blue-300 bg-blue-950/60 px-2 py-0.5 rounded border border-blue-800/50">
-                          {ver.versionType}
-                        </span>
-                        <p className="text-xs text-slate-400 mt-1 line-clamp-2" title={ver.changeSummary}>
-                          {ver.changeSummary || 'No change summary provided.'}
-                        </p>
+                      <td className="px-6 py-4 whitespace-nowrap text-xs text-slate-500">
+                        {ver.reviewedAt ? formatISTDate(ver.reviewedAt) : formatISTDate(ver.createdAt)}
                       </td>
 
-                      <td className="px-6 py-4 whitespace-nowrap text-xs text-slate-400">
-                        {new Date(ver.createdAt).toLocaleDateString()}
+                      <td className="px-6 py-4 max-w-xs text-xs text-slate-600 line-clamp-2">
+                        {ver.reviewerComments || ver.changeSummary || '—'}
                       </td>
 
                       <td className="px-6 py-4 whitespace-nowrap text-right">
                         <button
-                          id={`btn-review-${ver.id}`}
                           onClick={() => onOpenReviewModal(ver)}
-                          className="inline-flex items-center space-x-1.5 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-semibold text-xs px-4 py-2 rounded-xl shadow-md shadow-emerald-900/30 transition-all hover:scale-[1.02] border border-emerald-400/30"
+                          className="inline-flex items-center space-x-1 text-xs font-semibold text-slate-800 hover:text-slate-950 bg-slate-100 hover:bg-slate-200 px-3 py-1.5 rounded-lg transition-colors border border-slate-200"
                         >
-                          <GitCompare className="w-3.5 h-3.5" />
-                          <span>Review & Decide</span>
-                          <ArrowRight className="w-3.5 h-3.5 ml-0.5" />
+                          <Lock className="w-3.5 h-3.5 text-slate-500" />
+                          <span>View Decision (Locked)</span>
                         </button>
                       </td>
                     </tr>
-                  );
-                })
-              )}
-            </tbody>
-          </table>
-        </div>
-      </div>
-
-      {/* ALL DOCUMENTS GOVERNANCE DIRECTORY */}
-      <div className="glass-panel-dark rounded-2xl border border-slate-800/80 shadow-xl overflow-hidden">
-        <div className="px-6 py-4 border-b border-slate-800/80 flex items-center justify-between">
-          <div>
-            <h2 className="text-base font-bold text-white">All Document Masters & Published Status</h2>
-            <p className="text-xs text-slate-400">Comprehensive overview of all logical document records and active version numbers.</p>
+                  ))
+                )}
+              </tbody>
+            </table>
           </div>
         </div>
-
-        <div className="overflow-x-auto">
-          <table className="min-w-full divide-y divide-slate-800/80">
-            <thead className="bg-slate-950/70 text-slate-400 text-xs uppercase tracking-wider font-semibold">
-              <tr>
-                <th scope="col" className="px-6 py-3 text-left">Document ID</th>
-                <th scope="col" className="px-6 py-3 text-left">Title</th>
-                <th scope="col" className="px-6 py-3 text-left">Category</th>
-                <th scope="col" className="px-6 py-3 text-left">Published Version</th>
-                <th scope="col" className="px-6 py-3 text-left">Status</th>
-                <th scope="col" className="px-6 py-3 text-left">Confidentiality</th>
-                <th scope="col" className="px-6 py-3 text-right">Actions</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-800/60 text-sm">
-              {documents.map((doc) => {
-                const docVers = versions.filter((v) => v.documentMasterId === doc.id);
-                return (
-                  <tr key={doc.id} className="hover:bg-slate-800/40 transition-colors">
-                    <td className="px-6 py-3.5 whitespace-nowrap font-mono text-xs font-bold text-blue-300">
-                      {doc.documentId}
-                    </td>
-                    <td className="px-6 py-3.5 font-semibold text-white">{doc.title}</td>
-                    <td className="px-6 py-3.5 text-xs text-slate-400">{doc.category}</td>
-                    <td className="px-6 py-3.5 whitespace-nowrap">
-                      {doc.currentPublishedVersionNumber ? (
-                        <span className="font-bold text-xs text-emerald-300 bg-emerald-950/60 px-2.5 py-1 rounded-full border border-emerald-800/60">
-                          v{doc.currentPublishedVersionNumber} (Live)
-                        </span>
-                      ) : (
-                        <span className="text-xs text-slate-500 italic">None</span>
-                      )}
-                    </td>
-                    <td className="px-6 py-3.5 whitespace-nowrap">
-                      <StatusBadge status={doc.currentStatus} size="sm" />
-                    </td>
-                    <td className="px-6 py-3.5 text-xs text-slate-400">{doc.confidentiality}</td>
-                    <td className="px-6 py-3.5 text-right">
-                      <button
-                        id={`btn-reviewer-view-${doc.id}`}
-                        onClick={() => onOpenDocumentDetail(doc)}
-                        className="inline-flex items-center space-x-1 text-xs font-semibold text-slate-300 hover:text-white bg-slate-800 hover:bg-slate-700 px-3 py-1.5 rounded-lg transition-colors border border-slate-700"
-                      >
-                        <Eye className="w-3.5 h-3.5" />
-                        <span>Audit Timeline ({docVers.length})</span>
-                      </button>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-      </div>
+      )}
     </div>
   );
 };

@@ -39,8 +39,6 @@ export enum VersionType {
 export enum ConfidentialityLevel {
   PUBLIC = 'Public (All Employees)',
   INTERNAL = 'Internal Company',
-  RESTRICTED = 'Restricted Department',
-  CONFIDENTIAL = 'Strictly Confidential (HR & Management)',
 }
 
 export enum AuditAction {
@@ -61,6 +59,7 @@ export enum AuditAction {
   PUBLICATION_FAILED = 'PUBLICATION_FAILED',
   ACCESS_DENIED = 'ACCESS_DENIED',
   DOCUMENT_ACKNOWLEDGED = 'DOCUMENT_ACKNOWLEDGED',
+  USER_UPDATED = 'USER_UPDATED',
 }
 
 export interface User {
@@ -243,8 +242,24 @@ export interface AcknowledgementRecord {
   employeeId: string;
   employeeName: string;
   employeeEmail: string;
+  departmentName?: string;
   status: 'PENDING' | 'ACKNOWLEDGED';
   acknowledgedAt?: string;
+  notes?: string;
+  signatureReference?: string;
+  reminderSentAt?: string;
+}
+
+export interface EmployeeComplianceStats {
+  employeeId: string;
+  employeeName: string;
+  employeeEmail: string;
+  departmentName: string;
+  totalAssigned: number;
+  acknowledgedCount: number;
+  pendingCount: number;
+  complianceRate: number;
+  acknowledgements: AcknowledgementRecord[];
 }
 
 export interface StorageMetadata {

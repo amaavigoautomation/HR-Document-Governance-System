@@ -1,6 +1,6 @@
 {
   "name": "HR Document Governance System",
-  "description": "Enterprise HR Document Governance, Version Control, Review Workflow, Side-by-Side Comparison, and Automated Publishing System.",
+  "description": "Enterprise HR Document Governance, Version Control, Review Workflow, Employee Document Acknowledgement & Compliance Tracking, and Secure Email Broadcasting System.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

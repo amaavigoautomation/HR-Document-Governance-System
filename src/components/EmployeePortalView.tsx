@@ -13,8 +13,9 @@ import {
   Check,
   ExternalLink,
 } from 'lucide-react';
-import { AcknowledgementRecord, DocumentMaster, DocumentVersion, User, VersionStatus } from '../types';
+import { AcknowledgementRecord, ConfidentialityLevel, DocumentMaster, DocumentVersion, User, VersionStatus } from '../types';
 import { governanceEngine } from '../services/governance';
+import { formatISTDate } from '../utils/dateFormat';
 
 interface EmployeePortalViewProps {
   currentUser: User;
@@ -31,11 +32,17 @@ export const EmployeePortalView: React.FC<EmployeePortalViewProps> = ({
 }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [acknowledgements, setAcknowledgements] = useState<AcknowledgementRecord[]>(
-    governanceEngine.getAcknowledgements(currentUser.id)
+    governanceEngine.getAcknowledgements()
   );
 
-  // Employee only sees PUBLISHED documents (Section 34)
-  const publishedDocs = documents.filter((d) => d.currentStatus === VersionStatus.PUBLISHED);
+  // Employee only sees PUBLISHED documents that are Public (All Employees)
+  // Internal Company documents are strictly restricted to HR & Approvers
+  const publishedDocs = documents.filter(
+    (d) =>
+      d.active &&
+      d.currentStatus === VersionStatus.PUBLISHED &&
+      d.confidentiality === ConfidentialityLevel.PUBLIC
+  );
 
   const filtered = publishedDocs.filter((doc) => {
     const q = searchTerm.toLowerCase();
@@ -47,49 +54,69 @@ export const EmployeePortalView: React.FC<EmployeePortalViewProps> = ({
     );
   });
 
+  const userIdentifiers = [currentUser.id, currentUser.empId, currentUser.loginId, currentUser.email]
+    .filter(Boolean)
+    .map((s) => s!.toLowerCase());
+
   const handleAcknowledge = (doc: DocumentMaster, verNumber: string) => {
     governanceEngine.acknowledgeDocument(currentUser, doc.documentId, verNumber);
-    setAcknowledgements(governanceEngine.getAcknowledgements(currentUser.id));
+    setAcknowledgements(governanceEngine.getAcknowledgements());
   };
 
-  const pendingAcksCount = acknowledgements.filter((a) => a.status === 'PENDING').length;
+  const userAcks = acknowledgements.filter(
+    (a) =>
+      userIdentifiers.includes(a.employeeId?.toLowerCase()) ||
+      (a.employeeEmail && userIdentifiers.includes(a.employeeEmail.toLowerCase()))
+  );
+
+  const pendingAcksCount = publishedDocs.filter((doc) => {
+    if (!doc.acknowledgementRequired) return false;
+    const verNumber = doc.currentPublishedVersionNumber || '1.0';
+    const ack = userAcks.find(
+      (a) =>
+        a.documentId === doc.documentId &&
+        a.versionNumber === verNumber &&
+        a.status === 'ACKNOWLEDGED'
+    );
+    return !ack;
+  }).length;
 
   return (
     <div className="space-y-6">
       {/* HEADER */}
-      <div className="glass-panel-dark rounded-2xl p-6 shadow-xl flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+      <div className="bg-white rounded-2xl p-6 shadow-sm flex flex-col md:flex-row md:items-center md:justify-between gap-4 border border-slate-200">
         <div>
           <div className="flex items-center space-x-2.5 flex-wrap gap-y-1">
-            <h1 className="text-2xl font-bold text-white tracking-tight">Employee Document Portal</h1>
-            <span className="bg-indigo-500/15 text-indigo-300 text-xs px-3 py-0.5 rounded-full font-semibold border border-indigo-500/30">
+            <h1 className="text-2xl font-bold text-slate-900 tracking-tight">Employee Document Portal</h1>
+            <span className="bg-[#FA7014]/10 text-[#FA7014] text-xs px-3 py-0.5 rounded-full font-semibold border border-[#FA7014]/30">
               Live Company Policies & SOPs
             </span>
-            <span className="bg-slate-800 text-slate-300 text-xs px-2.5 py-0.5 rounded-md font-mono border border-slate-700">
+            <span className="bg-slate-100 text-slate-800 text-xs px-2.5 py-0.5 rounded-md font-mono font-semibold border border-slate-200">
               emp_id: {currentUser.empId || currentUser.loginId || currentUser.id}
             </span>
           </div>
-          <p className="text-sm text-slate-400 mt-1.5">
-            Logged in as <span className="font-semibold text-slate-200">{currentUser.name}</span> ({currentUser.email}) • Access operational published policies and complete required compliance acknowledgements.
+          <p className="text-sm text-slate-500 mt-1.5">
+            Logged in as <span className="font-semibold text-slate-900">{currentUser.name}</span> ({currentUser.email}) • Access operational published policies and complete required compliance acknowledgements.
           </p>
         </div>
 
         {pendingAcksCount > 0 ? (
-          <div className="bg-amber-950/50 border border-amber-800/60 px-4 py-2.5 rounded-xl flex items-center space-x-2.5 text-xs text-amber-300 shadow-inner">
-            <Clock className="w-4 h-4 text-amber-400 animate-pulse shrink-0" />
+          <div className="bg-[#FA7014]/10 border border-[#FA7014]/30 px-4 py-2.5 rounded-xl flex items-center space-x-2.5 text-xs text-[#FA7014]">
+            <Clock className="w-4 h-4 text-[#FA7014] animate-pulse shrink-0" />
             <span>
               You have <strong>{pendingAcksCount} document(s)</strong> awaiting your compliance acknowledgement.
             </span>
           </div>
         ) : (
-          <div className="bg-emerald-950/50 border border-emerald-800/60 px-4 py-2.5 rounded-xl flex items-center space-x-2.5 text-xs text-emerald-300 shadow-inner">
-            <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+          <div className="bg-slate-50 border border-slate-200 px-4 py-2.5 rounded-xl flex items-center space-x-2.5 text-xs text-slate-800">
+            <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
             <span>All active policy acknowledgements up to date!</span>
           </div>
         )}
       </div>
 
       {/* SEARCH BAR */}
-      <div className="glass-panel-dark p-4 rounded-2xl border border-slate-800/80 shadow-md">
+      <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm">
         <div className="relative">
           <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
           <input
@@ -98,7 +125,7 @@ export const EmployeePortalView: React.FC<EmployeePortalViewProps> = ({
             placeholder="Search active policies, SOPs, forms, or guidelines..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
-            className="w-full pl-9 pr-4 py-2.5 bg-slate-950/60 border border-slate-800 rounded-xl text-xs text-slate-200 focus:outline-hidden focus:ring-2 focus:ring-indigo-500 placeholder:text-slate-500"
+            className="w-full pl-9 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 focus:outline-hidden focus:ring-2 focus:ring-[#FA7014] focus:bg-white placeholder:text-slate-400 transition-colors"
           />
         </div>
       </div>
@@ -106,8 +133,8 @@ export const EmployeePortalView: React.FC<EmployeePortalViewProps> = ({
       {/* PUBLISHED DOCUMENTS GRID */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         {filtered.length === 0 ? (
-          <div className="col-span-2 glass-panel-dark rounded-2xl p-12 text-center text-slate-500 border border-slate-800">
-            <BookOpen className="w-12 h-12 mx-auto mb-2 text-slate-600" />
+          <div className="col-span-2 bg-white rounded-2xl p-12 text-center text-slate-500 border border-slate-200 shadow-sm">
+            <BookOpen className="w-12 h-12 mx-auto mb-2 text-slate-400" />
             <p>No published documents found matching your search.</p>
           </div>
         ) : (
@@ -115,69 +142,72 @@ export const EmployeePortalView: React.FC<EmployeePortalViewProps> = ({
             const pubVersion = versions.find((v) => v.id === doc.currentPublishedVersionId);
             const verNumber = doc.currentPublishedVersionNumber || '1.0';
 
-            const ack = acknowledgements.find(
-              (a) => a.documentId === doc.documentId && a.versionNumber === verNumber
+            const ack = userAcks.find(
+              (a) =>
+                a.documentId === doc.documentId &&
+                a.versionNumber === verNumber &&
+                a.status === 'ACKNOWLEDGED'
             );
-            const isAcked = ack?.status === 'ACKNOWLEDGED';
+            const isAcked = !!ack;
 
             return (
               <div
                 key={doc.id}
-                className="glass-panel-dark rounded-2xl border border-slate-800/80 p-5 shadow-lg hover:border-slate-700 transition-all flex flex-col justify-between"
+                className="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm hover:border-slate-300 transition-all flex flex-col justify-between"
               >
                 <div>
                   <div className="flex items-start justify-between gap-2 mb-2">
                     <div className="flex items-center space-x-2">
-                      <span className="font-mono text-xs font-bold text-blue-300 bg-blue-950/60 px-2.5 py-0.5 rounded-lg border border-blue-800/60">
+                      <span className="font-mono text-xs font-bold text-slate-900 bg-slate-100 px-2.5 py-0.5 rounded-lg border border-slate-200">
                         {doc.documentId}
                       </span>
-                      <span className="font-bold text-xs text-emerald-300 bg-emerald-950/60 px-2.5 py-0.5 rounded-full border border-emerald-800/60">
+                      <span className="font-bold text-xs text-slate-900 bg-slate-100 px-2.5 py-0.5 rounded-full border border-slate-200">
                         v{verNumber} Live
                       </span>
                     </div>
 
-                    <span className="text-xs text-slate-400 bg-slate-800 px-2 py-0.5 rounded-md font-medium border border-slate-700">
+                    <span className="text-xs text-slate-600 bg-slate-100 px-2 py-0.5 rounded-md font-medium border border-slate-200">
                       {doc.category}
                     </span>
                   </div>
 
-                  <h2 className="text-base font-bold text-white leading-snug">{doc.title}</h2>
-                  <p className="text-xs text-slate-400 mt-1 line-clamp-2">
+                  <h2 className="text-base font-bold text-slate-900 leading-snug">{doc.title}</h2>
+                  <p className="text-xs text-slate-500 mt-1 line-clamp-2">
                     {doc.description || pubVersion?.changeSummary || 'Official corporate HR operational policy.'}
                   </p>
 
-                  <div className="mt-4 pt-3 border-t border-slate-800/80 grid grid-cols-2 gap-2 text-xs text-slate-400">
+                  <div className="mt-4 pt-3 border-t border-slate-100 grid grid-cols-2 gap-2 text-xs text-slate-500">
                     <div>
-                      <span className="text-slate-500 block text-[10px] uppercase font-bold">Department</span>
-                      <span className="text-slate-300 font-medium">{doc.departmentName}</span>
+                      <span className="text-slate-400 block text-[10px] uppercase font-bold">Department</span>
+                      <span className="text-slate-700 font-medium">{doc.departmentName}</span>
                     </div>
                     <div>
-                      <span className="text-slate-500 block text-[10px] uppercase font-bold">Effective Date</span>
-                      <span className="text-slate-300 font-medium">{pubVersion?.effectiveFrom || '2026-08-01'}</span>
+                      <span className="text-slate-400 block text-[10px] uppercase font-bold">Effective Date</span>
+                      <span className="text-slate-700 font-medium">{pubVersion?.effectiveFrom || '2026-08-01'}</span>
                     </div>
                   </div>
                 </div>
 
-                <div className="mt-5 pt-3 border-t border-slate-800/80 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
+                <div className="mt-5 pt-3 border-t border-slate-100 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
                   {/* Acknowledgement Status / Action */}
                   {doc.acknowledgementRequired ? (
                     isAcked ? (
-                      <span className="inline-flex items-center space-x-1 text-xs font-semibold text-emerald-300 bg-emerald-950/60 px-3 py-1.5 rounded-xl border border-emerald-800/60">
-                        <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
-                        <span>Acknowledged v{verNumber}</span>
+                      <span className="inline-flex items-center space-x-1.5 text-xs font-semibold text-emerald-800 bg-emerald-50 px-3 py-1.5 rounded-xl border border-emerald-200">
+                        <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                        <span>Acknowledged (v{verNumber}) {ack?.acknowledgedAt ? `• ${formatISTDate(ack.acknowledgedAt)}` : ''}</span>
                       </span>
                     ) : (
                       <button
                         id={`btn-ack-${doc.id}`}
                         onClick={() => handleAcknowledge(doc, verNumber)}
-                        className="inline-flex items-center justify-center space-x-1.5 bg-gradient-to-r from-amber-600 to-orange-600 hover:from-amber-500 hover:to-orange-500 text-white text-xs font-bold px-3.5 py-2 rounded-xl transition-all shadow-md shadow-amber-900/30 border border-amber-400/30"
+                        className="inline-flex items-center justify-center space-x-1.5 bg-[#FA7014] hover:bg-[#E65A05] text-white text-xs font-bold px-3.5 py-2 rounded-xl transition-all shadow-md shadow-[#FA7014]/20 cursor-pointer"
                       >
                         <Check className="w-3.5 h-3.5 stroke-[3]" />
                         <span>Acknowledge Policy v{verNumber}</span>
                       </button>
                     )
                   ) : (
-                    <span className="text-[11px] text-slate-500">Acknowledgement not required</span>
+                    <span className="text-[11px] text-slate-400">Acknowledgement optional</span>
                   )}
 
                   {/* Read Document Button */}
@@ -185,9 +215,9 @@ export const EmployeePortalView: React.FC<EmployeePortalViewProps> = ({
                     <button
                       id={`btn-employee-read-${doc.id}`}
                       onClick={() => onOpenDocumentView(pubVersion)}
-                      className="inline-flex items-center justify-center space-x-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold px-3.5 py-2 rounded-xl transition-colors border border-slate-700"
+                      className="inline-flex items-center justify-center space-x-1.5 bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-semibold px-3.5 py-2 rounded-xl transition-colors border border-slate-200 cursor-pointer"
                     >
-                      <Eye className="w-3.5 h-3.5 text-slate-400" />
+                      <Eye className="w-3.5 h-3.5 text-slate-600" />
                       <span>Read Document</span>
                     </button>
                   )}

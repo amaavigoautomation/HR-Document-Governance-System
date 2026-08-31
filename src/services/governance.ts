@@ -36,33 +36,85 @@ export class DocumentGovernanceEngine {
   constructor() {
     auditService.seedLogs(SEED_AUDIT_LOGS);
     this.initDefaultAcknowledgements();
+    this.syncVersionsToStorage();
+  }
+
+  public syncVersionsToStorage(versions: DocumentVersion[] = this.documentVersions): void {
+    for (const v of versions) {
+      if (v.storageKey && v.rawContent) {
+        defaultStorageProvider.storeFile(v.storageKey, v.rawContent, {
+          storagePath: v.storagePath,
+          fileName: v.fileName,
+          mimeType: v.mimeType,
+          contentHash: v.contentHash || calculateSha256(v.rawContent),
+          sizeBytes: v.fileSize,
+        });
+      }
+    }
   }
 
   private initDefaultAcknowledgements() {
-    // Seed an initial acknowledgement for the employee Parth (AM001)
-    this.acknowledgements.push({
-      id: 'ack-001',
-      documentId: 'AMA-HR-POL-001',
-      documentTitle: 'Work From Home (WFH) Policy',
-      versionNumber: '1.0',
-      documentVersionId: 'ver-001-v10',
-      employeeId: 'AM001',
-      employeeName: 'Parth',
-      employeeEmail: 'parth@amaavigo.in',
-      status: 'ACKNOWLEDGED',
-      acknowledgedAt: '2026-08-05T10:00:00Z',
-    });
-    // Note: v2.0 is pending acknowledgement for Parth!
-    this.acknowledgements.push({
-      id: 'ack-002',
-      documentId: 'AMA-HR-POL-001',
-      documentTitle: 'Work From Home (WFH) Policy',
-      versionNumber: '2.0',
-      documentVersionId: 'ver-001-v20',
-      employeeId: 'AM001',
-      employeeName: 'Parth',
-      employeeEmail: 'parth@amaavigo.in',
-      status: 'PENDING',
+    const employees = this.users.filter((u) => u.role === UserRole.EMPLOYEE);
+    
+    // Seed acknowledgements for WFH Policy v1.0 and v2.0
+    const wfhMaster = this.documentMasters.find((d) => d.documentId === 'AMA-HR-POL-001');
+    const ahMaster = this.documentMasters.find((d) => d.documentId === 'AMA-HR-POL-002');
+    const codeMaster = this.documentMasters.find((d) => d.documentId === 'AMA-HR-POL-003');
+
+    employees.forEach((emp, index) => {
+      // WFH Policy v1.0 (historical baseline - acknowledged by all except newest)
+      if (wfhMaster) {
+        this.acknowledgements.push({
+          id: `ack-seed-wfh1-${emp.id}`,
+          documentId: 'AMA-HR-POL-001',
+          documentTitle: 'Work From Home (WFH) Policy',
+          versionNumber: '1.0',
+          documentVersionId: 'ver-001-v10',
+          employeeId: emp.id,
+          employeeName: emp.name,
+          employeeEmail: emp.email,
+          departmentName: emp.departmentName,
+          status: 'ACKNOWLEDGED',
+          acknowledgedAt: '2026-08-02T10:00:00Z',
+          signatureReference: `SIG-E-${emp.id}-0802`,
+        });
+
+        // WFH Policy v2.0 (current live revision - some acknowledged, some pending)
+        const isAckedV2 = index % 2 === 0 && emp.id !== 'AM001'; // Parth is pending v2.0 for live test
+        this.acknowledgements.push({
+          id: `ack-seed-wfh2-${emp.id}`,
+          documentId: 'AMA-HR-POL-001',
+          documentTitle: 'Work From Home (WFH) Policy',
+          versionNumber: '2.0',
+          documentVersionId: 'ver-001-v20',
+          employeeId: emp.id,
+          employeeName: emp.name,
+          employeeEmail: emp.email,
+          departmentName: emp.departmentName,
+          status: isAckedV2 ? 'ACKNOWLEDGED' : 'PENDING',
+          acknowledgedAt: isAckedV2 ? '2026-08-16T14:30:00Z' : undefined,
+          signatureReference: isAckedV2 ? `SIG-E-${emp.id}-0816` : undefined,
+        });
+      }
+
+      // Anti-Harassment Policy v1.0 (Mandatory compliance - mostly acknowledged)
+      if (ahMaster && ahMaster.confidentiality === ConfidentialityLevel.PUBLIC) {
+        const isAckedAH = index < 4;
+        this.acknowledgements.push({
+          id: `ack-seed-ah-${emp.id}`,
+          documentId: 'AMA-HR-POL-002',
+          documentTitle: 'Anti-Harassment & Workplace Conduct Policy',
+          versionNumber: '1.0',
+          documentVersionId: 'ver-002-v10',
+          employeeId: emp.id,
+          employeeName: emp.name,
+          employeeEmail: emp.email,
+          departmentName: emp.departmentName,
+          status: isAckedAH ? 'ACKNOWLEDGED' : 'PENDING',
+          acknowledgedAt: isAckedAH ? '2026-08-04T09:15:00Z' : undefined,
+          signatureReference: isAckedAH ? `SIG-E-${emp.id}-0804` : undefined,
+        });
+      }
     });
   }
 
@@ -117,6 +169,298 @@ export class DocumentGovernanceEngine {
   // Get all users
   public getUsers(): User[] {
     return this.users;
+  }
+
+  // Get all employees
+  public getEmployees(): User[] {
+    return this.users.filter((u) => {
+      const r = (u.role || '').toString().toUpperCase();
+      return r === 'EMPLOYEE' && u.active !== false;
+    });
+  }
+
+  public setEmployees(employees: User[]): void {
+    // Merge cloud user records by id, preserving existing memory state
+    const userMap = new Map<string, User>();
+    for (const u of this.users) {
+      userMap.set(u.id, u);
+    }
+    for (const emp of employees) {
+      const rawRole = (emp.role || '').toString().toUpperCase();
+      let role = UserRole.EMPLOYEE;
+      if (
+        rawRole === 'CREATOR' ||
+        rawRole === 'HR' ||
+        emp.id === 'usr-hr-001' ||
+        emp.loginId === 'HR' ||
+        emp.loginId === 'HR001'
+      ) {
+        role = UserRole.CREATOR;
+      } else if (
+        rawRole === 'REVIEWER' ||
+        rawRole === 'APPROVER' ||
+        emp.id === 'usr-app-001' ||
+        emp.loginId === 'APPROVER' ||
+        emp.loginId === 'AMA001'
+      ) {
+        role = UserRole.REVIEWER;
+      }
+
+      const normalized: User = {
+        id: emp.id,
+        empId: emp.empId || (emp as any).employeeId || emp.loginId || emp.id,
+        loginId: emp.loginId || emp.empId || (emp as any).employeeId || emp.id,
+        name: emp.name || (role === UserRole.CREATOR ? 'HR Creator' : role === UserRole.REVIEWER ? 'Approver' : 'Employee'),
+        email: emp.email || '',
+        role,
+        title:
+          emp.title ||
+          (role === UserRole.CREATOR
+            ? 'HR Policy & Governance Lead'
+            : role === UserRole.REVIEWER
+            ? 'VP of Human Resources & Governance'
+            : 'Staff Member'),
+        departmentName:
+          emp.departmentName ||
+          (role === UserRole.CREATOR || role === UserRole.REVIEWER ? 'Human Resources' : 'Operations'),
+        companyName: emp.companyName || 'Amaavigo Group',
+        password:
+          emp.password || (role === UserRole.CREATOR ? 'HR001' : role === UserRole.REVIEWER ? 'AMA001' : 'Parth!123'),
+        active: emp.active !== false,
+        avatar: emp.avatar || (emp as any).avatarUrl,
+        ...emp,
+      };
+      userMap.set(emp.id, normalized);
+      if (role === UserRole.CREATOR) {
+        userMap.set('usr-hr-001', { ...userMap.get('usr-hr-001'), ...normalized, id: 'usr-hr-001' });
+      }
+      if (role === UserRole.REVIEWER) {
+        userMap.set('usr-app-001', { ...userMap.get('usr-app-001'), ...normalized, id: 'usr-app-001' });
+      }
+    }
+    this.users = Array.from(userMap.values());
+    this.syncDocumentAuthorNames();
+    this.ensurePendingAcknowledgementsForEmployees();
+  }
+
+  public setUsers(users: User[]): void {
+    const userMap = new Map<string, User>();
+    for (const u of this.users) {
+      userMap.set(u.id, u);
+    }
+    for (const u of users) {
+      userMap.set(u.id, { ...userMap.get(u.id), ...u });
+      if (u.role === UserRole.CREATOR) {
+        userMap.set('usr-hr-001', { ...userMap.get('usr-hr-001'), ...u, id: 'usr-hr-001' });
+      }
+      if (u.role === UserRole.REVIEWER) {
+        userMap.set('usr-app-001', { ...userMap.get('usr-app-001'), ...u, id: 'usr-app-001' });
+      }
+    }
+    this.users = Array.from(userMap.values());
+    this.syncDocumentAuthorNames();
+    this.ensurePendingAcknowledgementsForEmployees();
+  }
+
+  private syncDocumentAuthorNames(): void {
+    const creatorUser = this.users.find((u) => u.role === UserRole.CREATOR);
+    const reviewerUser = this.users.find((u) => u.role === UserRole.REVIEWER);
+
+    if (creatorUser) {
+      for (const doc of this.documentMasters) {
+        if (doc.processOwnerName === 'Sarah Jenkins' || doc.createdById === 'usr-hr-001' || doc.createdById === creatorUser.id) {
+          doc.processOwnerName = creatorUser.name;
+          doc.createdByName = creatorUser.name;
+        }
+      }
+      for (const ver of this.documentVersions) {
+        if (ver.createdByName === 'Sarah Jenkins' || ver.createdById === 'usr-hr-001' || ver.createdById === creatorUser.id) {
+          ver.createdByName = creatorUser.name;
+        }
+      }
+    }
+
+    if (reviewerUser) {
+      for (const doc of this.documentMasters) {
+        if (doc.documentOwnerName === 'Marcus Vance') {
+          doc.documentOwnerName = reviewerUser.name;
+        }
+      }
+      for (const ver of this.documentVersions) {
+        if (ver.reviewedByName === 'Marcus Vance' || ver.reviewedById === 'usr-app-001' || ver.reviewedById === reviewerUser.id) {
+          ver.reviewedByName = reviewerUser.name;
+        }
+        if (ver.publishedByName === 'Marcus Vance' || ver.publishedById === 'usr-app-001' || ver.publishedById === reviewerUser.id) {
+          ver.publishedByName = reviewerUser.name;
+        }
+      }
+    }
+  }
+
+  // Resolve performer information dynamically so name edits in backend reflect everywhere
+  public resolvePerformer(
+    userId?: string,
+    role?: UserRole | string,
+    fallbackName?: string
+  ): { name: string; role: UserRole; title: string; email: string } {
+    // 1. Direct ID match
+    if (userId) {
+      const match = this.users.find(
+        (u) =>
+          u.id === userId ||
+          (u.empId && u.empId.toLowerCase() === userId.toLowerCase()) ||
+          (u.loginId && u.loginId.toLowerCase() === userId.toLowerCase())
+      );
+      if (match) {
+        return {
+          name: match.name,
+          role: match.role,
+          title: match.title,
+          email: match.email,
+        };
+      }
+    }
+
+    // 2. Creator / HR role match
+    const rawRole = (role || '').toString().toUpperCase();
+    if (
+      rawRole === 'CREATOR' ||
+      rawRole === 'HR' ||
+      userId === 'usr-hr-001' ||
+      fallbackName === 'Sarah Jenkins' ||
+      fallbackName?.toLowerCase().includes('sarah')
+    ) {
+      const creator = this.users.find(
+        (u) => u.role === UserRole.CREATOR || u.id === 'usr-hr-001' || u.loginId === 'HR' || u.loginId === 'HR001'
+      );
+      if (creator) {
+        return {
+          name: creator.name,
+          role: UserRole.CREATOR,
+          title: creator.title,
+          email: creator.email,
+        };
+      }
+    }
+
+    // 3. Reviewer / Approver role match
+    if (
+      rawRole === 'REVIEWER' ||
+      rawRole === 'APPROVER' ||
+      userId === 'usr-app-001' ||
+      fallbackName === 'Marcus Vance' ||
+      fallbackName?.toLowerCase().includes('marcus')
+    ) {
+      const reviewer = this.users.find(
+        (u) => u.role === UserRole.REVIEWER || u.id === 'usr-app-001' || u.loginId === 'APPROVER' || u.loginId === 'AMA001'
+      );
+      if (reviewer) {
+        return {
+          name: reviewer.name,
+          role: UserRole.REVIEWER,
+          title: reviewer.title,
+          email: reviewer.email,
+        };
+      }
+    }
+
+    // 4. By fallback name if exists in current directory
+    if (fallbackName) {
+      const byName = this.users.find((u) => u.name.toLowerCase() === fallbackName.toLowerCase());
+      if (byName) {
+        return {
+          name: byName.name,
+          role: byName.role,
+          title: byName.title,
+          email: byName.email,
+        };
+      }
+    }
+
+    let defaultRole = UserRole.EMPLOYEE;
+    if (rawRole === 'CREATOR' || rawRole === 'HR') defaultRole = UserRole.CREATOR;
+    if (rawRole === 'REVIEWER' || rawRole === 'APPROVER') defaultRole = UserRole.REVIEWER;
+
+    return {
+      name: fallbackName || 'System User',
+      role: defaultRole,
+      title: '',
+      email: '',
+    };
+  }
+
+  // Ensure every active employee has a pending acknowledgement for all active published public policies
+  public ensurePendingAcknowledgementsForEmployees(): void {
+    const activeEmployees = this.getEmployees();
+    const publishedPublicDocs = this.documentMasters.filter(
+      (d) => d.active && d.currentStatus === VersionStatus.PUBLISHED && d.confidentiality === ConfidentialityLevel.PUBLIC && d.acknowledgementRequired
+    );
+
+    let createdCount = 0;
+    for (const emp of activeEmployees) {
+      for (const doc of publishedPublicDocs) {
+        const empIdentifiers = [emp.id, emp.empId, emp.loginId, emp.email].filter(Boolean).map((s) => s!.toLowerCase());
+        const hasAck = this.acknowledgements.some(
+          (a) =>
+            a.documentId === doc.documentId &&
+            (empIdentifiers.includes(a.employeeId?.toLowerCase()) || (a.employeeEmail && empIdentifiers.includes(a.employeeEmail.toLowerCase())))
+        );
+
+        if (!hasAck) {
+          const activeVer = this.documentVersions.find((v) => v.id === doc.currentPublishedVersionId) ||
+            this.documentVersions.filter((v) => v.documentMasterId === doc.id && v.status === VersionStatus.PUBLISHED).pop();
+
+          const pendingAck: AcknowledgementRecord = {
+            id: `ack-${Date.now()}-${emp.id.replace(/[^a-zA-Z0-9]/g, '')}-${Math.random().toString(36).substr(2, 4)}`,
+            documentId: doc.documentId,
+            documentTitle: doc.title,
+            versionNumber: activeVer?.versionNumber || doc.currentPublishedVersionNumber || '1.0',
+            documentVersionId: activeVer?.id || '',
+            employeeId: emp.id,
+            employeeName: emp.name,
+            employeeEmail: emp.email,
+            departmentName: emp.departmentName,
+            status: 'PENDING',
+          };
+          this.acknowledgements.push(pendingAck);
+          createdCount++;
+          try {
+            firestoreService.saveAcknowledgement(pendingAck).catch((e) => console.warn('Sync new employee ack:', e));
+          } catch (e) {
+            // ignore
+          }
+        }
+      }
+    }
+    if (createdCount > 0) {
+      console.log(`[Governance] Initialized ${createdCount} pending compliance acknowledgements for active employees.`);
+    }
+  }
+
+  // Update a user (HR, Reviewer, or Employee) and persist to Firestore
+  public async updateUser(updatedUser: User): Promise<User> {
+    const index = this.users.findIndex((u) => u.id === updatedUser.id);
+    if (index >= 0) {
+      this.users[index] = { ...this.users[index], ...updatedUser };
+    } else {
+      this.users.push(updatedUser);
+    }
+
+    try {
+      await firestoreService.saveEmployee(updatedUser);
+    } catch (e) {
+      console.warn('[Governance] Cloud Firestore user update note:', e);
+    }
+
+    auditService.logEvent(AuditAction.USER_UPDATED, updatedUser, {
+      reason: `Profile information for ${updatedUser.name} (${updatedUser.role}) was updated and synced to Firestore.`,
+    });
+
+    return updatedUser;
+  }
+
+  public setAcknowledgements(acks: AcknowledgementRecord[]): void {
+    this.acknowledgements = acks;
   }
 
   public getUserById(id: string): User | undefined {
@@ -230,7 +574,7 @@ export class DocumentGovernanceEngine {
       documentOwnerId: data.documentOwnerId || creator.id,
       documentOwnerName: data.documentOwnerName || creator.name,
       confidentiality: data.confidentiality,
-      acknowledgementRequired: data.acknowledgementRequired,
+      acknowledgementRequired: data.confidentiality === ConfidentialityLevel.INTERNAL ? false : (data.acknowledgementRequired ?? true),
       currentStatus: VersionStatus.IN_REVIEW,
       description: data.description || '',
       createdById: creator.id,
@@ -396,10 +740,22 @@ export class DocumentGovernanceEngine {
     master.currentStatus = VersionStatus.IN_REVIEW;
     master.updatedAt = new Date().toISOString();
 
-    // Persist to Cloud Firestore (non-blocking)
+    // Mark any preceding REVISION_REQUIRED versions for this document master as SUPERSEDED now that next version is authored
+    const prevRevisionRequired = this.documentVersions.filter(
+      (v) => (v.documentMasterId === master.id || v.documentId === master.documentId) && v.id !== versionId && v.status === VersionStatus.REVISION_REQUIRED
+    );
+    for (const prevVer of prevRevisionRequired) {
+      prevVer.status = VersionStatus.SUPERSEDED;
+      prevVer.locked = true;
+    }
+
+    // Persist to Cloud Firestore
     try {
-      firestoreService.saveDocument(master).catch((e) => console.warn('Firestore doc sync:', e));
-      firestoreService.saveVersion(newVersion).catch((e) => console.warn('Firestore ver sync:', e));
+      await firestoreService.saveDocument(master);
+      await firestoreService.saveVersion(newVersion);
+      for (const prevVer of prevRevisionRequired) {
+        await firestoreService.saveVersion(prevVer);
+      }
     } catch (e) {
       console.warn('Firestore cloud sync error:', e);
     }
@@ -494,15 +850,18 @@ export class DocumentGovernanceEngine {
     const version = this.getVersionById(versionId);
     if (!version) throw new Error(`Version not found: ${versionId}`);
 
-    if (version.status !== VersionStatus.IN_REVIEW) {
-      throw new Error(`Invalid status transition: Cannot approve a version in ${version.status} status.`);
+    if (version.status !== VersionStatus.IN_REVIEW || version.reviewedAt) {
+      throw new Error(
+        `Decision already finalized: An approver decision has already been rendered for Document ID ${version.documentId} ("${version.documentTitle}") v${version.versionNumber} with status ${version.status}. Duplicate reviews are prohibited.`
+      );
     }
 
     const master = this.getDocumentMasterById(version.documentMasterId);
     if (!master) throw new Error(`Document Master not found for version ${versionId}`);
 
-    // Verify file hash integrity
-    const hashValid = await defaultStorageProvider.verifyFileHash(version.storageKey, version.contentHash);
+    // Verify file hash integrity with storage fallback
+    const expectedHash = version.contentHash || (version.rawContent ? calculateSha256(version.rawContent) : '');
+    const hashValid = await defaultStorageProvider.verifyFileHash(version.storageKey, expectedHash, version.rawContent);
     if (!hashValid) {
       auditService.logEvent(AuditAction.FILE_HASH_VALIDATED, reviewer, {
         documentMasterId: master.id,
@@ -512,6 +871,11 @@ export class DocumentGovernanceEngine {
         reason: 'CRITICAL: File hash mismatch detected prior to approval. Publication blocked.',
       });
       throw new Error('Security check failed: Document file hash does not match original upload hash.');
+    }
+
+    // Ensure version has contentHash populated
+    if (!version.contentHash && expectedHash) {
+      version.contentHash = expectedHash;
     }
 
     const nowIso = new Date().toISOString();
@@ -555,8 +919,14 @@ export class DocumentGovernanceEngine {
 
     // Persist changes to Cloud Firestore
     try {
-      firestoreService.saveDocument(master).catch((e) => console.warn('Firestore doc sync:', e));
-      firestoreService.saveVersion(version).catch((e) => console.warn('Firestore ver sync:', e));
+      await firestoreService.saveDocument(master);
+      await firestoreService.saveVersion(version);
+      if (previousPublishedId && previousPublishedId !== version.id) {
+        const prevVersion = this.getVersionById(previousPublishedId);
+        if (prevVersion) {
+          await firestoreService.saveVersion(prevVersion);
+        }
+      }
     } catch (e) {
       console.warn('Firestore cloud sync error:', e);
     }
@@ -598,10 +968,10 @@ export class DocumentGovernanceEngine {
       reason: `Version ${version.versionNumber} is now the operational live version for ${master.title}`,
     });
 
-    // 6. Automatically dispatch Employee Notifications (Sent when acknowledgement is required)
-    if (master.acknowledgementRequired) {
+    // 6. Automatically dispatch Employee Notifications ONLY for PUBLIC policies requiring acknowledgement
+    if (master.confidentiality === ConfidentialityLevel.PUBLIC && master.acknowledgementRequired) {
       const emailSubject = `[Action Required] New HR Policy Published — ${master.title} v${version.versionNumber}`;
-      const emailBody = `Dear Employee,\n\nA new official HR document has been published and requires your mandatory compliance review and electronic sign-off:\n\n` +
+      const emailBody = `Dear Employee,\n\nAn official company policy/document has been approved and published in the Amaavigo HR Governance system, and requires your mandatory compliance review and electronic sign-off:\n\n` +
         `• Document Title: ${master.title}\n` +
         `• Document ID: ${master.documentId}\n` +
         `• Category: ${master.category}\n` +
@@ -609,13 +979,16 @@ export class DocumentGovernanceEngine {
         `• Version Number: v${version.versionNumber} (${version.versionType} Release)\n` +
         `• Effective Date: ${version.effectiveFrom || 'Immediate'}\n` +
         `• Summary of Changes: ${version.changeSummary || 'New document baseline release.'}\n` +
-        `• Compliance Acknowledgement Required: YES (Mandatory within 14 days)\n\n` +
-        `Please log in to the Employee Portal using your Employee ID and Password to read and acknowledge this version:\n` +
-        `${version.fileUrl}\n\n` +
+        `• Compliance Acknowledgement Required: YES (Mandatory within 14 calendar days)\n\n` +
+        `HOW TO COMPLY:\n` +
+        `1. Log in to your Amaavigo Employee Portal using your Employee ID and credentials.\n` +
+        `2. Navigate to the Employee Portal tab.\n` +
+        `3. Review the complete document and complete your electronic compliance acknowledgment.\n\n` +
+        `Note: To ensure document security, confidentiality, and tamper-proof version control, documents are securely accessed directly inside the authenticated Employee Portal.\n\n` +
         `Sincerely,\nHuman Resources Governance & Compliance Team\n${master.companyName}`;
 
-      // Send only to active employees
-      const employeeAudience = this.users.filter((u) => u.active && u.role === UserRole.EMPLOYEE);
+      // Send to all active employees (including all employees added from backend)
+      const employeeAudience = this.getEmployees();
       for (const emp of employeeAudience) {
         await defaultEmailProvider.sendEmail(emp.email, emp.name, emailSubject, emailBody, {
           documentId: master.documentId,
@@ -627,7 +1000,7 @@ export class DocumentGovernanceEngine {
 
         // Create pending acknowledgement entry
         const pendingAck: AcknowledgementRecord = {
-          id: `ack-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
+          id: `ack-${Date.now()}-${emp.id.replace(/[^a-zA-Z0-9]/g, '')}-${Math.random().toString(36).substr(2, 4)}`,
           documentId: master.documentId,
           documentTitle: master.title,
           versionNumber: version.versionNumber,
@@ -635,6 +1008,7 @@ export class DocumentGovernanceEngine {
           employeeId: emp.id,
           employeeName: emp.name,
           employeeEmail: emp.email,
+          departmentName: emp.departmentName,
           status: 'PENDING',
         };
         this.acknowledgements.push(pendingAck);
@@ -651,7 +1025,7 @@ export class DocumentGovernanceEngine {
         documentId: master.documentId,
         documentVersionId: version.id,
         versionNumber: version.versionNumber,
-        reason: `Dispatched mandatory acknowledgement email notification for v${version.versionNumber} to all employees.`,
+        reason: `Dispatched mandatory acknowledgement email notification for Public Policy v${version.versionNumber} to all active employees.`,
       });
     } else {
       auditService.logEvent(AuditAction.NOTIFICATION_SENT, reviewer, {
@@ -659,7 +1033,9 @@ export class DocumentGovernanceEngine {
         documentId: master.documentId,
         documentVersionId: version.id,
         versionNumber: version.versionNumber,
-        reason: `Published v${version.versionNumber} without email broadcast (No employee acknowledgement required).`,
+        reason: master.confidentiality === ConfidentialityLevel.INTERNAL
+          ? `Published v${version.versionNumber} as Internal Company document (Restricted to HR & Approvers; hidden from Employee Portal with zero employee notifications/acknowledgements).`
+          : `Published v${version.versionNumber} without email broadcast (No employee acknowledgement required).`,
       });
     }
 
@@ -683,8 +1059,10 @@ export class DocumentGovernanceEngine {
     const version = this.getVersionById(versionId);
     if (!version) throw new Error(`Version not found: ${versionId}`);
 
-    if (version.status !== VersionStatus.IN_REVIEW) {
-      throw new Error(`Invalid status transition: Cannot reject a version in ${version.status} status.`);
+    if (version.status !== VersionStatus.IN_REVIEW || version.reviewedAt) {
+      throw new Error(
+        `Decision already finalized: An approver decision has already been rendered for Document ID ${version.documentId} ("${version.documentTitle}") v${version.versionNumber} with status ${version.status}. Duplicate reviews are prohibited.`
+      );
     }
 
     const master = this.getDocumentMasterById(version.documentMasterId);
@@ -704,6 +1082,14 @@ export class DocumentGovernanceEngine {
     // If master has a published version, master status stays PUBLISHED or reflects revisions pending.
     master.currentStatus = master.currentPublishedVersionId ? VersionStatus.PUBLISHED : VersionStatus.REVISION_REQUIRED;
     master.updatedAt = nowIso;
+
+    // Persist changes to Cloud Firestore
+    try {
+      await firestoreService.saveDocument(master);
+      await firestoreService.saveVersion(version);
+    } catch (e) {
+      console.warn('Firestore cloud sync error:', e);
+    }
 
     // Audit logs
     auditService.logEvent(AuditAction.REVIEW_REJECTED, reviewer, {
@@ -733,8 +1119,14 @@ export class DocumentGovernanceEngine {
     documentId: string,
     versionNumber: string
   ): AcknowledgementRecord {
+    // Robust employee match by ID, empId, loginId, or email
+    const empIdentifiers = [employee.id, employee.empId, employee.loginId, employee.email].filter(Boolean);
+
     let ack = this.acknowledgements.find(
-      (a) => a.documentId === documentId && a.versionNumber === versionNumber && a.employeeId === employee.id
+      (a) =>
+        a.documentId === documentId &&
+        a.versionNumber === versionNumber &&
+        (empIdentifiers.includes(a.employeeId) || (a.employeeEmail && a.employeeEmail.toLowerCase() === employee.email.toLowerCase()))
     );
 
     const nowIso = new Date().toISOString();
@@ -754,6 +1146,7 @@ export class DocumentGovernanceEngine {
         employeeId: employee.id,
         employeeName: employee.name,
         employeeEmail: employee.email,
+        departmentName: employee.departmentName,
         status: 'ACKNOWLEDGED',
         acknowledgedAt: nowIso,
       };
@@ -761,6 +1154,9 @@ export class DocumentGovernanceEngine {
     } else {
       ack.status = 'ACKNOWLEDGED';
       ack.acknowledgedAt = nowIso;
+      ack.employeeId = employee.id;
+      ack.employeeName = employee.name;
+      ack.employeeEmail = employee.email;
     }
 
     try {
@@ -772,17 +1168,187 @@ export class DocumentGovernanceEngine {
     auditService.logEvent(AuditAction.DOCUMENT_ACKNOWLEDGED, employee, {
       documentId,
       versionNumber,
-      reason: `Employee ${employee.name} formally acknowledged ${documentId} v${versionNumber}`,
+      reason: `Employee ${employee.name} (${employee.empId || employee.email}) formally acknowledged ${documentId} v${versionNumber}`,
     });
 
     return ack;
   }
 
-  public getAcknowledgements(employeeId?: string): AcknowledgementRecord[] {
-    if (employeeId) {
-      return this.acknowledgements.filter((a) => a.employeeId === employeeId);
+  public getAcknowledgements(employeeIdentifier?: string): AcknowledgementRecord[] {
+    const publishedPublicDocs = this.documentMasters.filter(
+      (d) =>
+        d.active &&
+        d.currentStatus === VersionStatus.PUBLISHED &&
+        d.acknowledgementRequired &&
+        d.confidentiality === ConfidentialityLevel.PUBLIC
+    );
+    const validDocIds = new Set(publishedPublicDocs.map((d) => d.documentId));
+
+    // Filter stored acknowledgements to only include currently valid published public documents
+    const validStoredAcks = this.acknowledgements.filter((a) => validDocIds.has(a.documentId));
+
+    if (employeeIdentifier) {
+      const target = employeeIdentifier.toLowerCase();
+      return validStoredAcks.filter(
+        (a) =>
+          a.employeeId?.toLowerCase() === target ||
+          a.employeeEmail?.toLowerCase() === target
+      );
     }
-    return [...this.acknowledgements];
+    return [...validStoredAcks];
+  }
+
+  // Get aggregated compliance stats per employee
+  public getEmployeeComplianceStats(): any[] {
+    const employees = this.users.filter((u) => {
+      const r = (u.role || '').toString().toUpperCase();
+      return r === 'EMPLOYEE' && u.active !== false;
+    });
+    const publishedPublicDocs = this.documentMasters.filter(
+      (d) =>
+        d.active &&
+        d.currentStatus === VersionStatus.PUBLISHED &&
+        d.acknowledgementRequired &&
+        d.confidentiality === ConfidentialityLevel.PUBLIC
+    );
+
+    return employees.map((emp) => {
+      const empIdentifiers = [emp.id, emp.empId, emp.loginId, emp.email].filter(Boolean).map((s) => s!.toLowerCase());
+
+      const records = publishedPublicDocs.map((doc) => {
+        const existing = this.acknowledgements.find(
+          (a) =>
+            a.documentId === doc.documentId &&
+            ((a.employeeId && empIdentifiers.includes(a.employeeId.toLowerCase())) ||
+             (a.employeeEmail && empIdentifiers.includes(a.employeeEmail.toLowerCase())))
+        );
+        if (existing) return existing;
+
+        return {
+          id: `ack-synth-${emp.id}-${doc.id}`,
+          documentId: doc.documentId,
+          documentTitle: doc.title,
+          versionNumber: doc.currentPublishedVersionNumber || '1.0',
+          documentVersionId: doc.currentPublishedVersionId || '',
+          employeeId: emp.id,
+          employeeName: emp.name,
+          employeeEmail: emp.email,
+          departmentName: emp.departmentName,
+          status: 'PENDING' as const,
+        };
+      });
+
+      const totalAssigned = records.length;
+      const acknowledgedCount = records.filter((a) => a.status === 'ACKNOWLEDGED').length;
+      const pendingCount = totalAssigned - acknowledgedCount;
+      const complianceRate = totalAssigned > 0 ? Math.round((acknowledgedCount / totalAssigned) * 100) : 100;
+
+      return {
+        employeeId: emp.id,
+        employeeLoginId: emp.loginId || emp.empId || emp.id,
+        employeeName: emp.name,
+        employeeEmail: emp.email,
+        departmentName: emp.departmentName || 'General Operations',
+        title: emp.title || 'Staff Member',
+        active: emp.active,
+        totalAssigned,
+        acknowledgedCount,
+        pendingCount,
+        complianceRate,
+        acknowledgements: records,
+      };
+    });
+  }
+
+  // Send a targeted compliance reminder email to a single employee
+  public async sendComplianceReminder(ackId: string, sender: User): Promise<{ success: boolean; message: string }> {
+    const ack = this.acknowledgements.find((a) => a.id === ackId);
+    if (!ack) throw new Error('Acknowledgement record not found.');
+
+    if (ack.status === 'ACKNOWLEDGED') {
+      return { success: false, message: 'Employee has already acknowledged this document.' };
+    }
+
+    const master = this.documentMasters.find((d) => d.documentId === ack.documentId);
+    const subject = `[Urgent Reminder] Compliance Acknowledgment Pending: ${ack.documentTitle} v${ack.versionNumber}`;
+    const body = `Dear ${ack.employeeName},\n\nThis is an official compliance reminder regarding the mandatory document awaiting your electronic review and sign-off:\n\n` +
+      `• Document Title: ${ack.documentTitle}\n` +
+      `• Document ID: ${ack.documentId}\n` +
+      `• Version: v${ack.versionNumber}\n` +
+      `• Department: ${master?.departmentName || ack.departmentName || 'Corporate Governance'}\n` +
+      `• Compliance Status: ACTION REQUIRED (PENDING)\n\n` +
+      `Please log in to your Amaavigo Employee Portal as soon as possible to review the document and complete your compliance sign-off.\n\n` +
+      `Sincerely,\nHuman Resources & Compliance Department\nAmaavigo Global Inc.`;
+
+    const result = await defaultEmailProvider.sendEmail(ack.employeeEmail, ack.employeeName, subject, body, {
+      documentId: ack.documentId,
+      documentTitle: ack.documentTitle,
+      versionNumber: ack.versionNumber,
+      documentVersionId: ack.documentVersionId,
+      acknowledgementRequired: true,
+    });
+
+    ack.reminderSentAt = new Date().toISOString();
+    try {
+      firestoreService.saveAcknowledgement(ack).catch((e) => console.warn('Firestore reminder update note:', e));
+    } catch (e) {
+      console.warn('Firestore reminder update:', e);
+    }
+
+    auditService.logEvent(AuditAction.NOTIFICATION_SENT, sender, {
+      documentId: ack.documentId,
+      versionNumber: ack.versionNumber,
+      reason: `Sent compliance reminder to ${ack.employeeName} (${ack.employeeEmail}) for ${ack.documentId} v${ack.versionNumber}`,
+    });
+
+    return {
+      success: result.success,
+      message: `Compliance reminder dispatched successfully to ${ack.employeeEmail} via ${result.provider || 'Gmail SMTP'}.`,
+    };
+  }
+
+  // Record a manual offline sign-off / attestation
+  public recordManualSignOff(ackId: string, notes: string, adminUser: User): AcknowledgementRecord {
+    const ack = this.acknowledgements.find((a) => a.id === ackId);
+    if (!ack) throw new Error('Acknowledgement record not found.');
+
+    const nowIso = new Date().toISOString();
+    ack.status = 'ACKNOWLEDGED';
+    ack.acknowledgedAt = nowIso;
+    ack.notes = notes || `Manually attested by HR Admin (${adminUser.name})`;
+    ack.signatureReference = `MANUAL-ATTEST-${adminUser.loginId || adminUser.id}-${Date.now().toString().slice(-4)}`;
+
+    try {
+      firestoreService.saveAcknowledgement(ack).catch((e) => console.warn('Firestore manual sign-off sync:', e));
+    } catch (e) {
+      console.warn('Firestore manual sign-off sync error:', e);
+    }
+
+    auditService.logEvent(AuditAction.DOCUMENT_ACKNOWLEDGED, adminUser, {
+      documentId: ack.documentId,
+      versionNumber: ack.versionNumber,
+      reason: `HR Officer ${adminUser.name} recorded manual physical/offline sign-off for ${ack.employeeName}: ${notes || 'Verified paper attestation'}`,
+    });
+
+    return ack;
+  }
+
+  // Send batch reminders for all pending acknowledgements or specific document
+  public async sendBatchReminders(sender: User, documentId?: string): Promise<{ sentCount: number; message: string }> {
+    const pendingList = this.acknowledgements.filter(
+      (a) => a.status === 'PENDING' && (!documentId || a.documentId === documentId)
+    );
+
+    let sent = 0;
+    for (const ack of pendingList) {
+      await this.sendComplianceReminder(ack.id, sender);
+      sent++;
+    }
+
+    return {
+      sentCount: sent,
+      message: `Dispatched ${sent} compliance reminder notification(s) successfully.`,
+    };
   }
 
   public getNotifications(): EmailNotification[] {
@@ -791,6 +1357,79 @@ export class DocumentGovernanceEngine {
 
   public getPublicationRecords(): DocumentPublicationRecord[] {
     return [...this.publicationRecords];
+  }
+
+  // Delete a single document master and all associated versions & acknowledgements
+  public async deleteDocument(documentId: string, currentUser?: User): Promise<void> {
+    const docMaster = this.documentMasters.find((d) => d.id === documentId || d.documentId === documentId);
+    const targetId = docMaster ? docMaster.id : documentId;
+    const docLogicalId = docMaster ? docMaster.documentId : documentId;
+
+    this.documentMasters = this.documentMasters.filter((d) => d.id !== targetId && d.documentId !== docLogicalId);
+    this.documentVersions = this.documentVersions.filter(
+      (v) => v.documentMasterId !== targetId && v.documentId !== docLogicalId
+    );
+    this.acknowledgements = this.acknowledgements.filter((a) => a.documentId !== docLogicalId);
+
+    // Sync deletion to Firestore
+    try {
+      await firestoreService.deleteDocument(targetId);
+    } catch (e) {
+      console.warn('[Governance] Firestore deleteDocument sync note:', e);
+    }
+
+    if (currentUser) {
+      auditService.logEvent(AuditAction.VERSION_ARCHIVED, currentUser, {
+        documentId: docLogicalId,
+        reason: `Document master ${docLogicalId} and all associated revisions were deleted from the system.`,
+      });
+    }
+  }
+
+  // Clear all documents, versions, and acknowledgments across the application & database
+  public async clearAllDocuments(currentUser?: User): Promise<void> {
+    this.documentMasters = [];
+    this.documentVersions = [];
+    this.acknowledgements = [];
+    this.publicationRecords = [];
+
+    // Mark cleared in localStorage so it does not re-seed automatically on refresh
+    try {
+      localStorage.setItem('ama_docs_cleared', 'true');
+    } catch (e) {
+      console.warn('Storage note:', e);
+    }
+
+    // Sync clear to Firestore
+    try {
+      await firestoreService.clearAllDocuments();
+    } catch (e) {
+      console.warn('[Governance] Firestore clearAllDocuments sync note:', e);
+    }
+
+    if (currentUser) {
+      auditService.logEvent(AuditAction.VERSION_ARCHIVED, currentUser, {
+        documentId: 'ALL-POLICIES',
+        reason: `All document masters, revisions, and acknowledgment records were purged by ${currentUser.name} (${currentUser.role}).`,
+      });
+    }
+  }
+
+  // Restore or re-seed sample documents
+  public async restoreDefaultSeed(): Promise<void> {
+    try {
+      localStorage.removeItem('ama_docs_cleared');
+    } catch (e) {
+      console.warn('Storage note:', e);
+    }
+    this.resetToSeed();
+    await firestoreService.seedFirestoreIfEmpty(
+      SEED_DOCUMENTS,
+      SEED_VERSIONS,
+      SEED_AUDIT_LOGS,
+      this.getAcknowledgements(),
+      this.getUsers()
+    );
   }
 
   // Reset/Re-seed for testing

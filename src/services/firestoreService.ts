@@ -17,14 +17,35 @@ import {
   AuditLogEntry,
   AcknowledgementRecord,
   EmailNotification,
+  User,
+  UserRole,
 } from '../types';
 
 // Collection references
+const EMPLOYEES_COLLECTION = 'employees';
 const DOCS_COLLECTION = 'documents';
 const VERSIONS_COLLECTION = 'versions';
 const AUDIT_COLLECTION = 'auditLogs';
 const ACKS_COLLECTION = 'acknowledgments';
 const NOTIFS_COLLECTION = 'notifications';
+
+// Helper to strip undefined values so Firestore does not reject writes
+function cleanFirestoreData<T>(obj: T): T {
+  if (obj === null || obj === undefined) return obj;
+  if (Array.isArray(obj)) {
+    return obj.map(cleanFirestoreData) as unknown as T;
+  }
+  if (typeof obj === 'object') {
+    const cleaned: any = {};
+    for (const [key, value] of Object.entries(obj)) {
+      if (value !== undefined) {
+        cleaned[key] = cleanFirestoreData(value);
+      }
+    }
+    return cleaned;
+  }
+  return obj;
+}
 
 export const firestoreService = {
   // Sync initial seeds if collection is empty
@@ -32,29 +53,143 @@ export const firestoreService = {
     seedDocs: DocumentMaster[],
     seedVersions: DocumentVersion[],
     seedAuditLogs: AuditLogEntry[],
-    seedAcks: AcknowledgementRecord[]
+    seedAcks: AcknowledgementRecord[],
+    seedEmployees?: User[]
   ) {
     try {
+      // 1. Check and seed Employees collection
+      if (seedEmployees && seedEmployees.length > 0) {
+        const empSnap = await getDocs(collection(db, EMPLOYEES_COLLECTION));
+        if (empSnap.empty) {
+          console.log('[Firestore] Seeding employees collection...');
+          for (const emp of seedEmployees) {
+            await setDoc(doc(db, EMPLOYEES_COLLECTION, emp.id), cleanFirestoreData(emp));
+          }
+          console.log('[Firestore] Employees collection seeded.');
+        }
+      }
+
+      // 2. Check and seed Documents (only if database not deliberately cleared)
+      const hasPurged = typeof window !== 'undefined' && localStorage.getItem('ama_docs_cleared') === 'true';
       const snap = await getDocs(collection(db, DOCS_COLLECTION));
-      if (snap.empty) {
+      if (snap.empty && !hasPurged) {
         console.log('[Firestore] Seeding initial HR governance data...');
         for (const docMaster of seedDocs) {
-          await setDoc(doc(db, DOCS_COLLECTION, docMaster.id), docMaster);
+          await setDoc(doc(db, DOCS_COLLECTION, docMaster.id), cleanFirestoreData(docMaster));
         }
         for (const ver of seedVersions) {
-          await setDoc(doc(db, VERSIONS_COLLECTION, ver.id), ver);
+          await setDoc(doc(db, VERSIONS_COLLECTION, ver.id), cleanFirestoreData(ver));
         }
         for (const log of seedAuditLogs) {
-          await setDoc(doc(db, AUDIT_COLLECTION, log.id), log);
+          await setDoc(doc(db, AUDIT_COLLECTION, log.id), cleanFirestoreData(log));
         }
         for (const ack of seedAcks) {
-          await setDoc(doc(db, ACKS_COLLECTION, ack.id), ack);
+          await setDoc(doc(db, ACKS_COLLECTION, ack.id), cleanFirestoreData(ack));
         }
         console.log('[Firestore] Seeding completed.');
       }
     } catch (e) {
       console.warn('[Firestore] Seed error / offline fallback:', e);
     }
+  },
+
+  // Employees & Users Directory & Records
+  async getEmployees(): Promise<User[]> {
+    try {
+      const [empSnap, usersSnap] = await Promise.all([
+        getDocs(collection(db, EMPLOYEES_COLLECTION)),
+        getDocs(collection(db, 'users')).catch(() => ({ docs: [] } as any)),
+      ]);
+
+      const allDocs = [...empSnap.docs, ...usersSnap.docs];
+      const seen = new Set<string>();
+
+      const users: User[] = [];
+      for (const d of allDocs) {
+        const data = d.data() as any;
+        const docId = data.id || d.id;
+        if (seen.has(docId)) continue;
+        seen.add(docId);
+
+        const rawRole = (data.role || '').toString().toUpperCase();
+        let role = UserRole.EMPLOYEE;
+        if (
+          rawRole === 'CREATOR' ||
+          rawRole === 'HR' ||
+          docId === 'usr-hr-001' ||
+          data.loginId === 'HR' ||
+          data.loginId === 'HR001'
+        ) {
+          role = UserRole.CREATOR;
+        } else if (
+          rawRole === 'REVIEWER' ||
+          rawRole === 'APPROVER' ||
+          docId === 'usr-app-001' ||
+          data.loginId === 'APPROVER' ||
+          data.loginId === 'AMA001'
+        ) {
+          role = UserRole.REVIEWER;
+        }
+
+        const empId = data.empId || data.employeeId || data.loginId || docId;
+        const loginId = data.loginId || data.empId || data.employeeId || docId;
+        const name =
+          data.name ||
+          data.fullName ||
+          data.employeeName ||
+          (role === UserRole.CREATOR ? 'HR Creator' : role === UserRole.REVIEWER ? 'Approver' : 'Employee');
+        const email =
+          data.email ||
+          (empId ? `${empId.toLowerCase()}@amaavigo.com` : 'employee@amaavigo.com');
+
+        users.push({
+          id: docId,
+          empId,
+          loginId,
+          name,
+          email,
+          role,
+          title:
+            data.title ||
+            data.designation ||
+            (role === UserRole.CREATOR
+              ? 'HR Policy & Governance Lead'
+              : role === UserRole.REVIEWER
+              ? 'VP of Human Resources & Governance'
+              : 'Staff Member'),
+          departmentName:
+            data.departmentName ||
+            data.department ||
+            (role === UserRole.CREATOR || role === UserRole.REVIEWER
+              ? 'Human Resources'
+              : 'Operations'),
+          companyName: data.companyName || 'Amaavigo Group',
+          password:
+            data.password ||
+            (role === UserRole.CREATOR ? 'HR001' : role === UserRole.REVIEWER ? 'AMA001' : 'Parth!123'),
+          active: data.active !== false && data.status !== 'INACTIVE',
+          avatar: data.avatar || data.avatarUrl,
+          ...data,
+        } as User);
+      }
+
+      return users;
+    } catch (e) {
+      console.warn('[Firestore] Error getting employees/users:', e);
+      return [];
+    }
+  },
+
+  async saveEmployee(employee: User): Promise<void> {
+    await setDoc(doc(db, EMPLOYEES_COLLECTION, employee.id), cleanFirestoreData(employee));
+  },
+
+  async updateEmployee(employeeId: string, updates: Partial<User>): Promise<void> {
+    await updateDoc(doc(db, EMPLOYEES_COLLECTION, employeeId), cleanFirestoreData(updates));
+  },
+
+  async deleteEmployee(employeeId: string): Promise<void> {
+    await deleteDoc(doc(db, EMPLOYEES_COLLECTION, employeeId));
   },
 
   // Document Masters
@@ -64,7 +199,7 @@ export const firestoreService = {
   },
 
   async saveDocument(docMaster: DocumentMaster): Promise<void> {
-    await setDoc(doc(db, DOCS_COLLECTION, docMaster.id), docMaster);
+    await setDoc(doc(db, DOCS_COLLECTION, docMaster.id), cleanFirestoreData(docMaster));
   },
 
   // Versions
@@ -74,11 +209,11 @@ export const firestoreService = {
   },
 
   async saveVersion(version: DocumentVersion): Promise<void> {
-    await setDoc(doc(db, VERSIONS_COLLECTION, version.id), version);
+    await setDoc(doc(db, VERSIONS_COLLECTION, version.id), cleanFirestoreData(version));
   },
 
   async updateVersion(versionId: string, updates: Partial<DocumentVersion>): Promise<void> {
-    await updateDoc(doc(db, VERSIONS_COLLECTION, versionId), updates);
+    await updateDoc(doc(db, VERSIONS_COLLECTION, versionId), cleanFirestoreData(updates));
   },
 
   // Audit Logs
@@ -88,7 +223,7 @@ export const firestoreService = {
   },
 
   async saveAuditLog(log: AuditLogEntry): Promise<void> {
-    await setDoc(doc(db, AUDIT_COLLECTION, log.id), log);
+    await setDoc(doc(db, AUDIT_COLLECTION, log.id), cleanFirestoreData(log));
   },
 
   // Acknowledgments
@@ -98,7 +233,129 @@ export const firestoreService = {
   },
 
   async saveAcknowledgement(ack: AcknowledgementRecord): Promise<void> {
-    await setDoc(doc(db, ACKS_COLLECTION, ack.id), ack);
+    await setDoc(doc(db, ACKS_COLLECTION, ack.id), cleanFirestoreData(ack));
+  },
+
+  // Delete a single document master and its associated versions & acknowledgements
+  async deleteDocument(documentId: string): Promise<void> {
+    try {
+      await deleteDoc(doc(db, DOCS_COLLECTION, documentId));
+
+      const vSnap = await getDocs(collection(db, VERSIONS_COLLECTION));
+      for (const d of vSnap.docs) {
+        const data = d.data() as DocumentVersion;
+        if (data.documentMasterId === documentId || data.documentId === documentId) {
+          await deleteDoc(doc(db, VERSIONS_COLLECTION, d.id));
+        }
+      }
+
+      const aSnap = await getDocs(collection(db, ACKS_COLLECTION));
+      for (const d of aSnap.docs) {
+        const data = d.data() as AcknowledgementRecord;
+        if (data.documentId === documentId) {
+          await deleteDoc(doc(db, ACKS_COLLECTION, d.id));
+        }
+      }
+    } catch (err) {
+      console.error('[Firestore] Error deleting document:', err);
+      throw err;
+    }
+  },
+
+  // Clear all documents, versions, and acknowledgments from Firestore database
+  async clearAllDocuments(): Promise<void> {
+    try {
+      console.log('[Firestore] Clearing all documents, versions, and acknowledgements...');
+      const dSnap = await getDocs(collection(db, DOCS_COLLECTION));
+      for (const d of dSnap.docs) {
+        await deleteDoc(doc(db, DOCS_COLLECTION, d.id));
+      }
+
+      const vSnap = await getDocs(collection(db, VERSIONS_COLLECTION));
+      for (const d of vSnap.docs) {
+        await deleteDoc(doc(db, VERSIONS_COLLECTION, d.id));
+      }
+
+      const aSnap = await getDocs(collection(db, ACKS_COLLECTION));
+      for (const d of aSnap.docs) {
+        await deleteDoc(doc(db, ACKS_COLLECTION, d.id));
+      }
+      console.log('[Firestore] All document collections cleared successfully.');
+    } catch (err) {
+      console.error('[Firestore] Error clearing document collections:', err);
+      throw err;
+    }
+  },
+
+  // Real-time listener for employees and users
+  subscribeToEmployees(callback: (employees: User[]) => void) {
+    return onSnapshot(collection(db, EMPLOYEES_COLLECTION), (snap) => {
+      const items = snap.docs.map((d) => {
+        const data = d.data() as any;
+        const docId = data.id || d.id;
+        const rawRole = (data.role || '').toString().toUpperCase();
+        let role = UserRole.EMPLOYEE;
+        if (
+          rawRole === 'CREATOR' ||
+          rawRole === 'HR' ||
+          docId === 'usr-hr-001' ||
+          data.loginId === 'HR' ||
+          data.loginId === 'HR001'
+        ) {
+          role = UserRole.CREATOR;
+        } else if (
+          rawRole === 'REVIEWER' ||
+          rawRole === 'APPROVER' ||
+          docId === 'usr-app-001' ||
+          data.loginId === 'APPROVER' ||
+          data.loginId === 'AMA001'
+        ) {
+          role = UserRole.REVIEWER;
+        }
+
+        const empId = data.empId || data.employeeId || data.loginId || docId;
+        const loginId = data.loginId || data.empId || data.employeeId || docId;
+        const name =
+          data.name ||
+          data.fullName ||
+          data.employeeName ||
+          (role === UserRole.CREATOR ? 'HR Creator' : role === UserRole.REVIEWER ? 'Approver' : 'Employee');
+        const email =
+          data.email ||
+          (empId ? `${empId.toLowerCase()}@amaavigo.com` : 'employee@amaavigo.com');
+
+        return {
+          id: docId,
+          empId,
+          loginId,
+          name,
+          email,
+          role,
+          title:
+            data.title ||
+            data.designation ||
+            (role === UserRole.CREATOR
+              ? 'HR Policy & Governance Lead'
+              : role === UserRole.REVIEWER
+              ? 'VP of Human Resources & Governance'
+              : 'Staff Member'),
+          departmentName:
+            data.departmentName ||
+            data.department ||
+            (role === UserRole.CREATOR || role === UserRole.REVIEWER
+              ? 'Human Resources'
+              : 'Operations'),
+          companyName: data.companyName || 'Amaavigo Group',
+          password:
+            data.password ||
+            (role === UserRole.CREATOR ? 'HR001' : role === UserRole.REVIEWER ? 'AMA001' : 'Parth!123'),
+          active: data.active !== false && data.status !== 'INACTIVE',
+          avatar: data.avatar || data.avatarUrl,
+          ...data,
+        } as User;
+      });
+      callback(items);
+    });
   },
 
   // Real-time listener for document changes
@@ -113,6 +370,22 @@ export const firestoreService = {
   subscribeToVersions(callback: (versions: DocumentVersion[]) => void) {
     return onSnapshot(collection(db, VERSIONS_COLLECTION), (snap) => {
       const items = snap.docs.map((d) => d.data() as DocumentVersion);
+      callback(items);
+    });
+  },
+
+  // Real-time listener for acknowledgments
+  subscribeToAcknowledgements(callback: (acks: AcknowledgementRecord[]) => void) {
+    return onSnapshot(collection(db, ACKS_COLLECTION), (snap) => {
+      const items = snap.docs.map((d) => d.data() as AcknowledgementRecord);
+      callback(items);
+    });
+  },
+
+  // Real-time listener for audit logs
+  subscribeToAuditLogs(callback: (logs: AuditLogEntry[]) => void) {
+    return onSnapshot(collection(db, AUDIT_COLLECTION), (snap) => {
+      const items = snap.docs.map((d) => d.data() as AuditLogEntry);
       callback(items);
     });
   },

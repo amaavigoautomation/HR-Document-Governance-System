@@ -1,27 +1,29 @@
-import React from 'react';
+import React, { useState } from 'react';
 import {
   FileText,
   ShieldCheck,
   Bell,
   RotateCcw,
-  UserCheck,
   BookOpen,
   History,
-  Layers,
   Sparkles,
   LogOut,
-  ExternalLink,
+  Users,
+  UserCog,
 } from 'lucide-react';
 import { User, UserRole } from '../types';
+import { AmaavigoLogo } from './AmaavigoLogo';
+import { EditProfileModal } from './EditProfileModal';
 
 interface HeaderProps {
   currentUser: User | null;
   onSwitchUser: (user: User) => void;
   allUsers: User[];
   onLogout: () => void;
-  activeTab: 'creator' | 'reviewer' | 'employee' | 'audit' | 'notifications';
-  setActiveTab: (tab: 'creator' | 'reviewer' | 'employee' | 'audit' | 'notifications') => void;
+  activeTab: 'creator' | 'reviewer' | 'employee' | 'compliance' | 'audit' | 'notifications';
+  setActiveTab: (tab: 'creator' | 'reviewer' | 'employee' | 'compliance' | 'audit' | 'notifications') => void;
   notificationCount: number;
+  pendingComplianceCount?: number;
   onOpenNotifications: () => void;
   onResetSeed: () => void;
   onOpenDemoTour: () => void;
@@ -35,6 +37,7 @@ export const Header: React.FC<HeaderProps> = ({
   activeTab,
   setActiveTab,
   notificationCount,
+  pendingComplianceCount = 0,
   onOpenNotifications,
   onResetSeed,
   onOpenDemoTour,
@@ -43,39 +46,38 @@ export const Header: React.FC<HeaderProps> = ({
   const reviewerUser = allUsers.find((u) => u.role === UserRole.REVIEWER);
   const employeeUser = allUsers.find((u) => u.role === UserRole.EMPLOYEE);
 
+  const [showEditProfile, setShowEditProfile] = useState(false);
+
   return (
-    <header id="main-header" className="bg-slate-900/90 backdrop-blur-md border-b border-slate-800/80 text-white sticky top-0 z-40 shadow-lg shadow-black/20">
+    <header id="main-header" className="bg-white/95 backdrop-blur-md border-b border-slate-200 text-slate-900 sticky top-0 z-40 shadow-xs">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex items-center justify-between h-16">
           {/* Logo & Branding */}
-          <div className="flex items-center space-x-3">
-            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center shadow-md shadow-blue-500/20 border border-blue-400/30">
-              <ShieldCheck className="w-6 h-6 text-white" />
+          <div className="flex items-center space-x-3.5 shrink-0">
+            <div className="flex items-center shrink-0">
+              <AmaavigoLogo size="md" variant="full" theme="light" height={48} className="shrink-0" />
             </div>
-            <div>
-              <div className="flex items-center space-x-2">
-                <span className="font-bold text-lg tracking-tight text-white">
-                  Amaavigo <span className="text-blue-400">DocGov</span>
+            <div className="hidden sm:flex items-center pl-3 border-l border-slate-200 space-x-2 shrink-0">
+              <span className="font-bold text-sm tracking-tight text-slate-900 flex items-center gap-1.5">
+                <span className="text-slate-800">DocGov</span>
+                <span className="bg-[#FA7014]/10 text-[#FA7014] text-[10px] px-2 py-0.5 rounded-full font-mono font-bold border border-[#FA7014]/30">
+                  Enterprise
                 </span>
-                <span className="bg-blue-500/15 text-blue-300 text-[11px] px-2 py-0.5 rounded-full font-mono border border-blue-500/30">
-                  v2.4 Enterprise
-                </span>
-              </div>
-              <p className="text-xs text-slate-400">HR Document Governance & Version Control System</p>
+              </span>
             </div>
           </div>
 
           {/* Navigation Links based on role */}
           {currentUser && (
-            <nav className="hidden md:flex items-center space-x-1.5 bg-slate-950/60 p-1 rounded-xl border border-slate-800/80">
+            <nav className="hidden md:flex items-center space-x-1 bg-slate-100/90 p-1 rounded-xl border border-slate-200">
               {currentUser.role === UserRole.CREATOR && (
                 <button
                   id="nav-creator-dashboard"
                   onClick={() => setActiveTab('creator')}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all flex items-center space-x-1.5 ${
+                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center space-x-1.5 ${
                     activeTab === 'creator'
-                      ? 'bg-blue-600 text-white shadow-md shadow-blue-600/30'
-                      : 'text-slate-400 hover:bg-slate-800/80 hover:text-white'
+                      ? 'bg-[#FA7014] text-white shadow-sm'
+                      : 'text-slate-600 hover:bg-white hover:text-slate-900'
                   }`}
                 >
                   <FileText className="w-3.5 h-3.5" />
@@ -87,10 +89,10 @@ export const Header: React.FC<HeaderProps> = ({
                 <button
                   id="nav-reviewer-dashboard"
                   onClick={() => setActiveTab('reviewer')}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all flex items-center space-x-1.5 ${
+                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center space-x-1.5 ${
                     activeTab === 'reviewer'
-                      ? 'bg-emerald-600 text-white shadow-md shadow-emerald-600/30'
-                      : 'text-slate-400 hover:bg-slate-800/80 hover:text-white'
+                      ? 'bg-slate-900 text-white shadow-sm'
+                      : 'text-slate-600 hover:bg-white hover:text-slate-900'
                   }`}
                 >
                   <ShieldCheck className="w-3.5 h-3.5" />
@@ -98,113 +100,141 @@ export const Header: React.FC<HeaderProps> = ({
                 </button>
               )}
 
-              <button
-                id="nav-employee-portal"
-                onClick={() => setActiveTab('employee')}
-                className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all flex items-center space-x-1.5 ${
-                  activeTab === 'employee'
-                    ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/30'
-                    : 'text-slate-400 hover:bg-slate-800/80 hover:text-white'
-                }`}
-              >
-                <BookOpen className="w-3.5 h-3.5" />
-                <span>Employee Portal</span>
-              </button>
+              {/* Employee Acknowledgement & Compliance Tracker Module (For HR / Reviewers / Admin) */}
+              {(currentUser.role === UserRole.CREATOR || currentUser.role === UserRole.REVIEWER) && (
+                <button
+                  id="nav-compliance-tracker"
+                  onClick={() => setActiveTab('compliance')}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center space-x-1.5 ${
+                    activeTab === 'compliance'
+                      ? 'bg-slate-900 text-white shadow-sm'
+                      : 'text-slate-600 hover:bg-white hover:text-slate-900'
+                  }`}
+                >
+                  <Users className="w-3.5 h-3.5" />
+                  <span>Compliance Tracker</span>
+                  {pendingComplianceCount > 0 && (
+                    <span className="ml-1 px-1.5 py-0.2 rounded-full text-[10px] bg-[#FA7014] text-white font-bold shadow-xs">
+                      {pendingComplianceCount}
+                    </span>
+                  )}
+                </button>
+              )}
 
-              <button
-                id="nav-audit-trail"
-                onClick={() => setActiveTab('audit')}
-                className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all flex items-center space-x-1.5 ${
-                  activeTab === 'audit'
-                    ? 'bg-purple-600 text-white shadow-md shadow-purple-600/30'
-                    : 'text-slate-400 hover:bg-slate-800/80 hover:text-white'
-                }`}
-              >
-                <History className="w-3.5 h-3.5" />
-                <span>Audit Trail</span>
-              </button>
+              {currentUser.role !== UserRole.CREATOR && currentUser.role !== UserRole.REVIEWER && (
+                <button
+                  id="nav-employee-portal"
+                  onClick={() => setActiveTab('employee')}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center space-x-1.5 ${
+                    activeTab === 'employee'
+                      ? 'bg-slate-900 text-white shadow-sm'
+                      : 'text-slate-600 hover:bg-white hover:text-slate-900'
+                  }`}
+                >
+                  <BookOpen className="w-3.5 h-3.5" />
+                  <span>Employee Portal</span>
+                </button>
+              )}
+
+              {currentUser.role !== UserRole.EMPLOYEE && (
+                <button
+                  id="nav-audit-trail"
+                  onClick={() => setActiveTab('audit')}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center space-x-1.5 ${
+                    activeTab === 'audit'
+                      ? 'bg-slate-900 text-white shadow-sm'
+                      : 'text-slate-600 hover:bg-white hover:text-slate-900'
+                  }`}
+                >
+                  <History className="w-3.5 h-3.5" />
+                  <span>Audit Trail</span>
+                </button>
+              )}
             </nav>
           )}
 
           {/* Right actions: Quick switcher, Notifications, Reset, Demo Guide */}
           <div className="flex items-center space-x-2.5">
-            {/* Demo Tour Button */}
+            {/* Demo Tour Button (Styled like "Connect Now" on amaavigo.com) */}
             <button
               id="btn-demo-tour"
               onClick={onOpenDemoTour}
-              className="hidden lg:flex items-center space-x-1.5 bg-amber-500/10 border border-amber-500/30 text-amber-300 hover:bg-amber-500/20 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all shadow-xs"
+              className="hidden lg:flex items-center space-x-1.5 bg-white border border-slate-900 hover:bg-slate-900 text-slate-900 hover:text-white px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all shadow-xs"
               title="Interactive End-to-End Workflow Guide"
             >
-              <Sparkles className="w-3.5 h-3.5 text-amber-400" />
-              <span>Workflow Demo Guide</span>
+              <Sparkles className="w-3.5 h-3.5 text-[#FA7014]" />
+              <span>Demo Guide</span>
             </button>
 
             {/* Email Notifications Drawer Button */}
-            <button
-              id="btn-notification-drawer"
-              onClick={onOpenNotifications}
-              className="relative p-2 text-slate-300 hover:text-white hover:bg-slate-800/80 rounded-lg transition-colors border border-transparent hover:border-slate-700"
-              title="Broadcasted Email Notifications"
-            >
-              <Bell className="w-4.5 h-4.5" />
-              {notificationCount > 0 && (
-                <span className="absolute top-1 right-1 w-4 h-4 bg-rose-500 text-white text-[10px] font-bold rounded-full flex items-center justify-center shadow-xs">
-                  {notificationCount > 9 ? '9+' : notificationCount}
-                </span>
-              )}
-            </button>
+            {currentUser && currentUser.role !== UserRole.CREATOR && currentUser.role !== UserRole.REVIEWER && currentUser.role !== UserRole.EMPLOYEE && (
+              <button
+                id="btn-notification-drawer"
+                onClick={onOpenNotifications}
+                className="relative p-2 text-slate-600 hover:text-slate-900 hover:bg-slate-100 rounded-lg transition-colors border border-transparent hover:border-slate-200"
+                title="Broadcasted Email Notifications"
+              >
+                <Bell className="w-4.5 h-4.5" />
+                {notificationCount > 0 && (
+                  <span className="absolute top-1 right-1 w-4 h-4 bg-[#FA7014] text-white text-[10px] font-bold rounded-full flex items-center justify-center shadow-xs">
+                    {notificationCount > 9 ? '9+' : notificationCount}
+                  </span>
+                )}
+              </button>
+            )}
 
             {/* Reset Database Button */}
-            <button
-              id="btn-reset-seed"
-              onClick={onResetSeed}
-              className="p-2 text-slate-400 hover:text-slate-200 hover:bg-slate-800/80 rounded-lg transition-colors border border-transparent hover:border-slate-700"
-              title="Reset System to Seed Baseline"
-            >
-              <RotateCcw className="w-4 h-4" />
-            </button>
+            {currentUser && currentUser.role !== UserRole.CREATOR && currentUser.role !== UserRole.REVIEWER && currentUser.role !== UserRole.EMPLOYEE && (
+              <button
+                id="btn-reset-seed"
+                onClick={onResetSeed}
+                className="p-2 text-slate-500 hover:text-slate-900 hover:bg-slate-100 rounded-lg transition-colors border border-transparent hover:border-slate-200"
+                title="Reset System to Seed Baseline"
+              >
+                <RotateCcw className="w-4 h-4" />
+              </button>
+            )}
 
             {/* User Quick Switcher Dropdown */}
             {currentUser && (
-              <div className="flex items-center space-x-2 pl-2 border-l border-slate-800">
+              <div className="flex items-center space-x-2 pl-2 border-l border-slate-200">
                 <div className="flex items-center space-x-2">
-                  <div className="relative">
-                    <img
-                      src={currentUser.avatar || 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=100'}
-                      alt={currentUser.name}
-                      className="w-8 h-8 rounded-full border border-slate-600 object-cover shadow-xs"
-                    />
-                    <span
-                      className={`absolute bottom-0 right-0 w-2.5 h-2.5 rounded-full border-2 border-slate-900 ${
-                        currentUser.role === UserRole.REVIEWER
-                          ? 'bg-emerald-500'
-                          : currentUser.role === UserRole.CREATOR
-                          ? 'bg-blue-500'
-                          : 'bg-indigo-500'
-                      }`}
-                    />
-                  </div>
                   <div className="hidden sm:block text-left">
-                    <div className="text-xs font-bold text-white leading-tight">{currentUser.name}</div>
-                    <div className="text-[10px] text-slate-400 flex items-center space-x-1">
+                    <div className="flex items-center space-x-1.5">
+                      <div className="text-xs font-bold text-slate-900 leading-tight">{currentUser.name}</div>
+                      <button
+                        id="btn-edit-user-profile"
+                        onClick={() => setShowEditProfile(true)}
+                        className="p-0.5 text-slate-400 hover:text-[#FA7014] rounded transition-colors"
+                        title="Edit User Profile (Name, Title, Email)"
+                      >
+                        <UserCog className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                    <div className="text-[10px] text-slate-500 flex items-center space-x-1.5 mt-0.5">
                       <span
-                        className={`inline-block w-1.5 h-1.5 rounded-full ${
+                        className={`inline-block w-2 h-2 rounded-full ${
                           currentUser.role === UserRole.REVIEWER
-                            ? 'bg-emerald-400'
-                            : 'bg-blue-400'
+                            ? 'bg-emerald-500'
+                            : currentUser.role === UserRole.CREATOR
+                            ? 'bg-[#FA7014]'
+                            : 'bg-amber-500'
                         }`}
                       />
-                      <span>
-                        {currentUser.role === UserRole.REVIEWER
-                          ? 'Approver'
-                          : 'HR (Creator)'}
+                      <span className="truncate max-w-[140px] font-medium" title={currentUser.title || ''}>
+                        {currentUser.title ||
+                          (currentUser.role === UserRole.REVIEWER
+                            ? 'Approver'
+                            : currentUser.role === UserRole.CREATOR
+                            ? 'HR (Creator)'
+                            : 'Employee')}
                       </span>
                     </div>
                   </div>
                 </div>
 
                 {/* Quick 3-Role Toggle Bar */}
-                <div className="flex items-center bg-slate-950/70 p-1 rounded-xl border border-slate-800">
+                <div className="flex items-center bg-slate-100 p-1 rounded-xl border border-slate-200">
                   {creatorUser && (
                     <button
                       id="switch-to-creator"
@@ -212,10 +242,10 @@ export const Header: React.FC<HeaderProps> = ({
                         onSwitchUser(creatorUser);
                         setActiveTab('creator');
                       }}
-                      className={`px-2.5 py-1 text-xs rounded-lg font-semibold transition-all ${
+                      className={`px-2.5 py-1 text-xs rounded-lg font-bold transition-all ${
                         currentUser.id === creatorUser.id
-                          ? 'bg-blue-600 text-white shadow-xs'
-                          : 'text-slate-400 hover:text-white'
+                          ? 'bg-[#FA7014] text-white shadow-xs'
+                          : 'text-slate-600 hover:text-slate-900'
                       }`}
                       title="Switch to HR Creator (HR001)"
                     >
@@ -229,10 +259,10 @@ export const Header: React.FC<HeaderProps> = ({
                         onSwitchUser(reviewerUser);
                         setActiveTab('reviewer');
                       }}
-                      className={`px-2.5 py-1 text-xs rounded-lg font-semibold transition-all ${
+                      className={`px-2.5 py-1 text-xs rounded-lg font-bold transition-all ${
                         currentUser.id === reviewerUser.id
-                          ? 'bg-emerald-600 text-white shadow-xs'
-                          : 'text-slate-400 hover:text-white'
+                          ? 'bg-slate-900 text-white shadow-xs'
+                          : 'text-slate-600 hover:text-slate-900'
                       }`}
                       title="Switch to Approver (AMA001)"
                     >
@@ -246,14 +276,14 @@ export const Header: React.FC<HeaderProps> = ({
                         onSwitchUser(employeeUser);
                         setActiveTab('employee');
                       }}
-                      className={`px-2.5 py-1 text-xs rounded-lg font-semibold transition-all ${
+                      className={`px-2.5 py-1 text-xs rounded-lg font-bold transition-all ${
                         currentUser.id === employeeUser.id
-                          ? 'bg-indigo-600 text-white shadow-xs'
-                          : 'text-slate-400 hover:text-white'
+                          ? 'bg-slate-900 text-[#FA7014] border border-[#FA7014]/40 font-bold shadow-xs'
+                          : 'text-slate-600 hover:text-slate-900'
                       }`}
                       title="Switch to Employee (AM001 - Parth)"
                     >
-                      Employee (Parth)
+                      Employee
                     </button>
                   )}
                 </div>
@@ -262,7 +292,7 @@ export const Header: React.FC<HeaderProps> = ({
                 <button
                   id="btn-header-logout"
                   onClick={onLogout}
-                  className="p-1.5 text-slate-400 hover:text-rose-400 hover:bg-slate-800/80 rounded-lg transition-colors"
+                  className="p-1.5 text-slate-500 hover:text-rose-600 hover:bg-slate-100 rounded-lg transition-colors"
                   title="Logout"
                 >
                   <LogOut className="w-4 h-4" />
@@ -272,6 +302,18 @@ export const Header: React.FC<HeaderProps> = ({
           </div>
         </div>
       </div>
+
+      {/* Edit User Profile Modal */}
+      {currentUser && showEditProfile && (
+        <EditProfileModal
+          isOpen={showEditProfile}
+          onClose={() => setShowEditProfile(false)}
+          currentUser={currentUser}
+          onProfileUpdated={(updatedUser) => {
+            onSwitchUser(updatedUser);
+          }}
+        />
+      )}
     </header>
   );
 };

@@ -161,13 +161,13 @@ export const CreateVersionModal: React.FC<CreateVersionModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-3 sm:p-6">
-      <div className="glass-panel-dark rounded-2xl shadow-2xl border border-slate-800 w-full max-w-3xl max-h-[92vh] flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+    <div className="fixed inset-0 z-50 overflow-y-auto bg-black/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-6">
+      <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-3xl max-h-[92vh] flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-150">
         {/* HEADER */}
-        <div className="bg-slate-900/90 text-white px-6 py-4 flex items-center justify-between border-b border-slate-800 shrink-0">
+        <div className="bg-slate-900 text-white px-6 py-4 flex items-center justify-between border-b border-slate-800 shrink-0">
           <div className="flex items-center space-x-3">
-            <div className="w-10 h-10 rounded-xl bg-blue-600/30 border border-blue-500/40 flex items-center justify-center shadow-inner">
-              <GitBranch className="w-5 h-5 text-blue-400" />
+            <div className="w-10 h-10 rounded-xl bg-[#FA7014]/20 border border-[#FA7014]/40 flex items-center justify-center shadow-inner">
+              <GitBranch className="w-5 h-5 text-[#FA7014]" />
             </div>
             <div>
               <h2 className="text-lg font-bold text-white">Create New Document Version</h2>
@@ -186,27 +186,27 @@ export const CreateVersionModal: React.FC<CreateVersionModalProps> = ({
         </div>
 
         {/* FORM */}
-        <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto p-6 space-y-5 bg-slate-950">
+        <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto p-6 space-y-5 bg-white">
           {error && (
-            <div className="bg-rose-950/50 border border-rose-800/60 rounded-xl p-3 text-xs text-rose-300 flex items-center space-x-2">
-              <AlertCircle className="w-4 h-4 text-rose-400 shrink-0" />
+            <div className="bg-orange-50 border border-orange-200 rounded-xl p-3 text-xs text-orange-950 flex items-center space-x-2">
+              <AlertCircle className="w-4 h-4 text-[#FA7014] shrink-0" />
               <span>{error}</span>
             </div>
           )}
 
           {/* TARGET DOCUMENT SELECTOR */}
           <div>
-            <label className="block text-xs font-bold text-slate-300 uppercase tracking-wider mb-1.5" htmlFor="select-target-document">
-              Select Document Master to Revise <span className="text-rose-400">*</span>
+            <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5" htmlFor="select-target-document">
+              Select Document Master to Revise <span className="text-[#FA7014]">*</span>
             </label>
             <select
               id="select-target-document"
               value={selectedDocId}
               onChange={(e) => setSelectedDocId(e.target.value)}
-              className="w-full text-sm p-3 bg-slate-900 border border-slate-700 text-white rounded-xl focus:outline-hidden focus:ring-2 focus:ring-blue-500 font-medium cursor-pointer"
+              className="w-full text-sm p-3 bg-slate-50 border border-slate-200 text-slate-900 rounded-xl focus:outline-hidden focus:ring-2 focus:ring-[#FA7014] font-medium cursor-pointer"
             >
               {documents.map((doc) => (
-                <option key={doc.id} value={doc.id} className="bg-slate-900 text-white py-1">
+                <option key={doc.id} value={doc.id} className="bg-white text-slate-900 py-1">
                   {doc.documentId} — {doc.title} (Published: v{doc.currentPublishedVersionNumber || 'None'})
                 </option>
               ))}
@@ -215,34 +215,34 @@ export const CreateVersionModal: React.FC<CreateVersionModalProps> = ({
 
           {/* BASELINE & CALCULATED VERSION CARD */}
           {selectedMaster && (
-            <div className="glass-panel-dark border border-slate-800 rounded-2xl p-4 grid grid-cols-1 sm:grid-cols-3 gap-4 text-xs">
+            <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4 grid grid-cols-1 sm:grid-cols-3 gap-4 text-xs">
               <div>
-                <span className="text-slate-400 font-semibold uppercase tracking-wider text-[10px]">
+                <span className="text-slate-500 font-semibold uppercase tracking-wider text-[10px]">
                   Document ID
                 </span>
-                <div className="font-mono text-sm font-bold text-blue-400 mt-0.5">
+                <div className="font-mono text-sm font-bold text-slate-900 mt-0.5">
                   {selectedMaster.documentId}
                 </div>
-                <span className="text-slate-400">{selectedMaster.category}</span>
+                <span className="text-slate-500">{selectedMaster.category}</span>
               </div>
 
               <div>
-                <span className="text-slate-400 font-semibold uppercase tracking-wider text-[10px]">
+                <span className="text-slate-500 font-semibold uppercase tracking-wider text-[10px]">
                   Current Published Baseline
                 </span>
-                <div className="font-bold text-sm text-emerald-400 mt-0.5">
+                <div className="font-bold text-sm text-slate-900 mt-0.5">
                   v{selectedMaster.currentPublishedVersionNumber || '1.0'}
                 </div>
                 <span className="text-slate-500">Operational Version</span>
               </div>
 
-              <div className="bg-blue-950/70 p-3 rounded-xl border border-blue-800/80">
-                <span className="text-blue-300 font-bold uppercase tracking-wider text-[10px]">
+              <div className="bg-white p-3 rounded-xl border border-slate-200 shadow-xs">
+                <span className="text-slate-700 font-bold uppercase tracking-wider text-[10px]">
                   Calculated New Version
                 </span>
-                <div className="font-mono text-base font-extrabold text-white mt-0.5 flex items-center space-x-1.5">
-                  <span className="text-blue-300">v{calculatedNextVersion}</span>
-                  <span className="text-xs font-normal font-sans text-slate-300">({revisionType})</span>
+                <div className="font-mono text-base font-extrabold text-slate-900 mt-0.5 flex items-center space-x-1.5">
+                  <span className="text-[#FA7014]">v{calculatedNextVersion}</span>
+                  <span className="text-xs font-normal font-sans text-slate-500">({revisionType})</span>
                 </div>
               </div>
             </div>
@@ -250,15 +250,15 @@ export const CreateVersionModal: React.FC<CreateVersionModalProps> = ({
 
           {/* REVISION TYPE SELECTOR (Minor vs Major) */}
           <div>
-            <label className="block text-xs font-bold text-slate-300 uppercase tracking-wider mb-2">
-              Revision Magnitude <span className="text-rose-400">*</span>
+            <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-2">
+              Revision Magnitude <span className="text-[#FA7014]">*</span>
             </label>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <label
                 className={`p-4 rounded-2xl border cursor-pointer transition-all flex items-start space-x-3 ${
                   revisionType === VersionType.MINOR
-                    ? 'border-blue-500 bg-blue-950/40 shadow-lg shadow-blue-900/20'
-                    : 'border-slate-800 hover:border-slate-700 bg-slate-900/60'
+                    ? 'border-[#FA7014] bg-orange-50/40 shadow-xs'
+                    : 'border-slate-200 hover:border-slate-300 bg-slate-50'
                 }`}
               >
                 <input
@@ -267,13 +267,13 @@ export const CreateVersionModal: React.FC<CreateVersionModalProps> = ({
                   value={VersionType.MINOR}
                   checked={revisionType === VersionType.MINOR}
                   onChange={() => setRevisionType(VersionType.MINOR)}
-                  className="mt-1 text-blue-600 focus:ring-blue-500 cursor-pointer"
+                  className="mt-1 text-[#FA7014] focus:ring-[#FA7014] cursor-pointer"
                 />
                 <div>
-                  <div className="font-bold text-xs text-white">
+                  <div className="font-bold text-xs text-slate-900">
                     Minor Revision (v{governanceEngine.calculateNextVersionNumber(baselineVersionNumber, VersionType.MINOR)})
                   </div>
-                  <p className="text-[11px] text-slate-400 mt-0.5 leading-relaxed">
+                  <p className="text-[11px] text-slate-500 mt-0.5 leading-relaxed">
                     Incremental adjustments, procedural updates, typographical or operational clarifications.
                   </p>
                 </div>
@@ -282,8 +282,8 @@ export const CreateVersionModal: React.FC<CreateVersionModalProps> = ({
               <label
                 className={`p-4 rounded-2xl border cursor-pointer transition-all flex items-start space-x-3 ${
                   revisionType === VersionType.MAJOR
-                    ? 'border-blue-500 bg-blue-950/40 shadow-lg shadow-blue-900/20'
-                    : 'border-slate-800 hover:border-slate-700 bg-slate-900/60'
+                    ? 'border-[#FA7014] bg-orange-50/40 shadow-xs'
+                    : 'border-slate-200 hover:border-slate-300 bg-slate-50'
                 }`}
               >
                 <input
@@ -292,13 +292,13 @@ export const CreateVersionModal: React.FC<CreateVersionModalProps> = ({
                   value={VersionType.MAJOR}
                   checked={revisionType === VersionType.MAJOR}
                   onChange={() => setRevisionType(VersionType.MAJOR)}
-                  className="mt-1 text-blue-600 focus:ring-blue-500 cursor-pointer"
+                  className="mt-1 text-[#FA7014] focus:ring-[#FA7014] cursor-pointer"
                 />
                 <div>
-                  <div className="font-bold text-xs text-white">
+                  <div className="font-bold text-xs text-slate-900">
                     Major Revision (v{governanceEngine.calculateNextVersionNumber(baselineVersionNumber, VersionType.MAJOR)})
                   </div>
-                  <p className="text-[11px] text-slate-400 mt-0.5 leading-relaxed">
+                  <p className="text-[11px] text-slate-500 mt-0.5 leading-relaxed">
                     Substantial restructuring, legal mandate changes, compensation or core policy revamps.
                   </p>
                 </div>
@@ -309,16 +309,16 @@ export const CreateVersionModal: React.FC<CreateVersionModalProps> = ({
           {/* CHANGE SUMMARY */}
           <div>
             <div className="flex flex-wrap items-center justify-between mb-1.5 gap-2">
-              <label className="block text-xs font-bold text-slate-300 uppercase tracking-wider" htmlFor="input-change-summary">
-                Change Summary / Release Notes <span className="text-rose-400">*</span>
+              <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider" htmlFor="input-change-summary">
+                Change Summary / Release Notes <span className="text-[#FA7014]">*</span>
               </label>
-              <div className="flex items-center space-x-1.5 text-[11px] text-blue-400 font-semibold">
-                <Sparkles className="w-3 h-3" />
+              <div className="flex items-center space-x-1.5 text-[11px] text-slate-600 font-semibold">
+                <Sparkles className="w-3 h-3 text-[#FA7014]" />
                 <span>Quick demo fill:</span>
                 <button
                   type="button"
                   onClick={() => applyQuickRevisionExample('broadband')}
-                  className="underline hover:text-blue-200 ml-1"
+                  className="text-[#FA7014] hover:underline ml-1"
                 >
                   Add Broadband & Security
                 </button>
@@ -326,7 +326,7 @@ export const CreateVersionModal: React.FC<CreateVersionModalProps> = ({
                 <button
                   type="button"
                   onClick={() => applyQuickRevisionExample('parental')}
-                  className="underline hover:text-blue-200"
+                  className="text-[#FA7014] hover:underline"
                 >
                   Expand PTO
                 </button>
@@ -339,20 +339,20 @@ export const CreateVersionModal: React.FC<CreateVersionModalProps> = ({
               onChange={(e) => setChangeSummary(e.target.value)}
               rows={2}
               placeholder="Detail specifically what was changed from the previous published baseline..."
-              className="w-full text-xs p-3 bg-slate-900 border border-slate-700 text-white rounded-xl focus:outline-hidden focus:ring-2 focus:ring-blue-500 placeholder:text-slate-500"
+              className="w-full text-xs p-3 bg-slate-50 border border-slate-200 text-slate-900 rounded-xl focus:outline-hidden focus:ring-2 focus:ring-[#FA7014] placeholder:text-slate-400"
               required
             />
           </div>
 
           {/* REVISED CONTENT EDITOR / UPLOAD */}
-          <div className="border border-slate-800 rounded-2xl p-4 bg-slate-900/80">
+          <div className="border border-slate-200 rounded-2xl p-4 bg-slate-50/50">
             <div className="flex items-center justify-between mb-2">
-              <label className="block text-xs font-bold text-slate-200 uppercase tracking-wider">
-                Revised Document Content (Loaded from Baseline v{baselineVersionNumber}) <span className="text-rose-400">*</span>
+              <label className="block text-xs font-bold text-slate-900 uppercase tracking-wider">
+                Revised Document Content (Loaded from Baseline v{baselineVersionNumber}) <span className="text-[#FA7014]">*</span>
               </label>
 
-              <label className="cursor-pointer inline-flex items-center space-x-1.5 text-xs font-semibold text-blue-300 hover:text-white bg-blue-950/70 border border-blue-800/80 px-3 py-1.5 rounded-xl shadow-xs hover:bg-blue-900/80 transition-colors">
-                <UploadCloud className="w-3.5 h-3.5" />
+              <label className="cursor-pointer inline-flex items-center space-x-1.5 text-xs font-semibold text-slate-700 hover:text-slate-900 bg-white border border-slate-200 px-3 py-1.5 rounded-xl shadow-xs hover:bg-slate-50 transition-colors">
+                <UploadCloud className="w-3.5 h-3.5 text-[#FA7014]" />
                 <span>Upload Revised File</span>
                 <input
                   type="file"
@@ -364,16 +364,16 @@ export const CreateVersionModal: React.FC<CreateVersionModalProps> = ({
             </div>
 
             {parsingFile && (
-              <div className="text-xs text-blue-300 mb-2 font-mono bg-blue-950/60 p-2.5 rounded-xl border border-blue-800/60 flex items-center space-x-2">
-                <Clock className="w-3.5 h-3.5 animate-spin text-blue-400" />
+              <div className="text-xs text-slate-700 mb-2 font-mono bg-white p-2.5 rounded-xl border border-slate-200 flex items-center space-x-2">
+                <Clock className="w-3.5 h-3.5 animate-spin text-[#FA7014]" />
                 <span>Parsing file and extracting readable document content...</span>
               </div>
             )}
 
             {fileName && !parsingFile && uploadStatus && (
-              <div className="text-xs text-slate-300 mb-2 font-mono bg-slate-950 p-2.5 rounded-xl border border-slate-800 flex items-center justify-between">
+              <div className="text-xs text-slate-800 mb-2 font-mono bg-white p-2.5 rounded-xl border border-slate-200 flex items-center justify-between">
                 <span className="truncate max-w-[70%]">Selected File: {fileName}</span>
-                <span className="text-[11px] text-emerald-400 font-sans font-semibold flex items-center space-x-1">
+                <span className="text-[11px] text-[#FA7014] font-sans font-semibold flex items-center space-x-1">
                   <CheckCircle2 className="w-3.5 h-3.5" />
                   <span>{uploadStatus}</span>
                 </span>
@@ -386,17 +386,17 @@ export const CreateVersionModal: React.FC<CreateVersionModalProps> = ({
               onChange={(e) => setRawContent(e.target.value)}
               rows={10}
               placeholder="Edit or paste revised Markdown / text here..."
-              className="w-full text-xs font-mono p-3 bg-slate-950 border border-slate-800 text-slate-100 rounded-xl focus:outline-hidden focus:ring-2 focus:ring-blue-500 leading-relaxed placeholder:text-slate-600"
+              className="w-full text-xs font-mono p-3 bg-white border border-slate-200 text-slate-900 rounded-xl focus:outline-hidden focus:ring-2 focus:ring-[#FA7014] leading-relaxed placeholder:text-slate-400"
               required
             />
           </div>
 
           {/* BUTTONS */}
-          <div className="flex items-center justify-end space-x-3 pt-4 border-t border-slate-800">
+          <div className="flex items-center justify-end space-x-3 pt-4 border-t border-slate-200">
             <button
               type="button"
               onClick={onClose}
-              className="px-4 py-2.5 text-xs font-semibold text-slate-400 hover:text-white transition-colors"
+              className="px-4 py-2.5 text-xs font-semibold text-slate-500 hover:text-slate-900 transition-colors"
             >
               Cancel
             </button>
@@ -404,7 +404,7 @@ export const CreateVersionModal: React.FC<CreateVersionModalProps> = ({
               id="btn-submit-create-version"
               type="submit"
               disabled={submitting}
-              className="bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white text-xs font-bold px-6 py-2.5 rounded-xl shadow-lg shadow-blue-600/30 flex items-center space-x-2 disabled:opacity-50 border border-blue-400/30 transition-all"
+              className="bg-[#FA7014] hover:bg-[#E65A05] text-white text-xs font-bold px-6 py-2.5 rounded-xl shadow-md shadow-[#FA7014]/20 flex items-center space-x-2 disabled:opacity-50 transition-all"
             >
               {submitting ? <Clock className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />}
               <span>Submit Revision v{calculatedNextVersion} for Review</span>

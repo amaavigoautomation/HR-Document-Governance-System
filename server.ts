@@ -63,6 +63,38 @@ async function startServer() {
     res.json(governanceEngine.getUsers());
   });
 
+  // Employee Directory API
+  app.get('/api/employees', (req, res) => {
+    res.json(governanceEngine.getEmployees());
+  });
+
+  app.get('/api/employees/:id', (req, res) => {
+    const emp = governanceEngine.getUserById(req.params.id);
+    if (!emp) {
+      return res.status(404).json({ error: 'Employee not found' });
+    }
+    res.json(emp);
+  });
+
+  // Database collections status endpoint
+  app.get('/api/database/status', (req, res) => {
+    res.json({
+      status: 'online',
+      database: 'ai-studio-hrdocumentgovern-f71a32a8-1c50-4d39-bfab-6a034be035cc',
+      collections: [
+        'employees',
+        'documents',
+        'versions',
+        'acknowledgments',
+        'auditLogs',
+        'notifications',
+      ],
+      employeeCount: governanceEngine.getEmployees().length,
+      documentCount: governanceEngine.getDocumentMasters().length,
+      acknowledgmentCount: governanceEngine.getAcknowledgements().length,
+    });
+  });
+
   // Get all documents
   app.get('/api/documents', (req, res) => {
     const { category, search, companyId } = req.query;
@@ -96,6 +128,38 @@ async function startServer() {
       res.status(201).json(result);
     } catch (err: any) {
       res.status(400).json({ error: err.message || 'Failed to create document' });
+    }
+  });
+
+  // Delete a single document master
+  app.delete('/api/documents/:id', async (req, res) => {
+    try {
+      const user = governanceEngine.getUsers().find((u) => u.role === 'CREATOR');
+      await governanceEngine.deleteDocument(req.params.id, user);
+      res.json({ success: true, message: `Document ${req.params.id} deleted successfully.` });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message || 'Failed to delete document' });
+    }
+  });
+
+  // Clear / Purge all documents and versions from database
+  app.delete('/api/documents', async (req, res) => {
+    try {
+      const user = governanceEngine.getUsers().find((u) => u.role === 'CREATOR');
+      await governanceEngine.clearAllDocuments(user);
+      res.json({ success: true, message: 'All documents, versions, and acknowledgements have been removed from the database.' });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message || 'Failed to clear documents' });
+    }
+  });
+
+  // Restore seed documents
+  app.post('/api/documents/restore-seed', async (req, res) => {
+    try {
+      await governanceEngine.restoreDefaultSeed();
+      res.json({ success: true, message: 'Sample seed documents restored successfully.' });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message || 'Failed to restore seed documents' });
     }
   });
 
@@ -199,11 +263,49 @@ async function startServer() {
     res.json(notifs);
   });
 
-  // Acknowledgements
+  // Acknowledgements & Compliance
   app.get('/api/acknowledgements', (req, res) => {
     const { employeeId } = req.query;
     const acks = governanceEngine.getAcknowledgements(employeeId as string);
     res.json(acks);
+  });
+
+  app.get('/api/compliance/stats', (req, res) => {
+    const stats = governanceEngine.getEmployeeComplianceStats();
+    res.json(stats);
+  });
+
+  app.post('/api/compliance/remind', async (req, res) => {
+    try {
+      const { ackId, senderId } = req.body;
+      const sender = governanceEngine.getUserById(senderId) || governanceEngine.getUsers()[0];
+      const result = await governanceEngine.sendComplianceReminder(ackId, sender);
+      res.json(result);
+    } catch (err: any) {
+      res.status(400).json({ error: err.message || 'Failed to dispatch reminder' });
+    }
+  });
+
+  app.post('/api/compliance/batch-remind', async (req, res) => {
+    try {
+      const { senderId, documentId } = req.body;
+      const sender = governanceEngine.getUserById(senderId) || governanceEngine.getUsers()[0];
+      const result = await governanceEngine.sendBatchReminders(sender, documentId);
+      res.json(result);
+    } catch (err: any) {
+      res.status(400).json({ error: err.message || 'Failed to dispatch batch reminders' });
+    }
+  });
+
+  app.post('/api/compliance/acknowledge-offline', (req, res) => {
+    try {
+      const { ackId, notes, adminId } = req.body;
+      const admin = governanceEngine.getUserById(adminId) || governanceEngine.getUsers()[0];
+      const result = governanceEngine.recordManualSignOff(ackId, notes, admin);
+      res.json(result);
+    } catch (err: any) {
+      res.status(400).json({ error: err.message || 'Failed to record manual sign-off' });
+    }
   });
 
   app.post('/api/acknowledgements', (req, res) => {
