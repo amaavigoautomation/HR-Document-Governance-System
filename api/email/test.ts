@@ -1,4 +1,4 @@
-import { dispatchLiveEmail } from '../../src/services/serverEmail';
+import { dispatchLiveEmail } from '../_lib/serverEmail.js';
 
 export default async function handler(req: any, res: any) {
   res.setHeader('Access-Control-Allow-Credentials', 'true');
