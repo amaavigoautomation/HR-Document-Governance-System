@@ -182,7 +182,15 @@ export class DocumentGovernanceEngine {
 
   // Get all users
   public getUsers(): User[] {
-    return this.users;
+    const seen = new Set<string>();
+    const res: User[] = [];
+    for (const u of this.users) {
+      const key = (u.empId || u.loginId || u.email || u.id || '').toUpperCase().trim();
+      if (key && seen.has(key)) continue;
+      if (key) seen.add(key);
+      res.push(u);
+    }
+    return res;
   }
 
   // Get all active reviewers / approvers (APPROVER / REVIEWER) with valid emails
@@ -274,19 +282,28 @@ export class DocumentGovernanceEngine {
 
   // Get all employees
   public getEmployees(): User[] {
-    return this.users.filter((u) => {
+    const seen = new Set<string>();
+    const emps: User[] = [];
+    for (const u of this.users) {
       const r = (u.role || '').toString().toUpperCase();
-      return r === 'EMPLOYEE' && u.active !== false;
-    });
+      if (r === 'EMPLOYEE' && u.active !== false) {
+        const key = (u.empId || u.loginId || u.email || u.id || '').toUpperCase().trim();
+        if (key && seen.has(key)) continue;
+        if (key) seen.add(key);
+        emps.push(u);
+      }
+    }
+    return emps;
   }
 
   public setEmployees(employees: User[]): void {
     if (!employees || employees.length === 0) return;
 
-    // Merge cloud user records by id, preserving existing memory state
+    // Merge cloud user records by canonical key (empId/loginId/email/id), preserving existing memory state
     const userMap = new Map<string, User>();
     for (const u of this.users) {
-      userMap.set(u.id, u);
+      const key = (u.empId || u.loginId || u.email || u.id || '').toUpperCase().trim();
+      if (key) userMap.set(key, u);
     }
     for (const emp of employees) {
       const rawRole = (emp.role || '').toString().toUpperCase().trim();
@@ -333,7 +350,7 @@ export class DocumentGovernanceEngine {
 
       const normalized: User = {
         ...emp,
-        id: emp.id,
+        id: emp.id || emp.empId || emp.loginId || rawLoginId,
         empId: emp.empId || (emp as any).employeeId || emp.loginId || emp.id,
         loginId: emp.loginId || emp.empId || (emp as any).employeeId || emp.id,
         name: emp.name || (role === UserRole.CREATOR ? 'HR Creator' : role === UserRole.REVIEWER ? 'Approver' : 'Employee'),
@@ -355,7 +372,9 @@ export class DocumentGovernanceEngine {
         active: emp.active !== false && (emp as any).status !== 'INACTIVE',
         avatar: emp.avatar || (emp as any).avatarUrl,
       };
-      userMap.set(emp.id, normalized);
+
+      const key = (normalized.empId || normalized.loginId || normalized.email || normalized.id).toUpperCase().trim();
+      userMap.set(key, normalized);
     }
     this.users = Array.from(userMap.values());
     this.syncDocumentAuthorNames();
@@ -366,10 +385,14 @@ export class DocumentGovernanceEngine {
     if (!users || users.length === 0) return;
     const userMap = new Map<string, User>();
     for (const u of this.users) {
-      userMap.set(u.id, u);
+      const key = (u.empId || u.loginId || u.email || u.id || '').toUpperCase().trim();
+      if (key) userMap.set(key, u);
     }
     for (const u of users) {
-      userMap.set(u.id, { ...userMap.get(u.id), ...u });
+      const key = (u.empId || u.loginId || u.email || u.id || '').toUpperCase().trim();
+      if (key) {
+        userMap.set(key, { ...userMap.get(key), ...u });
+      }
     }
     this.users = Array.from(userMap.values());
     this.syncDocumentAuthorNames();

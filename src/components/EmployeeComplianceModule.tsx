@@ -84,10 +84,23 @@ export const EmployeeComplianceModule: React.FC<EmployeeComplianceModuleProps> =
 
   const allEmployees = useMemo(() => {
     const rawUsers = users && users.length > 0 ? users : governanceEngine.getUsers();
-    return rawUsers.filter((u) => {
+    const filtered = rawUsers.filter((u) => {
       const r = (u.role || '').toString().toUpperCase();
       return r === 'EMPLOYEE' && u.active !== false;
     });
+
+    // Deduplicate by canonical employee ID / login ID / email
+    const seen = new Set<string>();
+    const uniqueEmployees: User[] = [];
+
+    for (const emp of filtered) {
+      const key = (emp.empId || emp.loginId || emp.email || emp.id || '').toString().toUpperCase().trim();
+      if (!key || seen.has(key)) continue;
+      seen.add(key);
+      uniqueEmployees.push(emp);
+    }
+
+    return uniqueEmployees;
   }, [users]);
 
   const publishedDocs = useMemo(() => {
