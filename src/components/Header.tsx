@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React from 'react';
 import {
   FileText,
   ShieldCheck,
@@ -6,14 +6,11 @@ import {
   RotateCcw,
   BookOpen,
   History,
-  Sparkles,
   LogOut,
   Users,
-  UserCog,
 } from 'lucide-react';
 import { User, UserRole } from '../types';
 import { AmaavigoLogo } from './AmaavigoLogo';
-import { EditProfileModal } from './EditProfileModal';
 
 interface HeaderProps {
   currentUser: User | null;
@@ -26,7 +23,6 @@ interface HeaderProps {
   pendingComplianceCount?: number;
   onOpenNotifications: () => void;
   onResetSeed: () => void;
-  onOpenDemoTour: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -40,13 +36,10 @@ export const Header: React.FC<HeaderProps> = ({
   pendingComplianceCount = 0,
   onOpenNotifications,
   onResetSeed,
-  onOpenDemoTour,
 }) => {
   const creatorUser = allUsers.find((u) => u.role === UserRole.CREATOR);
   const reviewerUser = allUsers.find((u) => u.role === UserRole.REVIEWER);
   const employeeUser = allUsers.find((u) => u.role === UserRole.EMPLOYEE);
-
-  const [showEditProfile, setShowEditProfile] = useState(false);
 
   return (
     <header id="main-header" className="bg-white/95 backdrop-blur-md border-b border-slate-200 text-slate-900 sticky top-0 z-40 shadow-xs">
@@ -113,11 +106,6 @@ export const Header: React.FC<HeaderProps> = ({
                 >
                   <Users className="w-3.5 h-3.5" />
                   <span>Compliance Tracker</span>
-                  {pendingComplianceCount > 0 && (
-                    <span className="ml-1 px-1.5 py-0.2 rounded-full text-[10px] bg-[#FA7014] text-white font-bold shadow-xs">
-                      {pendingComplianceCount}
-                    </span>
-                  )}
                 </button>
               )}
 
@@ -153,19 +141,8 @@ export const Header: React.FC<HeaderProps> = ({
             </nav>
           )}
 
-          {/* Right actions: Quick switcher, Notifications, Reset, Demo Guide */}
+          {/* Right actions: Quick switcher, Notifications, Reset */}
           <div className="flex items-center space-x-2.5">
-            {/* Demo Tour Button (Styled like "Connect Now" on amaavigo.com) */}
-            <button
-              id="btn-demo-tour"
-              onClick={onOpenDemoTour}
-              className="hidden lg:flex items-center space-x-1.5 bg-white border border-slate-900 hover:bg-slate-900 text-slate-900 hover:text-white px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all shadow-xs"
-              title="Interactive End-to-End Workflow Guide"
-            >
-              <Sparkles className="w-3.5 h-3.5 text-[#FA7014]" />
-              <span>Demo Guide</span>
-            </button>
-
             {/* Email Notifications Drawer Button */}
             {currentUser && currentUser.role !== UserRole.CREATOR && currentUser.role !== UserRole.REVIEWER && currentUser.role !== UserRole.EMPLOYEE && (
               <button
@@ -202,14 +179,6 @@ export const Header: React.FC<HeaderProps> = ({
                   <div className="hidden sm:block text-left">
                     <div className="flex items-center space-x-1.5">
                       <div className="text-xs font-bold text-slate-900 leading-tight">{currentUser.name}</div>
-                      <button
-                        id="btn-edit-user-profile"
-                        onClick={() => setShowEditProfile(true)}
-                        className="p-0.5 text-slate-400 hover:text-[#FA7014] rounded transition-colors"
-                        title="Edit User Profile (Name, Title, Email)"
-                      >
-                        <UserCog className="w-3.5 h-3.5" />
-                      </button>
                     </div>
                     <div className="text-[10px] text-slate-500 flex items-center space-x-1.5 mt-0.5">
                       <span
@@ -233,61 +202,6 @@ export const Header: React.FC<HeaderProps> = ({
                   </div>
                 </div>
 
-                {/* Quick 3-Role Toggle Bar */}
-                <div className="flex items-center bg-slate-100 p-1 rounded-xl border border-slate-200">
-                  {creatorUser && (
-                    <button
-                      id="switch-to-creator"
-                      onClick={() => {
-                        onSwitchUser(creatorUser);
-                        setActiveTab('creator');
-                      }}
-                      className={`px-2.5 py-1 text-xs rounded-lg font-bold transition-all ${
-                        currentUser.id === creatorUser.id
-                          ? 'bg-[#FA7014] text-white shadow-xs'
-                          : 'text-slate-600 hover:text-slate-900'
-                      }`}
-                      title="Switch to HR Creator (HR001)"
-                    >
-                      HR
-                    </button>
-                  )}
-                  {reviewerUser && (
-                    <button
-                      id="switch-to-reviewer"
-                      onClick={() => {
-                        onSwitchUser(reviewerUser);
-                        setActiveTab('reviewer');
-                      }}
-                      className={`px-2.5 py-1 text-xs rounded-lg font-bold transition-all ${
-                        currentUser.id === reviewerUser.id
-                          ? 'bg-slate-900 text-white shadow-xs'
-                          : 'text-slate-600 hover:text-slate-900'
-                      }`}
-                      title="Switch to Approver (AMA001)"
-                    >
-                      Approver
-                    </button>
-                  )}
-                  {employeeUser && (
-                    <button
-                      id="switch-to-employee"
-                      onClick={() => {
-                        onSwitchUser(employeeUser);
-                        setActiveTab('employee');
-                      }}
-                      className={`px-2.5 py-1 text-xs rounded-lg font-bold transition-all ${
-                        currentUser.id === employeeUser.id
-                          ? 'bg-slate-900 text-[#FA7014] border border-[#FA7014]/40 font-bold shadow-xs'
-                          : 'text-slate-600 hover:text-slate-900'
-                      }`}
-                      title="Switch to Employee (AM001 - Parth)"
-                    >
-                      Employee
-                    </button>
-                  )}
-                </div>
-
                 {/* Logout */}
                 <button
                   id="btn-header-logout"
@@ -302,18 +216,6 @@ export const Header: React.FC<HeaderProps> = ({
           </div>
         </div>
       </div>
-
-      {/* Edit User Profile Modal */}
-      {currentUser && showEditProfile && (
-        <EditProfileModal
-          isOpen={showEditProfile}
-          onClose={() => setShowEditProfile(false)}
-          currentUser={currentUser}
-          onProfileUpdated={(updatedUser) => {
-            onSwitchUser(updatedUser);
-          }}
-        />
-      )}
     </header>
   );
 };

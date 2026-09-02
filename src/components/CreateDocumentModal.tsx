@@ -113,10 +113,18 @@ Employees should notify their immediate manager via the HR self-service portal a
     const file = e.target.files?.[0];
     if (!file) return;
 
+    const lowerName = file.name.toLowerCase();
+    const isAllowed = lowerName.endsWith(".pdf") || lowerName.endsWith(".docx");
+    if (!isAllowed) {
+      setError("Invalid file format. Only .pdf and .docx documents are supported.");
+      return;
+    }
+
     setParsingFile(true);
+    setError("");
     setFileName(file.name);
     if (!title) {
-      setTitle(file.name.replace(/\.[^/.]+$/, '').replace(/[_-]/g, ' '));
+      setTitle(file.name.replace(/\.[^/.]+$/, "").replace(/[_-]/g, " "));
     }
 
     try {
@@ -205,36 +213,7 @@ Employees should notify their immediate manager via the HR self-service portal a
           </button>
         </div>
 
-        {/* TEMPLATE QUICK BAR */}
-        <div className="bg-slate-50 border-b border-slate-200 px-6 py-2.5 flex flex-wrap items-center justify-between text-xs text-slate-700 shrink-0 gap-2">
-          <div className="flex items-center space-x-1.5">
-            <Sparkles className="w-4 h-4 text-[#FA7014] shrink-0" />
-            <span className="font-semibold text-slate-900">Quick Sample Templates for testing:</span>
-          </div>
-          <div className="flex items-center space-x-2">
-            <button
-              type="button"
-              onClick={() => loadTemplate('remote')}
-              className="bg-white hover:bg-slate-100 text-slate-800 border border-slate-300 px-2.5 py-1 rounded-lg text-[11px] font-semibold transition-colors"
-            >
-              Hybrid Work Policy
-            </button>
-            <button
-              type="button"
-              onClick={() => loadTemplate('conduct')}
-              className="bg-white hover:bg-slate-100 text-slate-800 border border-slate-300 px-2.5 py-1 rounded-lg text-[11px] font-semibold transition-colors"
-            >
-              Code of Conduct
-            </button>
-            <button
-              type="button"
-              onClick={() => loadTemplate('wellness')}
-              className="bg-white hover:bg-slate-100 text-slate-800 border border-slate-300 px-2.5 py-1 rounded-lg text-[11px] font-semibold transition-colors"
-            >
-              Wellness SOP
-            </button>
-          </div>
-        </div>
+
 
         {/* FORM BODY */}
         <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto p-6 space-y-5 bg-white">
@@ -377,30 +356,17 @@ Employees should notify their immediate manager via the HR self-service portal a
             </div>
           </div>
 
-          {/* DATES */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
-                Effective From Date
-              </label>
-              <input
-                type="date"
-                value={effectiveFrom}
-                onChange={(e) => setEffectiveFrom(e.target.value)}
-                className="w-full text-sm p-2.5 bg-slate-50 border border-slate-200 text-slate-900 rounded-xl focus:outline-hidden focus:ring-2 focus:ring-[#FA7014] focus:bg-white"
-              />
-            </div>
-            <div>
-              <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
-                Annual Review Due Date
-              </label>
-              <input
-                type="date"
-                value={reviewDueDate}
-                onChange={(e) => setReviewDueDate(e.target.value)}
-                className="w-full text-sm p-2.5 bg-slate-50 border border-slate-200 text-slate-900 rounded-xl focus:outline-hidden focus:ring-2 focus:ring-[#FA7014] focus:bg-white"
-              />
-            </div>
+          {/* EFFECTIVE DATE */}
+          <div>
+            <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
+              Effective From Date
+            </label>
+            <input
+              type="date"
+              value={effectiveFrom}
+              onChange={(e) => setEffectiveFrom(e.target.value)}
+              className="w-full text-sm p-2.5 bg-slate-50 border border-slate-200 text-slate-900 rounded-xl focus:outline-hidden focus:ring-2 focus:ring-[#FA7014] focus:bg-white"
+            />
           </div>
 
           {/* DESCRIPTION */}
@@ -421,7 +387,7 @@ Employees should notify their immediate manager via the HR self-service portal a
           <div className="border border-slate-200 rounded-2xl p-4 bg-slate-50/50">
             <div className="flex items-center justify-between mb-2">
               <label className="block text-xs font-bold text-slate-900 uppercase tracking-wider">
-                Document Content / File (PDF, DOCX, Markdown, Text) <span className="text-[#FA7014]">*</span>
+                Document Content / File (PDF, DOCX) <span className="text-[#FA7014]">*</span>
               </label>
 
               <label className="cursor-pointer inline-flex items-center space-x-1.5 text-xs font-semibold text-slate-700 hover:text-slate-900 bg-white border border-slate-200 px-3 py-1.5 rounded-xl shadow-xs hover:bg-slate-50 transition-colors">
@@ -429,7 +395,7 @@ Employees should notify their immediate manager via the HR self-service portal a
                 <span>Upload File</span>
                 <input
                   type="file"
-                  accept=".txt,.md,.doc,.docx,.pdf"
+                  accept=".pdf,.docx"
                   onChange={handleFileUpload}
                   className="hidden"
                 />

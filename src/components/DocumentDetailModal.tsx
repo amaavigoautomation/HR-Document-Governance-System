@@ -49,6 +49,9 @@ export const DocumentDetailModal: React.FC<DocumentDetailModalProps> = ({
   const versions = governanceEngine.getDocumentVersions(document.id);
   const auditLogs = auditService.getLogs({ documentId: document.documentId });
 
+  const inReviewVersion = versions.find((v) => v.status === VersionStatus.IN_REVIEW);
+  const hasInReviewVersion = !!inReviewVersion || document.currentStatus === VersionStatus.IN_REVIEW;
+
   const activeVersion = selectedVersionId
     ? versions.find((v) => v.id === selectedVersionId) || versions[0]
     : document.currentPublishedVersionId
@@ -94,13 +97,24 @@ export const DocumentDetailModal: React.FC<DocumentDetailModalProps> = ({
             <button
               id="btn-detail-revise"
               onClick={() => {
+                if (hasInReviewVersion) return;
                 onClose();
                 onOpenCreateVersion(document);
               }}
-              className="inline-flex items-center space-x-1.5 bg-[#FA7014] hover:bg-[#E65A05] text-white text-xs font-semibold px-3.5 py-2 rounded-xl transition-all shadow-md shadow-[#FA7014]/20"
+              disabled={hasInReviewVersion}
+              className={`inline-flex items-center space-x-1.5 text-xs font-semibold px-3.5 py-2 rounded-xl transition-all shadow-md ${
+                hasInReviewVersion
+                  ? 'bg-slate-800 text-slate-400 border border-slate-700 cursor-not-allowed shadow-none'
+                  : 'bg-[#FA7014] hover:bg-[#E65A05] text-white shadow-[#FA7014]/20'
+              }`}
+              title={
+                hasInReviewVersion
+                  ? `Cannot revise: Version v${inReviewVersion?.versionNumber || ''} is currently in review`
+                  : 'Create New Version'
+              }
             >
-              <GitBranch className="w-3.5 h-3.5" />
-              <span>Create New Version</span>
+              <GitBranch className={`w-3.5 h-3.5 ${hasInReviewVersion ? 'text-slate-400' : 'text-white'}`} />
+              <span>{hasInReviewVersion ? 'In Review (Revision Blocked)' : 'Create New Version'}</span>
             </button>
 
             <button

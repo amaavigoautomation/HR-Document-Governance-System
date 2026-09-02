@@ -577,7 +577,7 @@ export const ReviewDocumentModal: React.FC<ReviewDocumentModalProps> = ({
                     ? '🔒 Internal Company Document: Access restricted to HR & Approvers. No employee emails will be sent and document is hidden from Employee Portal.'
                     : master?.acknowledgementRequired
                     ? '📢 Public Policy: Broadcast mandatory compliance email to active employees and require portal sign-off.'
-                    : '📢 Public Policy: Publish to Employee Portal for general reference (No email broadcast).'}
+                    : '📢 Public Policy: Broadcast informational notice email to active employees (view/read only, no acknowledgement required).'}
                 </span>
               </li>
               <li className="flex items-center space-x-1.5">

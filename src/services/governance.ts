@@ -673,6 +673,16 @@ export class DocumentGovernanceEngine {
       throw new Error(`Document Master not found: ${data.documentMasterId}`);
     }
 
+    // Guard: Do not allow authoring a new version if a version is currently IN_REVIEW
+    const inReviewVersion = this.documentVersions.find(
+      (v) => (v.documentMasterId === master.id || v.documentId === master.documentId) && v.status === VersionStatus.IN_REVIEW
+    );
+    if (inReviewVersion || master.currentStatus === VersionStatus.IN_REVIEW) {
+      throw new Error(
+        `Cannot create revision: Document [${master.documentId}] currently has version v${inReviewVersion?.versionNumber || ''} in review. Please wait for the reviewer's approval or revision request.`
+      );
+    }
+
     // Determine baseline: Current published version, or latest version if none published
     let baselineVersion: DocumentVersion | undefined;
     if (master.currentPublishedVersionId) {
@@ -968,74 +978,103 @@ export class DocumentGovernanceEngine {
       reason: `Version ${version.versionNumber} is now the operational live version for ${master.title}`,
     });
 
-    // 6. Automatically dispatch Employee Notifications ONLY for PUBLIC policies requiring acknowledgement
-    if (master.confidentiality === ConfidentialityLevel.PUBLIC && master.acknowledgementRequired) {
-      const emailSubject = `[Action Required] New HR Policy Published — ${master.title} v${version.versionNumber}`;
-      const emailBody = `Dear Employee,\n\nAn official company policy/document has been approved and published in the Amaavigo HR Governance system, and requires your mandatory compliance review and electronic sign-off:\n\n` +
-        `• Document Title: ${master.title}\n` +
-        `• Document ID: ${master.documentId}\n` +
-        `• Category: ${master.category}\n` +
-        `• Department: ${master.departmentName}\n` +
-        `• Version Number: v${version.versionNumber} (${version.versionType} Release)\n` +
-        `• Effective Date: ${version.effectiveFrom || 'Immediate'}\n` +
-        `• Summary of Changes: ${version.changeSummary || 'New document baseline release.'}\n` +
-        `• Compliance Acknowledgement Required: YES (Mandatory within 14 calendar days)\n\n` +
-        `HOW TO COMPLY:\n` +
-        `1. Log in to your Amaavigo Employee Portal using your Employee ID and credentials.\n` +
-        `2. Navigate to the Employee Portal tab.\n` +
-        `3. Review the complete document and complete your electronic compliance acknowledgment.\n\n` +
-        `Note: To ensure document security, confidentiality, and tamper-proof version control, documents are securely accessed directly inside the authenticated Employee Portal.\n\n` +
-        `Sincerely,\nHuman Resources Governance & Compliance Team\n${master.companyName}`;
+    // 6. Automatically dispatch Employee Notifications for PUBLIC policies
+    if (master.confidentiality === ConfidentialityLevel.PUBLIC) {
+      if (master.acknowledgementRequired) {
+        // MANDATORY ACKNOWLEDGEMENT BROADCAST
+        const emailSubject = `[Action Required] New HR Document Published — ${master.title}`;
+        const emailBody = `Dear Employee,\n\nAn official company document has been approved and published in the Amaavigo HR Governance system, and requires your mandatory compliance review and electronic sign-off:\n\n` +
+          `• Document Title: ${master.title}\n` +
+          `• Document ID: ${master.documentId}\n` +
+          `• Category: ${master.category}\n` +
+          `• Department: ${master.departmentName}\n` +
+          `• Effective Date: ${version.effectiveFrom || 'Immediate'}\n` +
+          `• Compliance Acknowledgement Required: YES (Mandatory within 14 calendar days)\n\n` +
+          `HOW TO COMPLY:\n` +
+          `1. Log in to your Amaavigo Employee Portal using your Employee ID and credentials.\n` +
+          `2. Navigate to the Employee Portal tab.\n` +
+          `3. Review the complete document and complete your electronic compliance acknowledgment.\n\n` +
+          `Note: To ensure document security, confidentiality, and tamper-proof version control, documents are securely accessed directly inside the authenticated Employee Portal.\n\n` +
+          `Sincerely,\nHuman Resources Governance & Compliance Team\n${master.companyName}`;
 
-      // Send to all active employees (including all employees added from backend)
-      const employeeAudience = this.getEmployees();
-      for (const emp of employeeAudience) {
-        await defaultEmailProvider.sendEmail(emp.email, emp.name, emailSubject, emailBody, {
-          documentId: master.documentId,
-          documentTitle: master.title,
-          versionNumber: version.versionNumber,
-          documentVersionId: version.id,
-          acknowledgementRequired: true,
-        });
+        const employeeAudience = this.getEmployees();
+        for (const emp of employeeAudience) {
+          await defaultEmailProvider.sendEmail(emp.email, emp.name, emailSubject, emailBody, {
+            documentId: master.documentId,
+            documentTitle: master.title,
+            versionNumber: version.versionNumber,
+            documentVersionId: version.id,
+            acknowledgementRequired: true,
+          });
 
-        // Create pending acknowledgement entry
-        const pendingAck: AcknowledgementRecord = {
-          id: `ack-${Date.now()}-${emp.id.replace(/[^a-zA-Z0-9]/g, '')}-${Math.random().toString(36).substr(2, 4)}`,
-          documentId: master.documentId,
-          documentTitle: master.title,
-          versionNumber: version.versionNumber,
-          documentVersionId: version.id,
-          employeeId: emp.id,
-          employeeName: emp.name,
-          employeeEmail: emp.email,
-          departmentName: emp.departmentName,
-          status: 'PENDING',
-        };
-        this.acknowledgements.push(pendingAck);
+          // Create pending acknowledgement entry
+          const pendingAck: AcknowledgementRecord = {
+            id: `ack-${Date.now()}-${emp.id.replace(/[^a-zA-Z0-9]/g, '')}-${Math.random().toString(36).substr(2, 4)}`,
+            documentId: master.documentId,
+            documentTitle: master.title,
+            versionNumber: version.versionNumber,
+            documentVersionId: version.id,
+            employeeId: emp.id,
+            employeeName: emp.name,
+            employeeEmail: emp.email,
+            departmentName: emp.departmentName,
+            status: 'PENDING',
+          };
+          this.acknowledgements.push(pendingAck);
 
-        try {
-          firestoreService.saveAcknowledgement(pendingAck).catch((e) => console.warn('Firestore ack save error:', e));
-        } catch (e) {
-          console.warn('Firestore ack save note:', e);
+          try {
+            firestoreService.saveAcknowledgement(pendingAck).catch((e) => console.warn('Firestore ack save error:', e));
+          } catch (e) {
+            console.warn('Firestore ack save note:', e);
+          }
         }
-      }
 
-      auditService.logEvent(AuditAction.NOTIFICATION_SENT, reviewer, {
-        documentMasterId: master.id,
-        documentId: master.documentId,
-        documentVersionId: version.id,
-        versionNumber: version.versionNumber,
-        reason: `Dispatched mandatory acknowledgement email notification for Public Policy v${version.versionNumber} to all active employees.`,
-      });
+        auditService.logEvent(AuditAction.NOTIFICATION_SENT, reviewer, {
+          documentMasterId: master.id,
+          documentId: master.documentId,
+          documentVersionId: version.id,
+          versionNumber: version.versionNumber,
+          reason: `Dispatched mandatory acknowledgement email notification for Public Document to all active employees.`,
+        });
+      } else {
+        // INFORMATIONAL NOTIFICATION BROADCAST (No acknowledgement required)
+        const emailSubject = `[Notice] New HR Document Published — ${master.title}`;
+        const emailBody = `Dear Employee,\n\nAn official company document has been published in the Amaavigo HR Governance system for your information and reference:\n\n` +
+          `• Document Title: ${master.title}\n` +
+          `• Document ID: ${master.documentId}\n` +
+          `• Category: ${master.category}\n` +
+          `• Department: ${master.departmentName}\n` +
+          `• Effective Date: ${version.effectiveFrom || 'Immediate'}\n` +
+          `• Compliance Acknowledgement Required: NO (Informational / Reference only)\n\n` +
+          `You can view and read the complete document anytime by logging into the Amaavigo Employee Portal.\n\n` +
+          `Sincerely,\nHuman Resources Governance & Compliance Team\n${master.companyName}`;
+
+        const employeeAudience = this.getEmployees();
+        for (const emp of employeeAudience) {
+          await defaultEmailProvider.sendEmail(emp.email, emp.name, emailSubject, emailBody, {
+            documentId: master.documentId,
+            documentTitle: master.title,
+            versionNumber: version.versionNumber,
+            documentVersionId: version.id,
+            acknowledgementRequired: false,
+          });
+        }
+
+        auditService.logEvent(AuditAction.NOTIFICATION_SENT, reviewer, {
+          documentMasterId: master.id,
+          documentId: master.documentId,
+          documentVersionId: version.id,
+          versionNumber: version.versionNumber,
+          reason: `Dispatched informational notification email for Public Document to all active employees (No acknowledgement required).`,
+        });
+      }
     } else {
       auditService.logEvent(AuditAction.NOTIFICATION_SENT, reviewer, {
         documentMasterId: master.id,
         documentId: master.documentId,
         documentVersionId: version.id,
         versionNumber: version.versionNumber,
-        reason: master.confidentiality === ConfidentialityLevel.INTERNAL
-          ? `Published v${version.versionNumber} as Internal Company document (Restricted to HR & Approvers; hidden from Employee Portal with zero employee notifications/acknowledgements).`
-          : `Published v${version.versionNumber} without email broadcast (No employee acknowledgement required).`,
+        reason: `Published v${version.versionNumber} as Internal Company document (Restricted to HR & Approvers; hidden from Employee Portal with zero employee notifications/acknowledgements).`,
       });
     }
 

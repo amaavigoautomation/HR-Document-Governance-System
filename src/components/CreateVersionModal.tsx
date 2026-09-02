@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   X,
   GitBranch,
@@ -6,12 +6,13 @@ import {
   UploadCloud,
   CheckCircle2,
   AlertCircle,
+  AlertTriangle,
   Clock,
   Layers,
   ArrowRight,
   Sparkles,
 } from 'lucide-react';
-import { DocumentMaster, DocumentVersion, User, VersionType } from '../types';
+import { DocumentMaster, DocumentVersion, User, VersionStatus, VersionType } from '../types';
 import { governanceEngine } from '../services/governance';
 import { parseUploadedFile, extractTextFromRawPdfStream, isRawPdfStream } from '../utils/fileParser';
 
@@ -32,7 +33,19 @@ export const CreateVersionModal: React.FC<CreateVersionModalProps> = ({
   onClose,
   onSuccess,
 }) => {
-  const [selectedDocId, setSelectedDocId] = useState<string>(initialDocument?.id || documents[0]?.id || '');
+  // Prefer selecting an available (not in review) document by default if initialDocument not set
+  const defaultDocId = useMemo(() => {
+    if (initialDocument?.id) return initialDocument.id;
+    const available = documents.find((doc) => {
+      const hasInReview = versions.some(
+        (v) => (v.documentMasterId === doc.id || v.documentId === doc.documentId) && v.status === VersionStatus.IN_REVIEW
+      );
+      return !hasInReview && doc.currentStatus !== VersionStatus.IN_REVIEW;
+    });
+    return available?.id || documents[0]?.id || '';
+  }, [initialDocument, documents, versions]);
+
+  const [selectedDocId, setSelectedDocId] = useState<string>(defaultDocId);
   const [revisionType, setRevisionType] = useState<VersionType>(VersionType.MINOR);
   const [changeSummary, setChangeSummary] = useState('');
   const [rawContent, setRawContent] = useState('');
@@ -46,6 +59,12 @@ export const CreateVersionModal: React.FC<CreateVersionModalProps> = ({
   const [submitting, setSubmitting] = useState(false);
 
   const selectedMaster = documents.find((d) => d.id === selectedDocId);
+
+  // Check if target document has an active version in review
+  const inReviewVersion = versions.find(
+    (v) => (v.documentMasterId === selectedMaster?.id || v.documentId === selectedMaster?.documentId) && v.status === VersionStatus.IN_REVIEW
+  );
+  const isInReview = !!inReviewVersion || selectedMaster?.currentStatus === VersionStatus.IN_REVIEW;
 
   // Baseline version is the currently published version or latest version
   const baselineVersion = selectedMaster?.currentPublishedVersionId
@@ -101,7 +120,15 @@ export const CreateVersionModal: React.FC<CreateVersionModalProps> = ({
     const file = e.target.files?.[0];
     if (!file) return;
 
+    const lowerName = file.name.toLowerCase();
+    const isAllowed = lowerName.endsWith(".pdf") || lowerName.endsWith(".docx");
+    if (!isAllowed) {
+      setError("Invalid file format. Only .pdf and .docx documents are supported.");
+      return;
+    }
+
     setParsingFile(true);
+    setError("");
     setFileName(file.name);
 
     try {
@@ -126,6 +153,10 @@ export const CreateVersionModal: React.FC<CreateVersionModalProps> = ({
     e.preventDefault();
     if (!selectedDocId) {
       setError('Please select a target Document Master.');
+      return;
+    }
+    if (isInReview) {
+      setError(`Cannot create revision: Document [${selectedMaster?.documentId}] currently has version v${inReviewVersion?.versionNumber || ''} in review. Please wait for the reviewer's approval or revision request.`);
       return;
     }
     if (!changeSummary.trim()) {
@@ -194,6 +225,25 @@ export const CreateVersionModal: React.FC<CreateVersionModalProps> = ({
             </div>
           )}
 
+          {/* IN-REVIEW WARNING BANNER */}
+          {isInReview && (
+            <div className="bg-amber-50 border border-amber-300 rounded-xl p-4 text-xs text-amber-950 flex items-start space-x-3 shadow-xs">
+              <AlertTriangle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
+              <div>
+                <div className="font-bold text-amber-900 text-sm">
+                  Revision Blocked: Document is Currently in Review
+                </div>
+                <p className="text-amber-800 mt-1 leading-relaxed">
+                  <strong>{selectedMaster?.documentId} ({selectedMaster?.title})</strong> currently has version{' '}
+                  <span className="font-mono font-bold text-amber-950 bg-amber-200/80 px-1.5 py-0.5 rounded">
+                    v{inReviewVersion?.versionNumber || selectedMaster?.currentPublishedVersionNumber || 'under review'}
+                  </span>{' '}
+                  pending approval by the Document Reviewer / Approver. Under governance rules, you cannot author a new revision until the pending review is completed.
+                </p>
+              </div>
+            </div>
+          )}
+
           {/* TARGET DOCUMENT SELECTOR */}
           <div>
             <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5" htmlFor="select-target-document">
@@ -205,11 +255,18 @@ export const CreateVersionModal: React.FC<CreateVersionModalProps> = ({
               onChange={(e) => setSelectedDocId(e.target.value)}
               className="w-full text-sm p-3 bg-slate-50 border border-slate-200 text-slate-900 rounded-xl focus:outline-hidden focus:ring-2 focus:ring-[#FA7014] font-medium cursor-pointer"
             >
-              {documents.map((doc) => (
-                <option key={doc.id} value={doc.id} className="bg-white text-slate-900 py-1">
-                  {doc.documentId} — {doc.title} (Published: v{doc.currentPublishedVersionNumber || 'None'})
-                </option>
-              ))}
+              {documents.map((doc) => {
+                const docInReviewVer = versions.find(
+                  (v) => (v.documentMasterId === doc.id || v.documentId === doc.documentId) && v.status === VersionStatus.IN_REVIEW
+                );
+                const isDocInReview = !!docInReviewVer || doc.currentStatus === VersionStatus.IN_REVIEW;
+
+                return (
+                  <option key={doc.id} value={doc.id} className="bg-white text-slate-900 py-1">
+                    {doc.documentId} — {doc.title} {isDocInReview ? `[⚠️ In Review: v${docInReviewVer?.versionNumber || ''} - Blocked]` : `(Published: v${doc.currentPublishedVersionNumber || 'None'})`}
+                  </option>
+                );
+              })}
             </select>
           </div>
 
@@ -308,29 +365,10 @@ export const CreateVersionModal: React.FC<CreateVersionModalProps> = ({
 
           {/* CHANGE SUMMARY */}
           <div>
-            <div className="flex flex-wrap items-center justify-between mb-1.5 gap-2">
+            <div className="mb-1.5">
               <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider" htmlFor="input-change-summary">
                 Change Summary / Release Notes <span className="text-[#FA7014]">*</span>
               </label>
-              <div className="flex items-center space-x-1.5 text-[11px] text-slate-600 font-semibold">
-                <Sparkles className="w-3 h-3 text-[#FA7014]" />
-                <span>Quick demo fill:</span>
-                <button
-                  type="button"
-                  onClick={() => applyQuickRevisionExample('broadband')}
-                  className="text-[#FA7014] hover:underline ml-1"
-                >
-                  Add Broadband & Security
-                </button>
-                <span>•</span>
-                <button
-                  type="button"
-                  onClick={() => applyQuickRevisionExample('parental')}
-                  className="text-[#FA7014] hover:underline"
-                >
-                  Expand PTO
-                </button>
-              </div>
             </div>
 
             <textarea
@@ -356,7 +394,7 @@ export const CreateVersionModal: React.FC<CreateVersionModalProps> = ({
                 <span>Upload Revised File</span>
                 <input
                   type="file"
-                  accept=".txt,.md,.doc,.docx,.pdf"
+                  accept=".pdf,.docx"
                   onChange={handleFileUpload}
                   className="hidden"
                 />
@@ -403,11 +441,26 @@ export const CreateVersionModal: React.FC<CreateVersionModalProps> = ({
             <button
               id="btn-submit-create-version"
               type="submit"
-              disabled={submitting}
-              className="bg-[#FA7014] hover:bg-[#E65A05] text-white text-xs font-bold px-6 py-2.5 rounded-xl shadow-md shadow-[#FA7014]/20 flex items-center space-x-2 disabled:opacity-50 transition-all"
+              disabled={submitting || isInReview}
+              className={`text-white text-xs font-bold px-6 py-2.5 rounded-xl shadow-md flex items-center space-x-2 transition-all ${
+                isInReview
+                  ? 'bg-slate-400 opacity-60 cursor-not-allowed shadow-none'
+                  : 'bg-[#FA7014] hover:bg-[#E65A05] shadow-[#FA7014]/20'
+              }`}
+              title={isInReview ? 'Cannot submit revision while a version of this document is still in review' : undefined}
             >
-              {submitting ? <Clock className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />}
-              <span>Submit Revision v{calculatedNextVersion} for Review</span>
+              {submitting ? (
+                <Clock className="w-4 h-4 animate-spin" />
+              ) : isInReview ? (
+                <AlertTriangle className="w-4 h-4" />
+              ) : (
+                <CheckCircle2 className="w-4 h-4" />
+              )}
+              <span>
+                {isInReview
+                  ? 'Revision Blocked (Document in Review)'
+                  : `Submit Revision v${calculatedNextVersion} for Review`}
+              </span>
             </button>
           </div>
         </form>

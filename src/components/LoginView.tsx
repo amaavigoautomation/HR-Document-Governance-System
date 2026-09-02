@@ -285,7 +285,7 @@ export const LoginView: React.FC<LoginViewProps> = ({ users, onSelectUser }) => 
                     id="input-hr-pass"
                     type={showHrPass ? 'text' : 'password'}
                     required
-                    placeholder="Enter Password (HR001)"
+                    placeholder="Enter Password"
                     value={hrPass}
                     onChange={(e) => setHrPass(e.target.value)}
                     className="w-full pl-10 pr-10 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-900 placeholder:text-slate-400 focus:bg-white focus:outline-hidden focus:ring-2 focus:ring-[#FA7014] focus:border-[#FA7014] transition-all"
@@ -298,20 +298,6 @@ export const LoginView: React.FC<LoginViewProps> = ({ users, onSelectUser }) => 
                     {showHrPass ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                   </button>
                 </div>
-              </div>
-
-              {/* Demo Credentials Pill */}
-              <div className="bg-[#FA7014]/5 border border-[#FA7014]/20 rounded-xl p-3 flex items-center justify-between text-xs">
-                <div className="text-slate-700">
-                  <span className="font-semibold text-[#FA7014]">Credentials:</span> ID: <strong className="font-mono text-slate-900">HR001</strong> | Pass: <strong className="font-mono text-slate-900">HR001</strong>
-                </div>
-                <button
-                  type="button"
-                  onClick={autofillHr}
-                  className="text-[11px] font-semibold text-[#FA7014] hover:text-white bg-[#FA7014]/15 hover:bg-[#FA7014] px-2.5 py-1 rounded-lg border border-[#FA7014]/30 transition-colors"
-                >
-                  Autofill
-                </button>
               </div>
 
               {/* Submit Button */}
@@ -375,7 +361,7 @@ export const LoginView: React.FC<LoginViewProps> = ({ users, onSelectUser }) => 
                     id="input-approver-pass"
                     type={showApproverPass ? 'text' : 'password'}
                     required
-                    placeholder="Enter Password (AMA001)"
+                    placeholder="Enter Password"
                     value={approverPass}
                     onChange={(e) => setApproverPass(e.target.value)}
                     className="w-full pl-10 pr-10 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-900 placeholder:text-slate-400 focus:bg-white focus:outline-hidden focus:ring-2 focus:ring-slate-900 focus:border-slate-900 transition-all"
@@ -388,20 +374,6 @@ export const LoginView: React.FC<LoginViewProps> = ({ users, onSelectUser }) => 
                     {showApproverPass ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                   </button>
                 </div>
-              </div>
-
-              {/* Demo Credentials Pill */}
-              <div className="bg-slate-50 border border-slate-200 rounded-xl p-3 flex items-center justify-between text-xs">
-                <div className="text-slate-700">
-                  <span className="font-semibold text-slate-900">Credentials:</span> ID: <strong className="font-mono text-slate-900">AMA001</strong> | Pass: <strong className="font-mono text-slate-900">AMA001</strong>
-                </div>
-                <button
-                  type="button"
-                  onClick={autofillApprover}
-                  className="text-[11px] font-semibold text-slate-900 hover:text-white bg-slate-200 hover:bg-slate-900 px-2.5 py-1 rounded-lg transition-colors"
-                >
-                  Autofill
-                </button>
               </div>
 
               {/* Submit Button */}
@@ -465,7 +437,7 @@ export const LoginView: React.FC<LoginViewProps> = ({ users, onSelectUser }) => 
                     id="input-emp-pass"
                     type={showEmpPass ? 'text' : 'password'}
                     required
-                    placeholder="Enter Password (Parth!123)"
+                    placeholder="Enter Password"
                     value={empPass}
                     onChange={(e) => setEmpPass(e.target.value)}
                     className="w-full pl-10 pr-10 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-900 placeholder:text-slate-400 focus:bg-white focus:outline-hidden focus:ring-2 focus:ring-[#FA7014] focus:border-[#FA7014] transition-all"
@@ -477,28 +449,6 @@ export const LoginView: React.FC<LoginViewProps> = ({ users, onSelectUser }) => 
                   >
                     {showEmpPass ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                   </button>
-                </div>
-              </div>
-
-              {/* Employee Details Preview & Autofill */}
-              <div className="bg-slate-50 border border-slate-200 rounded-xl p-3.5 text-xs space-y-1.5">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <span className="font-semibold text-slate-800">Employee Database Record:</span>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={autofillEmp}
-                    className="text-[11px] font-semibold text-[#FA7014] hover:text-white bg-[#FA7014]/15 hover:bg-[#FA7014] px-2.5 py-1 rounded-lg border border-[#FA7014]/30 transition-colors"
-                  >
-                    Autofill (AM001)
-                  </button>
-                </div>
-                <div className="grid grid-cols-2 gap-2 pt-1 border-t border-slate-200 text-[11px] font-mono text-slate-600">
-                  <div><span className="text-slate-500">emp_id:</span> <strong className="text-slate-900">AM001</strong></div>
-                  <div><span className="text-slate-500">emp_name:</span> <strong className="text-slate-900">Parth</strong></div>
-                  <div><span className="text-slate-500">emp_email:</span> <strong className="text-slate-900">parth@amaavigo.in</strong></div>
-                  <div><span className="text-slate-500">emp_password:</span> <strong className="text-slate-900">Parth!123</strong></div>
                 </div>
               </div>
 

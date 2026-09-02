@@ -118,29 +118,6 @@ export const CreatorDashboard: React.FC<CreatorDashboardProps> = ({
         </div>
 
         <div className="flex flex-wrap items-center gap-2.5">
-          {documents.length > 0 && onClearAllDocuments && (
-            <button
-              id="btn-clear-all-documents"
-              onClick={() => setShowClearModal(true)}
-              className="inline-flex items-center space-x-1.5 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 font-semibold px-3.5 py-2.5 rounded-xl text-xs transition-all shadow-2xs"
-              title="Remove all documents from Firestore database"
-            >
-              <Trash2 className="w-3.5 h-3.5 text-rose-600" />
-              <span>Remove All Documents</span>
-            </button>
-          )}
-
-          {documents.length === 0 && onRestoreSeedDocuments && (
-            <button
-              id="btn-restore-seed-documents"
-              onClick={onRestoreSeedDocuments}
-              className="inline-flex items-center space-x-1.5 bg-slate-100 hover:bg-slate-200 text-slate-800 border border-slate-300 font-semibold px-3.5 py-2.5 rounded-xl text-xs transition-all shadow-2xs"
-            >
-              <RotateCcw className="w-3.5 h-3.5 text-slate-600" />
-              <span>Restore Sample Policies</span>
-            </button>
-          )}
-
           <button
             id="btn-open-create-version"
             onClick={() => onOpenCreateVersion()}
@@ -431,10 +408,19 @@ export const CreatorDashboard: React.FC<CreatorDashboardProps> = ({
                         <button
                           id={`btn-new-version-${doc.id}`}
                           onClick={() => onOpenCreateVersion(doc)}
-                          className="inline-flex items-center space-x-1 text-xs font-semibold text-white bg-slate-900 hover:bg-slate-800 px-2.5 py-1.5 rounded-lg transition-colors shadow-xs"
-                          title="Create New Revision (Minor/Major)"
+                          disabled={!!inReview || doc.currentStatus === VersionStatus.IN_REVIEW}
+                          className={`inline-flex items-center space-x-1 text-xs font-semibold px-2.5 py-1.5 rounded-lg transition-colors shadow-xs ${
+                            inReview || doc.currentStatus === VersionStatus.IN_REVIEW
+                              ? 'bg-slate-100 text-slate-400 border border-slate-200 cursor-not-allowed opacity-60'
+                              : 'text-white bg-slate-900 hover:bg-slate-800'
+                          }`}
+                          title={
+                            inReview || doc.currentStatus === VersionStatus.IN_REVIEW
+                              ? `Cannot revise: Version v${inReview?.versionNumber || ''} is currently under review`
+                              : 'Create New Revision (Minor/Major)'
+                          }
                         >
-                          <GitBranch className="w-3.5 h-3.5 text-[#FA7014]" />
+                          <GitBranch className={`w-3.5 h-3.5 ${inReview || doc.currentStatus === VersionStatus.IN_REVIEW ? 'text-slate-400' : 'text-[#FA7014]'}`} />
                           <span>Revise</span>
                         </button>
 

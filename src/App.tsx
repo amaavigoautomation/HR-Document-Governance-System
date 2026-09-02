@@ -23,14 +23,41 @@ import { CreateVersionModal } from './components/CreateVersionModal';
 import { ReviewDocumentModal } from './components/ReviewDocumentModal';
 import { DocumentDetailModal } from './components/DocumentDetailModal';
 import { NotificationDrawer } from './components/NotificationDrawer';
-import { DemoWorkflowModal } from './components/DemoWorkflowModal';
 import { DocumentViewer } from './components/DocumentViewer';
 import { FileText, X, Download } from 'lucide-react';
 import { StatusBadge } from './components/StatusBadge';
 
+const CURRENT_USER_STORAGE_KEY = 'amaavigo_current_user_id';
+const ACTIVE_TAB_STORAGE_KEY = 'amaavigo_active_tab';
+
 export default function App() {
-  const [currentUser, setCurrentUser] = useState<User | null>(null);
-  const [activeTab, setActiveTab] = useState<'creator' | 'reviewer' | 'employee' | 'compliance' | 'audit' | 'notifications'>('creator');
+  const [currentUser, setCurrentUser] = useState<User | null>(() => {
+    try {
+      const savedUserId = localStorage.getItem(CURRENT_USER_STORAGE_KEY);
+      if (savedUserId) {
+        const users = governanceEngine.getUsers();
+        const found = users.find((u) => u.id === savedUserId);
+        if (found) return found;
+        const seedFound = SEED_USERS.find((u) => u.id === savedUserId);
+        if (seedFound) return seedFound;
+      }
+    } catch (e) {
+      console.warn('Could not read user from localStorage', e);
+    }
+    return null;
+  });
+
+  const [activeTab, setActiveTab] = useState<'creator' | 'reviewer' | 'employee' | 'compliance' | 'audit' | 'notifications'>(() => {
+    try {
+      const savedTab = localStorage.getItem(ACTIVE_TAB_STORAGE_KEY);
+      if (savedTab && ['creator', 'reviewer', 'employee', 'compliance', 'audit', 'notifications'].includes(savedTab)) {
+        return savedTab as any;
+      }
+    } catch (e) {
+      console.warn('Could not read activeTab from localStorage', e);
+    }
+    return 'creator';
+  });
 
   // Governance Data State
   const [allUsers, setAllUsers] = useState<User[]>([]);
@@ -46,7 +73,6 @@ export default function App() {
   const [reviewVersion, setReviewVersion] = useState<DocumentVersion | null>(null);
   const [detailDocument, setDetailDocument] = useState<DocumentMaster | null>(null);
   const [isNotifDrawerOpen, setIsNotifDrawerOpen] = useState(false);
-  const [isDemoTourOpen, setIsDemoTourOpen] = useState(false);
   const [readerVersion, setReaderVersion] = useState<DocumentVersion | null>(null);
 
   // Sync data from governance engine
@@ -54,7 +80,16 @@ export default function App() {
     const users = [...governanceEngine.getUsers()];
     setAllUsers(users);
     setCurrentUser((prev) => {
-      if (!prev) return null;
+      if (!prev) {
+        try {
+          const savedUserId = localStorage.getItem(CURRENT_USER_STORAGE_KEY);
+          if (savedUserId) {
+            const match = users.find((u) => u.id === savedUserId);
+            if (match) return { ...match };
+          }
+        } catch (e) {}
+        return null;
+      }
       const match = users.find((u) => u.id === prev.id);
       return match ? { ...match } : prev;
     });
@@ -161,30 +196,78 @@ export default function App() {
     };
   }, []);
 
+  // Synchronize state changes to localStorage
+  useEffect(() => {
+    try {
+      if (currentUser) {
+        localStorage.setItem(CURRENT_USER_STORAGE_KEY, currentUser.id);
+      } else {
+        localStorage.removeItem(CURRENT_USER_STORAGE_KEY);
+      }
+    } catch (e) {
+      console.warn('Error saving user to localStorage:', e);
+    }
+  }, [currentUser]);
+
+  useEffect(() => {
+    try {
+      if (activeTab) {
+        localStorage.setItem(ACTIVE_TAB_STORAGE_KEY, activeTab);
+      }
+    } catch (e) {
+      console.warn('Error saving active tab to localStorage:', e);
+    }
+  }, [activeTab]);
+
   const handleLogin = (user: User) => {
     setCurrentUser(user);
+    try {
+      localStorage.setItem(CURRENT_USER_STORAGE_KEY, user.id);
+    } catch (e) {}
+    let targetTab: 'creator' | 'reviewer' | 'employee' | 'compliance' | 'audit' = 'creator';
     if (user.role === UserRole.CREATOR) {
-      setActiveTab('creator');
+      targetTab = 'creator';
     } else if (user.role === UserRole.REVIEWER) {
-      setActiveTab('reviewer');
+      targetTab = 'reviewer';
     } else {
-      setActiveTab('employee');
+      targetTab = 'employee';
     }
+    setActiveTab(targetTab);
+    try {
+      localStorage.setItem(ACTIVE_TAB_STORAGE_KEY, targetTab);
+    } catch (e) {}
   };
 
   const handleSwitchUser = (user: User) => {
     setCurrentUser(user);
-    if (user.role === UserRole.CREATOR) {
-      setActiveTab('creator');
-    } else if (user.role === UserRole.REVIEWER) {
-      setActiveTab('reviewer');
-    } else if (user.role === UserRole.EMPLOYEE) {
+    try {
+      localStorage.setItem(CURRENT_USER_STORAGE_KEY, user.id);
+    } catch (e) {}
+    // If switching between employee and creator/reviewer, adjust default dashboard appropriately
+    if (user.role === UserRole.EMPLOYEE && (activeTab === 'creator' || activeTab === 'reviewer')) {
       setActiveTab('employee');
+      try {
+        localStorage.setItem(ACTIVE_TAB_STORAGE_KEY, 'employee');
+      } catch (e) {}
+    } else if (user.role === UserRole.CREATOR && activeTab === 'employee') {
+      setActiveTab('creator');
+      try {
+        localStorage.setItem(ACTIVE_TAB_STORAGE_KEY, 'creator');
+      } catch (e) {}
+    } else if (user.role === UserRole.REVIEWER && activeTab === 'employee') {
+      setActiveTab('reviewer');
+      try {
+        localStorage.setItem(ACTIVE_TAB_STORAGE_KEY, 'reviewer');
+      } catch (e) {}
     }
   };
 
   const handleLogout = () => {
     setCurrentUser(null);
+    try {
+      localStorage.removeItem(CURRENT_USER_STORAGE_KEY);
+      localStorage.removeItem(ACTIVE_TAB_STORAGE_KEY);
+    } catch (e) {}
   };
 
   const handleResetSeed = async () => {
@@ -235,7 +318,6 @@ export default function App() {
         pendingComplianceCount={pendingComplianceCount}
         onOpenNotifications={() => setIsNotifDrawerOpen(true)}
         onResetSeed={handleResetSeed}
-        onOpenDemoTour={() => setIsDemoTourOpen(true)}
       />
 
       {/* Main Screen Content */}
@@ -409,15 +491,6 @@ export default function App() {
       <NotificationDrawer
         isOpen={isNotifDrawerOpen}
         onClose={() => setIsNotifDrawerOpen(false)}
-      />
-
-      {/* DEMO WORKFLOW GUIDE */}
-      <DemoWorkflowModal
-        isOpen={isDemoTourOpen}
-        onClose={() => setIsDemoTourOpen(false)}
-        users={allUsers}
-        onSwitchUser={handleSwitchUser}
-        onRefreshData={refreshData}
       />
     </div>
   );

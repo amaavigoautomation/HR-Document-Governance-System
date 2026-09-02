@@ -604,7 +604,7 @@ export const EmployeeComplianceModule: React.FC<EmployeeComplianceModuleProps> =
         </div>
 
         {/* Filters Grid */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 pt-2 border-t border-slate-100">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-2 border-t border-slate-100">
           {/* Search Box */}
           <div className="relative">
             <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
@@ -616,23 +616,6 @@ export const EmployeeComplianceModule: React.FC<EmployeeComplianceModuleProps> =
               onChange={(e) => setSearchTerm(e.target.value)}
               className="w-full bg-slate-50 border border-slate-200 rounded-xl pl-9 pr-4 py-2 text-xs text-slate-900 placeholder-slate-400 focus:outline-hidden focus:ring-2 focus:ring-[#FA7014] focus:bg-white transition-colors"
             />
-          </div>
-
-          {/* Department Filter */}
-          <div>
-            <select
-              id="select-dept-filter"
-              value={selectedDept}
-              onChange={(e) => setSelectedDept(e.target.value)}
-              className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs text-slate-900 focus:outline-hidden focus:ring-2 focus:ring-[#FA7014] transition-colors"
-            >
-              <option value="ALL">All Departments</option>
-              {departments.map((dept) => (
-                <option key={dept} value={dept}>
-                  {dept}
-                </option>
-              ))}
-            </select>
           </div>
 
           {/* Compliance Status Filter */}
