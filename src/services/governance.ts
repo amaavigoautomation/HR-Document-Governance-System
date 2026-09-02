@@ -154,14 +154,30 @@ export class DocumentGovernanceEngine {
   }
 
   // Calculate next version number based on baseline and revision type
-  public calculateNextVersionNumber(baselineVersionNumber: string, revisionType: VersionType): string {
+  public calculateNextVersionNumber(
+    baselineVersionNumber: string,
+    revisionType: VersionType,
+    existingVersions?: DocumentVersion[]
+  ): string {
     const parts = baselineVersionNumber.split('.');
-    const major = parseInt(parts[0] || '1', 10);
-    const minor = parseInt(parts[1] || '0', 10);
+    let major = parseInt(parts[0] || '1', 10);
+    let minor = parseInt(parts[1] || '0', 10);
 
     if (revisionType === VersionType.MAJOR) {
+      if (existingVersions && existingVersions.length > 0) {
+        const majors = existingVersions.map((v) => parseInt((v.versionNumber || '1.0').split('.')[0] || '0', 10));
+        major = Math.max(major, ...majors);
+      }
       return `${major + 1}.0`;
     } else {
+      if (existingVersions && existingVersions.length > 0) {
+        const minors = existingVersions
+          .filter((v) => parseInt((v.versionNumber || '1.0').split('.')[0] || '0', 10) === major)
+          .map((v) => parseInt((v.versionNumber || '1.0').split('.')[1] || '0', 10));
+        if (minors.length > 0) {
+          minor = Math.max(minor, ...minors);
+        }
+      }
       return `${major}.${minor + 1}`;
     }
   }
@@ -169,6 +185,93 @@ export class DocumentGovernanceEngine {
   // Get all users
   public getUsers(): User[] {
     return this.users;
+  }
+
+  // Get all active reviewers / approvers (APPROVER / REVIEWER) with valid emails
+  public getReviewers(): User[] {
+    const seenEmails = new Set<string>();
+    const reviewers: User[] = [];
+    for (const u of this.users) {
+      if (u.active === false) continue;
+      const email = (u.email || '').trim();
+      if (!email || !email.includes('@')) continue;
+
+      const r = (u.role || '').toString().toUpperCase().trim();
+      const id = (u.id || '').toLowerCase();
+      const loginId = (u.loginId || u.empId || '').toUpperCase().trim();
+      const title = (u.title || '').toUpperCase();
+
+      const isReviewer =
+        r === 'REVIEWER' ||
+        r === 'APPROVER' ||
+        r.includes('REVIEWER') ||
+        r.includes('APPROVER') ||
+        id.includes('reviewer') ||
+        id.includes('approver') ||
+        id.includes('app') ||
+        loginId.startsWith('AMA') ||
+        loginId.startsWith('APP') ||
+        loginId.startsWith('REV') ||
+        loginId === 'APPROVER' ||
+        loginId === 'REVIEWER' ||
+        title.includes('APPROVER') ||
+        title.includes('REVIEWER');
+
+      if (!isReviewer) continue;
+
+      const normalizedEmail = email.toLowerCase();
+      if (seenEmails.has(normalizedEmail)) continue;
+      seenEmails.add(normalizedEmail);
+      reviewers.push({
+        ...u,
+        email,
+      });
+    }
+    return reviewers;
+  }
+
+  // Get all active creators / HR authors (HR / CREATOR) with valid emails
+  public getCreators(): User[] {
+    const seenEmails = new Set<string>();
+    const creators: User[] = [];
+    for (const u of this.users) {
+      if (u.active === false) continue;
+      const email = (u.email || '').trim();
+      if (!email || !email.includes('@')) continue;
+
+      const r = (u.role || '').toString().toUpperCase().trim();
+      const id = (u.id || '').toLowerCase();
+      const loginId = (u.loginId || u.empId || '').toUpperCase().trim();
+      const dept = (u.departmentName || u.departmentId || '').toUpperCase();
+      const title = (u.title || '').toUpperCase();
+
+      const isCreator =
+        r === 'CREATOR' ||
+        r === 'HR' ||
+        r === 'AUTHOR' ||
+        r.includes('CREATOR') ||
+        r.includes('HR') ||
+        id.includes('creator') ||
+        id.includes('hr') ||
+        loginId.startsWith('HR') ||
+        loginId === 'CREATOR' ||
+        dept.includes('HUMAN RESOURCES') ||
+        dept === 'HR' ||
+        title.includes('HR') ||
+        title.includes('CREATOR') ||
+        title.includes('AUTHOR');
+
+      if (!isCreator) continue;
+
+      const normalizedEmail = email.toLowerCase();
+      if (seenEmails.has(normalizedEmail)) continue;
+      seenEmails.add(normalizedEmail);
+      creators.push({
+        ...u,
+        email,
+      });
+    }
+    return creators;
   }
 
   // Get all employees
@@ -180,38 +283,63 @@ export class DocumentGovernanceEngine {
   }
 
   public setEmployees(employees: User[]): void {
+    if (!employees || employees.length === 0) return;
+
     // Merge cloud user records by id, preserving existing memory state
     const userMap = new Map<string, User>();
     for (const u of this.users) {
       userMap.set(u.id, u);
     }
     for (const emp of employees) {
-      const rawRole = (emp.role || '').toString().toUpperCase();
+      const rawRole = (emp.role || '').toString().toUpperCase().trim();
+      const rawLoginId = (emp.loginId || emp.empId || emp.id || '').toString().toUpperCase().trim();
+      const rawTitle = (emp.title || (emp as any).designation || '').toString().toUpperCase();
+      const rawDept = (emp.departmentName || emp.departmentId || (emp as any).department || '').toString().toUpperCase();
+      const lowerId = (emp.id || '').toLowerCase();
+
       let role = UserRole.EMPLOYEE;
       if (
         rawRole === 'CREATOR' ||
         rawRole === 'HR' ||
-        emp.id === 'usr-hr-001' ||
-        emp.loginId === 'HR' ||
-        emp.loginId === 'HR001'
+        rawRole === 'AUTHOR' ||
+        rawRole.includes('CREATOR') ||
+        rawRole.includes('HR') ||
+        lowerId.includes('creator') ||
+        lowerId.includes('hr') ||
+        rawLoginId.startsWith('HR') ||
+        rawLoginId === 'CREATOR' ||
+        rawDept.includes('HUMAN RESOURCES') ||
+        rawDept === 'HR' ||
+        rawTitle.includes('HR') ||
+        rawTitle.includes('CREATOR')
       ) {
         role = UserRole.CREATOR;
       } else if (
         rawRole === 'REVIEWER' ||
         rawRole === 'APPROVER' ||
-        emp.id === 'usr-app-001' ||
-        emp.loginId === 'APPROVER' ||
-        emp.loginId === 'AMA001'
+        rawRole.includes('REVIEWER') ||
+        rawRole.includes('APPROVER') ||
+        lowerId.includes('reviewer') ||
+        lowerId.includes('approver') ||
+        lowerId.includes('app') ||
+        rawLoginId.startsWith('AMA') ||
+        rawLoginId.startsWith('APP') ||
+        rawLoginId.startsWith('REV') ||
+        rawLoginId === 'APPROVER' ||
+        rawLoginId === 'REVIEWER' ||
+        rawTitle.includes('APPROVER') ||
+        rawTitle.includes('REVIEWER')
       ) {
         role = UserRole.REVIEWER;
       }
 
       const normalized: User = {
+        ...emp,
         id: emp.id,
         empId: emp.empId || (emp as any).employeeId || emp.loginId || emp.id,
         loginId: emp.loginId || emp.empId || (emp as any).employeeId || emp.id,
         name: emp.name || (role === UserRole.CREATOR ? 'HR Creator' : role === UserRole.REVIEWER ? 'Approver' : 'Employee'),
-        email: emp.email || '',
+        email: (emp.email || '').trim(),
         role,
         title:
           emp.title ||
@@ -226,17 +354,10 @@ export class DocumentGovernanceEngine {
         companyName: emp.companyName || 'Amaavigo Group',
         password:
           emp.password || (role === UserRole.CREATOR ? 'HR001' : role === UserRole.REVIEWER ? 'AMA001' : 'Parth!123'),
-        active: emp.active !== false,
+        active: emp.active !== false && (emp as any).status !== 'INACTIVE',
         avatar: emp.avatar || (emp as any).avatarUrl,
-        ...emp,
       };
       userMap.set(emp.id, normalized);
-      if (role === UserRole.CREATOR) {
-        userMap.set('usr-hr-001', { ...userMap.get('usr-hr-001'), ...normalized, id: 'usr-hr-001' });
-      }
-      if (role === UserRole.REVIEWER) {
-        userMap.set('usr-app-001', { ...userMap.get('usr-app-001'), ...normalized, id: 'usr-app-001' });
-      }
     }
     this.users = Array.from(userMap.values());
     this.syncDocumentAuthorNames();
@@ -244,18 +365,13 @@ export class DocumentGovernanceEngine {
   }
 
   public setUsers(users: User[]): void {
+    if (!users || users.length === 0) return;
     const userMap = new Map<string, User>();
     for (const u of this.users) {
       userMap.set(u.id, u);
     }
     for (const u of users) {
       userMap.set(u.id, { ...userMap.get(u.id), ...u });
-      if (u.role === UserRole.CREATOR) {
-        userMap.set('usr-hr-001', { ...userMap.get('usr-hr-001'), ...u, id: 'usr-hr-001' });
-      }
-      if (u.role === UserRole.REVIEWER) {
-        userMap.set('usr-app-001', { ...userMap.get('usr-app-001'), ...u, id: 'usr-app-001' });
-      }
     }
     this.users = Array.from(userMap.values());
     this.syncDocumentAuthorNames();
@@ -646,6 +762,27 @@ export class DocumentGovernanceEngine {
       reason: `Submitted version 1.0 for Reviewer authorization queue`,
     });
 
+    // Notify Approver(s) via email that a new document has been created and requires review
+    try {
+      const reviewers = this.getReviewers();
+      const emailSubject = `[Action Required: Review] New Document Created: [${documentId}] ${newMaster.title} (v${versionNumber})`;
+      const emailBody = `Dear Approver,\n\nA new document has been created by HR and submitted to the review queue for your authorization:\n\n• Document ID: ${documentId}\n• Title: ${newMaster.title}\n• Version: v${versionNumber} (Initial Baseline)\n• Category: ${newMaster.category}\n• Department: ${newMaster.departmentName}\n• Created By: ${creator.name} (${creator.title})\n\nPlease sign in to the Governance Portal, inspect the document content and security baseline, and perform your decision (Approve & Publish or Request Revisions).\n\nSincerely,\nHR Document Governance Automation System\n${newMaster.companyName}`;
+
+      for (const rev of reviewers) {
+        if (rev.email) {
+          defaultEmailProvider.sendEmail(rev.email, rev.name, emailSubject, emailBody, {
+            documentId: newMaster.documentId,
+            documentTitle: newMaster.title,
+            versionNumber,
+            documentVersionId: versionId,
+            acknowledgementRequired: false,
+          }).catch((err) => console.warn('[Governance] Reviewer email notification error:', err));
+        }
+      }
+    } catch (e) {
+      console.warn('[Governance] Could not trigger reviewer notification email:', e);
+    }
+
     return { master: newMaster, version: newVersion };
   }
 
@@ -662,6 +799,7 @@ export class DocumentGovernanceEngine {
       reviewDueDate?: string;
       mimeType?: string;
       fileDataUrl?: string;
+      previousVersionId?: string;
     }
   ): Promise<DocumentVersion> {
     if (creator.role !== UserRole.CREATOR && creator.role !== UserRole.REVIEWER) {
@@ -683,25 +821,37 @@ export class DocumentGovernanceEngine {
       );
     }
 
-    // Determine baseline: Current published version, or latest version if none published
-    let baselineVersion: DocumentVersion | undefined;
-    if (master.currentPublishedVersionId) {
-      baselineVersion = this.getVersionById(master.currentPublishedVersionId);
+    // Determine baseline & predecessor:
+    // 1. If explicit data.previousVersionId passed, use that.
+    // 2. If there is a REVISION_REQUIRED version (the rejected draft being addressed), that is the immediate predecessor!
+    // 3. Otherwise, check the newest existing version in allVersions.
+    // 4. Otherwise, fallback to master.currentPublishedVersionId.
+    const allVersions = this.getDocumentVersions(master.id);
+    let predecessorVersion: DocumentVersion | undefined;
+    if (data.previousVersionId) {
+      predecessorVersion = this.getVersionById(data.previousVersionId);
     }
-    if (!baselineVersion) {
-      const allVersions = this.getDocumentVersions(master.id);
-      baselineVersion = allVersions[0];
+    if (!predecessorVersion) {
+      predecessorVersion = allVersions.find((v) => v.status === VersionStatus.REVISION_REQUIRED);
+    }
+    if (!predecessorVersion && allVersions.length > 0) {
+      predecessorVersion = allVersions[0];
+    }
+    if (!predecessorVersion && master.currentPublishedVersionId) {
+      predecessorVersion = this.getVersionById(master.currentPublishedVersionId);
     }
 
-    const baselineNumber = baselineVersion ? baselineVersion.versionNumber : '1.0';
-    const nextVersionNumber = this.calculateNextVersionNumber(baselineNumber, data.revisionType);
+    const baselineNumber = predecessorVersion
+      ? predecessorVersion.versionNumber
+      : master.currentPublishedVersionNumber || '1.0';
+    const nextVersionNumber = this.calculateNextVersionNumber(baselineNumber, data.revisionType, allVersions);
 
     // Concurrency / Duplicate version prevention
     const existing = this.documentVersions.find(
-      (v) => v.documentMasterId === master.id && v.versionNumber === nextVersionNumber
+      (v) => v.documentMasterId === master.id && v.versionNumber === nextVersionNumber && v.status === VersionStatus.IN_REVIEW
     );
     if (existing) {
-      throw new Error(`Version conflict: Version ${nextVersionNumber} already exists for document ${master.documentId}.`);
+      throw new Error(`Version conflict: Version ${nextVersionNumber} is already in review for document ${master.documentId}.`);
     }
 
     const versionId = `ver-${Date.now()}-v${nextVersionNumber.replace('.', '')}`;
@@ -737,11 +887,11 @@ export class DocumentGovernanceEngine {
       createdAt: new Date().toISOString(),
       effectiveFrom: data.effectiveFrom || new Date().toISOString().split('T')[0],
       reviewDueDate: data.reviewDueDate || master.updatedAt.split('T')[0],
-      previousVersionId: baselineVersion?.id,
-      previousVersionNumber: baselineVersion?.versionNumber,
-      changeSummary: data.changeSummary || `Revision ${nextVersionNumber} created from baseline ${baselineNumber}.`,
+      previousVersionId: predecessorVersion?.id,
+      previousVersionNumber: predecessorVersion?.versionNumber,
+      changeSummary: data.changeSummary || `Revision ${nextVersionNumber} created from predecessor ${baselineNumber}.`,
       locked: false,
-      createdFromVersionId: baselineVersion?.id,
+      createdFromVersionId: predecessorVersion?.id,
     };
 
     this.documentVersions.unshift(newVersion);
@@ -796,15 +946,32 @@ export class DocumentGovernanceEngine {
       reason: `Submitted v${nextVersionNumber} for Reviewer queue`,
     });
 
+    // Notify Approver(s) via email that a revised document version has been created and requires review
+    try {
+      const reviewers = this.getReviewers();
+      const emailSubject = `[Action Required: Review] Revised Version Created: [${master.documentId}] ${master.title} (v${nextVersionNumber})`;
+      const emailBody = `Dear Approver,\n\nA revised version of document [${master.documentId}] has been authored by HR and submitted to your review queue:\n\n• Document ID: ${master.documentId}\n• Title: ${master.title}\n• New Version: v${nextVersionNumber} (${data.revisionType} revision)\n• Baseline Comparison: v${baselineNumber}\n• Change Summary: ${data.changeSummary || 'Revised document version submitted.'}\n• Created By: ${creator.name} (${creator.title})\n\nPlease sign in to the Governance Portal to compare changes against baseline v${baselineNumber} and render your authorization decision.\n\nSincerely,\nHR Document Governance Automation System\n${master.companyName}`;
+
+      for (const rev of reviewers) {
+        if (rev.email) {
+          defaultEmailProvider.sendEmail(rev.email, rev.name, emailSubject, emailBody, {
+            documentId: master.documentId,
+            documentTitle: master.title,
+            versionNumber: nextVersionNumber,
+            documentVersionId: versionId,
+            acknowledgementRequired: false,
+          }).catch((err) => console.warn('[Governance] Reviewer email notification error:', err));
+        }
+      }
+    } catch (e) {
+      console.warn('[Governance] Could not trigger reviewer notification email for revised version:', e);
+    }
+
     return newVersion;
   }
 
   // Get or compute comparison against baseline
-  public getComparison(newVersionId: string): DocumentComparisonResult {
-    if (this.comparisons.has(newVersionId)) {
-      return this.comparisons.get(newVersionId)!;
-    }
-
+  public getComparison(newVersionId: string, customBaselineVersionId?: string): DocumentComparisonResult {
     const newVersion = this.getVersionById(newVersionId);
     if (!newVersion) {
       throw new Error(`Version not found: ${newVersionId}`);
@@ -815,17 +982,22 @@ export class DocumentGovernanceEngine {
       throw new Error(`Document Master not found for version: ${newVersionId}`);
     }
 
-    // Baseline rule: Always compare against the baseline version (e.g. current published version or previousVersionId)
+    // Baseline rule: Use custom baseline if explicitly requested, otherwise use previousVersionId, then published baseline, then fallback
     let baselineVersion: DocumentVersion | undefined;
-    if (newVersion.previousVersionId) {
+    if (customBaselineVersionId) {
+      baselineVersion = this.getVersionById(customBaselineVersionId);
+    } else if (newVersion.previousVersionId) {
       baselineVersion = this.getVersionById(newVersion.previousVersionId);
-    }
-    if (!baselineVersion && master.currentPublishedVersionId) {
+    } else if (master.currentPublishedVersionId) {
       baselineVersion = this.getVersionById(master.currentPublishedVersionId);
-    }
-    if (!baselineVersion) {
+    } else {
       const allVersions = this.getDocumentVersions(master.id);
       baselineVersion = allVersions.find((v) => v.id !== newVersion.id);
+    }
+
+    const cacheKey = `${newVersionId}_${baselineVersion?.id || 'none'}`;
+    if (this.comparisons.has(cacheKey)) {
+      return this.comparisons.get(cacheKey)!;
     }
 
     const oldText = baselineVersion ? baselineVersion.rawContent : '';
@@ -843,7 +1015,7 @@ export class DocumentGovernanceEngine {
       newVersion.changeSummary
     );
 
-    this.comparisons.set(newVersionId, result);
+    this.comparisons.set(cacheKey, result);
     return result;
   }
 
@@ -1117,9 +1289,9 @@ export class DocumentGovernanceEngine {
     version.reviewerComments = comments.trim();
     version.locked = false; // Remains unlocked or editable/viewable
 
-    // CRITICAL: Document Master does NOT change its current published version.
-    // If master has a published version, master status stays PUBLISHED or reflects revisions pending.
-    master.currentStatus = master.currentPublishedVersionId ? VersionStatus.PUBLISHED : VersionStatus.REVISION_REQUIRED;
+    // CRITICAL: Document Master does NOT remove its current published version record,
+    // but the master governance status reflects REVISION_REQUIRED so creator dashboards and directories highlight action needed.
+    master.currentStatus = VersionStatus.REVISION_REQUIRED;
     master.updatedAt = nowIso;
 
     // Persist changes to Cloud Firestore
@@ -1148,6 +1320,42 @@ export class DocumentGovernanceEngine {
       versionNumber: version.versionNumber,
       reason: `Returned version ${version.versionNumber} to Creator (${version.createdByName}) with feedback: "${comments.trim()}"`,
     });
+
+    // Notify all HR users in the database via email that revision is required along with comments
+    try {
+      const hrUsers = this.getCreators();
+      const emailSubject = `[Revision Required] Changes Requested: [${master.documentId}] ${master.title} (v${version.versionNumber})`;
+      const emailBody = `Dear HR,\n\nApprover ${reviewer.name} (${reviewer.title}) has reviewed version v${version.versionNumber} of document [${master.documentId}] "${master.title}" and requested revisions before approval.\n\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\nCHANGES REQUIRED / APPROVER FEEDBACK:\n"${comments.trim()}"\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n• Document ID: ${master.documentId}\n• Title: ${master.title}\n• Reviewed Version: v${version.versionNumber}\n• Reviewed By: ${reviewer.name} (${reviewer.title})\n• Status: Revision Required\n\nPlease navigate to the "Action Required: Revisions" tab in your HR Author Dashboard to revise the document text and submit the next version.\n\nSincerely,\nHR Document Governance Automation System\n${master.companyName}`;
+
+      const sentEmails = new Set<string>();
+      for (const hr of hrUsers) {
+        if (hr.email && !sentEmails.has(hr.email.toLowerCase())) {
+          sentEmails.add(hr.email.toLowerCase());
+          defaultEmailProvider.sendEmail(hr.email, hr.name || 'HR Team', emailSubject, emailBody, {
+            documentId: master.documentId,
+            documentTitle: master.title,
+            versionNumber: version.versionNumber,
+            documentVersionId: version.id,
+            acknowledgementRequired: false,
+          }).catch((err) => console.warn('[Governance] HR revision required email notification error:', err));
+        }
+      }
+
+      // Also ensure the original creator gets it if not already in sent list
+      const creatorTarget = this.getUserById(version.createdById);
+      if (creatorTarget?.email && !sentEmails.has(creatorTarget.email.toLowerCase())) {
+        sentEmails.add(creatorTarget.email.toLowerCase());
+        defaultEmailProvider.sendEmail(creatorTarget.email, creatorTarget.name || 'HR Document Author', emailSubject, emailBody, {
+          documentId: master.documentId,
+          documentTitle: master.title,
+          versionNumber: version.versionNumber,
+          documentVersionId: version.id,
+          acknowledgementRequired: false,
+        }).catch((err) => console.warn('[Governance] Creator rejection email notification error:', err));
+      }
+    } catch (e) {
+      console.warn('[Governance] Could not trigger HR notification email for revision required:', e);
+    }
 
     return version;
   }

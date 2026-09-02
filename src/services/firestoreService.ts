@@ -111,22 +111,44 @@ export const firestoreService = {
         if (seen.has(docId)) continue;
         seen.add(docId);
 
-        const rawRole = (data.role || '').toString().toUpperCase();
+        const rawRole = (data.role || '').toString().toUpperCase().trim();
+        const rawLoginId = (data.loginId || data.empId || docId || '').toString().toUpperCase().trim();
+        const rawTitle = (data.title || data.designation || '').toString().toUpperCase();
+        const rawDept = (data.departmentName || data.department || data.departmentId || '').toString().toUpperCase();
+        const lowerDocId = docId.toLowerCase();
+
         let role = UserRole.EMPLOYEE;
         if (
           rawRole === 'CREATOR' ||
           rawRole === 'HR' ||
-          docId === 'usr-hr-001' ||
-          data.loginId === 'HR' ||
-          data.loginId === 'HR001'
+          rawRole === 'AUTHOR' ||
+          rawRole.includes('CREATOR') ||
+          rawRole.includes('HR') ||
+          lowerDocId.includes('creator') ||
+          lowerDocId.includes('hr') ||
+          rawLoginId.startsWith('HR') ||
+          rawLoginId === 'CREATOR' ||
+          rawDept.includes('HUMAN RESOURCES') ||
+          rawDept === 'HR' ||
+          rawTitle.includes('HR') ||
+          rawTitle.includes('CREATOR')
         ) {
           role = UserRole.CREATOR;
         } else if (
           rawRole === 'REVIEWER' ||
           rawRole === 'APPROVER' ||
-          docId === 'usr-app-001' ||
-          data.loginId === 'APPROVER' ||
-          data.loginId === 'AMA001'
+          rawRole.includes('REVIEWER') ||
+          rawRole.includes('APPROVER') ||
+          lowerDocId.includes('reviewer') ||
+          lowerDocId.includes('approver') ||
+          lowerDocId.includes('app') ||
+          rawLoginId.startsWith('AMA') ||
+          rawLoginId.startsWith('APP') ||
+          rawLoginId.startsWith('REV') ||
+          rawLoginId === 'APPROVER' ||
+          rawLoginId === 'REVIEWER' ||
+          rawTitle.includes('APPROVER') ||
+          rawTitle.includes('REVIEWER')
         ) {
           role = UserRole.REVIEWER;
         }
@@ -293,22 +315,44 @@ export const firestoreService = {
       const items = snap.docs.map((d) => {
         const data = d.data() as any;
         const docId = data.id || d.id;
-        const rawRole = (data.role || '').toString().toUpperCase();
+        const rawRole = (data.role || '').toString().toUpperCase().trim();
+        const rawLoginId = (data.loginId || data.empId || docId || '').toString().toUpperCase().trim();
+        const rawTitle = (data.title || data.designation || '').toString().toUpperCase();
+        const rawDept = (data.departmentName || data.department || data.departmentId || '').toString().toUpperCase();
+        const lowerDocId = docId.toLowerCase();
+
         let role = UserRole.EMPLOYEE;
         if (
           rawRole === 'CREATOR' ||
           rawRole === 'HR' ||
-          docId === 'usr-hr-001' ||
-          data.loginId === 'HR' ||
-          data.loginId === 'HR001'
+          rawRole === 'AUTHOR' ||
+          rawRole.includes('CREATOR') ||
+          rawRole.includes('HR') ||
+          lowerDocId.includes('creator') ||
+          lowerDocId.includes('hr') ||
+          rawLoginId.startsWith('HR') ||
+          rawLoginId === 'CREATOR' ||
+          rawDept.includes('HUMAN RESOURCES') ||
+          rawDept === 'HR' ||
+          rawTitle.includes('HR') ||
+          rawTitle.includes('CREATOR')
         ) {
           role = UserRole.CREATOR;
         } else if (
           rawRole === 'REVIEWER' ||
           rawRole === 'APPROVER' ||
-          docId === 'usr-app-001' ||
-          data.loginId === 'APPROVER' ||
-          data.loginId === 'AMA001'
+          rawRole.includes('REVIEWER') ||
+          rawRole.includes('APPROVER') ||
+          lowerDocId.includes('reviewer') ||
+          lowerDocId.includes('approver') ||
+          lowerDocId.includes('app') ||
+          rawLoginId.startsWith('AMA') ||
+          rawLoginId.startsWith('APP') ||
+          rawLoginId.startsWith('REV') ||
+          rawLoginId === 'APPROVER' ||
+          rawLoginId === 'REVIEWER' ||
+          rawTitle.includes('APPROVER') ||
+          rawTitle.includes('REVIEWER')
         ) {
           role = UserRole.REVIEWER;
         }

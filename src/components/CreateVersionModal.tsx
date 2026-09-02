@@ -66,6 +66,11 @@ export const CreateVersionModal: React.FC<CreateVersionModalProps> = ({
   );
   const isInReview = !!inReviewVersion || selectedMaster?.currentStatus === VersionStatus.IN_REVIEW;
 
+  // Check if target document has a rejected / revision required version
+  const rejectedVersion = versions.find(
+    (v) => (v.documentMasterId === selectedMaster?.id || v.documentId === selectedMaster?.documentId) && v.status === VersionStatus.REVISION_REQUIRED
+  );
+
   // Baseline version is the currently published version or latest version
   const baselineVersion = selectedMaster?.currentPublishedVersionId
     ? versions.find((v) => v.id === selectedMaster.currentPublishedVersionId)
@@ -73,23 +78,32 @@ export const CreateVersionModal: React.FC<CreateVersionModalProps> = ({
 
   const baselineVersionNumber = baselineVersion ? baselineVersion.versionNumber : '1.0';
 
-  // Calculate next version
+  const docVersions = useMemo(() => {
+    return versions.filter((v) => v.documentMasterId === selectedMaster?.id || v.documentId === selectedMaster?.documentId);
+  }, [versions, selectedMaster]);
+
+  // Calculate next version taking all existing versions into account
   const calculatedNextVersion = governanceEngine.calculateNextVersionNumber(
     baselineVersionNumber,
-    revisionType
+    revisionType,
+    docVersions
   );
 
-  // When selected document changes, populate rawContent with baseline text
+  // When selected document changes, populate rawContent with rejected draft (if exists) or baseline text
   useEffect(() => {
-    if (baselineVersion) {
-      const cleanContent = isRawPdfStream(baselineVersion.rawContent)
-        ? extractTextFromRawPdfStream(baselineVersion.rawContent)
-        : baselineVersion.rawContent;
+    const sourceVer = rejectedVersion || baselineVersion;
+    if (sourceVer) {
+      const cleanContent = isRawPdfStream(sourceVer.rawContent)
+        ? extractTextFromRawPdfStream(sourceVer.rawContent)
+        : sourceVer.rawContent;
       setRawContent(cleanContent || '');
       setFileName(`${selectedMaster?.documentId}_revised_v${calculatedNextVersion}.md`);
       setFileDataUrl('');
       setMimeType('text/markdown');
       setUploadStatus('');
+      if (rejectedVersion?.reviewerComments) {
+        setChangeSummary(`Addressed reviewer feedback on v${rejectedVersion.versionNumber}: ${rejectedVersion.reviewerComments.slice(0, 100)}`);
+      }
     }
   }, [selectedDocId, calculatedNextVersion]);
 
@@ -181,6 +195,7 @@ export const CreateVersionModal: React.FC<CreateVersionModalProps> = ({
         effectiveFrom,
         fileDataUrl,
         mimeType: mimeType || (fileName.endsWith('.pdf') ? 'application/pdf' : 'text/markdown'),
+        previousVersionId: rejectedVersion?.id || selectedMaster?.currentPublishedVersionId || docVersions[0]?.id,
       });
 
       onSuccess();
@@ -260,15 +275,42 @@ export const CreateVersionModal: React.FC<CreateVersionModalProps> = ({
                   (v) => (v.documentMasterId === doc.id || v.documentId === doc.documentId) && v.status === VersionStatus.IN_REVIEW
                 );
                 const isDocInReview = !!docInReviewVer || doc.currentStatus === VersionStatus.IN_REVIEW;
+                const docNeedsRevision = versions.find(
+                  (v) => (v.documentMasterId === doc.id || v.documentId === doc.documentId) && v.status === VersionStatus.REVISION_REQUIRED
+                );
 
                 return (
                   <option key={doc.id} value={doc.id} className="bg-white text-slate-900 py-1">
-                    {doc.documentId} — {doc.title} {isDocInReview ? `[⚠️ In Review: v${docInReviewVer?.versionNumber || ''} - Blocked]` : `(Published: v${doc.currentPublishedVersionNumber || 'None'})`}
+                    {doc.documentId} — {doc.title}{' '}
+                    {isDocInReview
+                      ? `[⚠️ In Review: v${docInReviewVer?.versionNumber || ''} - Blocked]`
+                      : docNeedsRevision
+                      ? `[⚠️ Revision Requested on v${docNeedsRevision.versionNumber}]`
+                      : `(Published: v${doc.currentPublishedVersionNumber || 'None'})`}
                   </option>
                 );
               })}
             </select>
           </div>
+
+          {/* REVISION REQUESTED / REVIEWER FEEDBACK BANNER */}
+          {rejectedVersion && !isInReview && (
+            <div className="bg-[#FA7014]/5 border-l-4 border-l-[#FA7014] border-slate-200 rounded-2xl p-4 text-xs shadow-xs space-y-2">
+              <div className="flex items-center space-x-2 text-slate-900 font-bold">
+                <AlertTriangle className="w-4 h-4 text-[#FA7014]" />
+                <span>Addressing Reviewer Feedback on v{rejectedVersion.versionNumber}</span>
+              </div>
+              {rejectedVersion.reviewerComments && (
+                <div className="bg-white p-3 rounded-xl border border-slate-200 text-slate-800 flex items-start space-x-2">
+                  <span className="font-semibold text-slate-900 shrink-0">Reviewer Note:</span>
+                  <span className="italic">"{rejectedVersion.reviewerComments}"</span>
+                </div>
+              )}
+              <p className="text-[11px] text-slate-500">
+                The content below is pre-loaded with your draft. Revise the text to address the feedback and submit v{calculatedNextVersion} for approval.
+              </p>
+            </div>
+          )}
 
           {/* BASELINE & CALCULATED VERSION CARD */}
           {selectedMaster && (
@@ -285,12 +327,16 @@ export const CreateVersionModal: React.FC<CreateVersionModalProps> = ({
 
               <div>
                 <span className="text-slate-500 font-semibold uppercase tracking-wider text-[10px]">
-                  Current Published Baseline
+                  {rejectedVersion ? 'Predecessor Draft' : 'Current Published Baseline'}
                 </span>
                 <div className="font-bold text-sm text-slate-900 mt-0.5">
-                  v{selectedMaster.currentPublishedVersionNumber || '1.0'}
+                  {rejectedVersion
+                    ? `v${rejectedVersion.versionNumber} (Revision Required)`
+                    : `v${selectedMaster.currentPublishedVersionNumber || '1.0'}`}
                 </div>
-                <span className="text-slate-500">Operational Version</span>
+                <span className="text-slate-500">
+                  {rejectedVersion ? 'Addressed by this version' : 'Operational Live Version'}
+                </span>
               </div>
 
               <div className="bg-white p-3 rounded-xl border border-slate-200 shadow-xs">

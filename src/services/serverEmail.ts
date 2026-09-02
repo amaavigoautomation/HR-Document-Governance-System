@@ -50,6 +50,14 @@ export async function dispatchLiveEmail(payload: EmailDispatchPayload): Promise<
     .replace(/data:image\/[a-zA-Z0-9.+-]+;base64,[a-zA-Z0-9+/=]+/g, '')
     .trim();
 
+  const noticeType = metadata?.acknowledgementRequired
+    ? 'Official HR Policy Notice'
+    : subject.includes('Action Required: Review')
+    ? 'HR Document Review Required'
+    : subject.includes('Revision Required')
+    ? 'HR Document Revision Notice'
+    : 'Official HR Policy Notice';
+
   const formattedHtml = `
     <!DOCTYPE html>
     <html>
@@ -69,7 +77,7 @@ export async function dispatchLiveEmail(payload: EmailDispatchPayload): Promise<
                     AMAAVIGO • WHERE BRAND TAKES FLIGHT
                   </span>
                   <h1 style="color: #ffffff; margin: 0; font-size: 20px; font-weight: 700; line-height: 1.3;">
-                    Official HR Policy Notice
+                    ${noticeType}
                   </h1>
                 </td>
               </tr>

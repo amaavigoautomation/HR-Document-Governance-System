@@ -73,13 +73,20 @@ export const CreatorDashboard: React.FC<CreatorDashboardProps> = ({
   const revisionRequiredVersions = useMemo(() => {
     return versions.filter((v) => {
       if (v.status !== VersionStatus.REVISION_REQUIRED) return false;
+      const vTime = new Date(v.createdAt).getTime();
       const relatedVersions = versions.filter(
         (rv) => (rv.documentMasterId === v.documentMasterId || rv.documentId === v.documentId) && rv.id !== v.id
       );
-      // If any subsequent version is currently IN_REVIEW, PUBLISHED, or was authored after this revision request, it has been addressed
+      // A revision request is addressed ONLY if a SUBSEQUENT version was authored after this revision was requested
       const isAlreadyAddressed = relatedVersions.some((rv) => {
-        if (rv.status === VersionStatus.IN_REVIEW || rv.status === VersionStatus.PUBLISHED) return true;
-        if (new Date(rv.createdAt).getTime() > new Date(v.createdAt).getTime()) return true;
+        const rvTime = new Date(rv.createdAt).getTime();
+        if (rvTime > vTime) {
+          return (
+            rv.status === VersionStatus.IN_REVIEW ||
+            rv.status === VersionStatus.PUBLISHED ||
+            rv.status === VersionStatus.SUPERSEDED
+          );
+        }
         return false;
       });
       return !isAlreadyAddressed;
@@ -334,9 +341,11 @@ export const CreatorDashboard: React.FC<CreatorDashboardProps> = ({
                 </tr>
               ) : (
                 filteredDocs.map((doc) => {
-                  const docVersions = versions.filter((v) => v.documentMasterId === doc.id);
+                  const docVersions = versions.filter((v) => v.documentMasterId === doc.id || v.documentId === doc.documentId);
                   const inReview = docVersions.find((v) => v.status === VersionStatus.IN_REVIEW);
-                  const needsRevision = docVersions.find((v) => v.status === VersionStatus.REVISION_REQUIRED);
+                  const needsRevision = revisionRequiredVersions.find(
+                    (v) => v.documentMasterId === doc.id || v.documentId === doc.documentId
+                  );
 
                   return (
                     <tr key={doc.id} className="hover:bg-slate-50/80 transition-colors">
@@ -373,16 +382,29 @@ export const CreatorDashboard: React.FC<CreatorDashboardProps> = ({
                         ) : (
                           <span className="text-xs text-slate-500 italic">None Published Yet</span>
                         )}
-                        {inReview && (
+                        {inReview ? (
                           <div className="text-[11px] text-[#FA7014] mt-1 flex items-center space-x-1 font-medium">
                             <Clock className="w-3 h-3 text-[#FA7014]" />
                             <span>v{inReview.versionNumber} in review</span>
                           </div>
-                        )}
+                        ) : needsRevision ? (
+                          <div className="text-[11px] text-[#FA7014] mt-1 flex items-center space-x-1 font-semibold">
+                            <AlertTriangle className="w-3 h-3 text-[#FA7014]" />
+                            <span>v{needsRevision.versionNumber} revision requested</span>
+                          </div>
+                        ) : null}
                       </td>
 
                       <td className="px-6 py-4 whitespace-nowrap">
-                        <StatusBadge status={doc.currentStatus} />
+                        <StatusBadge
+                          status={
+                            inReview
+                              ? VersionStatus.IN_REVIEW
+                              : needsRevision
+                              ? VersionStatus.REVISION_REQUIRED
+                              : doc.currentStatus
+                          }
+                        />
                       </td>
 
                       <td className="px-6 py-4 whitespace-nowrap">
@@ -412,16 +434,28 @@ export const CreatorDashboard: React.FC<CreatorDashboardProps> = ({
                           className={`inline-flex items-center space-x-1 text-xs font-semibold px-2.5 py-1.5 rounded-lg transition-colors shadow-xs ${
                             inReview || doc.currentStatus === VersionStatus.IN_REVIEW
                               ? 'bg-slate-100 text-slate-400 border border-slate-200 cursor-not-allowed opacity-60'
+                              : needsRevision
+                              ? 'text-white bg-[#FA7014] hover:bg-[#E65A05] ring-2 ring-[#FA7014]/20'
                               : 'text-white bg-slate-900 hover:bg-slate-800'
                           }`}
                           title={
                             inReview || doc.currentStatus === VersionStatus.IN_REVIEW
                               ? `Cannot revise: Version v${inReview?.versionNumber || ''} is currently under review`
+                              : needsRevision
+                              ? `Author next revision addressing reviewer feedback on v${needsRevision.versionNumber}`
                               : 'Create New Revision (Minor/Major)'
                           }
                         >
-                          <GitBranch className={`w-3.5 h-3.5 ${inReview || doc.currentStatus === VersionStatus.IN_REVIEW ? 'text-slate-400' : 'text-[#FA7014]'}`} />
-                          <span>Revise</span>
+                          <GitBranch
+                            className={`w-3.5 h-3.5 ${
+                              inReview || doc.currentStatus === VersionStatus.IN_REVIEW
+                                ? 'text-slate-400'
+                                : needsRevision
+                                ? 'text-white'
+                                : 'text-[#FA7014]'
+                            }`}
+                          />
+                          <span>{needsRevision ? `Author v${needsRevision.versionNumber} Fix` : 'Revise'}</span>
                         </button>
 
                         {onDeleteDocument && (

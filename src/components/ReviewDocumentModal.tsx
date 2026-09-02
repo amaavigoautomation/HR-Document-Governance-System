@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   X,
   ShieldCheck,
@@ -65,22 +65,58 @@ export const ReviewDocumentModal: React.FC<ReviewDocumentModalProps> = ({
   const [isRejecting, setIsRejecting] = useState(false);
 
   const master = governanceEngine.getDocumentMasterById(version.documentMasterId);
-  const baselineVersion = version.previousVersionId
-    ? governanceEngine.getVersionById(version.previousVersionId)
-    : master?.currentPublishedVersionId
-    ? governanceEngine.getVersionById(master.currentPublishedVersionId)
-    : null;
+  const docVersions = useMemo(() => {
+    return governanceEngine.getDocumentVersions(version.documentMasterId || master?.id || '');
+  }, [version.documentMasterId, master?.id]);
+
+  // Candidates for baseline comparison: all versions other than the current version being reviewed
+  const candidateBaselines = useMemo(() => {
+    return docVersions.filter((v) => v.id !== version.id);
+  }, [docVersions, version.id]);
+
+  // Default baseline to compare against:
+  // 1. Explicit previousVersionId if found in candidateBaselines
+  // 2. Or the rejected / superseded predecessor draft that was addressed by this version
+  // 3. Or master.currentPublishedVersionId
+  // 4. Or the latest available candidate
+  const defaultBaselineId = useMemo(() => {
+    if (version.previousVersionId && candidateBaselines.some((b) => b.id === version.previousVersionId)) {
+      return version.previousVersionId;
+    }
+    const preDraft = candidateBaselines.find(
+      (b) => b.status === VersionStatus.REVISION_REQUIRED || b.status === VersionStatus.SUPERSEDED
+    );
+    if (preDraft) return preDraft.id;
+    if (master?.currentPublishedVersionId && candidateBaselines.some((b) => b.id === master.currentPublishedVersionId)) {
+      return master.currentPublishedVersionId;
+    }
+    return candidateBaselines[0]?.id || '';
+  }, [version.previousVersionId, candidateBaselines, master?.currentPublishedVersionId]);
+
+  const [selectedBaselineId, setSelectedBaselineId] = useState<string>(defaultBaselineId);
 
   useEffect(() => {
+    setSelectedBaselineId(defaultBaselineId);
+  }, [defaultBaselineId]);
+
+  const activeBaseline =
+    candidateBaselines.find((b) => b.id === selectedBaselineId) ||
+    candidateBaselines.find((b) => b.id === version.previousVersionId) ||
+    (master?.currentPublishedVersionId ? governanceEngine.getVersionById(master.currentPublishedVersionId) : null) ||
+    candidateBaselines[0];
+
+  useEffect(() => {
+    if (!version.id) return;
+    setLoading(true);
     try {
-      const comp = governanceEngine.getComparison(version.id);
+      const comp = governanceEngine.getComparison(version.id, selectedBaselineId || undefined);
       setComparison(comp);
     } catch (e) {
       console.error('Error generating comparison:', e);
     } finally {
       setLoading(false);
     }
-  }, [version.id]);
+  }, [version.id, selectedBaselineId]);
 
   const handleApprove = async () => {
     setIsApproving(true);
@@ -144,9 +180,11 @@ export const ReviewDocumentModal: React.FC<ReviewDocumentModalProps> = ({
               </div>
               <p className="text-xs text-slate-400 mt-0.5">
                 Submitted by <span className="text-slate-200 font-semibold">{version.createdByName}</span> on{' '}
-                {formatISTDate(version.createdAt)} • Baseline:{' '}
+                {formatISTDate(version.createdAt)} • Comparison Baseline:{' '}
                 <span className="text-[#FA7014] font-semibold">
-                  {baselineVersion ? `v${baselineVersion.versionNumber} (${baselineVersion.status})` : 'Initial Baseline'}
+                  {activeBaseline
+                    ? `v${activeBaseline.versionNumber} (${activeBaseline.status.replace('_', ' ')})`
+                    : 'Initial Baseline'}
                 </span>
               </p>
             </div>
@@ -291,25 +329,55 @@ export const ReviewDocumentModal: React.FC<ReviewDocumentModalProps> = ({
               {/* TAB 1: SIDE-BY-SIDE DIFF */}
               {activeTab === 'sideBySide' && (
                 <div className="space-y-4">
-                  {/* Baseline Header Notice */}
-                  <div className="bg-white border border-slate-200 rounded-xl p-3 text-xs text-slate-700 flex items-center justify-between shadow-2xs">
-                    <div className="flex items-center space-x-2">
+                  {/* Baseline Header Notice & Comparison Target Selector */}
+                  <div className="bg-white border border-slate-200 rounded-xl p-3 text-xs text-slate-700 flex flex-wrap items-center justify-between shadow-2xs gap-3">
+                    <div className="flex items-center space-x-2.5">
                       <Info className="w-4 h-4 text-[#FA7014] shrink-0" />
+                      <span className="font-semibold text-slate-900">Comparing against:</span>
+                      {candidateBaselines.length > 1 ? (
+                        <select
+                          id="select-comparison-baseline"
+                          value={selectedBaselineId}
+                          onChange={(e) => setSelectedBaselineId(e.target.value)}
+                          className="bg-slate-50 border border-slate-300 rounded-lg px-2.5 py-1 text-xs font-semibold text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#FA7014]/30 focus:border-[#FA7014] cursor-pointer"
+                        >
+                          {candidateBaselines.map((b) => {
+                            const isPrevDraft = b.id === version.previousVersionId;
+                            const isLive = b.id === master?.currentPublishedVersionId;
+                            return (
+                              <option key={b.id} value={b.id}>
+                                v{b.versionNumber} ({b.status.replace('_', ' ')})
+                                {isPrevDraft ? ' — [Previous Draft / Feedback Baseline]' : isLive ? ' — [Live Published Baseline]' : ''}
+                              </option>
+                            );
+                          })}
+                        </select>
+                      ) : (
+                        <span>
+                          <strong>v{activeBaseline?.versionNumber || '1.0'} ({activeBaseline?.status?.replace('_', ' ') || 'Initial'})</strong>
+                        </span>
+                      )}
+                    </div>
+                    <div className="flex items-center space-x-3 text-slate-500 font-mono text-xs">
+                      {activeBaseline?.status === VersionStatus.REVISION_REQUIRED || activeBaseline?.status === VersionStatus.SUPERSEDED ? (
+                        <span className="text-[11px] font-semibold text-[#FA7014] bg-orange-50 px-2 py-0.5 rounded border border-orange-200">
+                          Addressing Revisions on v{activeBaseline.versionNumber}
+                        </span>
+                      ) : null}
                       <span>
-                        Comparing against <strong>Published Baseline ({baselineVersion ? `v${baselineVersion.versionNumber}` : 'Initial'})</strong>.
+                        Similarity: <strong className="text-slate-900">{comparison?.statistics.similarityPercentage}%</strong>
                       </span>
                     </div>
-                    <span className="text-slate-500 font-mono">
-                      Similarity: {comparison?.statistics.similarityPercentage}%
-                    </span>
                   </div>
 
                   {/* Side-by-side table */}
                   <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden font-mono text-xs">
                     <div className="grid grid-cols-2 bg-slate-900 text-white font-sans text-xs font-bold py-2.5 px-4 border-b border-slate-800">
                       <div className="flex items-center space-x-2">
-                        <span className="bg-slate-800 px-2 py-0.5 rounded text-[11px] border border-slate-700 text-slate-300">OLD BASELINE</span>
-                        <span>{baselineVersion ? `v${baselineVersion.versionNumber} (${baselineVersion.status})` : 'Baseline Not Set'}</span>
+                        <span className="bg-slate-800 px-2 py-0.5 rounded text-[11px] border border-slate-700 text-slate-300">
+                          {activeBaseline?.id === master?.currentPublishedVersionId ? 'LIVE BASELINE' : 'PREVIOUS VERSION'}
+                        </span>
+                        <span>{activeBaseline ? `v${activeBaseline.versionNumber} (${activeBaseline.status.replace('_', ' ')})` : 'Baseline Not Set'}</span>
                       </div>
                       <div className="flex items-center space-x-2 pl-4 border-l border-slate-800">
                         <span className="bg-[#FA7014] px-2 py-0.5 rounded text-[11px] text-white">NEW VERSION</span>
@@ -427,11 +495,15 @@ export const ReviewDocumentModal: React.FC<ReviewDocumentModalProps> = ({
                             </div>
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
                               <div className="bg-white p-3 rounded-xl border border-slate-200">
-                                <div className="text-[11px] font-bold text-slate-500 uppercase mb-1">Old Baseline</div>
+                                <div className="text-[11px] font-bold text-slate-500 uppercase mb-1">
+                                  {activeBaseline ? `Baseline (v${activeBaseline.versionNumber})` : 'Old Baseline'}
+                                </div>
                                 <div className="text-slate-600 font-mono whitespace-pre-wrap">{item.oldText}</div>
                               </div>
                               <div className="bg-white p-3 rounded-xl border border-orange-200">
-                                <div className="text-[11px] font-bold text-[#FA7014] uppercase mb-1">New Revision</div>
+                                <div className="text-[11px] font-bold text-[#FA7014] uppercase mb-1">
+                                  New Revision (v{version.versionNumber})
+                                </div>
                                 <div className="text-slate-900 font-mono whitespace-pre-wrap">{item.newText}</div>
                               </div>
                             </div>
@@ -447,7 +519,7 @@ export const ReviewDocumentModal: React.FC<ReviewDocumentModalProps> = ({
               {activeTab === 'unified' && (
                 <div className="bg-white border border-slate-200 text-slate-800 font-mono text-xs rounded-2xl p-4 shadow-sm overflow-x-auto max-h-[55vh]">
                   <div className="text-slate-400 mb-3 border-b border-slate-200 pb-2">
-                    --- {baselineVersion ? `v${baselineVersion.versionNumber}` : 'Baseline'}{'\n'}
+                    --- {activeBaseline ? `v${activeBaseline.versionNumber} (${activeBaseline.status})` : 'Baseline'}{'\n'}
                     +++ v{version.versionNumber} (In Review)
                   </div>
                   {comparison?.diffSegments.map((seg, i) => {
