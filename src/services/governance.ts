@@ -27,16 +27,14 @@ import { firestoreService } from './firestoreService';
 
 export class DocumentGovernanceEngine {
   private users: User[] = [...SEED_USERS];
-  private documentMasters: DocumentMaster[] = [...SEED_DOCUMENTS];
-  private documentVersions: DocumentVersion[] = [...SEED_VERSIONS];
+  private documentMasters: DocumentMaster[] = [];
+  private documentVersions: DocumentVersion[] = [];
   private publicationRecords: DocumentPublicationRecord[] = [];
   private acknowledgements: AcknowledgementRecord[] = [];
   private comparisons: Map<string, DocumentComparisonResult> = new Map();
 
   constructor() {
-    auditService.seedLogs(SEED_AUDIT_LOGS);
-    this.initDefaultAcknowledgements();
-    this.syncVersionsToStorage();
+    // Starts with clean state. Data is loaded and synced from Cloud Firestore.
   }
 
   public syncVersionsToStorage(versions: DocumentVersion[] = this.documentVersions): void {
@@ -1662,7 +1660,7 @@ export class DocumentGovernanceEngine {
     }
   }
 
-  // Restore or re-seed sample documents
+  // Restore or re-seed sample documents (explicit user action)
   public async restoreDefaultSeed(): Promise<void> {
     try {
       localStorage.removeItem('ama_docs_cleared');
@@ -1670,12 +1668,12 @@ export class DocumentGovernanceEngine {
       console.warn('Storage note:', e);
     }
     this.resetToSeed();
-    await firestoreService.seedFirestoreIfEmpty(
+    this.syncVersionsToStorage();
+    await firestoreService.saveAllDocumentsAndVersions(
       SEED_DOCUMENTS,
       SEED_VERSIONS,
       SEED_AUDIT_LOGS,
-      this.getAcknowledgements(),
-      this.getUsers()
+      this.getAcknowledgements()
     );
   }
 

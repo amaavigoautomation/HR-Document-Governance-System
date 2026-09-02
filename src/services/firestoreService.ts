@@ -48,48 +48,58 @@ function cleanFirestoreData<T>(obj: T): T {
 }
 
 export const firestoreService = {
-  // Sync initial seeds if collection is empty
+  // Sync initial employee users only if collection is empty
   async seedFirestoreIfEmpty(
-    seedDocs: DocumentMaster[],
-    seedVersions: DocumentVersion[],
-    seedAuditLogs: AuditLogEntry[],
-    seedAcks: AcknowledgementRecord[],
+    _seedDocs: DocumentMaster[],
+    _seedVersions: DocumentVersion[],
+    _seedAuditLogs: AuditLogEntry[],
+    _seedAcks: AcknowledgementRecord[],
     seedEmployees?: User[]
   ) {
     try {
-      // 1. Check and seed Employees collection
+      // ONLY check and seed Employees collection if empty so default login accounts exist
       if (seedEmployees && seedEmployees.length > 0) {
         const empSnap = await getDocs(collection(db, EMPLOYEES_COLLECTION));
         if (empSnap.empty) {
-          console.log('[Firestore] Seeding employees collection...');
+          console.log('[Firestore] Initializing employees directory...');
           for (const emp of seedEmployees) {
             await setDoc(doc(db, EMPLOYEES_COLLECTION, emp.id), cleanFirestoreData(emp));
           }
-          console.log('[Firestore] Employees collection seeded.');
+          console.log('[Firestore] Employees directory initialized.');
         }
       }
-
-      // 2. Check and seed Documents (only if database not deliberately cleared)
-      const hasPurged = typeof window !== 'undefined' && localStorage.getItem('ama_docs_cleared') === 'true';
-      const snap = await getDocs(collection(db, DOCS_COLLECTION));
-      if (snap.empty && !hasPurged) {
-        console.log('[Firestore] Seeding initial HR governance data...');
-        for (const docMaster of seedDocs) {
-          await setDoc(doc(db, DOCS_COLLECTION, docMaster.id), cleanFirestoreData(docMaster));
-        }
-        for (const ver of seedVersions) {
-          await setDoc(doc(db, VERSIONS_COLLECTION, ver.id), cleanFirestoreData(ver));
-        }
-        for (const log of seedAuditLogs) {
-          await setDoc(doc(db, AUDIT_COLLECTION, log.id), cleanFirestoreData(log));
-        }
-        for (const ack of seedAcks) {
-          await setDoc(doc(db, ACKS_COLLECTION, ack.id), cleanFirestoreData(ack));
-        }
-        console.log('[Firestore] Seeding completed.');
-      }
+      // Note: Documents, versions, and acknowledgments are NEVER auto-seeded automatically.
+      // If a user deletes them, the database remains completely clean and empty across page refreshes.
     } catch (e) {
-      console.warn('[Firestore] Seed error / offline fallback:', e);
+      console.warn('[Firestore] Employee seed note:', e);
+    }
+  },
+
+  // Explicitly write sample documents & versions to Firestore (only when requested by user action)
+  async saveAllDocumentsAndVersions(
+    seedDocs: DocumentMaster[],
+    seedVersions: DocumentVersion[],
+    seedAuditLogs: AuditLogEntry[],
+    seedAcks: AcknowledgementRecord[]
+  ) {
+    try {
+      console.log('[Firestore] Writing seed documents and versions to Firestore...');
+      for (const docMaster of seedDocs) {
+        await setDoc(doc(db, DOCS_COLLECTION, docMaster.id), cleanFirestoreData(docMaster));
+      }
+      for (const ver of seedVersions) {
+        await setDoc(doc(db, VERSIONS_COLLECTION, ver.id), cleanFirestoreData(ver));
+      }
+      for (const log of seedAuditLogs) {
+        await setDoc(doc(db, AUDIT_COLLECTION, log.id), cleanFirestoreData(log));
+      }
+      for (const ack of seedAcks) {
+        await setDoc(doc(db, ACKS_COLLECTION, ack.id), cleanFirestoreData(ack));
+      }
+      console.log('[Firestore] Seed write complete.');
+    } catch (e) {
+      console.error('[Firestore] Error writing seed data:', e);
+      throw e;
     }
   },
 
@@ -261,20 +271,36 @@ export const firestoreService = {
   // Delete a single document master and its associated versions & acknowledgements
   async deleteDocument(documentId: string): Promise<void> {
     try {
-      await deleteDoc(doc(db, DOCS_COLLECTION, documentId));
+      // 1. Delete document master (by ID or matching documentId)
+      const dSnap = await getDocs(collection(db, DOCS_COLLECTION));
+      let logicalDocId = documentId;
+      for (const d of dSnap.docs) {
+        const data = d.data() as any;
+        if (d.id === documentId || data.id === documentId || data.documentId === documentId) {
+          if (data.documentId) logicalDocId = data.documentId;
+          await deleteDoc(doc(db, DOCS_COLLECTION, d.id));
+        }
+      }
 
+      // 2. Delete all matching versions
       const vSnap = await getDocs(collection(db, VERSIONS_COLLECTION));
       for (const d of vSnap.docs) {
         const data = d.data() as DocumentVersion;
-        if (data.documentMasterId === documentId || data.documentId === documentId) {
+        if (
+          d.id === documentId ||
+          data.documentMasterId === documentId ||
+          data.documentId === documentId ||
+          data.documentId === logicalDocId
+        ) {
           await deleteDoc(doc(db, VERSIONS_COLLECTION, d.id));
         }
       }
 
+      // 3. Delete all matching acknowledgments
       const aSnap = await getDocs(collection(db, ACKS_COLLECTION));
       for (const d of aSnap.docs) {
         const data = d.data() as AcknowledgementRecord;
-        if (data.documentId === documentId) {
+        if (data.documentId === documentId || data.documentId === logicalDocId) {
           await deleteDoc(doc(db, ACKS_COLLECTION, d.id));
         }
       }
