@@ -28,21 +28,45 @@ import { FileText, X, Download } from 'lucide-react';
 import { StatusBadge } from './components/StatusBadge';
 
 const CURRENT_USER_STORAGE_KEY = 'amaavigo_current_user_id';
+const CURRENT_USER_DATA_KEY = 'amaavigo_current_user_data';
 const ACTIVE_TAB_STORAGE_KEY = 'amaavigo_active_tab';
 
 export default function App() {
   const [currentUser, setCurrentUser] = useState<User | null>(() => {
     try {
+      // 1. First priority: restore full cached user object from localStorage
+      const savedUserData = localStorage.getItem(CURRENT_USER_DATA_KEY);
+      if (savedUserData) {
+        const parsed = JSON.parse(savedUserData);
+        if (parsed && (parsed.id || parsed.loginId || parsed.email)) {
+          return parsed as User;
+        }
+      }
+
+      // 2. Second priority: lookup user by stored ID / login ID
       const savedUserId = localStorage.getItem(CURRENT_USER_STORAGE_KEY);
       if (savedUserId) {
         const users = governanceEngine.getUsers();
-        const found = users.find((u) => u.id === savedUserId);
+        const found = users.find(
+          (u) =>
+            u.id === savedUserId ||
+            (u.loginId && u.loginId.toLowerCase() === savedUserId.toLowerCase()) ||
+            (u.empId && u.empId.toLowerCase() === savedUserId.toLowerCase()) ||
+            (u.email && u.email.toLowerCase() === savedUserId.toLowerCase())
+        );
         if (found) return found;
-        const seedFound = SEED_USERS.find((u) => u.id === savedUserId);
+
+        const seedFound = SEED_USERS.find(
+          (u) =>
+            u.id === savedUserId ||
+            (u.loginId && u.loginId.toLowerCase() === savedUserId.toLowerCase()) ||
+            (u.empId && u.empId.toLowerCase() === savedUserId.toLowerCase()) ||
+            (u.email && u.email.toLowerCase() === savedUserId.toLowerCase())
+        );
         if (seedFound) return seedFound;
       }
     } catch (e) {
-      console.warn('Could not read user from localStorage', e);
+      console.warn('Could not restore user from localStorage', e);
     }
     return null;
   });
@@ -80,18 +104,53 @@ export default function App() {
     const users = [...governanceEngine.getUsers()];
     setAllUsers(users);
     setCurrentUser((prev) => {
-      if (!prev) {
+      if (prev) {
+        const match = users.find(
+          (u) =>
+            u.id === prev.id ||
+            (u.loginId && prev.loginId && u.loginId.toLowerCase() === prev.loginId.toLowerCase()) ||
+            (u.empId && prev.empId && u.empId.toLowerCase() === prev.empId.toLowerCase()) ||
+            (u.email && prev.email && u.email.toLowerCase() === prev.email.toLowerCase())
+        );
+        const updated = match ? { ...prev, ...match } : prev;
         try {
-          const savedUserId = localStorage.getItem(CURRENT_USER_STORAGE_KEY);
-          if (savedUserId) {
-            const match = users.find((u) => u.id === savedUserId);
-            if (match) return { ...match };
-          }
+          localStorage.setItem(CURRENT_USER_STORAGE_KEY, updated.id);
+          localStorage.setItem(CURRENT_USER_DATA_KEY, JSON.stringify(updated));
         } catch (e) {}
-        return null;
+        return updated;
       }
-      const match = users.find((u) => u.id === prev.id);
-      return match ? { ...match } : prev;
+
+      try {
+        const savedUserData = localStorage.getItem(CURRENT_USER_DATA_KEY);
+        if (savedUserData) {
+          const parsed = JSON.parse(savedUserData);
+          if (parsed && (parsed.id || parsed.loginId || parsed.email)) {
+            const match = users.find(
+              (u) =>
+                u.id === parsed.id ||
+                (u.loginId && parsed.loginId && u.loginId.toLowerCase() === parsed.loginId.toLowerCase()) ||
+                (u.empId && parsed.empId && u.empId.toLowerCase() === parsed.empId.toLowerCase()) ||
+                (u.email && parsed.email && u.email.toLowerCase() === parsed.email.toLowerCase())
+            );
+            return match ? { ...parsed, ...match } : parsed;
+          }
+        }
+        const savedUserId = localStorage.getItem(CURRENT_USER_STORAGE_KEY);
+        if (savedUserId) {
+          const match = users.find(
+            (u) =>
+              u.id === savedUserId ||
+              (u.loginId && u.loginId.toLowerCase() === savedUserId.toLowerCase()) ||
+              (u.empId && u.empId.toLowerCase() === savedUserId.toLowerCase()) ||
+              (u.email && u.email.toLowerCase() === savedUserId.toLowerCase())
+          );
+          if (match) {
+            localStorage.setItem(CURRENT_USER_DATA_KEY, JSON.stringify(match));
+            return { ...match };
+          }
+        }
+      } catch (e) {}
+      return null;
     });
     const docs = [...governanceEngine.getDocumentMasters()];
     setDocuments(docs);
@@ -201,8 +260,7 @@ export default function App() {
     try {
       if (currentUser) {
         localStorage.setItem(CURRENT_USER_STORAGE_KEY, currentUser.id);
-      } else {
-        localStorage.removeItem(CURRENT_USER_STORAGE_KEY);
+        localStorage.setItem(CURRENT_USER_DATA_KEY, JSON.stringify(currentUser));
       }
     } catch (e) {
       console.warn('Error saving user to localStorage:', e);
@@ -223,6 +281,7 @@ export default function App() {
     setCurrentUser(user);
     try {
       localStorage.setItem(CURRENT_USER_STORAGE_KEY, user.id);
+      localStorage.setItem(CURRENT_USER_DATA_KEY, JSON.stringify(user));
     } catch (e) {}
     let targetTab: 'creator' | 'reviewer' | 'employee' | 'compliance' | 'audit' = 'creator';
     if (user.role === UserRole.CREATOR) {
@@ -242,6 +301,7 @@ export default function App() {
     setCurrentUser(user);
     try {
       localStorage.setItem(CURRENT_USER_STORAGE_KEY, user.id);
+      localStorage.setItem(CURRENT_USER_DATA_KEY, JSON.stringify(user));
     } catch (e) {}
     // If switching between employee and creator/reviewer, adjust default dashboard appropriately
     if (user.role === UserRole.EMPLOYEE && (activeTab === 'creator' || activeTab === 'reviewer')) {
@@ -266,6 +326,7 @@ export default function App() {
     setCurrentUser(null);
     try {
       localStorage.removeItem(CURRENT_USER_STORAGE_KEY);
+      localStorage.removeItem(CURRENT_USER_DATA_KEY);
       localStorage.removeItem(ACTIVE_TAB_STORAGE_KEY);
     } catch (e) {}
   };

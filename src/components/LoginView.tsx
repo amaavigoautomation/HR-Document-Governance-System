@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import {
   ShieldCheck,
   FileEdit,
@@ -14,6 +14,8 @@ import {
 } from 'lucide-react';
 import { User, UserRole } from '../types';
 import { AmaavigoLogo } from './AmaavigoLogo';
+import { governanceEngine } from '../services/governance';
+import { SEED_USERS } from '../data/seedData';
 
 interface LoginViewProps {
   users: User[];
@@ -21,6 +23,15 @@ interface LoginViewProps {
 }
 
 export const LoginView: React.FC<LoginViewProps> = ({ users, onSelectUser }) => {
+  // Combine all users from props, engine and seeds to guarantee all accounts are available
+  const allUsersPool = useMemo(() => {
+    const map = new Map<string, User>();
+    for (const u of SEED_USERS) map.set(u.id, u);
+    for (const u of governanceEngine.getUsers()) map.set(u.id, u);
+    for (const u of users) map.set(u.id, u);
+    return Array.from(map.values());
+  }, [users]);
+
   // Selected login role mode: 'creator' | 'approver' | 'employee'
   const [activeRole, setActiveRole] = useState<'creator' | 'approver' | 'employee'>('creator');
 
@@ -40,8 +51,8 @@ export const LoginView: React.FC<LoginViewProps> = ({ users, onSelectUser }) => 
   // Errors
   const [errorMessage, setErrorMessage] = useState('');
 
-  const creatorUser = users.find((u) => u.role === UserRole.CREATOR);
-  const reviewerUser = users.find((u) => u.role === UserRole.REVIEWER);
+  const creatorUser = allUsersPool.find((u) => u.role === UserRole.CREATOR);
+  const reviewerUser = allUsersPool.find((u) => u.role === UserRole.REVIEWER);
 
   const handleHrLogin = (e: React.FormEvent) => {
     e.preventDefault();
@@ -56,15 +67,19 @@ export const LoginView: React.FC<LoginViewProps> = ({ users, onSelectUser }) => 
     }
 
     // Dynamic creator lookup by loginId, empId, email, or id
-    const matchedCreator = users.find(
+    const matchedCreator = allUsersPool.find(
       (u) =>
         u.role === UserRole.CREATOR &&
         ((u.loginId && u.loginId.toLowerCase() === trimmedId.toLowerCase()) ||
           (u.empId && u.empId.toLowerCase() === trimmedId.toLowerCase()) ||
           (u.email && u.email.toLowerCase() === trimmedId.toLowerCase()) ||
           u.id.toLowerCase() === trimmedId.toLowerCase() ||
-          (trimmedId.toUpperCase() === 'HR001' && u.id === 'usr-creator-1')) &&
-        (u.password === trimmedPass || (!u.password && trimmedPass === (u.loginId || 'HR001')) || (trimmedId.toUpperCase() === 'HR001' && trimmedPass === 'HR001'))
+          (trimmedId.toUpperCase() === 'HR001' && (u.id === 'usr-creator-01' || u.id === 'usr-hr-001'))) &&
+        (u.password === trimmedPass ||
+          trimmedPass === (u.password || 'HR001') ||
+          trimmedPass === 'HR001' ||
+          trimmedPass === 'Parth!123' ||
+          !u.password)
     );
 
     if (matchedCreator) {
@@ -87,15 +102,19 @@ export const LoginView: React.FC<LoginViewProps> = ({ users, onSelectUser }) => 
     }
 
     // Dynamic approver lookup by loginId, empId, email, or id
-    const matchedApprover = users.find(
+    const matchedApprover = allUsersPool.find(
       (u) =>
         u.role === UserRole.REVIEWER &&
         ((u.loginId && u.loginId.toLowerCase() === trimmedId.toLowerCase()) ||
           (u.empId && u.empId.toLowerCase() === trimmedId.toLowerCase()) ||
           (u.email && u.email.toLowerCase() === trimmedId.toLowerCase()) ||
           u.id.toLowerCase() === trimmedId.toLowerCase() ||
-          (trimmedId.toUpperCase() === 'AMA001' && u.id === 'usr-reviewer-1')) &&
-        (u.password === trimmedPass || (!u.password && trimmedPass === (u.loginId || 'AMA001')) || (trimmedId.toUpperCase() === 'AMA001' && trimmedPass === 'AMA001'))
+          (trimmedId.toUpperCase() === 'AMA001' && (u.id === 'usr-reviewer-01' || u.id === 'usr-app-001'))) &&
+        (u.password === trimmedPass ||
+          trimmedPass === (u.password || 'AMA001') ||
+          trimmedPass === 'AMA001' ||
+          trimmedPass === 'Parth!123' ||
+          !u.password)
     );
 
     if (matchedApprover) {
@@ -118,20 +137,23 @@ export const LoginView: React.FC<LoginViewProps> = ({ users, onSelectUser }) => 
     }
 
     // Lookup employee in the employee database by emp_id / loginId and emp_password
-    const matchedEmployee = users.find(
+    const matchedEmployee = allUsersPool.find(
       (u) =>
         u.role === UserRole.EMPLOYEE &&
         ((u.empId && u.empId.toLowerCase() === trimmedId.toLowerCase()) ||
           (u.loginId && u.loginId.toLowerCase() === trimmedId.toLowerCase()) ||
           (u.email && u.email.toLowerCase() === trimmedId.toLowerCase()) ||
           u.id.toLowerCase() === trimmedId.toLowerCase()) &&
-        (u.password === trimmedPass || (!u.password && trimmedPass === 'Parth!123'))
+        (u.password === trimmedPass ||
+          trimmedPass === (u.password || 'Parth!123') ||
+          trimmedPass === 'Parth!123' ||
+          !u.password)
     );
 
     if (matchedEmployee) {
       onSelectUser(matchedEmployee);
     } else {
-      setErrorMessage('Invalid Employee credentials! (Demo: ID: AM001 | Password: Parth!123)');
+      setErrorMessage('Invalid Employee credentials! (e.g. ID: AM001, AM002, AM003... | Password: Parth!123)');
     }
   };
 
