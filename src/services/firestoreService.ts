@@ -226,46 +226,86 @@ export const firestoreService = {
 
   // Document Masters
   async getDocuments(): Promise<DocumentMaster[]> {
-    const snap = await getDocs(collection(db, DOCS_COLLECTION));
-    return snap.docs.map((d) => d.data() as DocumentMaster);
+    try {
+      const snap = await getDocs(collection(db, DOCS_COLLECTION));
+      return snap.docs.map((d) => d.data() as DocumentMaster);
+    } catch (e) {
+      console.warn('[Firestore] Error getting documents (using local cache):', e);
+      return [];
+    }
   },
 
   async saveDocument(docMaster: DocumentMaster): Promise<void> {
-    await setDoc(doc(db, DOCS_COLLECTION, docMaster.id), cleanFirestoreData(docMaster));
+    try {
+      await setDoc(doc(db, DOCS_COLLECTION, docMaster.id), cleanFirestoreData(docMaster));
+    } catch (e) {
+      console.warn('[Firestore] Save document offline note:', e);
+    }
   },
 
   // Versions
   async getVersions(): Promise<DocumentVersion[]> {
-    const snap = await getDocs(collection(db, VERSIONS_COLLECTION));
-    return snap.docs.map((d) => d.data() as DocumentVersion);
+    try {
+      const snap = await getDocs(collection(db, VERSIONS_COLLECTION));
+      return snap.docs.map((d) => d.data() as DocumentVersion);
+    } catch (e) {
+      console.warn('[Firestore] Error getting versions (using local cache):', e);
+      return [];
+    }
   },
 
   async saveVersion(version: DocumentVersion): Promise<void> {
-    await setDoc(doc(db, VERSIONS_COLLECTION, version.id), cleanFirestoreData(version));
+    try {
+      await setDoc(doc(db, VERSIONS_COLLECTION, version.id), cleanFirestoreData(version));
+    } catch (e) {
+      console.warn('[Firestore] Save version offline note:', e);
+    }
   },
 
   async updateVersion(versionId: string, updates: Partial<DocumentVersion>): Promise<void> {
-    await updateDoc(doc(db, VERSIONS_COLLECTION, versionId), cleanFirestoreData(updates));
+    try {
+      await updateDoc(doc(db, VERSIONS_COLLECTION, versionId), cleanFirestoreData(updates));
+    } catch (e) {
+      console.warn('[Firestore] Update version offline note:', e);
+    }
   },
 
   // Audit Logs
   async getAuditLogs(): Promise<AuditLogEntry[]> {
-    const snap = await getDocs(collection(db, AUDIT_COLLECTION));
-    return snap.docs.map((d) => d.data() as AuditLogEntry);
+    try {
+      const snap = await getDocs(collection(db, AUDIT_COLLECTION));
+      return snap.docs.map((d) => d.data() as AuditLogEntry);
+    } catch (e) {
+      console.warn('[Firestore] Error getting audit logs (using local cache):', e);
+      return [];
+    }
   },
 
   async saveAuditLog(log: AuditLogEntry): Promise<void> {
-    await setDoc(doc(db, AUDIT_COLLECTION, log.id), cleanFirestoreData(log));
+    try {
+      await setDoc(doc(db, AUDIT_COLLECTION, log.id), cleanFirestoreData(log));
+    } catch (e) {
+      console.warn('[Firestore] Save audit log offline note:', e);
+    }
   },
 
   // Acknowledgments
   async getAcknowledgements(): Promise<AcknowledgementRecord[]> {
-    const snap = await getDocs(collection(db, ACKS_COLLECTION));
-    return snap.docs.map((d) => d.data() as AcknowledgementRecord);
+    try {
+      const snap = await getDocs(collection(db, ACKS_COLLECTION));
+      return snap.docs.map((d) => d.data() as AcknowledgementRecord);
+    } catch (e) {
+      console.warn('[Firestore] Error getting acknowledgements (using local cache):', e);
+      return [];
+    }
   },
 
   async saveAcknowledgement(ack: AcknowledgementRecord): Promise<void> {
-    await setDoc(doc(db, ACKS_COLLECTION, ack.id), cleanFirestoreData(ack));
+    try {
+      await setDoc(doc(db, ACKS_COLLECTION, ack.id), cleanFirestoreData(ack));
+    } catch (e) {
+      console.warn('[Firestore] Save acknowledgement offline note:', e);
+    }
   },
 
   // Delete a single document master and its associated versions & acknowledgements
@@ -337,126 +377,156 @@ export const firestoreService = {
 
   // Real-time listener for employees and users
   subscribeToEmployees(callback: (employees: User[]) => void) {
-    return onSnapshot(collection(db, EMPLOYEES_COLLECTION), (snap) => {
-      const items = snap.docs.map((d) => {
-        const data = d.data() as any;
-        const docId = data.id || d.id;
-        const rawRole = (data.role || '').toString().toUpperCase().trim();
-        const rawLoginId = (data.loginId || data.empId || docId || '').toString().toUpperCase().trim();
-        const rawTitle = (data.title || data.designation || '').toString().toUpperCase();
-        const rawDept = (data.departmentName || data.department || data.departmentId || '').toString().toUpperCase();
-        const lowerDocId = docId.toLowerCase();
+    return onSnapshot(
+      collection(db, EMPLOYEES_COLLECTION),
+      (snap) => {
+        const items = snap.docs.map((d) => {
+          const data = d.data() as any;
+          const docId = data.id || d.id;
+          const rawRole = (data.role || '').toString().toUpperCase().trim();
+          const rawLoginId = (data.loginId || data.empId || docId || '').toString().toUpperCase().trim();
+          const rawTitle = (data.title || data.designation || '').toString().toUpperCase();
+          const rawDept = (data.departmentName || data.department || data.departmentId || '').toString().toUpperCase();
+          const lowerDocId = docId.toLowerCase();
 
-        let role = UserRole.EMPLOYEE;
-        if (
-          rawRole === 'CREATOR' ||
-          rawRole === 'HR' ||
-          rawRole === 'AUTHOR' ||
-          rawRole.includes('CREATOR') ||
-          rawRole.includes('HR') ||
-          lowerDocId.includes('creator') ||
-          lowerDocId.includes('hr') ||
-          rawLoginId.startsWith('HR') ||
-          rawLoginId === 'CREATOR' ||
-          rawDept.includes('HUMAN RESOURCES') ||
-          rawDept === 'HR' ||
-          rawTitle.includes('HR') ||
-          rawTitle.includes('CREATOR')
-        ) {
-          role = UserRole.CREATOR;
-        } else if (
-          rawRole === 'REVIEWER' ||
-          rawRole === 'APPROVER' ||
-          rawRole.includes('REVIEWER') ||
-          rawRole.includes('APPROVER') ||
-          lowerDocId.includes('reviewer') ||
-          lowerDocId.includes('approver') ||
-          lowerDocId.includes('app') ||
-          rawLoginId.startsWith('AMA') ||
-          rawLoginId.startsWith('APP') ||
-          rawLoginId.startsWith('REV') ||
-          rawLoginId === 'APPROVER' ||
-          rawLoginId === 'REVIEWER' ||
-          rawTitle.includes('APPROVER') ||
-          rawTitle.includes('REVIEWER')
-        ) {
-          role = UserRole.REVIEWER;
-        }
+          let role = UserRole.EMPLOYEE;
+          if (
+            rawRole === 'CREATOR' ||
+            rawRole === 'HR' ||
+            rawRole === 'AUTHOR' ||
+            rawRole.includes('CREATOR') ||
+            rawRole.includes('HR') ||
+            lowerDocId.includes('creator') ||
+            lowerDocId.includes('hr') ||
+            rawLoginId.startsWith('HR') ||
+            rawLoginId === 'CREATOR' ||
+            rawDept.includes('HUMAN RESOURCES') ||
+            rawDept === 'HR' ||
+            rawTitle.includes('HR') ||
+            rawTitle.includes('CREATOR')
+          ) {
+            role = UserRole.CREATOR;
+          } else if (
+            rawRole === 'REVIEWER' ||
+            rawRole === 'APPROVER' ||
+            rawRole.includes('REVIEWER') ||
+            rawRole.includes('APPROVER') ||
+            lowerDocId.includes('reviewer') ||
+            lowerDocId.includes('approver') ||
+            lowerDocId.includes('app') ||
+            rawLoginId.startsWith('AMA') ||
+            rawLoginId.startsWith('APP') ||
+            rawLoginId.startsWith('REV') ||
+            rawLoginId === 'APPROVER' ||
+            rawLoginId === 'REVIEWER' ||
+            rawTitle.includes('APPROVER') ||
+            rawTitle.includes('REVIEWER')
+          ) {
+            role = UserRole.REVIEWER;
+          }
 
-        const empId = data.empId || data.employeeId || data.loginId || docId;
-        const loginId = data.loginId || data.empId || data.employeeId || docId;
-        const name =
-          data.name ||
-          data.fullName ||
-          data.employeeName ||
-          (role === UserRole.CREATOR ? 'HR Creator' : role === UserRole.REVIEWER ? 'Approver' : 'Employee');
-        const email =
-          data.email ||
-          (empId ? `${empId.toLowerCase()}@amaavigo.com` : 'employee@amaavigo.com');
+          const empId = data.empId || data.employeeId || data.loginId || docId;
+          const loginId = data.loginId || data.empId || data.employeeId || docId;
+          const name =
+            data.name ||
+            data.fullName ||
+            data.employeeName ||
+            (role === UserRole.CREATOR ? 'HR Creator' : role === UserRole.REVIEWER ? 'Approver' : 'Employee');
+          const email =
+            data.email ||
+            (empId ? `${empId.toLowerCase()}@amaavigo.com` : 'employee@amaavigo.com');
 
-        return {
-          id: docId,
-          empId,
-          loginId,
-          name,
-          email,
-          role,
-          title:
-            data.title ||
-            data.designation ||
-            (role === UserRole.CREATOR
-              ? 'HR Policy & Governance Lead'
-              : role === UserRole.REVIEWER
-              ? 'VP of Human Resources & Governance'
-              : 'Staff Member'),
-          departmentName:
-            data.departmentName ||
-            data.department ||
-            (role === UserRole.CREATOR || role === UserRole.REVIEWER
-              ? 'Human Resources'
-              : 'Operations'),
-          companyName: data.companyName || 'Amaavigo Group',
-          password:
-            data.password ||
-            (role === UserRole.CREATOR ? 'HR001' : role === UserRole.REVIEWER ? 'AMA001' : 'Parth!123'),
-          active: data.active !== false && data.status !== 'INACTIVE',
-          avatar: data.avatar || data.avatarUrl,
-          ...data,
-        } as User;
-      });
-      callback(items);
-    });
+          return {
+            id: docId,
+            empId,
+            loginId,
+            name,
+            email,
+            role,
+            title:
+              data.title ||
+              data.designation ||
+              (role === UserRole.CREATOR
+                ? 'HR Policy & Governance Lead'
+                : role === UserRole.REVIEWER
+                ? 'VP of Human Resources & Governance'
+                : 'Staff Member'),
+            departmentName:
+              data.departmentName ||
+              data.department ||
+              (role === UserRole.CREATOR || role === UserRole.REVIEWER
+                ? 'Human Resources'
+                : 'Operations'),
+            companyName: data.companyName || 'Amaavigo Group',
+            password:
+              data.password ||
+              (role === UserRole.CREATOR ? 'HR001' : role === UserRole.REVIEWER ? 'AMA001' : 'Parth!123'),
+            active: data.active !== false && data.status !== 'INACTIVE',
+            avatar: data.avatar || data.avatarUrl,
+            ...data,
+          } as User;
+        });
+        callback(items);
+      },
+      (error) => {
+        console.warn('[Firestore] Employees subscription offline/retry note:', error?.message || error);
+      }
+    );
   },
 
   // Real-time listener for document changes
   subscribeToDocuments(callback: (docs: DocumentMaster[]) => void) {
-    return onSnapshot(collection(db, DOCS_COLLECTION), (snap) => {
-      const items = snap.docs.map((d) => d.data() as DocumentMaster);
-      callback(items);
-    });
+    return onSnapshot(
+      collection(db, DOCS_COLLECTION),
+      (snap) => {
+        const items = snap.docs.map((d) => d.data() as DocumentMaster);
+        callback(items);
+      },
+      (error) => {
+        console.warn('[Firestore] Documents subscription offline/retry note:', error?.message || error);
+      }
+    );
   },
 
   // Real-time listener for versions
   subscribeToVersions(callback: (versions: DocumentVersion[]) => void) {
-    return onSnapshot(collection(db, VERSIONS_COLLECTION), (snap) => {
-      const items = snap.docs.map((d) => d.data() as DocumentVersion);
-      callback(items);
-    });
+    return onSnapshot(
+      collection(db, VERSIONS_COLLECTION),
+      (snap) => {
+        const items = snap.docs.map((d) => d.data() as DocumentVersion);
+        callback(items);
+      },
+      (error) => {
+        console.warn('[Firestore] Versions subscription offline/retry note:', error?.message || error);
+      }
+    );
   },
 
   // Real-time listener for acknowledgments
   subscribeToAcknowledgements(callback: (acks: AcknowledgementRecord[]) => void) {
-    return onSnapshot(collection(db, ACKS_COLLECTION), (snap) => {
-      const items = snap.docs.map((d) => d.data() as AcknowledgementRecord);
-      callback(items);
-    });
+    return onSnapshot(
+      collection(db, ACKS_COLLECTION),
+      (snap) => {
+        const items = snap.docs.map((d) => d.data() as AcknowledgementRecord);
+        callback(items);
+      },
+      (error) => {
+        console.warn('[Firestore] Acknowledgements subscription offline/retry note:', error?.message || error);
+      }
+    );
   },
 
   // Real-time listener for audit logs
   subscribeToAuditLogs(callback: (logs: AuditLogEntry[]) => void) {
-    return onSnapshot(collection(db, AUDIT_COLLECTION), (snap) => {
-      const items = snap.docs.map((d) => d.data() as AuditLogEntry);
-      callback(items);
-    });
+    return onSnapshot(
+      collection(db, AUDIT_COLLECTION),
+      (snap) => {
+        const items = snap.docs.map((d) => d.data() as AuditLogEntry);
+        callback(items);
+      },
+      (error) => {
+        console.warn('[Firestore] Audit logs subscription offline/retry note:', error?.message || error);
+      }
+    );
   },
 };

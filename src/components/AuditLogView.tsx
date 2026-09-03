@@ -57,8 +57,8 @@ export const AuditLogView: React.FC<AuditLogViewProps> = ({ users }) => {
       rawRole === 'CREATOR' ||
       rawRole === 'HR' ||
       log.performedById === 'usr-hr-001' ||
-      log.performedByName === 'Sarah Jenkins' ||
-      log.performedByName?.toLowerCase().includes('sarah')
+      log.performedByName === 'Bharat Israni' ||
+      log.performedByName?.toLowerCase().includes('bharat')
     ) {
       const creator = userList.find(
         (u) => u.role === UserRole.CREATOR || u.id === 'usr-hr-001' || u.loginId === 'HR' || u.loginId === 'HR001'
@@ -77,8 +77,8 @@ export const AuditLogView: React.FC<AuditLogViewProps> = ({ users }) => {
       rawRole === 'REVIEWER' ||
       rawRole === 'APPROVER' ||
       log.performedById === 'usr-app-001' ||
-      log.performedByName === 'Marcus Vance' ||
-      log.performedByName?.toLowerCase().includes('marcus')
+      log.performedByName === 'Amee Shah' ||
+      log.performedByName?.toLowerCase().includes('amee')
     ) {
       const reviewer = userList.find(
         (u) => u.role === UserRole.REVIEWER || u.id === 'usr-app-001' || u.loginId === 'APPROVER' || u.loginId === 'AMA001'

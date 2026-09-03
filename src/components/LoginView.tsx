@@ -62,7 +62,7 @@ export const LoginView: React.FC<LoginViewProps> = ({ users, onSelectUser }) => 
     const trimmedPass = hrPass.trim();
 
     if (!trimmedId || !trimmedPass) {
-      setErrorMessage('Please enter both HR ID / Email and Password.');
+      setErrorMessage('Please enter both HR ID and Password.');
       return;
     }
 
@@ -85,7 +85,7 @@ export const LoginView: React.FC<LoginViewProps> = ({ users, onSelectUser }) => 
     if (matchedCreator) {
       onSelectUser(matchedCreator);
     } else {
-      setErrorMessage('Invalid HR Creator credentials. Please verify your ID/Email and password.');
+      setErrorMessage('Invalid HR Creator credentials. Please verify your ID and password.');
     }
   };
 
@@ -120,7 +120,7 @@ export const LoginView: React.FC<LoginViewProps> = ({ users, onSelectUser }) => 
     if (matchedApprover) {
       onSelectUser(matchedApprover);
     } else {
-      setErrorMessage('Invalid Approver credentials. Please verify your ID/Email and password.');
+      setErrorMessage('Invalid Approver credentials. Please verify your ID and password.');
     }
   };
 
@@ -153,7 +153,7 @@ export const LoginView: React.FC<LoginViewProps> = ({ users, onSelectUser }) => 
     if (matchedEmployee) {
       onSelectUser(matchedEmployee);
     } else {
-      setErrorMessage('Invalid Employee credentials! (e.g. ID: AM001, AM002, AM003... | Password: Parth!123)');
+      setErrorMessage('Invalid Approver credentials. Please verify your ID and password.');
     }
   };
 
@@ -272,9 +272,6 @@ export const LoginView: React.FC<LoginViewProps> = ({ users, onSelectUser }) => 
                     <p className="text-xs text-slate-500">Author & Manage HR Document Masters & Revisions</p>
                   </div>
                 </div>
-                <span className="text-[11px] font-mono font-bold text-[#FA7014] bg-[#FA7014]/10 border border-[#FA7014]/30 px-2.5 py-1 rounded-lg">
-                  Role: HR Creator
-                </span>
               </div>
 
               {/* HR ID Input */}
@@ -328,7 +325,7 @@ export const LoginView: React.FC<LoginViewProps> = ({ users, onSelectUser }) => 
                 type="submit"
                 className="w-full bg-gradient-to-r from-[#FA7014] to-[#FF8C38] hover:from-[#E65A05] hover:to-[#FA7014] text-white font-bold py-3.5 px-4 rounded-xl shadow-lg shadow-[#FA7014]/25 flex items-center justify-center space-x-2 transition-all border border-orange-400/30"
               >
-                <span>Login as HR (Creator)</span>
+                <span>Login</span>
                 <ArrowRight className="w-4 h-4" />
               </button>
             </form>
@@ -348,9 +345,6 @@ export const LoginView: React.FC<LoginViewProps> = ({ users, onSelectUser }) => 
                     <p className="text-xs text-slate-500">Review, Diff Comparison & Authorize Publications</p>
                   </div>
                 </div>
-                <span className="text-[11px] font-mono font-bold text-slate-900 bg-slate-100 border border-slate-200 px-2.5 py-1 rounded-lg">
-                  Role: Approver
-                </span>
               </div>
 
               {/* Approver ID Input */}
@@ -404,7 +398,7 @@ export const LoginView: React.FC<LoginViewProps> = ({ users, onSelectUser }) => 
                 type="submit"
                 className="w-full bg-slate-900 hover:bg-slate-800 text-white font-bold py-3.5 px-4 rounded-xl shadow-lg flex items-center justify-center space-x-2 transition-all"
               >
-                <span>Login as Approver</span>
+                <span>Login</span>
                 <ArrowRight className="w-4 h-4" />
               </button>
             </form>
@@ -424,9 +418,6 @@ export const LoginView: React.FC<LoginViewProps> = ({ users, onSelectUser }) => 
                     <p className="text-xs text-slate-500">View Operational Policies & Complete Required Sign-Offs</p>
                   </div>
                 </div>
-                <span className="text-[11px] font-mono font-bold text-slate-900 bg-slate-100 border border-slate-200 px-2.5 py-1 rounded-lg">
-                  Role: Employee
-                </span>
               </div>
 
               {/* Employee ID Input */}
@@ -480,7 +471,7 @@ export const LoginView: React.FC<LoginViewProps> = ({ users, onSelectUser }) => 
                 type="submit"
                 className="w-full bg-slate-900 hover:bg-slate-800 text-white font-bold py-3.5 px-4 rounded-xl shadow-lg flex items-center justify-center space-x-2 transition-all"
               >
-                <span>Login to Employee Portal</span>
+                <span>Login</span>
                 <ArrowRight className="w-4 h-4" />
               </button>
             </form>
