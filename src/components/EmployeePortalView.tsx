@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   BookOpen,
   Search,
@@ -21,6 +21,7 @@ interface EmployeePortalViewProps {
   currentUser: User;
   documents: DocumentMaster[];
   versions: DocumentVersion[];
+  acknowledgements?: AcknowledgementRecord[];
   onOpenDocumentView: (version: DocumentVersion) => void;
 }
 
@@ -28,12 +29,23 @@ export const EmployeePortalView: React.FC<EmployeePortalViewProps> = ({
   currentUser,
   documents,
   versions,
+  acknowledgements,
   onOpenDocumentView,
 }) => {
   const [searchTerm, setSearchTerm] = useState('');
-  const [acknowledgements, setAcknowledgements] = useState<AcknowledgementRecord[]>(
-    governanceEngine.getAcknowledgements()
-  );
+  const [localAcks, setLocalAcks] = useState<AcknowledgementRecord[]>(() => {
+    return acknowledgements && acknowledgements.length > 0
+      ? acknowledgements
+      : governanceEngine.getAcknowledgements();
+  });
+
+  useEffect(() => {
+    if (acknowledgements && acknowledgements.length > 0) {
+      setLocalAcks(acknowledgements);
+    } else {
+      setLocalAcks(governanceEngine.getAcknowledgements());
+    }
+  }, [acknowledgements, documents, versions, currentUser]);
 
   // Employee only sees PUBLISHED documents that are Public (All Employees)
   // Internal Company documents are strictly restricted to HR & Approvers
@@ -60,10 +72,11 @@ export const EmployeePortalView: React.FC<EmployeePortalViewProps> = ({
 
   const handleAcknowledge = (doc: DocumentMaster, verNumber: string) => {
     governanceEngine.acknowledgeDocument(currentUser, doc.documentId, verNumber);
-    setAcknowledgements(governanceEngine.getAcknowledgements());
+    setLocalAcks(governanceEngine.getAcknowledgements());
   };
 
-  const userAcks = acknowledgements.filter(
+  const effectiveAcks = localAcks.length > 0 ? localAcks : (acknowledgements || []);
+  const userAcks = effectiveAcks.filter(
     (a) =>
       userIdentifiers.includes(a.employeeId?.toLowerCase()) ||
       (a.employeeEmail && userIdentifiers.includes(a.employeeEmail.toLowerCase()))
@@ -91,13 +104,7 @@ export const EmployeePortalView: React.FC<EmployeePortalViewProps> = ({
             <span className="bg-[#FA7014]/10 text-[#FA7014] text-xs px-3 py-0.5 rounded-full font-semibold border border-[#FA7014]/30">
               Live Company Policies & SOPs
             </span>
-            <span className="bg-slate-100 text-slate-800 text-xs px-2.5 py-0.5 rounded-md font-mono font-semibold border border-slate-200">
-              emp_id: {currentUser.empId || currentUser.loginId || currentUser.id}
-            </span>
           </div>
-          <p className="text-sm text-slate-500 mt-1.5">
-            Logged in as <span className="font-semibold text-slate-900">{currentUser.name}</span> ({currentUser.email}) • Access operational published policies and complete required compliance acknowledgements.
-          </p>
         </div>
 
         {pendingAcksCount > 0 ? (

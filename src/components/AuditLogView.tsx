@@ -34,13 +34,14 @@ export const AuditLogView: React.FC<AuditLogViewProps> = ({ users }) => {
 
   // Helper to dynamically resolve the latest performer name and role from the active user roster
   const resolvePerformer = (log: AuditLogEntry) => {
-    // 1. Match by user ID
+    // 1. Match by user ID / empId / loginId
     if (log.performedById) {
       const match = userList.find(
         (u) =>
           u.id === log.performedById ||
           (u.empId && u.empId.toLowerCase() === log.performedById.toLowerCase()) ||
-          (u.loginId && u.loginId.toLowerCase() === log.performedById.toLowerCase())
+          (u.loginId && u.loginId.toLowerCase() === log.performedById.toLowerCase()) ||
+          (u.email && u.email.toLowerCase() === log.performedById.toLowerCase())
       );
       if (match) {
         return {
@@ -51,48 +52,7 @@ export const AuditLogView: React.FC<AuditLogViewProps> = ({ users }) => {
       }
     }
 
-    // 2. Match HR / Creator role or historical creator seed
-    const rawRole = (log.performedByRole || '').toString().toUpperCase();
-    if (
-      rawRole === 'CREATOR' ||
-      rawRole === 'HR' ||
-      log.performedById === 'usr-hr-001' ||
-      log.performedByName === 'Bharat Israni' ||
-      log.performedByName?.toLowerCase().includes('bharat')
-    ) {
-      const creator = userList.find(
-        (u) => u.role === UserRole.CREATOR || u.id === 'usr-hr-001' || u.loginId === 'HR' || u.loginId === 'HR001'
-      );
-      if (creator) {
-        return {
-          name: creator.name,
-          role: UserRole.CREATOR,
-          title: creator.title,
-        };
-      }
-    }
-
-    // 3. Match Reviewer / Approver role or historical reviewer seed
-    if (
-      rawRole === 'REVIEWER' ||
-      rawRole === 'APPROVER' ||
-      log.performedById === 'usr-app-001' ||
-      log.performedByName === 'Amee Shah' ||
-      log.performedByName?.toLowerCase().includes('amee')
-    ) {
-      const reviewer = userList.find(
-        (u) => u.role === UserRole.REVIEWER || u.id === 'usr-app-001' || u.loginId === 'APPROVER' || u.loginId === 'AMA001'
-      );
-      if (reviewer) {
-        return {
-          name: reviewer.name,
-          role: UserRole.REVIEWER,
-          title: reviewer.title,
-        };
-      }
-    }
-
-    // 4. Match by name in user roster
+    // 2. Match by name in user roster
     if (log.performedByName) {
       const byName = userList.find(
         (u) =>
@@ -104,6 +64,30 @@ export const AuditLogView: React.FC<AuditLogViewProps> = ({ users }) => {
           name: byName.name,
           role: byName.role || log.performedByRole,
           title: byName.title,
+        };
+      }
+    }
+
+    // 3. Match by role in user roster if available
+    const rawRole = (log.performedByRole || '').toString().toUpperCase();
+    if (rawRole === 'CREATOR' || rawRole === 'HR') {
+      const creator = userList.find((u) => u.role === UserRole.CREATOR);
+      if (creator) {
+        return {
+          name: log.performedByName || creator.name,
+          role: UserRole.CREATOR,
+          title: creator.title,
+        };
+      }
+    }
+
+    if (rawRole === 'REVIEWER' || rawRole === 'APPROVER') {
+      const reviewer = userList.find((u) => u.role === UserRole.REVIEWER);
+      if (reviewer) {
+        return {
+          name: log.performedByName || reviewer.name,
+          role: UserRole.REVIEWER,
+          title: reviewer.title,
         };
       }
     }

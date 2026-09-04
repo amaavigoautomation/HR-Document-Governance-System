@@ -237,13 +237,6 @@ export const ReviewDocumentModal: React.FC<ReviewDocumentModalProps> = ({
               <span className="font-semibold text-slate-800">{master?.acknowledgementRequired ? 'Mandatory' : 'Optional'}</span>
             </div>
           </div>
-
-          <div className="flex items-center space-x-2">
-            <span className="inline-flex items-center space-x-1.5 font-mono text-[11px] bg-white text-slate-800 border border-slate-200 px-2.5 py-0.5 rounded-lg shadow-2xs">
-              <CheckCircle2 className="w-3.5 h-3.5 text-[#FA7014]" />
-              <span>SHA-256 Verified: {version.contentHash.substring(0, 16)}...</span>
-            </span>
-          </div>
         </div>
 
         {/* NAVIGATION TABS */}
@@ -301,20 +294,6 @@ export const ReviewDocumentModal: React.FC<ReviewDocumentModalProps> = ({
               <span>Full Submitted Document</span>
             </button>
           </div>
-
-          {comparison && (
-            <div className="hidden sm:flex items-center space-x-2 text-xs font-medium text-slate-700 mb-2">
-              <span className="text-slate-800 bg-slate-100 border border-slate-200 px-2 py-0.5 rounded font-bold">
-                +{comparison.statistics.additions} added
-              </span>
-              <span className="text-slate-800 bg-slate-100 border border-slate-200 px-2 py-0.5 rounded font-bold">
-                -{comparison.statistics.removals} removed
-              </span>
-              <span className="text-[#FA7014] bg-orange-50 border border-orange-200 px-2 py-0.5 rounded font-bold">
-                ~{comparison.statistics.modifications} modified
-              </span>
-            </div>
-          )}
         </div>
 
         {/* MAIN COMPARISON CONTENT CONTAINER */}

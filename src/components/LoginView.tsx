@@ -15,7 +15,6 @@ import {
 import { User, UserRole } from '../types';
 import { AmaavigoLogo } from './AmaavigoLogo';
 import { governanceEngine } from '../services/governance';
-import { SEED_USERS } from '../data/seedData';
 
 interface LoginViewProps {
   users: User[];
@@ -23,12 +22,17 @@ interface LoginViewProps {
 }
 
 export const LoginView: React.FC<LoginViewProps> = ({ users, onSelectUser }) => {
-  // Combine all users from props, engine and seeds to guarantee all accounts are available
+  // Combine all users from props and engine
   const allUsersPool = useMemo(() => {
     const map = new Map<string, User>();
-    for (const u of SEED_USERS) map.set(u.id, u);
-    for (const u of governanceEngine.getUsers()) map.set(u.id, u);
-    for (const u of users) map.set(u.id, u);
+    for (const u of governanceEngine.getUsers()) {
+      const key = (u.empId || u.loginId || u.id || u.email || '').toUpperCase();
+      if (key) map.set(key, u);
+    }
+    for (const u of users) {
+      const key = (u.empId || u.loginId || u.id || u.email || '').toUpperCase();
+      if (key) map.set(key, u);
+    }
     return Array.from(map.values());
   }, [users]);
 
@@ -51,14 +55,11 @@ export const LoginView: React.FC<LoginViewProps> = ({ users, onSelectUser }) => 
   // Errors
   const [errorMessage, setErrorMessage] = useState('');
 
-  const creatorUser = allUsersPool.find((u) => u.role === UserRole.CREATOR);
-  const reviewerUser = allUsersPool.find((u) => u.role === UserRole.REVIEWER);
-
   const handleHrLogin = (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMessage('');
 
-    const trimmedId = hrId.trim();
+    const trimmedId = hrId.trim().toLowerCase();
     const trimmedPass = hrPass.trim();
 
     if (!trimmedId || !trimmedPass) {
@@ -70,15 +71,12 @@ export const LoginView: React.FC<LoginViewProps> = ({ users, onSelectUser }) => 
     const matchedCreator = allUsersPool.find(
       (u) =>
         u.role === UserRole.CREATOR &&
-        ((u.loginId && u.loginId.toLowerCase() === trimmedId.toLowerCase()) ||
-          (u.empId && u.empId.toLowerCase() === trimmedId.toLowerCase()) ||
-          (u.email && u.email.toLowerCase() === trimmedId.toLowerCase()) ||
-          u.id.toLowerCase() === trimmedId.toLowerCase() ||
-          (trimmedId.toUpperCase() === 'HR001' && (u.id === 'usr-creator-01' || u.id === 'usr-hr-001'))) &&
+        ((u.loginId && u.loginId.toLowerCase() === trimmedId) ||
+          (u.empId && u.empId.toLowerCase() === trimmedId) ||
+          (u.email && u.email.toLowerCase() === trimmedId) ||
+          u.id.toLowerCase() === trimmedId) &&
         (u.password === trimmedPass ||
-          trimmedPass === (u.password || 'HR001') ||
-          trimmedPass === 'HR001' ||
-          trimmedPass === 'Parth!123' ||
+          trimmedPass === (u.password || u.loginId || u.empId) ||
           !u.password)
     );
 
@@ -93,7 +91,7 @@ export const LoginView: React.FC<LoginViewProps> = ({ users, onSelectUser }) => 
     e.preventDefault();
     setErrorMessage('');
 
-    const trimmedId = approverId.trim();
+    const trimmedId = approverId.trim().toLowerCase();
     const trimmedPass = approverPass.trim();
 
     if (!trimmedId || !trimmedPass) {
@@ -105,15 +103,12 @@ export const LoginView: React.FC<LoginViewProps> = ({ users, onSelectUser }) => 
     const matchedApprover = allUsersPool.find(
       (u) =>
         u.role === UserRole.REVIEWER &&
-        ((u.loginId && u.loginId.toLowerCase() === trimmedId.toLowerCase()) ||
-          (u.empId && u.empId.toLowerCase() === trimmedId.toLowerCase()) ||
-          (u.email && u.email.toLowerCase() === trimmedId.toLowerCase()) ||
-          u.id.toLowerCase() === trimmedId.toLowerCase() ||
-          (trimmedId.toUpperCase() === 'AMA001' && (u.id === 'usr-reviewer-01' || u.id === 'usr-app-001'))) &&
+        ((u.loginId && u.loginId.toLowerCase() === trimmedId) ||
+          (u.empId && u.empId.toLowerCase() === trimmedId) ||
+          (u.email && u.email.toLowerCase() === trimmedId) ||
+          u.id.toLowerCase() === trimmedId) &&
         (u.password === trimmedPass ||
-          trimmedPass === (u.password || 'AMA001') ||
-          trimmedPass === 'AMA001' ||
-          trimmedPass === 'Parth!123' ||
+          trimmedPass === (u.password || u.loginId || u.empId) ||
           !u.password)
     );
 
@@ -128,7 +123,7 @@ export const LoginView: React.FC<LoginViewProps> = ({ users, onSelectUser }) => 
     e.preventDefault();
     setErrorMessage('');
 
-    const trimmedId = empId.trim();
+    const trimmedId = empId.trim().toLowerCase();
     const trimmedPass = empPass.trim();
 
     if (!trimmedId || !trimmedPass) {
@@ -136,43 +131,24 @@ export const LoginView: React.FC<LoginViewProps> = ({ users, onSelectUser }) => 
       return;
     }
 
-    // Lookup employee in the employee database by emp_id / loginId and emp_password
+    // Lookup employee in the database by emp_id / loginId / email / id
     const matchedEmployee = allUsersPool.find(
       (u) =>
         u.role === UserRole.EMPLOYEE &&
-        ((u.empId && u.empId.toLowerCase() === trimmedId.toLowerCase()) ||
-          (u.loginId && u.loginId.toLowerCase() === trimmedId.toLowerCase()) ||
-          (u.email && u.email.toLowerCase() === trimmedId.toLowerCase()) ||
-          u.id.toLowerCase() === trimmedId.toLowerCase()) &&
+        ((u.empId && u.empId.toLowerCase() === trimmedId) ||
+          (u.loginId && u.loginId.toLowerCase() === trimmedId) ||
+          (u.email && u.email.toLowerCase() === trimmedId) ||
+          u.id.toLowerCase() === trimmedId) &&
         (u.password === trimmedPass ||
-          trimmedPass === (u.password || 'Parth!123') ||
-          trimmedPass === 'Parth!123' ||
+          trimmedPass === (u.password || u.empId || u.loginId) ||
           !u.password)
     );
 
     if (matchedEmployee) {
       onSelectUser(matchedEmployee);
     } else {
-      setErrorMessage('Invalid Approver credentials. Please verify your ID and password.');
+      setErrorMessage('Invalid Employee credentials. Please verify your Employee ID and password.');
     }
-  };
-
-  const autofillHr = () => {
-    setHrId('HR001');
-    setHrPass('HR001');
-    setErrorMessage('');
-  };
-
-  const autofillApprover = () => {
-    setApproverId('AMA001');
-    setApproverPass('AMA001');
-    setErrorMessage('');
-  };
-
-  const autofillEmp = () => {
-    setEmpId('AM001');
-    setEmpPass('Parth!123');
-    setErrorMessage('');
   };
 
   return (
@@ -285,7 +261,7 @@ export const LoginView: React.FC<LoginViewProps> = ({ users, onSelectUser }) => 
                     id="input-hr-id"
                     type="text"
                     required
-                    placeholder="Enter HR ID (e.g. HR001)"
+                    placeholder="Enter HR ID "
                     value={hrId}
                     onChange={(e) => setHrId(e.target.value)}
                     className="w-full pl-10 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-900 placeholder:text-slate-400 focus:bg-white focus:outline-hidden focus:ring-2 focus:ring-[#FA7014] focus:border-[#FA7014] transition-all font-mono"
@@ -358,7 +334,7 @@ export const LoginView: React.FC<LoginViewProps> = ({ users, onSelectUser }) => 
                     id="input-approver-id"
                     type="text"
                     required
-                    placeholder="Enter Approver ID (e.g. AMA001)"
+                    placeholder="Enter Approver ID "
                     value={approverId}
                     onChange={(e) => setApproverId(e.target.value)}
                     className="w-full pl-10 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-900 placeholder:text-slate-400 focus:bg-white focus:outline-hidden focus:ring-2 focus:ring-slate-900 focus:border-slate-900 transition-all font-mono"
@@ -423,7 +399,7 @@ export const LoginView: React.FC<LoginViewProps> = ({ users, onSelectUser }) => 
               {/* Employee ID Input */}
               <div className="space-y-1.5">
                 <label className="block text-xs font-semibold text-slate-700" htmlFor="input-emp-id">
-                  Employee ID (emp_id)
+                  Employee ID
                 </label>
                 <div className="relative">
                   <UserIcon className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
@@ -431,7 +407,7 @@ export const LoginView: React.FC<LoginViewProps> = ({ users, onSelectUser }) => 
                     id="input-emp-id"
                     type="text"
                     required
-                    placeholder="Enter Employee ID (e.g. AM001)"
+                    placeholder="Enter Employee ID "
                     value={empId}
                     onChange={(e) => setEmpId(e.target.value)}
                     className="w-full pl-10 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-900 placeholder:text-slate-400 focus:bg-white focus:outline-hidden focus:ring-2 focus:ring-[#FA7014] focus:border-[#FA7014] transition-all font-mono"
@@ -442,7 +418,7 @@ export const LoginView: React.FC<LoginViewProps> = ({ users, onSelectUser }) => 
               {/* Employee Password Input */}
               <div className="space-y-1.5">
                 <label className="block text-xs font-semibold text-slate-700" htmlFor="input-emp-pass">
-                  Password (emp_password)
+                  Password
                 </label>
                 <div className="relative">
                   <Lock className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />

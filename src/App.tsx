@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import {
+  AcknowledgementRecord,
   DocumentMaster,
   DocumentVersion,
   User,
@@ -10,8 +11,9 @@ import { governanceEngine } from './services/governance';
 import { auditService } from './services/audit';
 import { defaultEmailProvider } from './services/email';
 import { firestoreService } from './services/firestoreService';
-import { SEED_DOCUMENTS, SEED_VERSIONS, SEED_AUDIT_LOGS, SEED_USERS } from './data/seedData';
-import { Header } from './components/Header';
+import { HRHeader } from './components/HRHeader';
+import { ApproverHeader } from './components/ApproverHeader';
+import { EmployeeHeader } from './components/EmployeeHeader';
 import { LoginView } from './components/LoginView';
 import { CreatorDashboard } from './components/CreatorDashboard';
 import { ReviewerDashboard } from './components/ReviewerDashboard';
@@ -29,16 +31,21 @@ import { StatusBadge } from './components/StatusBadge';
 
 const CURRENT_USER_STORAGE_KEY = 'amaavigo_current_user_id';
 const CURRENT_USER_DATA_KEY = 'amaavigo_current_user_data';
+const CURRENT_USER_ROLE_KEY = 'amaavigo_current_user_role';
 const ACTIVE_TAB_STORAGE_KEY = 'amaavigo_active_tab';
 
 export default function App() {
   const [currentUser, setCurrentUser] = useState<User | null>(() => {
     try {
+      const savedRole = localStorage.getItem(CURRENT_USER_ROLE_KEY);
       // 1. First priority: restore full cached user object from localStorage
       const savedUserData = localStorage.getItem(CURRENT_USER_DATA_KEY);
       if (savedUserData) {
         const parsed = JSON.parse(savedUserData);
         if (parsed && (parsed.id || parsed.loginId || parsed.email)) {
+          if (savedRole && (savedRole === UserRole.CREATOR || savedRole === UserRole.REVIEWER || savedRole === UserRole.EMPLOYEE)) {
+            parsed.role = savedRole as UserRole;
+          }
           return parsed as User;
         }
       }
@@ -49,21 +56,15 @@ export default function App() {
         const users = governanceEngine.getUsers();
         const found = users.find(
           (u) =>
-            u.id === savedUserId ||
-            (u.loginId && u.loginId.toLowerCase() === savedUserId.toLowerCase()) ||
-            (u.empId && u.empId.toLowerCase() === savedUserId.toLowerCase()) ||
-            (u.email && u.email.toLowerCase() === savedUserId.toLowerCase())
+            (!savedRole || u.role === savedRole) &&
+            (u.id === savedUserId ||
+              (u.loginId && u.loginId.toLowerCase() === savedUserId.toLowerCase()) ||
+              (u.empId && u.empId.toLowerCase() === savedUserId.toLowerCase()) ||
+              (u.email && u.email.toLowerCase() === savedUserId.toLowerCase()))
         );
-        if (found) return found;
-
-        const seedFound = SEED_USERS.find(
-          (u) =>
-            u.id === savedUserId ||
-            (u.loginId && u.loginId.toLowerCase() === savedUserId.toLowerCase()) ||
-            (u.empId && u.empId.toLowerCase() === savedUserId.toLowerCase()) ||
-            (u.email && u.email.toLowerCase() === savedUserId.toLowerCase())
-        );
-        if (seedFound) return seedFound;
+        if (found) {
+          return savedRole ? { ...found, role: savedRole as UserRole } : found;
+        }
       }
     } catch (e) {
       console.warn('Could not restore user from localStorage', e);
@@ -74,6 +75,24 @@ export default function App() {
   const [activeTab, setActiveTab] = useState<'creator' | 'reviewer' | 'employee' | 'compliance' | 'audit' | 'notifications'>(() => {
     try {
       const savedTab = localStorage.getItem(ACTIVE_TAB_STORAGE_KEY);
+      const savedRole = localStorage.getItem(CURRENT_USER_ROLE_KEY);
+
+      if (savedRole === UserRole.CREATOR) {
+        if (savedTab && ['creator', 'compliance', 'audit'].includes(savedTab)) {
+          return savedTab as any;
+        }
+        return 'creator';
+      }
+      if (savedRole === UserRole.REVIEWER) {
+        if (savedTab && ['reviewer', 'compliance', 'audit'].includes(savedTab)) {
+          return savedTab as any;
+        }
+        return 'reviewer';
+      }
+      if (savedRole === UserRole.EMPLOYEE) {
+        return 'employee';
+      }
+
       if (savedTab && ['creator', 'reviewer', 'employee', 'compliance', 'audit', 'notifications'].includes(savedTab)) {
         return savedTab as any;
       }
@@ -87,6 +106,9 @@ export default function App() {
   const [allUsers, setAllUsers] = useState<User[]>([]);
   const [documents, setDocuments] = useState<DocumentMaster[]>([]);
   const [versions, setVersions] = useState<DocumentVersion[]>([]);
+  const [acknowledgements, setAcknowledgements] = useState<AcknowledgementRecord[]>(() =>
+    governanceEngine.getAcknowledgements()
+  );
   const [notificationCount, setNotificationCount] = useState(0);
   const [pendingComplianceCount, setPendingComplianceCount] = useState(0);
 
@@ -104,18 +126,23 @@ export default function App() {
     const users = [...governanceEngine.getUsers()];
     setAllUsers(users);
     setCurrentUser((prev) => {
+      const savedRole = localStorage.getItem(CURRENT_USER_ROLE_KEY);
       if (prev) {
+        const roleToKeep = (prev.role || savedRole || UserRole.EMPLOYEE) as UserRole;
+        // Strictly match users with the exact same role to prevent HR or Approver from turning into an Employee
         const match = users.find(
           (u) =>
-            u.id === prev.id ||
-            (u.loginId && prev.loginId && u.loginId.toLowerCase() === prev.loginId.toLowerCase()) ||
-            (u.empId && prev.empId && u.empId.toLowerCase() === prev.empId.toLowerCase()) ||
-            (u.email && prev.email && u.email.toLowerCase() === prev.email.toLowerCase())
+            u.role === roleToKeep &&
+            (u.id === prev.id ||
+              (u.loginId && prev.loginId && u.loginId.toLowerCase() === prev.loginId.toLowerCase()) ||
+              (u.empId && prev.empId && u.empId.toLowerCase() === prev.empId.toLowerCase()) ||
+              (u.email && prev.email && u.email.toLowerCase() === prev.email.toLowerCase()))
         );
-        const updated = match ? { ...prev, ...match } : prev;
+        const updated = match ? { ...match, role: roleToKeep } : prev;
         try {
           localStorage.setItem(CURRENT_USER_STORAGE_KEY, updated.id);
           localStorage.setItem(CURRENT_USER_DATA_KEY, JSON.stringify(updated));
+          localStorage.setItem(CURRENT_USER_ROLE_KEY, updated.role);
         } catch (e) {}
         return updated;
       }
@@ -125,28 +152,34 @@ export default function App() {
         if (savedUserData) {
           const parsed = JSON.parse(savedUserData);
           if (parsed && (parsed.id || parsed.loginId || parsed.email)) {
+            const roleToKeep = (savedRole || parsed.role || UserRole.EMPLOYEE) as UserRole;
             const match = users.find(
               (u) =>
-                u.id === parsed.id ||
-                (u.loginId && parsed.loginId && u.loginId.toLowerCase() === parsed.loginId.toLowerCase()) ||
-                (u.empId && parsed.empId && u.empId.toLowerCase() === parsed.empId.toLowerCase()) ||
-                (u.email && parsed.email && u.email.toLowerCase() === parsed.email.toLowerCase())
+                u.role === roleToKeep &&
+                (u.id === parsed.id ||
+                  (u.loginId && parsed.loginId && u.loginId.toLowerCase() === parsed.loginId.toLowerCase()) ||
+                  (u.empId && parsed.empId && u.empId.toLowerCase() === parsed.empId.toLowerCase()) ||
+                  (u.email && parsed.email && u.email.toLowerCase() === parsed.email.toLowerCase()))
             );
-            return match ? { ...parsed, ...match } : parsed;
+            return match ? { ...match, role: roleToKeep } : parsed;
           }
         }
         const savedUserId = localStorage.getItem(CURRENT_USER_STORAGE_KEY);
         if (savedUserId) {
+          const roleToKeep = (savedRole || UserRole.EMPLOYEE) as UserRole;
           const match = users.find(
             (u) =>
-              u.id === savedUserId ||
-              (u.loginId && u.loginId.toLowerCase() === savedUserId.toLowerCase()) ||
-              (u.empId && u.empId.toLowerCase() === savedUserId.toLowerCase()) ||
-              (u.email && u.email.toLowerCase() === savedUserId.toLowerCase())
+              (!savedRole || u.role === roleToKeep) &&
+              (u.id === savedUserId ||
+                (u.loginId && u.loginId.toLowerCase() === savedUserId.toLowerCase()) ||
+                (u.empId && u.empId.toLowerCase() === savedUserId.toLowerCase()) ||
+                (u.email && u.email.toLowerCase() === savedUserId.toLowerCase()))
           );
           if (match) {
-            localStorage.setItem(CURRENT_USER_DATA_KEY, JSON.stringify(match));
-            return { ...match };
+            const resolved = { ...match, role: roleToKeep };
+            localStorage.setItem(CURRENT_USER_DATA_KEY, JSON.stringify(resolved));
+            if (savedRole) localStorage.setItem(CURRENT_USER_ROLE_KEY, savedRole);
+            return resolved;
           }
         }
       } catch (e) {}
@@ -167,47 +200,42 @@ export default function App() {
     setVersions([...allVers]);
     setNotificationCount(defaultEmailProvider.getNotifications().length);
     const acks = governanceEngine.getAcknowledgements();
+    setAcknowledgements([...acks]);
     setPendingComplianceCount(acks.filter((a) => a.status === 'PENDING').length);
   };
 
   useEffect(() => {
     refreshData();
-    // Seed and sync with Firestore cloud database
-    firestoreService
-      .seedFirestoreIfEmpty(
-        SEED_DOCUMENTS,
-        SEED_VERSIONS,
-        SEED_AUDIT_LOGS,
-        governanceEngine.getAcknowledgements(),
-        SEED_USERS
-      )
-      .then(async () => {
-        try {
-          const [cloudEmps, cloudDocs, cloudVers, cloudAcks] = await Promise.all([
-            firestoreService.getEmployees(),
-            firestoreService.getDocuments(),
-            firestoreService.getVersions(),
-            firestoreService.getAcknowledgements(),
-          ]);
+    // Dynamically hydrate from Firestore database
+    const hydrateFromFirestore = async () => {
+      try {
+        const [cloudEmps, cloudDocs, cloudVers, cloudAcks] = await Promise.all([
+          firestoreService.getEmployees(),
+          firestoreService.getDocuments(),
+          firestoreService.getVersions(),
+          firestoreService.getAcknowledgements(),
+        ]);
 
-          if (cloudEmps && cloudEmps.length > 0) {
-            governanceEngine.setEmployees(cloudEmps);
-          }
-          if (cloudDocs !== undefined) {
-            (governanceEngine as any).documentMasters = cloudDocs;
-          }
-          if (cloudVers !== undefined) {
-            (governanceEngine as any).documentVersions = cloudVers;
-            governanceEngine.syncVersionsToStorage(cloudVers);
-          }
-          if (cloudAcks !== undefined) {
-            governanceEngine.setAcknowledgements(cloudAcks);
-          }
-          refreshData();
-        } catch (e) {
-          console.warn('Firestore hydration note:', e);
+        if (cloudEmps && cloudEmps.length > 0) {
+          governanceEngine.setEmployees(cloudEmps);
         }
-      });
+        if (cloudDocs !== undefined) {
+          (governanceEngine as any).documentMasters = cloudDocs;
+        }
+        if (cloudVers !== undefined) {
+          (governanceEngine as any).documentVersions = cloudVers;
+          governanceEngine.syncVersionsToStorage(cloudVers);
+        }
+        if (cloudAcks !== undefined) {
+          governanceEngine.setAcknowledgements(cloudAcks);
+        }
+        refreshData();
+      } catch (e) {
+        console.warn('Firestore hydration note:', e);
+      }
+    };
+
+    hydrateFromFirestore();
 
     // Real-time synchronization listeners
     const unsubEmployees = firestoreService.subscribeToEmployees((cloudEmployees) => {
@@ -261,6 +289,7 @@ export default function App() {
       if (currentUser) {
         localStorage.setItem(CURRENT_USER_STORAGE_KEY, currentUser.id);
         localStorage.setItem(CURRENT_USER_DATA_KEY, JSON.stringify(currentUser));
+        localStorage.setItem(CURRENT_USER_ROLE_KEY, currentUser.role);
       }
     } catch (e) {
       console.warn('Error saving user to localStorage:', e);
@@ -282,13 +311,14 @@ export default function App() {
     try {
       localStorage.setItem(CURRENT_USER_STORAGE_KEY, user.id);
       localStorage.setItem(CURRENT_USER_DATA_KEY, JSON.stringify(user));
+      localStorage.setItem(CURRENT_USER_ROLE_KEY, user.role);
     } catch (e) {}
     let targetTab: 'creator' | 'reviewer' | 'employee' | 'compliance' | 'audit' = 'creator';
     if (user.role === UserRole.CREATOR) {
       targetTab = 'creator';
     } else if (user.role === UserRole.REVIEWER) {
       targetTab = 'reviewer';
-    } else {
+    } else if (user.role === UserRole.EMPLOYEE) {
       targetTab = 'employee';
     }
     setActiveTab(targetTab);
@@ -297,36 +327,12 @@ export default function App() {
     } catch (e) {}
   };
 
-  const handleSwitchUser = (user: User) => {
-    setCurrentUser(user);
-    try {
-      localStorage.setItem(CURRENT_USER_STORAGE_KEY, user.id);
-      localStorage.setItem(CURRENT_USER_DATA_KEY, JSON.stringify(user));
-    } catch (e) {}
-    // If switching between employee and creator/reviewer, adjust default dashboard appropriately
-    if (user.role === UserRole.EMPLOYEE && (activeTab === 'creator' || activeTab === 'reviewer')) {
-      setActiveTab('employee');
-      try {
-        localStorage.setItem(ACTIVE_TAB_STORAGE_KEY, 'employee');
-      } catch (e) {}
-    } else if (user.role === UserRole.CREATOR && activeTab === 'employee') {
-      setActiveTab('creator');
-      try {
-        localStorage.setItem(ACTIVE_TAB_STORAGE_KEY, 'creator');
-      } catch (e) {}
-    } else if (user.role === UserRole.REVIEWER && activeTab === 'employee') {
-      setActiveTab('reviewer');
-      try {
-        localStorage.setItem(ACTIVE_TAB_STORAGE_KEY, 'reviewer');
-      } catch (e) {}
-    }
-  };
-
   const handleLogout = () => {
     setCurrentUser(null);
     try {
       localStorage.removeItem(CURRENT_USER_STORAGE_KEY);
       localStorage.removeItem(CURRENT_USER_DATA_KEY);
+      localStorage.removeItem(CURRENT_USER_ROLE_KEY);
       localStorage.removeItem(ACTIVE_TAB_STORAGE_KEY);
     } catch (e) {}
   };
@@ -367,28 +373,43 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-[#F8FAFC] bg-[radial-gradient(ellipse_80%_80%_at_50%_-20%,rgba(250,112,20,0.05),rgba(255,255,255,0))] flex flex-col font-sans text-slate-900">
-      {/* Top Application Header with 1-Click Role Switcher */}
-      <Header
-        currentUser={currentUser}
-        onSwitchUser={handleSwitchUser}
-        allUsers={allUsers}
-        onLogout={handleLogout}
-        activeTab={activeTab}
-        setActiveTab={setActiveTab}
-        notificationCount={notificationCount}
-        pendingComplianceCount={pendingComplianceCount}
-        onOpenNotifications={() => setIsNotifDrawerOpen(true)}
-        onResetSeed={handleResetSeed}
-      />
+      {/* Separate Isolated Header for each dashboard */}
+      {!currentUser ? null : currentUser.role === UserRole.CREATOR ? (
+        <HRHeader
+          currentUser={currentUser}
+          onLogout={handleLogout}
+          activeTab={activeTab === 'compliance' || activeTab === 'audit' ? activeTab : 'creator'}
+          setActiveTab={(tab) => setActiveTab(tab)}
+          notificationCount={notificationCount}
+          pendingComplianceCount={pendingComplianceCount}
+          onOpenNotifications={() => setIsNotifDrawerOpen(true)}
+          onResetSeed={handleResetSeed}
+        />
+      ) : currentUser.role === UserRole.REVIEWER ? (
+        <ApproverHeader
+          currentUser={currentUser}
+          onLogout={handleLogout}
+          activeTab={activeTab === 'compliance' || activeTab === 'audit' ? activeTab : 'reviewer'}
+          setActiveTab={(tab) => setActiveTab(tab)}
+          notificationCount={notificationCount}
+          pendingComplianceCount={pendingComplianceCount}
+          onOpenNotifications={() => setIsNotifDrawerOpen(true)}
+        />
+      ) : (
+        <EmployeeHeader
+          currentUser={currentUser}
+          onLogout={handleLogout}
+        />
+      )}
 
       {/* Main Screen Content */}
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6">
         {!currentUser ? (
-          /* Dual Creator / Reviewer Login Screen */
+          /* Dual Creator / Reviewer / Employee Login Screen */
           <LoginView users={allUsers} onSelectUser={handleLogin} />
-        ) : (
+        ) : currentUser.role === UserRole.CREATOR ? (
           <>
-            {activeTab === 'creator' && (
+            {(activeTab === 'creator' || (activeTab !== 'compliance' && activeTab !== 'audit')) && (
               <CreatorDashboard
                 currentUser={currentUser}
                 documents={documents}
@@ -404,7 +425,21 @@ export default function App() {
               />
             )}
 
-            {activeTab === 'reviewer' && (
+            {activeTab === 'compliance' && (
+              <EmployeeComplianceModule
+                currentUser={currentUser}
+                users={allUsers}
+                documents={documents}
+                versions={versions}
+                onOpenDocumentView={(ver) => setReaderVersion(ver)}
+              />
+            )}
+
+            {activeTab === 'audit' && <AuditLogView users={allUsers} />}
+          </>
+        ) : currentUser.role === UserRole.REVIEWER ? (
+          <>
+            {(activeTab === 'reviewer' || (activeTab !== 'compliance' && activeTab !== 'audit')) && (
               <ReviewerDashboard
                 currentUser={currentUser}
                 documents={documents}
@@ -425,17 +460,16 @@ export default function App() {
               />
             )}
 
-            {activeTab === 'employee' && (
-              <EmployeePortalView
-                currentUser={currentUser}
-                documents={documents}
-                versions={versions}
-                onOpenDocumentView={(ver) => setReaderVersion(ver)}
-              />
-            )}
-
             {activeTab === 'audit' && <AuditLogView users={allUsers} />}
           </>
+        ) : (
+          <EmployeePortalView
+            currentUser={currentUser}
+            documents={documents}
+            versions={versions}
+            acknowledgements={acknowledgements}
+            onOpenDocumentView={(ver) => setReaderVersion(ver)}
+          />
         )}
       </main>
 

@@ -196,9 +196,7 @@ export const firestoreService = {
               ? 'Human Resources'
               : 'Operations'),
           companyName: data.companyName || 'Amaavigo Group',
-          password:
-            data.password ||
-            (role === UserRole.CREATOR ? 'HR001' : role === UserRole.REVIEWER ? 'AMA001' : 'Parth!123'),
+          password: data.password || '1',
           active: data.active !== false && data.status !== 'INACTIVE',
           avatar: data.avatar || data.avatarUrl,
           ...data,
@@ -293,7 +291,20 @@ export const firestoreService = {
   async getAcknowledgements(): Promise<AcknowledgementRecord[]> {
     try {
       const snap = await getDocs(collection(db, ACKS_COLLECTION));
-      return snap.docs.map((d) => d.data() as AcknowledgementRecord);
+      const items = snap.docs.map((d) => ({ ...d.data(), id: d.id }) as AcknowledgementRecord);
+      // Deduplicate in case multiple records exist for (docId, ver, empId)
+      const canonicalMap = new Map<string, AcknowledgementRecord>();
+      for (const item of items) {
+        if (!item.documentId) continue;
+        const emp = (item.employeeId || item.employeeEmail || '').toLowerCase().trim();
+        const ver = (item.versionNumber || '1.0').trim();
+        const key = `${item.documentId.toLowerCase()}_${ver}_${emp}`;
+        const existing = canonicalMap.get(key);
+        if (!existing || (item.status === 'ACKNOWLEDGED' && existing.status !== 'ACKNOWLEDGED')) {
+          canonicalMap.set(key, item);
+        }
+      }
+      return Array.from(canonicalMap.values());
     } catch (e) {
       console.warn('[Firestore] Error getting acknowledgements (using local cache):', e);
       return [];
@@ -302,7 +313,12 @@ export const firestoreService = {
 
   async saveAcknowledgement(ack: AcknowledgementRecord): Promise<void> {
     try {
-      await setDoc(doc(db, ACKS_COLLECTION, ack.id), cleanFirestoreData(ack));
+      const cleanEmpId = (ack.employeeId || ack.employeeEmail || 'unknown').toLowerCase().replace(/[^a-z0-9_-]/g, '_');
+      const cleanDocId = (ack.documentId || '').toLowerCase().replace(/[^a-z0-9_-]/g, '_');
+      const cleanVer = (ack.versionNumber || '1.0').replace(/\./g, '_');
+      const deterministicId = `ack_${cleanDocId}_v${cleanVer}_${cleanEmpId}`;
+      const record = { ...ack, id: deterministicId };
+      await setDoc(doc(db, ACKS_COLLECTION, deterministicId), cleanFirestoreData(record), { merge: true });
     } catch (e) {
       console.warn('[Firestore] Save acknowledgement offline note:', e);
     }
@@ -458,9 +474,7 @@ export const firestoreService = {
                 ? 'Human Resources'
                 : 'Operations'),
             companyName: data.companyName || 'Amaavigo Group',
-            password:
-              data.password ||
-              (role === UserRole.CREATOR ? 'HR001' : role === UserRole.REVIEWER ? 'AMA001' : 'Parth!123'),
+            password: data.password || '1',
             active: data.active !== false && data.status !== 'INACTIVE',
             avatar: data.avatar || data.avatarUrl,
             ...data,
@@ -507,8 +521,19 @@ export const firestoreService = {
     return onSnapshot(
       collection(db, ACKS_COLLECTION),
       (snap) => {
-        const items = snap.docs.map((d) => d.data() as AcknowledgementRecord);
-        callback(items);
+        const items = snap.docs.map((d) => ({ ...d.data(), id: d.id }) as AcknowledgementRecord);
+        const canonicalMap = new Map<string, AcknowledgementRecord>();
+        for (const item of items) {
+          if (!item.documentId) continue;
+          const emp = (item.employeeId || item.employeeEmail || '').toLowerCase().trim();
+          const ver = (item.versionNumber || '1.0').trim();
+          const key = `${item.documentId.toLowerCase()}_${ver}_${emp}`;
+          const existing = canonicalMap.get(key);
+          if (!existing || (item.status === 'ACKNOWLEDGED' && existing.status !== 'ACKNOWLEDGED')) {
+            canonicalMap.set(key, item);
+          }
+        }
+        callback(Array.from(canonicalMap.values()));
       },
       (error) => {
         console.warn('[Firestore] Acknowledgements subscription offline/retry note:', error?.message || error);

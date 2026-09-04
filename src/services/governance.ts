@@ -13,12 +13,6 @@ import {
   VersionStatus,
   VersionType,
 } from '../types';
-import {
-  SEED_AUDIT_LOGS,
-  SEED_DOCUMENTS,
-  SEED_USERS,
-  SEED_VERSIONS,
-} from '../data/seedData';
 import { auditService } from './audit';
 import { compareDocumentTexts } from './comparison';
 import { defaultEmailProvider } from './email';
@@ -26,7 +20,7 @@ import { calculateSha256, defaultStorageProvider } from './storage';
 import { firestoreService } from './firestoreService';
 
 export class DocumentGovernanceEngine {
-  private users: User[] = [...SEED_USERS];
+  private users: User[] = [];
   private documentMasters: DocumentMaster[] = [];
   private documentVersions: DocumentVersion[] = [];
   private publicationRecords: DocumentPublicationRecord[] = [];
@@ -34,7 +28,7 @@ export class DocumentGovernanceEngine {
   private comparisons: Map<string, DocumentComparisonResult> = new Map();
 
   constructor() {
-    // Starts with clean state. Data is loaded and synced from Cloud Firestore.
+    // Clean empty state. All data is loaded and synchronized from Cloud Firestore database.
   }
 
   public syncVersionsToStorage(versions: DocumentVersion[] = this.documentVersions): void {
@@ -49,71 +43,6 @@ export class DocumentGovernanceEngine {
         });
       }
     }
-  }
-
-  private initDefaultAcknowledgements() {
-    const employees = this.users.filter((u) => u.role === UserRole.EMPLOYEE);
-    
-    // Seed acknowledgements for WFH Policy v1.0 and v2.0
-    const wfhMaster = this.documentMasters.find((d) => d.documentId === 'AMA-HR-POL-001');
-    const ahMaster = this.documentMasters.find((d) => d.documentId === 'AMA-HR-POL-002');
-    const codeMaster = this.documentMasters.find((d) => d.documentId === 'AMA-HR-POL-003');
-
-    employees.forEach((emp, index) => {
-      // WFH Policy v1.0 (historical baseline - acknowledged by all except newest)
-      if (wfhMaster) {
-        this.acknowledgements.push({
-          id: `ack-seed-wfh1-${emp.id}`,
-          documentId: 'AMA-HR-POL-001',
-          documentTitle: 'Work From Home (WFH) Policy',
-          versionNumber: '1.0',
-          documentVersionId: 'ver-001-v10',
-          employeeId: emp.id,
-          employeeName: emp.name,
-          employeeEmail: emp.email,
-          departmentName: emp.departmentName,
-          status: 'ACKNOWLEDGED',
-          acknowledgedAt: '2026-08-02T10:00:00Z',
-          signatureReference: `SIG-E-${emp.id}-0802`,
-        });
-
-        // WFH Policy v2.0 (current live revision - some acknowledged, some pending)
-        const isAckedV2 = index % 2 === 0 && emp.id !== 'AM001'; // Parth is pending v2.0 for live test
-        this.acknowledgements.push({
-          id: `ack-seed-wfh2-${emp.id}`,
-          documentId: 'AMA-HR-POL-001',
-          documentTitle: 'Work From Home (WFH) Policy',
-          versionNumber: '2.0',
-          documentVersionId: 'ver-001-v20',
-          employeeId: emp.id,
-          employeeName: emp.name,
-          employeeEmail: emp.email,
-          departmentName: emp.departmentName,
-          status: isAckedV2 ? 'ACKNOWLEDGED' : 'PENDING',
-          acknowledgedAt: isAckedV2 ? '2026-08-16T14:30:00Z' : undefined,
-          signatureReference: isAckedV2 ? `SIG-E-${emp.id}-0816` : undefined,
-        });
-      }
-
-      // Anti-Harassment Policy v1.0 (Mandatory compliance - mostly acknowledged)
-      if (ahMaster && ahMaster.confidentiality === ConfidentialityLevel.PUBLIC) {
-        const isAckedAH = index < 4;
-        this.acknowledgements.push({
-          id: `ack-seed-ah-${emp.id}`,
-          documentId: 'AMA-HR-POL-002',
-          documentTitle: 'Anti-Harassment & Workplace Conduct Policy',
-          versionNumber: '1.0',
-          documentVersionId: 'ver-002-v10',
-          employeeId: emp.id,
-          employeeName: emp.name,
-          employeeEmail: emp.email,
-          departmentName: emp.departmentName,
-          status: isAckedAH ? 'ACKNOWLEDGED' : 'PENDING',
-          acknowledgedAt: isAckedAH ? '2026-08-04T09:15:00Z' : undefined,
-          signatureReference: isAckedAH ? `SIG-E-${emp.id}-0804` : undefined,
-        });
-      }
-    });
   }
 
   // Generate permanent Document ID safely (e.g. AMA-HR-POL-001, AMA-HR-SOP-002)
@@ -367,8 +296,7 @@ export class DocumentGovernanceEngine {
           emp.departmentName ||
           (role === UserRole.CREATOR || role === UserRole.REVIEWER ? 'Human Resources' : 'Operations'),
         companyName: emp.companyName || 'Amaavigo Group',
-        password:
-          emp.password || (role === UserRole.CREATOR ? 'HR001' : role === UserRole.REVIEWER ? 'AMA001' : 'Parth!123'),
+        password: emp.password || '1',
         active: emp.active !== false && (emp as any).status !== 'INACTIVE',
         avatar: emp.avatar || (emp as any).avatarUrl,
       };
@@ -378,7 +306,9 @@ export class DocumentGovernanceEngine {
     }
     this.users = Array.from(userMap.values());
     this.syncDocumentAuthorNames();
-    this.ensurePendingAcknowledgementsForEmployees();
+    if (this.documentMasters.length > 0 && this.acknowledgements.length > 0) {
+      this.ensurePendingAcknowledgementsForEmployees();
+    }
   }
 
   public setUsers(users: User[]): void {
@@ -396,39 +326,37 @@ export class DocumentGovernanceEngine {
     }
     this.users = Array.from(userMap.values());
     this.syncDocumentAuthorNames();
-    this.ensurePendingAcknowledgementsForEmployees();
+    if (this.documentMasters.length > 0 && this.acknowledgements.length > 0) {
+      this.ensurePendingAcknowledgementsForEmployees();
+    }
   }
 
   private syncDocumentAuthorNames(): void {
-    const creatorUser = this.users.find((u) => u.role === UserRole.CREATOR);
-    const reviewerUser = this.users.find((u) => u.role === UserRole.REVIEWER);
-
-    if (creatorUser) {
-      for (const doc of this.documentMasters) {
-        if (doc.processOwnerName === 'Sarah Jenkins' || doc.createdById === 'usr-hr-001' || doc.createdById === creatorUser.id) {
-          doc.processOwnerName = creatorUser.name;
-          doc.createdByName = creatorUser.name;
-        }
-      }
-      for (const ver of this.documentVersions) {
-        if (ver.createdByName === 'Sarah Jenkins' || ver.createdById === 'usr-hr-001' || ver.createdById === creatorUser.id) {
-          ver.createdByName = creatorUser.name;
+    for (const doc of this.documentMasters) {
+      if (doc.createdById) {
+        const u = this.users.find((user) => user.id === doc.createdById || user.empId === doc.createdById || user.loginId === doc.createdById);
+        if (u) {
+          doc.createdByName = u.name;
         }
       }
     }
-
-    if (reviewerUser) {
-      for (const doc of this.documentMasters) {
-        if (doc.documentOwnerName === 'Marcus Vance') {
-          doc.documentOwnerName = reviewerUser.name;
+    for (const ver of this.documentVersions) {
+      if (ver.createdById) {
+        const u = this.users.find((user) => user.id === ver.createdById || user.empId === ver.createdById || user.loginId === ver.createdById);
+        if (u) {
+          ver.createdByName = u.name;
         }
       }
-      for (const ver of this.documentVersions) {
-        if (ver.reviewedByName === 'Marcus Vance' || ver.reviewedById === 'usr-app-001' || ver.reviewedById === reviewerUser.id) {
-          ver.reviewedByName = reviewerUser.name;
+      if (ver.reviewedById) {
+        const u = this.users.find((user) => user.id === ver.reviewedById || user.empId === ver.reviewedById || user.loginId === ver.reviewedById);
+        if (u) {
+          ver.reviewedByName = u.name;
         }
-        if (ver.publishedByName === 'Marcus Vance' || ver.publishedById === 'usr-app-001' || ver.publishedById === reviewerUser.id) {
-          ver.publishedByName = reviewerUser.name;
+      }
+      if (ver.publishedById) {
+        const u = this.users.find((user) => user.id === ver.publishedById || user.empId === ver.publishedById || user.loginId === ver.publishedById);
+        if (u) {
+          ver.publishedByName = u.name;
         }
       }
     }
@@ -440,13 +368,14 @@ export class DocumentGovernanceEngine {
     role?: UserRole | string,
     fallbackName?: string
   ): { name: string; role: UserRole; title: string; email: string } {
-    // 1. Direct ID match
+    // 1. Direct ID / empId / loginId match
     if (userId) {
       const match = this.users.find(
         (u) =>
           u.id === userId ||
           (u.empId && u.empId.toLowerCase() === userId.toLowerCase()) ||
-          (u.loginId && u.loginId.toLowerCase() === userId.toLowerCase())
+          (u.loginId && u.loginId.toLowerCase() === userId.toLowerCase()) ||
+          (u.email && u.email.toLowerCase() === userId.toLowerCase())
       );
       if (match) {
         return {
@@ -458,21 +387,30 @@ export class DocumentGovernanceEngine {
       }
     }
 
-    // 2. Creator / HR role match
-    const rawRole = (role || '').toString().toUpperCase();
-    if (
-      rawRole === 'CREATOR' ||
-      rawRole === 'HR' ||
-      userId === 'usr-hr-001' ||
-      fallbackName === 'Sarah Jenkins' ||
-      fallbackName?.toLowerCase().includes('sarah')
-    ) {
-      const creator = this.users.find(
-        (u) => u.role === UserRole.CREATOR || u.id === 'usr-hr-001' || u.loginId === 'HR' || u.loginId === 'HR001'
+    // 2. Fallback name match in user roster
+    if (fallbackName) {
+      const byName = this.users.find(
+        (u) =>
+          u.name.toLowerCase() === fallbackName.toLowerCase() ||
+          (u.email && u.email.toLowerCase() === fallbackName.toLowerCase())
       );
+      if (byName) {
+        return {
+          name: byName.name,
+          role: byName.role,
+          title: byName.title,
+          email: byName.email,
+        };
+      }
+    }
+
+    // 3. Match by role in user roster if available
+    const rawRole = (role || '').toString().toUpperCase();
+    if (rawRole === 'CREATOR' || rawRole === 'HR') {
+      const creator = this.users.find((u) => u.role === UserRole.CREATOR);
       if (creator) {
         return {
-          name: creator.name,
+          name: fallbackName || creator.name,
           role: UserRole.CREATOR,
           title: creator.title,
           email: creator.email,
@@ -480,36 +418,14 @@ export class DocumentGovernanceEngine {
       }
     }
 
-    // 3. Reviewer / Approver role match
-    if (
-      rawRole === 'REVIEWER' ||
-      rawRole === 'APPROVER' ||
-      userId === 'usr-app-001' ||
-      fallbackName === 'Marcus Vance' ||
-      fallbackName?.toLowerCase().includes('marcus')
-    ) {
-      const reviewer = this.users.find(
-        (u) => u.role === UserRole.REVIEWER || u.id === 'usr-app-001' || u.loginId === 'APPROVER' || u.loginId === 'AMA001'
-      );
+    if (rawRole === 'REVIEWER' || rawRole === 'APPROVER') {
+      const reviewer = this.users.find((u) => u.role === UserRole.REVIEWER);
       if (reviewer) {
         return {
-          name: reviewer.name,
+          name: fallbackName || reviewer.name,
           role: UserRole.REVIEWER,
           title: reviewer.title,
           email: reviewer.email,
-        };
-      }
-    }
-
-    // 4. By fallback name if exists in current directory
-    if (fallbackName) {
-      const byName = this.users.find((u) => u.name.toLowerCase() === fallbackName.toLowerCase());
-      if (byName) {
-        return {
-          name: byName.name,
-          role: byName.role,
-          title: byName.title,
-          email: byName.email,
         };
       }
     }
@@ -535,25 +451,38 @@ export class DocumentGovernanceEngine {
 
     let createdCount = 0;
     for (const emp of activeEmployees) {
+      const primaryEmpId = emp.empId || emp.id || emp.loginId || emp.email;
+      if (!primaryEmpId) continue;
+
+      const empIdentifiers = [emp.id, emp.empId, emp.loginId, emp.email]
+        .filter(Boolean)
+        .map((s) => s!.toLowerCase());
+
       for (const doc of publishedPublicDocs) {
-        const empIdentifiers = [emp.id, emp.empId, emp.loginId, emp.email].filter(Boolean).map((s) => s!.toLowerCase());
+        const activeVer = this.documentVersions.find((v) => v.id === doc.currentPublishedVersionId) ||
+          this.documentVersions.filter((v) => v.documentMasterId === doc.id && v.status === VersionStatus.PUBLISHED).pop();
+        const verNumber = activeVer?.versionNumber || doc.currentPublishedVersionNumber || '1.0';
+
         const hasAck = this.acknowledgements.some(
           (a) =>
             a.documentId === doc.documentId &&
+            a.versionNumber === verNumber &&
             (empIdentifiers.includes(a.employeeId?.toLowerCase()) || (a.employeeEmail && empIdentifiers.includes(a.employeeEmail.toLowerCase())))
         );
 
         if (!hasAck) {
-          const activeVer = this.documentVersions.find((v) => v.id === doc.currentPublishedVersionId) ||
-            this.documentVersions.filter((v) => v.documentMasterId === doc.id && v.status === VersionStatus.PUBLISHED).pop();
+          const cleanEmpId = primaryEmpId.toLowerCase().replace(/[^a-z0-9_-]/g, '_');
+          const cleanDocId = doc.documentId.toLowerCase().replace(/[^a-z0-9_-]/g, '_');
+          const cleanVer = verNumber.replace(/\./g, '_');
+          const deterministicId = `ack_${cleanDocId}_v${cleanVer}_${cleanEmpId}`;
 
           const pendingAck: AcknowledgementRecord = {
-            id: `ack-${Date.now()}-${emp.id.replace(/[^a-zA-Z0-9]/g, '')}-${Math.random().toString(36).substr(2, 4)}`,
+            id: deterministicId,
             documentId: doc.documentId,
             documentTitle: doc.title,
-            versionNumber: activeVer?.versionNumber || doc.currentPublishedVersionNumber || '1.0',
+            versionNumber: verNumber,
             documentVersionId: activeVer?.id || '',
-            employeeId: emp.id,
+            employeeId: emp.empId || emp.id,
             employeeName: emp.name,
             employeeEmail: emp.email,
             departmentName: emp.departmentName,
@@ -597,7 +526,18 @@ export class DocumentGovernanceEngine {
   }
 
   public setAcknowledgements(acks: AcknowledgementRecord[]): void {
-    this.acknowledgements = acks;
+    const canonicalMap = new Map<string, AcknowledgementRecord>();
+    for (const item of acks) {
+      if (!item.documentId) continue;
+      const emp = (item.employeeId || item.employeeEmail || '').toLowerCase().trim();
+      const ver = (item.versionNumber || '1.0').trim();
+      const key = `${item.documentId.toLowerCase()}_${ver}_${emp}`;
+      const existing = canonicalMap.get(key);
+      if (!existing || (item.status === 'ACKNOWLEDGED' && existing.status !== 'ACKNOWLEDGED')) {
+        canonicalMap.set(key, item);
+      }
+    }
+    this.acknowledgements = Array.from(canonicalMap.values());
   }
 
   public getUserById(id: string): User | undefined {
@@ -1388,30 +1328,51 @@ export class DocumentGovernanceEngine {
     versionNumber: string
   ): AcknowledgementRecord {
     // Robust employee match by ID, empId, loginId, or email
-    const empIdentifiers = [employee.id, employee.empId, employee.loginId, employee.email].filter(Boolean);
+    const primaryEmpId = employee.empId || employee.id || employee.loginId || employee.email;
+    const empIdentifiers = [employee.id, employee.empId, employee.loginId, employee.email]
+      .filter(Boolean)
+      .map((s) => s!.toLowerCase());
 
-    let ack = this.acknowledgements.find(
-      (a) =>
-        a.documentId === documentId &&
-        a.versionNumber === versionNumber &&
-        (empIdentifiers.includes(a.employeeId) || (a.employeeEmail && a.employeeEmail.toLowerCase() === employee.email.toLowerCase()))
-    );
+    const cleanEmpId = (primaryEmpId || 'unknown').toLowerCase().replace(/[^a-z0-9_-]/g, '_');
+    const cleanDocId = documentId.toLowerCase().replace(/[^a-z0-9_-]/g, '_');
+    const cleanVer = (versionNumber || '1.0').replace(/\./g, '_');
+    const deterministicId = `ack_${cleanDocId}_v${cleanVer}_${cleanEmpId}`;
 
     const nowIso = new Date().toISOString();
+    const master = this.getDocumentMasterById(documentId);
+    const version = this.documentVersions.find(
+      (v) => v.documentId === documentId && v.versionNumber === versionNumber
+    );
 
-    if (!ack) {
-      const master = this.getDocumentMasterById(documentId);
-      const version = this.documentVersions.find(
-        (v) => v.documentId === documentId && v.versionNumber === versionNumber
-      );
+    const ackIndex = this.acknowledgements.findIndex(
+      (a) =>
+        a.id === deterministicId ||
+        (a.documentId === documentId &&
+          a.versionNumber === versionNumber &&
+          (empIdentifiers.includes(a.employeeId?.toLowerCase()) || (a.employeeEmail && empIdentifiers.includes(a.employeeEmail.toLowerCase()))))
+    );
 
+    let ack: AcknowledgementRecord;
+    if (ackIndex >= 0) {
       ack = {
-        id: `ack-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
+        ...this.acknowledgements[ackIndex],
+        id: deterministicId,
+        status: 'ACKNOWLEDGED',
+        acknowledgedAt: nowIso,
+        employeeId: employee.empId || employee.id,
+        employeeName: employee.name,
+        employeeEmail: employee.email,
+        departmentName: employee.departmentName,
+      };
+      this.acknowledgements[ackIndex] = ack;
+    } else {
+      ack = {
+        id: deterministicId,
         documentId,
         documentTitle: master?.title || documentId,
         versionNumber,
         documentVersionId: version?.id || '',
-        employeeId: employee.id,
+        employeeId: employee.empId || employee.id,
         employeeName: employee.name,
         employeeEmail: employee.email,
         departmentName: employee.departmentName,
@@ -1419,12 +1380,6 @@ export class DocumentGovernanceEngine {
         acknowledgedAt: nowIso,
       };
       this.acknowledgements.push(ack);
-    } else {
-      ack.status = 'ACKNOWLEDGED';
-      ack.acknowledgedAt = nowIso;
-      ack.employeeId = employee.id;
-      ack.employeeName = employee.name;
-      ack.employeeEmail = employee.email;
     }
 
     try {
@@ -1455,15 +1410,28 @@ export class DocumentGovernanceEngine {
     // Filter stored acknowledgements to only include currently valid published public documents
     const validStoredAcks = this.acknowledgements.filter((a) => validDocIds.has(a.documentId));
 
+    // Deduplicate so ACKNOWLEDGED always takes precedence
+    const canonicalMap = new Map<string, AcknowledgementRecord>();
+    for (const item of validStoredAcks) {
+      const emp = (item.employeeId || item.employeeEmail || '').toLowerCase().trim();
+      const ver = (item.versionNumber || '1.0').trim();
+      const key = `${item.documentId.toLowerCase()}_${ver}_${emp}`;
+      const existing = canonicalMap.get(key);
+      if (!existing || (item.status === 'ACKNOWLEDGED' && existing.status !== 'ACKNOWLEDGED')) {
+        canonicalMap.set(key, item);
+      }
+    }
+    const deduplicated = Array.from(canonicalMap.values());
+
     if (employeeIdentifier) {
       const target = employeeIdentifier.toLowerCase();
-      return validStoredAcks.filter(
+      return deduplicated.filter(
         (a) =>
           a.employeeId?.toLowerCase() === target ||
           a.employeeEmail?.toLowerCase() === target
       );
     }
-    return [...validStoredAcks];
+    return deduplicated;
   }
 
   // Get aggregated compliance stats per employee
@@ -1683,33 +1651,34 @@ export class DocumentGovernanceEngine {
     }
   }
 
-  // Restore or re-seed sample documents (explicit user action)
+  // Reload data from Firestore
   public async restoreDefaultSeed(): Promise<void> {
     try {
       localStorage.removeItem('ama_docs_cleared');
     } catch (e) {
       console.warn('Storage note:', e);
     }
-    this.resetToSeed();
-    this.syncVersionsToStorage();
-    await firestoreService.saveAllDocumentsAndVersions(
-      SEED_DOCUMENTS,
-      SEED_VERSIONS,
-      SEED_AUDIT_LOGS,
-      this.getAcknowledgements()
-    );
+    const [docs, versions, logs, acks, emps] = await Promise.all([
+      firestoreService.getDocuments(),
+      firestoreService.getVersions(),
+      firestoreService.getAuditLogs(),
+      firestoreService.getAcknowledgements(),
+      firestoreService.getEmployees(),
+    ]);
+    this.documentMasters = docs;
+    this.documentVersions = versions;
+    this.setAcknowledgements(acks);
+    this.setEmployees(emps);
+    auditService.seedLogs(logs);
   }
 
-  // Reset/Re-seed for testing
+  // Reset in-memory cache to clean state
   public resetToSeed(): void {
-    this.users = [...SEED_USERS];
-    this.documentMasters = JSON.parse(JSON.stringify(SEED_DOCUMENTS));
-    this.documentVersions = JSON.parse(JSON.stringify(SEED_VERSIONS));
+    this.documentMasters = [];
+    this.documentVersions = [];
     this.publicationRecords = [];
     this.acknowledgements = [];
     this.comparisons.clear();
-    auditService.seedLogs(SEED_AUDIT_LOGS);
-    this.initDefaultAcknowledgements();
   }
 }
 

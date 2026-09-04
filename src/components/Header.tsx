@@ -41,6 +41,8 @@ export const Header: React.FC<HeaderProps> = ({
   const reviewerUser = allUsers.find((u) => u.role === UserRole.REVIEWER);
   const employeeUser = allUsers.find((u) => u.role === UserRole.EMPLOYEE);
 
+  const normalizedRole = String(currentUser?.role || '').toUpperCase().trim();
+
   return (
     <header id="main-header" className="bg-white/95 backdrop-blur-md border-b border-slate-200 text-slate-900 sticky top-0 z-40 shadow-xs">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -63,7 +65,7 @@ export const Header: React.FC<HeaderProps> = ({
           {/* Navigation Links based on role */}
           {currentUser && (
             <nav className="hidden md:flex items-center space-x-1 bg-slate-100/90 p-1 rounded-xl border border-slate-200">
-              {currentUser.role === UserRole.CREATOR && (
+              {normalizedRole === UserRole.CREATOR && (
                 <button
                   id="nav-creator-dashboard"
                   onClick={() => setActiveTab('creator')}
@@ -78,7 +80,7 @@ export const Header: React.FC<HeaderProps> = ({
                 </button>
               )}
 
-              {currentUser.role === UserRole.REVIEWER && (
+              {normalizedRole === UserRole.REVIEWER && (
                 <button
                   id="nav-reviewer-dashboard"
                   onClick={() => setActiveTab('reviewer')}
@@ -94,7 +96,7 @@ export const Header: React.FC<HeaderProps> = ({
               )}
 
               {/* Employee Acknowledgement & Compliance Tracker Module (For HR / Reviewers / Admin) */}
-              {(currentUser.role === UserRole.CREATOR || currentUser.role === UserRole.REVIEWER) && (
+              {(normalizedRole === UserRole.CREATOR || normalizedRole === UserRole.REVIEWER) && (
                 <button
                   id="nav-compliance-tracker"
                   onClick={() => setActiveTab('compliance')}
@@ -109,22 +111,22 @@ export const Header: React.FC<HeaderProps> = ({
                 </button>
               )}
 
-              {currentUser.role !== UserRole.CREATOR && currentUser.role !== UserRole.REVIEWER && (
+              {normalizedRole === UserRole.EMPLOYEE && (
                 <button
                   id="nav-employee-portal"
                   onClick={() => setActiveTab('employee')}
                   className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center space-x-1.5 ${
-                    activeTab === 'employee'
-                      ? 'bg-slate-900 text-white shadow-sm'
-                      : 'text-slate-600 hover:bg-white hover:text-slate-900'
-                  }`}
+                  activeTab === 'employee'
+                  ? 'bg-slate-900 text-white shadow-sm'
+                : 'text-slate-600 hover:bg-white hover:text-slate-900'
+                 }`}
                 >
                   <BookOpen className="w-3.5 h-3.5" />
                   <span>Employee Portal</span>
                 </button>
               )}
 
-              {currentUser.role !== UserRole.EMPLOYEE && (
+              {normalizedRole !== UserRole.EMPLOYEE && (
                 <button
                   id="nav-audit-trail"
                   onClick={() => setActiveTab('audit')}
