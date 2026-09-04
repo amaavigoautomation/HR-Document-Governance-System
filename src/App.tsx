@@ -42,7 +42,7 @@ export default function App() {
       const savedUserData = localStorage.getItem(CURRENT_USER_DATA_KEY);
       if (savedUserData) {
         const parsed = JSON.parse(savedUserData);
-        if (parsed && (parsed.id || parsed.loginId || parsed.email)) {
+        if (parsed && (parsed.id || parsed.loginId || parsed.empId)) {
           if (savedRole && (savedRole === UserRole.CREATOR || savedRole === UserRole.REVIEWER || savedRole === UserRole.EMPLOYEE)) {
             parsed.role = savedRole as UserRole;
           }
@@ -50,7 +50,7 @@ export default function App() {
         }
       }
 
-      // 2. Second priority: lookup user by stored ID / login ID
+      // 2. Second priority: lookup user strictly by stored unique ID / login ID
       const savedUserId = localStorage.getItem(CURRENT_USER_STORAGE_KEY);
       if (savedUserId) {
         const users = governanceEngine.getUsers();
@@ -58,9 +58,8 @@ export default function App() {
           (u) =>
             (!savedRole || u.role === savedRole) &&
             (u.id === savedUserId ||
-              (u.loginId && u.loginId.toLowerCase() === savedUserId.toLowerCase()) ||
-              (u.empId && u.empId.toLowerCase() === savedUserId.toLowerCase()) ||
-              (u.email && u.email.toLowerCase() === savedUserId.toLowerCase()))
+              (u.loginId && u.loginId.toUpperCase() === savedUserId.toUpperCase()) ||
+              (u.empId && u.empId.toUpperCase() === savedUserId.toUpperCase()))
         );
         if (found) {
           return savedRole ? { ...found, role: savedRole as UserRole } : found;
@@ -129,14 +128,13 @@ export default function App() {
       const savedRole = localStorage.getItem(CURRENT_USER_ROLE_KEY);
       if (prev) {
         const roleToKeep = (prev.role || savedRole || UserRole.EMPLOYEE) as UserRole;
-        // Strictly match users with the exact same role to prevent HR or Approver from turning into an Employee
+        // Strictly match users by unique immutable ID (id, loginId, empId). Never match by role-only or shared email!
         const match = users.find(
           (u) =>
             u.role === roleToKeep &&
             (u.id === prev.id ||
-              (u.loginId && prev.loginId && u.loginId.toLowerCase() === prev.loginId.toLowerCase()) ||
-              (u.empId && prev.empId && u.empId.toLowerCase() === prev.empId.toLowerCase()) ||
-              (u.email && prev.email && u.email.toLowerCase() === prev.email.toLowerCase()))
+              (prev.loginId && u.loginId && u.loginId.toUpperCase() === prev.loginId.toUpperCase()) ||
+              (prev.empId && u.empId && u.empId.toUpperCase() === prev.empId.toUpperCase()))
         );
         const updated = match ? { ...match, role: roleToKeep } : prev;
         try {
@@ -151,15 +149,14 @@ export default function App() {
         const savedUserData = localStorage.getItem(CURRENT_USER_DATA_KEY);
         if (savedUserData) {
           const parsed = JSON.parse(savedUserData);
-          if (parsed && (parsed.id || parsed.loginId || parsed.email)) {
+          if (parsed && (parsed.id || parsed.loginId || parsed.empId)) {
             const roleToKeep = (savedRole || parsed.role || UserRole.EMPLOYEE) as UserRole;
             const match = users.find(
               (u) =>
                 u.role === roleToKeep &&
                 (u.id === parsed.id ||
-                  (u.loginId && parsed.loginId && u.loginId.toLowerCase() === parsed.loginId.toLowerCase()) ||
-                  (u.empId && parsed.empId && u.empId.toLowerCase() === parsed.empId.toLowerCase()) ||
-                  (u.email && parsed.email && u.email.toLowerCase() === parsed.email.toLowerCase()))
+                  (parsed.loginId && u.loginId && u.loginId.toUpperCase() === parsed.loginId.toUpperCase()) ||
+                  (parsed.empId && u.empId && u.empId.toUpperCase() === parsed.empId.toUpperCase()))
             );
             return match ? { ...match, role: roleToKeep } : parsed;
           }
@@ -171,9 +168,8 @@ export default function App() {
             (u) =>
               (!savedRole || u.role === roleToKeep) &&
               (u.id === savedUserId ||
-                (u.loginId && u.loginId.toLowerCase() === savedUserId.toLowerCase()) ||
-                (u.empId && u.empId.toLowerCase() === savedUserId.toLowerCase()) ||
-                (u.email && u.email.toLowerCase() === savedUserId.toLowerCase()))
+                (u.loginId && u.loginId.toUpperCase() === savedUserId.toUpperCase()) ||
+                (u.empId && u.empId.toUpperCase() === savedUserId.toUpperCase()))
           );
           if (match) {
             const resolved = { ...match, role: roleToKeep };
@@ -209,11 +205,12 @@ export default function App() {
     // Dynamically hydrate from Firestore database
     const hydrateFromFirestore = async () => {
       try {
-        const [cloudEmps, cloudDocs, cloudVers, cloudAcks] = await Promise.all([
+        const [cloudEmps, cloudDocs, cloudVers, cloudAcks, cloudLogs] = await Promise.all([
           firestoreService.getEmployees(),
           firestoreService.getDocuments(),
           firestoreService.getVersions(),
           firestoreService.getAcknowledgements(),
+          firestoreService.getAuditLogs(),
         ]);
 
         if (cloudEmps && cloudEmps.length > 0) {
@@ -228,6 +225,9 @@ export default function App() {
         }
         if (cloudAcks !== undefined) {
           governanceEngine.setAcknowledgements(cloudAcks);
+        }
+        if (cloudLogs && cloudLogs.length > 0) {
+          auditService.syncCloudLogs(cloudLogs);
         }
         refreshData();
       } catch (e) {
@@ -269,9 +269,13 @@ export default function App() {
 
     const unsubAudit = firestoreService.subscribeToAuditLogs((cloudLogs) => {
       if (cloudLogs && cloudLogs.length > 0) {
-        auditService.seedLogs(cloudLogs);
+        auditService.syncCloudLogs(cloudLogs);
         refreshData();
       }
+    });
+
+    const unsubAuditLocal = auditService.subscribe(() => {
+      refreshData();
     });
 
     return () => {
@@ -280,6 +284,7 @@ export default function App() {
       unsubVers();
       unsubAcks();
       unsubAudit();
+      unsubAuditLocal();
     };
   }, []);
 
@@ -380,10 +385,7 @@ export default function App() {
           onLogout={handleLogout}
           activeTab={activeTab === 'compliance' || activeTab === 'audit' ? activeTab : 'creator'}
           setActiveTab={(tab) => setActiveTab(tab)}
-          notificationCount={notificationCount}
           pendingComplianceCount={pendingComplianceCount}
-          onOpenNotifications={() => setIsNotifDrawerOpen(true)}
-          onResetSeed={handleResetSeed}
         />
       ) : currentUser.role === UserRole.REVIEWER ? (
         <ApproverHeader

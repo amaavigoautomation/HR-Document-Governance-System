@@ -231,7 +231,10 @@ export const CreatorDashboard: React.FC<CreatorDashboardProps> = ({
                             <div className="mt-2 text-xs text-slate-700 flex items-start space-x-2 bg-white p-2.5 rounded-lg border border-slate-200">
                               <MessageSquare className="w-3.5 h-3.5 text-[#FA7014] shrink-0 mt-0.5" />
                               <div>
-                                <span className="font-semibold text-slate-900">Reviewer Comment:</span> "{rev.reviewerComments}"
+                                <span className="font-semibold text-slate-900">
+                                  Reviewer {rev.reviewedByName ? `(${rev.reviewedByName})` : ''} Comment:
+                                </span>{' '}
+                                "{rev.reviewerComments}"
                               </div>
                             </div>
                           )}

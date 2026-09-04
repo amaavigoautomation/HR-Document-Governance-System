@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   History,
   Search,
@@ -12,6 +12,8 @@ import {
   FileText,
   CheckCircle2,
   AlertTriangle,
+  Lock,
+  Trash2,
 } from 'lucide-react';
 import { AuditAction, AuditLogEntry, User, UserRole } from '../types';
 import { auditService } from '../services/audit';
@@ -25,8 +27,15 @@ interface AuditLogViewProps {
 export const AuditLogView: React.FC<AuditLogViewProps> = ({ users }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedAction, setSelectedAction] = useState<string>('ALL');
+  const [allLogs, setAllLogs] = useState<AuditLogEntry[]>(() => auditService.getLogs());
 
-  const allLogs = auditService.getLogs();
+  useEffect(() => {
+    setAllLogs(auditService.getLogs());
+    const unsub = auditService.subscribe((updatedLogs) => {
+      setAllLogs(updatedLogs);
+    });
+    return () => unsub();
+  }, []);
 
   const userList = useMemo(() => {
     return users && users.length > 0 ? users : governanceEngine.getUsers();
@@ -121,6 +130,11 @@ export const AuditLogView: React.FC<AuditLogViewProps> = ({ users }) => {
       case AuditAction.REVIEW_REJECTED:
       case AuditAction.REVISION_REQUESTED:
         return 'bg-orange-50 text-orange-950 border-orange-200';
+      case AuditAction.DOCUMENT_DELETED:
+      case AuditAction.ALL_DOCUMENTS_CLEARED:
+        return 'bg-rose-50 text-rose-700 border-rose-300';
+      case AuditAction.REVIEW_STARTED:
+        return 'bg-blue-50 text-blue-700 border-blue-200';
       case AuditAction.VERSION_SUPERSEDED:
       case AuditAction.VERSION_ARCHIVED:
         return 'bg-slate-100 text-slate-500 border-slate-200';
@@ -175,6 +189,29 @@ export const AuditLogView: React.FC<AuditLogViewProps> = ({ users }) => {
           <Download className="w-4 h-4 text-[#FA7014]" />
           <span>Export Audit Log (JSON)</span>
         </button>
+      </div>
+
+      {/* IMMUTABILITY GUARANTEE BANNER */}
+      <div className="bg-slate-900 text-white rounded-2xl p-4 px-5 flex items-center justify-between border border-slate-800 shadow-xs">
+        <div className="flex items-center space-x-3">
+          <div className="w-8 h-8 rounded-xl bg-[#FA7014]/20 text-[#FA7014] flex items-center justify-center shrink-0">
+            <Lock className="w-4 h-4" />
+          </div>
+          <div>
+            <div className="text-xs font-bold text-white flex items-center space-x-2">
+              <span>Write-Once Immutable Audit Assurance</span>
+              <span className="text-[10px] bg-emerald-500/20 text-emerald-400 font-semibold px-2 py-0.2 rounded-full border border-emerald-500/30">
+                Permanent Retention Active
+              </span>
+            </div>
+            <p className="text-[11px] text-slate-400 mt-0.5">
+              All compliance events, approvals, rejections, revisions, and deletions are permanently recorded. Even when a document master is deleted, its complete historical audit trail remains intact and immutable.
+            </p>
+          </div>
+        </div>
+        <div className="hidden lg:flex items-center space-x-3 text-xs font-mono text-slate-400">
+          <span>Storage: <strong className="text-slate-200">Firestore Cloud + Local Ledger</strong></span>
+        </div>
       </div>
 
       {/* FILTER & SEARCH */}
@@ -259,9 +296,18 @@ export const AuditLogView: React.FC<AuditLogViewProps> = ({ users }) => {
                       <td className="px-6 py-4 whitespace-nowrap">
                         {log.documentId ? (
                           <div>
-                            <span className="font-mono font-bold text-slate-900 bg-slate-100 px-2 py-0.5 rounded-lg border border-slate-200">
-                              {log.documentId}
-                            </span>
+                            {log.action === AuditAction.DOCUMENT_DELETED || log.newValue === 'DELETED' ? (
+                              <div className="inline-flex items-center space-x-1.5 bg-rose-50 border border-rose-200 px-2 py-0.5 rounded-lg">
+                                <span className="font-mono font-bold text-rose-700">{log.documentId}</span>
+                                <span className="text-[10px] bg-rose-200/80 text-rose-800 px-1 py-0.2 rounded font-sans uppercase font-bold tracking-tight">
+                                  Deleted
+                                </span>
+                              </div>
+                            ) : (
+                              <span className="font-mono font-bold text-slate-900 bg-slate-100 px-2 py-0.5 rounded-lg border border-slate-200">
+                                {log.documentId}
+                              </span>
+                            )}
                             {log.versionNumber && (
                               <span className="ml-1.5 font-bold text-slate-700">v{log.versionNumber}</span>
                             )}

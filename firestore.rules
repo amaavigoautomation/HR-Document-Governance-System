@@ -16,9 +16,10 @@ service cloud.firestore {
       allow read, write: if true;
     }
     
-    // Immutable Audit Logs
+    // Immutable Audit Logs - write-once, permanent audit trail (no modifications or deletions permitted)
     match /auditLogs/{logId} {
-      allow read, write: if true;
+      allow read, create: if true;
+      allow update, delete: if false;
     }
     
     // Policy Acknowledgments

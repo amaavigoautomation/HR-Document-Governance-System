@@ -68,8 +68,20 @@ export const firestoreService = {
           console.log('[Firestore] Employees directory initialized.');
         }
       }
+      // Check and seed auditLogs collection if empty to ensure immutable baseline exists
+      if (_seedAuditLogs && _seedAuditLogs.length > 0) {
+        const auditSnap = await getDocs(collection(db, AUDIT_COLLECTION));
+        if (auditSnap.empty) {
+          console.log('[Firestore] Initializing immutable audit trail collection...');
+          for (const log of _seedAuditLogs) {
+            await setDoc(doc(db, AUDIT_COLLECTION, log.id), cleanFirestoreData(log));
+          }
+          console.log('[Firestore] Immutable audit trail initialized.');
+        }
+      }
       // Note: Documents, versions, and acknowledgments are NEVER auto-seeded automatically.
       // If a user deletes them, the database remains completely clean and empty across page refreshes.
+      // Audit logs are strictly immutable and permanent: they are never deleted on document deletion.
     } catch (e) {
       console.warn('[Firestore] Employee seed note:', e);
     }

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   X,
   FileText,
@@ -47,7 +47,31 @@ export const DocumentDetailModal: React.FC<DocumentDetailModalProps> = ({
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
   const versions = governanceEngine.getDocumentVersions(document.id);
-  const auditLogs = auditService.getLogs({ documentId: document.documentId });
+  const [auditLogs, setAuditLogs] = useState<AuditLogEntry[]>(() =>
+    auditService.getLogs().filter(
+      (l) =>
+        l.documentId === document.documentId ||
+        l.documentId === document.id ||
+        l.documentMasterId === document.id ||
+        l.documentMasterId === document.documentId
+    )
+  );
+
+  useEffect(() => {
+    const updateLogs = () => {
+      const logs = auditService.getLogs().filter(
+        (l) =>
+          l.documentId === document.documentId ||
+          l.documentId === document.id ||
+          l.documentMasterId === document.id ||
+          l.documentMasterId === document.documentId
+      );
+      setAuditLogs(logs);
+    };
+    updateLogs();
+    const unsub = auditService.subscribe(() => updateLogs());
+    return () => unsub();
+  }, [document.id, document.documentId]);
 
   const inReviewVersion = versions.find((v) => v.status === VersionStatus.IN_REVIEW);
   const hasInReviewVersion = !!inReviewVersion || document.currentStatus === VersionStatus.IN_REVIEW;
@@ -306,7 +330,10 @@ export const DocumentDetailModal: React.FC<DocumentDetailModalProps> = ({
                         <div className="mt-2.5 bg-orange-50/60 border border-orange-200 rounded-xl p-3 text-xs text-slate-800 flex items-start space-x-2">
                           <MessageSquare className="w-4 h-4 text-[#FA7014] shrink-0 mt-0.5" />
                           <div>
-                            <span className="font-bold text-slate-900">Reviewer Feedback:</span> "{ver.reviewerComments}"
+                            <span className="font-bold text-slate-900">
+                              Reviewer {ver.reviewedByName ? `(${ver.reviewedByName})` : ''} Feedback:
+                            </span>{' '}
+                            "{ver.reviewerComments}"
                           </div>
                         </div>
                       )}

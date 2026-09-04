@@ -3,10 +3,7 @@ import {
   FileText,
   Users,
   History,
-  Bell,
-  RotateCcw,
   LogOut,
-  UserCheck,
 } from 'lucide-react';
 import { User } from '../types';
 import { AmaavigoLogo } from './AmaavigoLogo';
@@ -16,10 +13,7 @@ interface HRHeaderProps {
   onLogout: () => void;
   activeTab: 'creator' | 'compliance' | 'audit';
   setActiveTab: (tab: 'creator' | 'compliance' | 'audit') => void;
-  notificationCount?: number;
   pendingComplianceCount?: number;
-  onOpenNotifications?: () => void;
-  onResetSeed?: () => void;
 }
 
 export const HRHeader: React.FC<HRHeaderProps> = ({
@@ -27,12 +21,9 @@ export const HRHeader: React.FC<HRHeaderProps> = ({
   onLogout,
   activeTab,
   setActiveTab,
-  notificationCount = 0,
   pendingComplianceCount = 0,
-  onOpenNotifications,
-  onResetSeed,
 }) => {
-  const displayId = currentUser.empId || currentUser.loginId || currentUser.id || 'HR001';
+  const displayId = currentUser.empId || currentUser.loginId || currentUser.id || '';
 
   return (
     <header
@@ -89,11 +80,6 @@ export const HRHeader: React.FC<HRHeaderProps> = ({
             >
               <Users className="w-3.5 h-3.5" />
               <span>Compliance Tracker</span>
-              {pendingComplianceCount > 0 && (
-                <span className="ml-1 bg-amber-500 text-white text-[10px] font-bold px-1.5 py-0.2 rounded-full">
-                  {pendingComplianceCount}
-                </span>
-              )}
             </button>
 
             {/* Audit Trail Tab */}
@@ -112,39 +98,8 @@ export const HRHeader: React.FC<HRHeaderProps> = ({
             </button>
           </nav>
 
-          {/* Right actions: Notifications, Seed Reset, HR Profile & Logout */}
+          {/* Right actions: HR Profile & Logout */}
           <div className="flex items-center space-x-2.5">
-            {/* Email Notifications Drawer Button */}
-            {onOpenNotifications && (
-              <button
-                id="btn-hr-notifications"
-                type="button"
-                onClick={onOpenNotifications}
-                className="relative p-2 text-slate-600 hover:text-slate-900 hover:bg-slate-100 rounded-lg transition-colors border border-transparent hover:border-slate-200"
-                title="Broadcasted Email Notifications"
-              >
-                <Bell className="w-4.5 h-4.5" />
-                {notificationCount > 0 && (
-                  <span className="absolute top-1 right-1 w-4 h-4 bg-[#FA7014] text-white text-[10px] font-bold rounded-full flex items-center justify-center shadow-xs">
-                    {notificationCount > 9 ? '9+' : notificationCount}
-                  </span>
-                )}
-              </button>
-            )}
-
-            {/* Reset Database Button */}
-            {onResetSeed && (
-              <button
-                id="btn-hr-reset-seed"
-                type="button"
-                onClick={onResetSeed}
-                className="p-2 text-slate-500 hover:text-slate-900 hover:bg-slate-100 rounded-lg transition-colors border border-transparent hover:border-slate-200"
-                title="Reset Database to Seed State"
-              >
-                <RotateCcw className="w-4 h-4" />
-              </button>
-            )}
-
             {/* HR Profile Details */}
             <div className="flex items-center space-x-2 pl-2 border-l border-slate-200">
               <div className="hidden sm:block text-left">

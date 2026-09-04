@@ -1,11 +1,75 @@
 import { AuditAction, AuditLogEntry, UserRole } from '../types';
+import { SEED_AUDIT_LOGS } from '../data/seedData';
+import { firestoreService } from './firestoreService';
+
+const AUDIT_STORAGE_KEY = 'ama_audit_logs_v1';
 
 export class AuditService {
   private logs: AuditLogEntry[] = [];
+  private listeners: Array<(logs: AuditLogEntry[]) => void> = [];
+
+  constructor() {
+    this.initFromStorage();
+  }
+
+  private initFromStorage(): void {
+    try {
+      if (typeof window !== 'undefined') {
+        const saved = localStorage.getItem(AUDIT_STORAGE_KEY);
+        if (saved) {
+          const parsed = JSON.parse(saved);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            this.logs = parsed;
+            return;
+          }
+        }
+      }
+    } catch (e) {
+      console.warn('[AuditService] LocalStorage read note:', e);
+    }
+
+    // Default fallback to baseline seed logs if storage is empty
+    this.logs = [...SEED_AUDIT_LOGS];
+    this.persistToLocalStorage();
+  }
+
+  private persistToLocalStorage(): void {
+    try {
+      if (typeof window !== 'undefined') {
+        localStorage.setItem(AUDIT_STORAGE_KEY, JSON.stringify(this.logs));
+      }
+    } catch (e) {
+      console.warn('[AuditService] LocalStorage save note:', e);
+    }
+  }
+
+  private notifyListeners(): void {
+    const copy = [...this.logs];
+    for (const listener of this.listeners) {
+      try {
+        listener(copy);
+      } catch (err) {
+        console.error('[AuditService] Listener error:', err);
+      }
+    }
+  }
+
+  public subscribe(listener: (logs: AuditLogEntry[]) => void): () => void {
+    this.listeners.push(listener);
+    // Call immediately with current logs
+    try {
+      listener([...this.logs]);
+    } catch (err) {
+      console.error('[AuditService] Initial subscribe error:', err);
+    }
+    return () => {
+      this.listeners = this.listeners.filter((l) => l !== listener);
+    };
+  }
 
   public logEvent(
     action: AuditAction,
-    user: { id: string; name: string; role: UserRole },
+    user: { id?: string; empId?: string; loginId?: string; name: string; role: UserRole },
     details: {
       documentMasterId?: string;
       documentId?: string;
@@ -22,7 +86,7 @@ export class AuditService {
     const entry: AuditLogEntry = {
       id: `audit-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`,
       action,
-      performedById: user.id,
+      performedById: user.id || user.empId || user.loginId || 'sys-user',
       performedByName: user.name,
       performedByRole: user.role,
       performedAt: new Date().toISOString(),
@@ -38,8 +102,45 @@ export class AuditService {
       userAgent: details.userAgent || (typeof navigator !== 'undefined' ? navigator.userAgent : 'Node-Express-Server'),
     };
 
-    this.logs.unshift(entry);
+    // Immutable append-only in memory (deduplicating by ID)
+    this.logs = [entry, ...this.logs.filter((l) => l.id !== entry.id)];
+    this.persistToLocalStorage();
+
+    // Persist immediately to Cloud Firestore
+    try {
+      firestoreService.saveAuditLog(entry).catch((e) => {
+        console.warn('[AuditService] Firestore audit log save note:', e);
+      });
+    } catch (e) {
+      console.warn('[AuditService] Firestore invocation note:', e);
+    }
+
+    this.notifyListeners();
     return entry;
+  }
+
+  public syncCloudLogs(cloudLogs: AuditLogEntry[]): void {
+    if (!cloudLogs || cloudLogs.length === 0) return;
+
+    // Deduplicate and merge by log ID
+    const logMap = new Map<string, AuditLogEntry>();
+
+    // Add existing logs first
+    for (const log of this.logs) {
+      logMap.set(log.id, log);
+    }
+    // Merge cloud logs
+    for (const log of cloudLogs) {
+      logMap.set(log.id, log);
+    }
+
+    // Sort chronologically descending (newest first)
+    this.logs = Array.from(logMap.values()).sort(
+      (a, b) => new Date(b.performedAt).getTime() - new Date(a.performedAt).getTime()
+    );
+
+    this.persistToLocalStorage();
+    this.notifyListeners();
   }
 
   public getLogs(filter?: {
@@ -60,9 +161,10 @@ export class AuditService {
     return result;
   }
 
-  public seedLogs(initialLogs: AuditLogEntry[]) {
-    this.logs = [...initialLogs];
+  public seedLogs(initialLogs: AuditLogEntry[]): void {
+    this.syncCloudLogs(initialLogs);
   }
 }
 
 export const auditService = new AuditService();
+

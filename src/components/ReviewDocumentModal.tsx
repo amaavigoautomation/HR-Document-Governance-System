@@ -29,8 +29,10 @@ import {
   User,
   VersionStatus,
   VersionType,
+  AuditAction,
 } from '../types';
 import { governanceEngine } from '../services/governance';
+import { auditService } from '../services/audit';
 import { DocumentViewer } from './DocumentViewer';
 import { formatIST, formatISTDate } from '../utils/dateFormat';
 
@@ -104,6 +106,18 @@ export const ReviewDocumentModal: React.FC<ReviewDocumentModalProps> = ({
     candidateBaselines.find((b) => b.id === version.previousVersionId) ||
     (master?.currentPublishedVersionId ? governanceEngine.getVersionById(master.currentPublishedVersionId) : null) ||
     candidateBaselines[0];
+
+  useEffect(() => {
+    if (!version.id) return;
+    // Log immutable review inspection event
+    auditService.logEvent(AuditAction.REVIEW_STARTED, currentUser, {
+      documentMasterId: version.documentMasterId,
+      documentId: version.documentId,
+      documentVersionId: version.id,
+      versionNumber: version.versionNumber,
+      reason: `Reviewer ${currentUser.name} (${currentUser.role}) initiated governance inspection on v${version.versionNumber}.`,
+    });
+  }, [version.id]);
 
   useEffect(() => {
     if (!version.id) return;

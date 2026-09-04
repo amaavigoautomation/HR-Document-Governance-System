@@ -16,7 +16,7 @@ export const EmployeeHeader: React.FC<EmployeeHeaderProps> = ({
   currentUser,
   onLogout,
 }) => {
-  const displayId = currentUser.empId || currentUser.loginId || currentUser.id || 'EMP';
+  const displayId = currentUser.empId || currentUser.loginId || currentUser.id || '';
   const displayDept = currentUser.departmentName || 'Operations';
   const displayTitle = currentUser.title || 'Staff Member';
 

@@ -28,7 +28,7 @@ export const ApproverHeader: React.FC<ApproverHeaderProps> = ({
   pendingComplianceCount = 0,
   onOpenNotifications,
 }) => {
-  const displayId = currentUser.empId || currentUser.loginId || currentUser.id || 'AMA001';
+  const displayId = currentUser.empId || currentUser.loginId || currentUser.id || '';
 
   return (
     <header
@@ -79,17 +79,12 @@ export const ApproverHeader: React.FC<ApproverHeaderProps> = ({
               onClick={() => setActiveTab('compliance')}
               className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center space-x-1.5 ${
                 activeTab === 'compliance'
-                  ? 'bg-slate-900 text-white shadow-sm'
+                  ? 'bg-emerald-700 text-white shadow-sm'
                   : 'text-slate-600 hover:bg-white hover:text-slate-900'
               }`}
             >
               <Users className="w-3.5 h-3.5" />
               <span>Compliance Tracker</span>
-              {pendingComplianceCount > 0 && (
-                <span className="ml-1 bg-amber-500 text-white text-[10px] font-bold px-1.5 py-0.2 rounded-full">
-                  {pendingComplianceCount}
-                </span>
-              )}
             </button>
 
             {/* Audit Trail Tab */}

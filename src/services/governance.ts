@@ -301,7 +301,7 @@ export class DocumentGovernanceEngine {
         avatar: emp.avatar || (emp as any).avatarUrl,
       };
 
-      const key = (normalized.empId || normalized.loginId || normalized.email || normalized.id).toUpperCase().trim();
+      const key = (normalized.id || normalized.empId || normalized.loginId).toUpperCase().trim();
       userMap.set(key, normalized);
     }
     this.users = Array.from(userMap.values());
@@ -315,11 +315,11 @@ export class DocumentGovernanceEngine {
     if (!users || users.length === 0) return;
     const userMap = new Map<string, User>();
     for (const u of this.users) {
-      const key = (u.empId || u.loginId || u.email || u.id || '').toUpperCase().trim();
+      const key = (u.id || u.empId || u.loginId || '').toUpperCase().trim();
       if (key) userMap.set(key, u);
     }
     for (const u of users) {
-      const key = (u.empId || u.loginId || u.email || u.id || '').toUpperCase().trim();
+      const key = (u.id || u.empId || u.loginId || '').toUpperCase().trim();
       if (key) {
         userMap.set(key, { ...userMap.get(key), ...u });
       }
@@ -334,7 +334,12 @@ export class DocumentGovernanceEngine {
   private syncDocumentAuthorNames(): void {
     for (const doc of this.documentMasters) {
       if (doc.createdById) {
-        const u = this.users.find((user) => user.id === doc.createdById || user.empId === doc.createdById || user.loginId === doc.createdById);
+        const u = this.users.find(
+          (user) =>
+            user.id === doc.createdById ||
+            (user.empId && user.empId.toUpperCase() === doc.createdById.toUpperCase()) ||
+            (user.loginId && user.loginId.toUpperCase() === doc.createdById.toUpperCase())
+        );
         if (u) {
           doc.createdByName = u.name;
         }
@@ -342,19 +347,34 @@ export class DocumentGovernanceEngine {
     }
     for (const ver of this.documentVersions) {
       if (ver.createdById) {
-        const u = this.users.find((user) => user.id === ver.createdById || user.empId === ver.createdById || user.loginId === ver.createdById);
+        const u = this.users.find(
+          (user) =>
+            user.id === ver.createdById ||
+            (user.empId && user.empId.toUpperCase() === ver.createdById.toUpperCase()) ||
+            (user.loginId && user.loginId.toUpperCase() === ver.createdById.toUpperCase())
+        );
         if (u) {
           ver.createdByName = u.name;
         }
       }
       if (ver.reviewedById) {
-        const u = this.users.find((user) => user.id === ver.reviewedById || user.empId === ver.reviewedById || user.loginId === ver.reviewedById);
+        const u = this.users.find(
+          (user) =>
+            user.id === ver.reviewedById ||
+            (user.empId && user.empId.toUpperCase() === ver.reviewedById.toUpperCase()) ||
+            (user.loginId && user.loginId.toUpperCase() === ver.reviewedById.toUpperCase())
+        );
         if (u) {
           ver.reviewedByName = u.name;
         }
       }
       if (ver.publishedById) {
-        const u = this.users.find((user) => user.id === ver.publishedById || user.empId === ver.publishedById || user.loginId === ver.publishedById);
+        const u = this.users.find(
+          (user) =>
+            user.id === ver.publishedById ||
+            (user.empId && user.empId.toUpperCase() === ver.publishedById.toUpperCase()) ||
+            (user.loginId && user.loginId.toUpperCase() === ver.publishedById.toUpperCase())
+        );
         if (u) {
           ver.publishedByName = u.name;
         }
@@ -368,14 +388,13 @@ export class DocumentGovernanceEngine {
     role?: UserRole | string,
     fallbackName?: string
   ): { name: string; role: UserRole; title: string; email: string } {
-    // 1. Direct ID / empId / loginId match
+    // 1. Direct ID / empId / loginId match (strictly by unique identifier, never by shared email)
     if (userId) {
       const match = this.users.find(
         (u) =>
           u.id === userId ||
-          (u.empId && u.empId.toLowerCase() === userId.toLowerCase()) ||
-          (u.loginId && u.loginId.toLowerCase() === userId.toLowerCase()) ||
-          (u.email && u.email.toLowerCase() === userId.toLowerCase())
+          (u.empId && u.empId.toUpperCase() === userId.toUpperCase()) ||
+          (u.loginId && u.loginId.toUpperCase() === userId.toUpperCase())
       );
       if (match) {
         return {
@@ -387,12 +406,10 @@ export class DocumentGovernanceEngine {
       }
     }
 
-    // 2. Fallback name match in user roster
+    // 2. Fallback exact name match in user roster
     if (fallbackName) {
       const byName = this.users.find(
-        (u) =>
-          u.name.toLowerCase() === fallbackName.toLowerCase() ||
-          (u.email && u.email.toLowerCase() === fallbackName.toLowerCase())
+        (u) => u.name.trim().toLowerCase() === fallbackName.trim().toLowerCase()
       );
       if (byName) {
         return {
@@ -404,41 +421,22 @@ export class DocumentGovernanceEngine {
       }
     }
 
-    // 3. Match by role in user roster if available
+    // 3. Fallback to fallbackName or role-appropriate default (do NOT pick first creator/reviewer blindly)
     const rawRole = (role || '').toString().toUpperCase();
-    if (rawRole === 'CREATOR' || rawRole === 'HR') {
-      const creator = this.users.find((u) => u.role === UserRole.CREATOR);
-      if (creator) {
-        return {
-          name: fallbackName || creator.name,
-          role: UserRole.CREATOR,
-          title: creator.title,
-          email: creator.email,
-        };
-      }
-    }
-
-    if (rawRole === 'REVIEWER' || rawRole === 'APPROVER') {
-      const reviewer = this.users.find((u) => u.role === UserRole.REVIEWER);
-      if (reviewer) {
-        return {
-          name: fallbackName || reviewer.name,
-          role: UserRole.REVIEWER,
-          title: reviewer.title,
-          email: reviewer.email,
-        };
-      }
-    }
-
     let defaultRole = UserRole.EMPLOYEE;
     if (rawRole === 'CREATOR' || rawRole === 'HR') defaultRole = UserRole.CREATOR;
     if (rawRole === 'REVIEWER' || rawRole === 'APPROVER') defaultRole = UserRole.REVIEWER;
 
     return {
-      name: fallbackName || 'System User',
+      name: fallbackName || (defaultRole === UserRole.CREATOR ? 'HR Author' : defaultRole === UserRole.REVIEWER ? 'Approver' : 'Employee'),
       role: defaultRole,
-      title: '',
-      email: '',
+      title:
+        defaultRole === UserRole.CREATOR
+          ? 'HR Policy & Governance Lead'
+          : defaultRole === UserRole.REVIEWER
+          ? 'VP of Human Resources & Governance'
+          : 'Staff Member',
+      email: defaultRole === UserRole.CREATOR ? 'hr-governance@amaavigo.in' : 'approver@amaavigo.in',
     };
   }
 
@@ -726,8 +724,9 @@ export class DocumentGovernanceEngine {
     // Notify Approver(s) via email that a new document has been created and requires review
     try {
       const reviewers = this.getReviewers();
-      const emailSubject = `[Action Required: Review] New Document Created: [${documentId}] ${newMaster.title} (v${versionNumber})`;
-      const emailBody = `Dear Approver,\n\nA new document has been created by HR and submitted to the review queue for your authorization:\n\n• Document ID: ${documentId}\n• Title: ${newMaster.title}\n• Version: v${versionNumber} (Initial Baseline)\n• Category: ${newMaster.category}\n• Department: ${newMaster.departmentName}\n• Created By: ${creator.name} (${creator.title})\n\nPlease sign in to the Governance Portal, inspect the document content and security baseline, and perform your decision (Approve & Publish or Request Revisions).\n\nSincerely,\nHR Document Governance Automation System\n${newMaster.companyName}`;
+      const creatorDisplay = `${creator.name} (${creator.loginId || creator.empId || 'HR'})`;
+      const emailSubject = `[Action Required: Review] New Document Created by ${creatorDisplay}: [${documentId}] ${newMaster.title} (v${versionNumber})`;
+      const emailBody = `Dear Approver,\n\nA new document has been created by HR Author ${creatorDisplay} (${creator.title}) and submitted to the review queue for your authorization:\n\n• Document ID: ${documentId}\n• Title: ${newMaster.title}\n• Version: v${versionNumber} (Initial Baseline)\n• Category: ${newMaster.category}\n• Department: ${newMaster.departmentName}\n• Created By HR Author: ${creatorDisplay} (${creator.title})\n\nPlease sign in to the Governance Portal, inspect the document content and security baseline, and perform your decision (Approve & Publish or Request Revisions).\n\nSincerely,\nHR Document Governance Automation System\n${newMaster.companyName}`;
 
       for (const rev of reviewers) {
         if (rev.email) {
@@ -910,8 +909,9 @@ export class DocumentGovernanceEngine {
     // Notify Approver(s) via email that a revised document version has been created and requires review
     try {
       const reviewers = this.getReviewers();
-      const emailSubject = `[Action Required: Review] Revised Version Created: [${master.documentId}] ${master.title} (v${nextVersionNumber})`;
-      const emailBody = `Dear Approver,\n\nA revised version of document [${master.documentId}] has been authored by HR and submitted to your review queue:\n\n• Document ID: ${master.documentId}\n• Title: ${master.title}\n• New Version: v${nextVersionNumber} (${data.revisionType} revision)\n• Baseline Comparison: v${baselineNumber}\n• Change Summary: ${data.changeSummary || 'Revised document version submitted.'}\n• Created By: ${creator.name} (${creator.title})\n\nPlease sign in to the Governance Portal to compare changes against baseline v${baselineNumber} and render your authorization decision.\n\nSincerely,\nHR Document Governance Automation System\n${master.companyName}`;
+      const creatorDisplay = `${creator.name} (${creator.loginId || creator.empId || 'HR'})`;
+      const emailSubject = `[Action Required: Review] Revised Version Created by ${creatorDisplay}: [${master.documentId}] ${master.title} (v${nextVersionNumber})`;
+      const emailBody = `Dear Approver,\n\nA revised version of document [${master.documentId}] has been authored by HR Author ${creatorDisplay} (${creator.title}) and submitted to your review queue:\n\n• Document ID: ${master.documentId}\n• Title: ${master.title}\n• New Version: v${nextVersionNumber} (${data.revisionType} revision)\n• Baseline Comparison: v${baselineNumber}\n• Change Summary: ${data.changeSummary || 'Revised document version submitted.'}\n• Created By HR Author: ${creatorDisplay} (${creator.title})\n\nPlease sign in to the Governance Portal to compare changes against baseline v${baselineNumber} and render your authorization decision.\n\nSincerely,\nHR Document Governance Automation System\n${master.companyName}`;
 
       for (const rev of reviewers) {
         if (rev.email) {
@@ -1285,8 +1285,9 @@ export class DocumentGovernanceEngine {
     // Notify all HR users in the database via email that revision is required along with comments
     try {
       const hrUsers = this.getCreators();
-      const emailSubject = `[Revision Required] Changes Requested: [${master.documentId}] ${master.title} (v${version.versionNumber})`;
-      const emailBody = `Dear HR,\n\nApprover ${reviewer.name} (${reviewer.title}) has reviewed version v${version.versionNumber} of document [${master.documentId}] "${master.title}" and requested revisions before approval.\n\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\nCHANGES REQUIRED / APPROVER FEEDBACK:\n"${comments.trim()}"\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n• Document ID: ${master.documentId}\n• Title: ${master.title}\n• Reviewed Version: v${version.versionNumber}\n• Reviewed By: ${reviewer.name} (${reviewer.title})\n• Status: Revision Required\n\nPlease navigate to the "Action Required: Revisions" tab in your HR Author Dashboard to revise the document text and submit the next version.\n\nSincerely,\nHR Document Governance Automation System\n${master.companyName}`;
+      const reviewerDisplay = `${reviewer.name} (${reviewer.loginId || reviewer.empId || 'Approver'})`;
+      const emailSubject = `[Revision Required] Rejected by Approver ${reviewerDisplay}: [${master.documentId}] ${master.title} (v${version.versionNumber})`;
+      const emailBody = `Dear HR Team,\n\nApprover ${reviewerDisplay} (${reviewer.title}) has reviewed and rejected / requested revisions for version v${version.versionNumber} of document [${master.documentId}] "${master.title}".\n\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\nCHANGES REQUIRED / FEEDBACK FROM APPROVER ${reviewer.name}:\n"${comments.trim()}"\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n• Document ID: ${master.documentId}\n• Title: ${master.title}\n• Reviewed Version: v${version.versionNumber}\n• Rejected / Reviewed By Approver: ${reviewerDisplay} (${reviewer.title})\n• Document Author: ${version.createdByName || 'HR Author'}\n• Decision: Revision Required\n\nPlease navigate to the Creator Studio in your HR Author Dashboard to review the feedback and submit the revised version.\n\nSincerely,\nHR Document Governance Automation System\n${master.companyName}`;
 
       const sentEmails = new Set<string>();
       for (const hr of hrUsers) {
@@ -1600,6 +1601,7 @@ export class DocumentGovernanceEngine {
     const docMaster = this.documentMasters.find((d) => d.id === documentId || d.documentId === documentId);
     const targetId = docMaster ? docMaster.id : documentId;
     const docLogicalId = docMaster ? docMaster.documentId : documentId;
+    const docTitle = docMaster ? docMaster.title : documentId;
 
     this.documentMasters = this.documentMasters.filter((d) => d.id !== targetId && d.documentId !== docLogicalId);
     this.documentVersions = this.documentVersions.filter(
@@ -1607,19 +1609,36 @@ export class DocumentGovernanceEngine {
     );
     this.acknowledgements = this.acknowledgements.filter((a) => a.documentId !== docLogicalId);
 
-    // Sync deletion to Firestore
+    // Sync deletion to Firestore (documents, versions, acks only - audit logs are NEVER deleted)
     try {
       await firestoreService.deleteDocument(targetId);
     } catch (e) {
       console.warn('[Governance] Firestore deleteDocument sync note:', e);
     }
 
-    if (currentUser) {
-      auditService.logEvent(AuditAction.VERSION_ARCHIVED, currentUser, {
-        documentId: docLogicalId,
-        reason: `Document master ${docLogicalId} and all associated revisions were deleted from the system.`,
-      });
-    }
+    // Always generate an immutable audit log for the deletion event
+    const effectiveUser = currentUser || {
+      id: 'hr-admin',
+      name: 'HR Compliance Officer',
+      role: UserRole.CREATOR,
+      companyId: 'ama-corp',
+      companyName: 'Amaavigo Group',
+      departmentId: 'hr-dept',
+      departmentName: 'Human Resources',
+      title: 'HR Compliance Officer',
+      email: 'hr@amaavigo.com',
+      active: true,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+
+    auditService.logEvent(AuditAction.DOCUMENT_DELETED, effectiveUser, {
+      documentId: docLogicalId,
+      documentMasterId: targetId,
+      oldValue: docTitle,
+      newValue: 'DELETED',
+      reason: `Document Master [${docLogicalId}] "${docTitle}" and all version revisions were deleted by ${effectiveUser.name} (${effectiveUser.role}). All historical compliance audit records remain permanently preserved.`,
+    });
   }
 
   // Clear all documents, versions, and acknowledgments across the application & database
@@ -1636,19 +1655,34 @@ export class DocumentGovernanceEngine {
       console.warn('Storage note:', e);
     }
 
-    // Sync clear to Firestore
+    // Sync clear to Firestore (documents, versions, acks only - audit trail is strictly preserved)
     try {
       await firestoreService.clearAllDocuments();
     } catch (e) {
       console.warn('[Governance] Firestore clearAllDocuments sync note:', e);
     }
 
-    if (currentUser) {
-      auditService.logEvent(AuditAction.VERSION_ARCHIVED, currentUser, {
-        documentId: 'ALL-POLICIES',
-        reason: `All document masters, revisions, and acknowledgment records were purged by ${currentUser.name} (${currentUser.role}).`,
-      });
-    }
+    const effectiveUser = currentUser || {
+      id: 'hr-admin',
+      name: 'HR Compliance Officer',
+      role: UserRole.CREATOR,
+      companyId: 'ama-corp',
+      companyName: 'Amaavigo Group',
+      departmentId: 'hr-dept',
+      departmentName: 'Human Resources',
+      title: 'HR Compliance Officer',
+      email: 'hr@amaavigo.com',
+      active: true,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+
+    auditService.logEvent(AuditAction.ALL_DOCUMENTS_CLEARED, effectiveUser, {
+      documentId: 'ALL-DOCUMENTS',
+      oldValue: 'ACTIVE_POLICIES',
+      newValue: 'PURGED',
+      reason: `All active document masters, revisions, and acknowledgment records were purged by ${effectiveUser.name} (${effectiveUser.role}). Immutable audit logs remain intact.`,
+    });
   }
 
   // Reload data from Firestore
