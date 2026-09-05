@@ -1,6 +1,7 @@
 import {
   collection,
   doc,
+  getDoc,
   getDocs,
   setDoc,
   updateDoc,
@@ -115,111 +116,191 @@ export const firestoreService = {
     }
   },
 
+  // Parse any Firestore employee document safely and robustly
+  parseEmployeeDoc(d: any): User {
+    const data = (typeof d?.data === 'function' ? d.data() : d) || {};
+    const docId = data.id || d?.id || data.empId || data.loginId || 'EMP';
+
+    const rawRole = (data.role || '').toString().toUpperCase().trim();
+    const rawLoginId = (data.loginId || data.empId || docId || '').toString().toUpperCase().trim();
+    const rawTitle = (data.title || data.designation || '').toString().toUpperCase();
+    const rawDept = (data.departmentName || data.department || data.departmentId || '').toString().toUpperCase();
+    const lowerDocId = String(docId).toLowerCase();
+
+    // Explicit database role is respected with highest priority
+    let role = UserRole.EMPLOYEE;
+    if (rawRole === 'EMPLOYEE') {
+      role = UserRole.EMPLOYEE;
+    } else if (rawRole === 'CREATOR' || rawRole === 'HR' || rawRole === 'AUTHOR') {
+      role = UserRole.CREATOR;
+    } else if (rawRole === 'REVIEWER' || rawRole === 'APPROVER') {
+      role = UserRole.REVIEWER;
+    } else if (
+      rawRole.includes('CREATOR') ||
+      rawRole.includes('HR') ||
+      lowerDocId.includes('creator') ||
+      rawLoginId.startsWith('HR') ||
+      rawLoginId === 'CREATOR' ||
+      rawDept.includes('HUMAN RESOURCES') ||
+      rawTitle.includes('HR POLICY') ||
+      rawTitle.includes('CREATOR')
+    ) {
+      role = UserRole.CREATOR;
+    } else if (
+      rawRole.includes('REVIEWER') ||
+      rawRole.includes('APPROVER') ||
+      lowerDocId.includes('reviewer') ||
+      rawLoginId.startsWith('REV') ||
+      rawLoginId === 'APPROVER' ||
+      rawLoginId === 'REVIEWER' ||
+      rawTitle.includes('GOVERNANCE APPROVER')
+    ) {
+      role = UserRole.REVIEWER;
+    }
+
+    const empId = data.empId || data.employeeId || data.loginId || docId;
+    const loginId = data.loginId || data.empId || data.employeeId || docId;
+    const name =
+      data.name ||
+      data.fullName ||
+      data.employeeName ||
+      (role === UserRole.CREATOR ? 'HR Creator' : role === UserRole.REVIEWER ? 'Approver' : 'Employee');
+    const email =
+      data.email ||
+      (empId ? `${String(empId).toLowerCase()}@amaavigo.com` : 'employee@amaavigo.com');
+
+    const isActive =
+      data.active !== false &&
+      String(data.active).toLowerCase() !== 'false' &&
+      data.status !== 'INACTIVE' &&
+      data.status !== 'inactive';
+
+    return {
+      ...data,
+      id: docId,
+      empId: String(empId),
+      loginId: String(loginId),
+      name,
+      email: String(email).trim(),
+      role,
+      title:
+        data.title ||
+        data.designation ||
+        (role === UserRole.CREATOR
+          ? 'HR Policy & Governance Lead'
+          : role === UserRole.REVIEWER
+          ? 'VP of Human Resources & Governance'
+          : 'Staff Member'),
+      departmentName:
+        data.departmentName ||
+        data.department ||
+        (role === UserRole.CREATOR || role === UserRole.REVIEWER
+          ? 'Human Resources'
+          : 'Operations'),
+      companyName: data.companyName || 'Amaavigo Group',
+      password: String(data.password ?? '1'),
+      active: isActive,
+      avatar: data.avatar || data.avatarUrl,
+    } as User;
+  },
+
   // Employees & Users Directory & Records
   async getEmployees(): Promise<User[]> {
     try {
-      const [empSnap, usersSnap] = await Promise.all([
-        getDocs(collection(db, EMPLOYEES_COLLECTION)),
-        getDocs(collection(db, 'users')).catch(() => ({ docs: [] } as any)),
-      ]);
-
-      const allDocs = [...empSnap.docs, ...usersSnap.docs];
+      const empSnap = await getDocs(collection(db, EMPLOYEES_COLLECTION));
       const seen = new Set<string>();
-
       const users: User[] = [];
-      for (const d of allDocs) {
-        const data = d.data() as any;
-        const docId = data.id || d.id;
-        if (seen.has(docId)) continue;
-        seen.add(docId);
 
-        const rawRole = (data.role || '').toString().toUpperCase().trim();
-        const rawLoginId = (data.loginId || data.empId || docId || '').toString().toUpperCase().trim();
-        const rawTitle = (data.title || data.designation || '').toString().toUpperCase();
-        const rawDept = (data.departmentName || data.department || data.departmentId || '').toString().toUpperCase();
-        const lowerDocId = docId.toLowerCase();
-
-        let role = UserRole.EMPLOYEE;
-        if (
-          rawRole === 'CREATOR' ||
-          rawRole === 'HR' ||
-          rawRole === 'AUTHOR' ||
-          rawRole.includes('CREATOR') ||
-          rawRole.includes('HR') ||
-          lowerDocId.includes('creator') ||
-          lowerDocId.includes('hr') ||
-          rawLoginId.startsWith('HR') ||
-          rawLoginId === 'CREATOR' ||
-          rawDept.includes('HUMAN RESOURCES') ||
-          rawDept === 'HR' ||
-          rawTitle.includes('HR') ||
-          rawTitle.includes('CREATOR')
-        ) {
-          role = UserRole.CREATOR;
-        } else if (
-          rawRole === 'REVIEWER' ||
-          rawRole === 'APPROVER' ||
-          rawRole.includes('REVIEWER') ||
-          rawRole.includes('APPROVER') ||
-          lowerDocId.includes('reviewer') ||
-          lowerDocId.includes('approver') ||
-          lowerDocId.includes('app') ||
-          rawLoginId.startsWith('AMA') ||
-          rawLoginId.startsWith('APP') ||
-          rawLoginId.startsWith('REV') ||
-          rawLoginId === 'APPROVER' ||
-          rawLoginId === 'REVIEWER' ||
-          rawTitle.includes('APPROVER') ||
-          rawTitle.includes('REVIEWER')
-        ) {
-          role = UserRole.REVIEWER;
-        }
-
-        const empId = data.empId || data.employeeId || data.loginId || docId;
-        const loginId = data.loginId || data.empId || data.employeeId || docId;
-        const name =
-          data.name ||
-          data.fullName ||
-          data.employeeName ||
-          (role === UserRole.CREATOR ? 'HR Creator' : role === UserRole.REVIEWER ? 'Approver' : 'Employee');
-        const email =
-          data.email ||
-          (empId ? `${empId.toLowerCase()}@amaavigo.com` : 'employee@amaavigo.com');
-
-        users.push({
-          id: docId,
-          empId,
-          loginId,
-          name,
-          email,
-          role,
-          title:
-            data.title ||
-            data.designation ||
-            (role === UserRole.CREATOR
-              ? 'HR Policy & Governance Lead'
-              : role === UserRole.REVIEWER
-              ? 'VP of Human Resources & Governance'
-              : 'Staff Member'),
-          departmentName:
-            data.departmentName ||
-            data.department ||
-            (role === UserRole.CREATOR || role === UserRole.REVIEWER
-              ? 'Human Resources'
-              : 'Operations'),
-          companyName: data.companyName || 'Amaavigo Group',
-          password: data.password || '1',
-          active: data.active !== false && data.status !== 'INACTIVE',
-          avatar: data.avatar || data.avatarUrl,
-          ...data,
-        } as User);
+      for (const d of empSnap.docs) {
+        const user = this.parseEmployeeDoc(d);
+        const docKey = (user.empId || user.loginId || user.id || user.email).toUpperCase().trim();
+        if (seen.has(docKey)) continue;
+        seen.add(docKey);
+        users.push(user);
       }
 
       return users;
     } catch (e) {
-      console.warn('[Firestore] Error getting employees/users:', e);
+      console.warn('[Firestore] Error getting employees directory:', e);
       return [];
     }
+  },
+
+  // Find a specific user in Firestore directly in real-time (instant fallback for newly created DB employees)
+  async findEmployeeInDatabase(identifier: string): Promise<User | null> {
+    if (!identifier) return null;
+    const cleanId = identifier.trim();
+    const upperId = cleanId.toUpperCase();
+    const lowerId = cleanId.toLowerCase();
+
+    try {
+      // 1. Direct document lookup by ID
+      const directRef = doc(db, EMPLOYEES_COLLECTION, cleanId);
+      const directSnap = await getDoc(directRef);
+      if (directSnap.exists()) {
+        return this.parseEmployeeDoc(directSnap);
+      }
+
+      if (upperId !== cleanId) {
+        const upperRef = doc(db, EMPLOYEES_COLLECTION, upperId);
+        const upperSnap = await getDoc(upperRef);
+        if (upperSnap.exists()) {
+          return this.parseEmployeeDoc(upperSnap);
+        }
+      }
+
+      // 2. Query by empId
+      const empQ = query(collection(db, EMPLOYEES_COLLECTION), where('empId', '==', cleanId));
+      const empSnap = await getDocs(empQ);
+      if (!empSnap.empty) {
+        return this.parseEmployeeDoc(empSnap.docs[0]);
+      }
+      if (upperId !== cleanId) {
+        const upperEmpQ = query(collection(db, EMPLOYEES_COLLECTION), where('empId', '==', upperId));
+        const upperEmpSnap = await getDocs(upperEmpQ);
+        if (!upperEmpSnap.empty) {
+          return this.parseEmployeeDoc(upperEmpSnap.docs[0]);
+        }
+      }
+
+      // 3. Query by loginId
+      const loginQ = query(collection(db, EMPLOYEES_COLLECTION), where('loginId', '==', cleanId));
+      const loginSnap = await getDocs(loginQ);
+      if (!loginSnap.empty) {
+        return this.parseEmployeeDoc(loginSnap.docs[0]);
+      }
+      if (upperId !== cleanId) {
+        const upperLoginQ = query(collection(db, EMPLOYEES_COLLECTION), where('loginId', '==', upperId));
+        const upperLoginSnap = await getDocs(upperLoginQ);
+        if (!upperLoginSnap.empty) {
+          return this.parseEmployeeDoc(upperLoginSnap.docs[0]);
+        }
+      }
+
+      // 4. Query by email
+      const emailQ = query(collection(db, EMPLOYEES_COLLECTION), where('email', '==', lowerId));
+      const emailSnap = await getDocs(emailQ);
+      if (!emailSnap.empty) {
+        return this.parseEmployeeDoc(emailSnap.docs[0]);
+      }
+
+      // 5. Query-scan fallback for any field case-insensitively
+      const allSnap = await getDocs(collection(db, EMPLOYEES_COLLECTION));
+      for (const d of allSnap.docs) {
+        const user = this.parseEmployeeDoc(d);
+        if (
+          user.empId.toLowerCase() === lowerId ||
+          user.loginId.toLowerCase() === lowerId ||
+          user.id.toLowerCase() === lowerId ||
+          user.email.toLowerCase() === lowerId
+        ) {
+          return user;
+        }
+      }
+    } catch (err) {
+      console.warn('[Firestore] Error finding employee in live database:', err);
+    }
+    return null;
   },
 
   async saveEmployee(employee: User): Promise<void> {

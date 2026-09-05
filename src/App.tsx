@@ -377,7 +377,7 @@ export default function App() {
   };
 
   return (
-    <div className="min-h-screen bg-[#F8FAFC] bg-[radial-gradient(ellipse_80%_80%_at_50%_-20%,rgba(250,112,20,0.05),rgba(255,255,255,0))] flex flex-col font-sans text-slate-900">
+    <div className={!currentUser ? "h-screen max-h-screen overflow-hidden bg-[#F8FAFC] flex flex-col font-sans text-slate-900" : "min-h-screen bg-[#F8FAFC] bg-[radial-gradient(ellipse_80%_80%_at_50%_-20%,rgba(250,112,20,0.05),rgba(255,255,255,0))] flex flex-col font-sans text-slate-900"}>
       {/* Separate Isolated Header for each dashboard */}
       {!currentUser ? null : currentUser.role === UserRole.CREATOR ? (
         <HRHeader
@@ -405,7 +405,7 @@ export default function App() {
       )}
 
       {/* Main Screen Content */}
-      <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6">
+      <main className={currentUser ? "flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6" : "flex-1 w-full h-full p-0 flex flex-col overflow-hidden"}>
         {!currentUser ? (
           /* Dual Creator / Reviewer / Employee Login Screen */
           <LoginView users={allUsers} onSelectUser={handleLogin} />

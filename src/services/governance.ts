@@ -241,47 +241,48 @@ export class DocumentGovernanceEngine {
       const rawDept = (emp.departmentName || emp.departmentId || (emp as any).department || '').toString().toUpperCase();
       const lowerId = (emp.id || '').toLowerCase();
 
+      // Explicit database role is respected with highest priority
       let role = UserRole.EMPLOYEE;
-      if (
-        rawRole === 'CREATOR' ||
-        rawRole === 'HR' ||
-        rawRole === 'AUTHOR' ||
+      if (rawRole === 'EMPLOYEE') {
+        role = UserRole.EMPLOYEE;
+      } else if (rawRole === 'CREATOR' || rawRole === 'HR' || rawRole === 'AUTHOR') {
+        role = UserRole.CREATOR;
+      } else if (rawRole === 'REVIEWER' || rawRole === 'APPROVER') {
+        role = UserRole.REVIEWER;
+      } else if (
         rawRole.includes('CREATOR') ||
         rawRole.includes('HR') ||
         lowerId.includes('creator') ||
-        lowerId.includes('hr') ||
         rawLoginId.startsWith('HR') ||
         rawLoginId === 'CREATOR' ||
         rawDept.includes('HUMAN RESOURCES') ||
-        rawDept === 'HR' ||
-        rawTitle.includes('HR') ||
+        rawTitle.includes('HR POLICY') ||
         rawTitle.includes('CREATOR')
       ) {
         role = UserRole.CREATOR;
       } else if (
-        rawRole === 'REVIEWER' ||
-        rawRole === 'APPROVER' ||
         rawRole.includes('REVIEWER') ||
         rawRole.includes('APPROVER') ||
         lowerId.includes('reviewer') ||
-        lowerId.includes('approver') ||
-        lowerId.includes('app') ||
-        rawLoginId.startsWith('AMA') ||
-        rawLoginId.startsWith('APP') ||
         rawLoginId.startsWith('REV') ||
         rawLoginId === 'APPROVER' ||
         rawLoginId === 'REVIEWER' ||
-        rawTitle.includes('APPROVER') ||
-        rawTitle.includes('REVIEWER')
+        rawTitle.includes('GOVERNANCE APPROVER')
       ) {
         role = UserRole.REVIEWER;
       }
 
+      const isActive =
+        emp.active !== false &&
+        String(emp.active).toLowerCase() !== 'false' &&
+        (emp as any).status !== 'INACTIVE' &&
+        (emp as any).status !== 'inactive';
+
       const normalized: User = {
         ...emp,
         id: emp.id || emp.empId || emp.loginId || rawLoginId,
-        empId: emp.empId || (emp as any).employeeId || emp.loginId || emp.id,
-        loginId: emp.loginId || emp.empId || (emp as any).employeeId || emp.id,
+        empId: String(emp.empId || (emp as any).employeeId || emp.loginId || emp.id),
+        loginId: String(emp.loginId || emp.empId || (emp as any).employeeId || emp.id),
         name: emp.name || (role === UserRole.CREATOR ? 'HR Creator' : role === UserRole.REVIEWER ? 'Approver' : 'Employee'),
         email: (emp.email || '').trim(),
         role,
@@ -296,8 +297,8 @@ export class DocumentGovernanceEngine {
           emp.departmentName ||
           (role === UserRole.CREATOR || role === UserRole.REVIEWER ? 'Human Resources' : 'Operations'),
         companyName: emp.companyName || 'Amaavigo Group',
-        password: emp.password || '1',
-        active: emp.active !== false && (emp as any).status !== 'INACTIVE',
+        password: String(emp.password ?? '1'),
+        active: isActive,
         avatar: emp.avatar || (emp as any).avatarUrl,
       };
 

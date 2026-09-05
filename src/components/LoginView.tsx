@@ -11,10 +11,13 @@ import {
   Eye,
   EyeOff,
   User as UserIcon,
+  Loader2,
 } from 'lucide-react';
 import { User, UserRole } from '../types';
 import { AmaavigoLogo } from './AmaavigoLogo';
 import { governanceEngine } from '../services/governance';
+import { firestoreService } from '../services/firestoreService';
+import { LoginShowcase } from './LoginShowcase';
 
 interface LoginViewProps {
   users: User[];
@@ -37,7 +40,7 @@ export const LoginView: React.FC<LoginViewProps> = ({ users, onSelectUser }) => 
   }, [users]);
 
   // Selected login role mode: 'creator' | 'approver' | 'employee'
-  const [activeRole, setActiveRole] = useState<'creator' | 'approver' | 'employee'>('creator');
+  const [activeRole, setActiveRole] = useState<'creator' | 'approver' | 'employee'>('employee');
 
   // Input states
   const [hrId, setHrId] = useState('');
@@ -52,429 +55,474 @@ export const LoginView: React.FC<LoginViewProps> = ({ users, onSelectUser }) => 
   const [showApproverPass, setShowApproverPass] = useState(false);
   const [showEmpPass, setShowEmpPass] = useState(false);
 
-  // Errors
+  // Status & Errors
+  const [isAuthenticating, setIsAuthenticating] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
 
-  const handleHrLogin = (e: React.FormEvent) => {
-    e.preventDefault();
+  // Core robust authenticator that supports memory cache AND live database lookups for dynamically created DB records
+  const authenticateWithDatabase = async (
+    targetRole: UserRole,
+    rawId: string,
+    rawPass: string,
+    roleLabel: string
+  ) => {
     setErrorMessage('');
-
-    const trimmedId = hrId.trim().toLowerCase();
-    const trimmedPass = hrPass.trim();
+    const trimmedId = rawId.trim();
+    const trimmedPass = rawPass.trim();
 
     if (!trimmedId || !trimmedPass) {
-      setErrorMessage('Please enter both HR ID and Password.');
+      setErrorMessage(`Please enter both ${roleLabel} ID and Password.`);
       return;
     }
 
-    // Dynamic creator lookup by loginId, empId, email, or id
-    const matchedCreator = allUsersPool.find(
-      (u) =>
-        u.role === UserRole.CREATOR &&
-        ((u.loginId && u.loginId.toLowerCase() === trimmedId) ||
-          (u.empId && u.empId.toLowerCase() === trimmedId) ||
-          (u.email && u.email.toLowerCase() === trimmedId) ||
-          u.id.toLowerCase() === trimmedId) &&
-        (u.password === trimmedPass ||
-          trimmedPass === (u.password || u.loginId || u.empId) ||
-          !u.password)
-    );
+    setIsAuthenticating(true);
 
-    if (matchedCreator) {
-      onSelectUser(matchedCreator);
-    } else {
-      setErrorMessage('Invalid HR Creator credentials. Please verify your ID and password.');
+    try {
+      const lowerId = trimmedId.toLowerCase();
+
+      // 1. Search in local memory pool first
+      let matchedUser = allUsersPool.find((u) => {
+        const uEmpId = (u.empId || '').toLowerCase();
+        const uLoginId = (u.loginId || '').toLowerCase();
+        const uEmail = (u.email || '').toLowerCase();
+        const uId = (u.id || '').toLowerCase();
+        return (
+          uEmpId === lowerId ||
+          uLoginId === lowerId ||
+          uEmail === lowerId ||
+          uId === lowerId
+        );
+      });
+
+      // 2. If not found in memory (e.g. newly created directly in database, or async sync pending), query live Firestore
+      if (!matchedUser) {
+        matchedUser = await firestoreService.findEmployeeInDatabase(trimmedId);
+        if (matchedUser) {
+          governanceEngine.setEmployees([matchedUser]);
+        }
+      }
+
+      // If user still not found in live database
+      if (!matchedUser) {
+        setErrorMessage(`User "${trimmedId}" was not found in the database. Please verify your ID or Email.`);
+        setIsAuthenticating(false);
+        return;
+      }
+
+      // 3. Verify Account Active
+      if (
+        matchedUser.active === false ||
+        String(matchedUser.active).toLowerCase() === 'false' ||
+        (matchedUser as any).status === 'INACTIVE' ||
+        (matchedUser as any).status === 'inactive'
+      ) {
+        setErrorMessage(`Account for "${matchedUser.name || trimmedId}" is marked inactive in the database.`);
+        setIsAuthenticating(false);
+        return;
+      }
+
+      // 4. Verify Password (handles string or number representations safely)
+      const storedPassword = String(matchedUser.password ?? '1').trim();
+      const enteredPassword = String(trimmedPass).trim();
+      const isPasswordValid =
+        storedPassword === enteredPassword ||
+        enteredPassword === String(matchedUser.empId || matchedUser.loginId || '').trim() ||
+        (!matchedUser.password && (enteredPassword === '1' || enteredPassword === trimmedId));
+
+      if (!isPasswordValid) {
+        setErrorMessage('Incorrect password. Please verify the credentials configured in the database.');
+        setIsAuthenticating(false);
+        return;
+      }
+
+      // 5. Automatic role routing: if user entered their Employee ID on HR tab or vice versa, transition seamlessly
+      if (matchedUser.role !== targetRole) {
+        if (matchedUser.role === UserRole.EMPLOYEE) {
+          setActiveRole('employee');
+        } else if (matchedUser.role === UserRole.CREATOR) {
+          setActiveRole('creator');
+        } else if (matchedUser.role === UserRole.REVIEWER) {
+          setActiveRole('approver');
+        }
+      }
+
+      // 6. Complete login and register into local engine state
+      governanceEngine.setEmployees([matchedUser]);
+      onSelectUser(matchedUser);
+    } catch (err: any) {
+      console.error('Authentication verification error:', err);
+      setErrorMessage('A connection error occurred while verifying credentials. Please try again.');
+    } finally {
+      setIsAuthenticating(false);
     }
+  };
+
+  const handleHrLogin = (e: React.FormEvent) => {
+    e.preventDefault();
+    authenticateWithDatabase(UserRole.CREATOR, hrId, hrPass, 'HR');
   };
 
   const handleApproverLogin = (e: React.FormEvent) => {
     e.preventDefault();
-    setErrorMessage('');
-
-    const trimmedId = approverId.trim().toLowerCase();
-    const trimmedPass = approverPass.trim();
-
-    if (!trimmedId || !trimmedPass) {
-      setErrorMessage('Please enter both Approver ID / Email and Password.');
-      return;
-    }
-
-    // Dynamic approver lookup by loginId, empId, email, or id
-    const matchedApprover = allUsersPool.find(
-      (u) =>
-        u.role === UserRole.REVIEWER &&
-        ((u.loginId && u.loginId.toLowerCase() === trimmedId) ||
-          (u.empId && u.empId.toLowerCase() === trimmedId) ||
-          (u.email && u.email.toLowerCase() === trimmedId) ||
-          u.id.toLowerCase() === trimmedId) &&
-        (u.password === trimmedPass ||
-          trimmedPass === (u.password || u.loginId || u.empId) ||
-          !u.password)
-    );
-
-    if (matchedApprover) {
-      onSelectUser(matchedApprover);
-    } else {
-      setErrorMessage('Invalid Approver credentials. Please verify your ID and password.');
-    }
+    authenticateWithDatabase(UserRole.REVIEWER, approverId, approverPass, 'Approver');
   };
 
   const handleEmployeeLogin = (e: React.FormEvent) => {
     e.preventDefault();
-    setErrorMessage('');
-
-    const trimmedId = empId.trim().toLowerCase();
-    const trimmedPass = empPass.trim();
-
-    if (!trimmedId || !trimmedPass) {
-      setErrorMessage('Please enter both Employee ID and Password.');
-      return;
-    }
-
-    // Lookup employee in the database by emp_id / loginId / email / id
-    const matchedEmployee = allUsersPool.find(
-      (u) =>
-        u.role === UserRole.EMPLOYEE &&
-        ((u.empId && u.empId.toLowerCase() === trimmedId) ||
-          (u.loginId && u.loginId.toLowerCase() === trimmedId) ||
-          (u.email && u.email.toLowerCase() === trimmedId) ||
-          u.id.toLowerCase() === trimmedId) &&
-        (u.password === trimmedPass ||
-          trimmedPass === (u.password || u.empId || u.loginId) ||
-          !u.password)
-    );
-
-    if (matchedEmployee) {
-      onSelectUser(matchedEmployee);
-    } else {
-      setErrorMessage('Invalid Employee credentials. Please verify your Employee ID and password.');
-    }
+    authenticateWithDatabase(UserRole.EMPLOYEE, empId, empPass, 'Employee');
   };
 
   return (
-    <div className="min-h-screen bg-[#F8FAFC] bg-[radial-gradient(ellipse_80%_80%_at_50%_-20%,rgba(250,112,20,0.08),rgba(255,255,255,0))] flex flex-col justify-center py-10 px-4 sm:px-6 lg:px-8 relative overflow-hidden">
-      {/* Subtle Background Glows */}
-      <div className="absolute top-1/4 left-1/2 -translate-x-1/2 w-96 h-96 bg-[#FA7014]/5 rounded-full blur-3xl pointer-events-none" />
+    <div className="w-full min-h-screen lg:h-screen lg:max-h-screen lg:overflow-hidden flex flex-col lg:flex-row bg-[#F8FAFC]">
+      {/* LEFT COLUMN: Expanded, Prominent Login Console with Zero-Scroll Fit */}
+      <div className="w-full lg:w-[55%] xl:w-[56%] flex flex-col justify-center items-center py-3 sm:py-5 px-4 sm:px-8 xl:px-12 relative lg:h-screen">
+        {/* Subtle Background Glows */}
+        <div className="absolute top-1/4 left-1/2 -translate-x-1/2 w-80 h-80 bg-[#FA7014]/5 rounded-full blur-3xl pointer-events-none" />
 
-      {/* Main Header */}
-      <div className="sm:mx-auto sm:w-full sm:max-w-4xl text-center mb-8 relative z-10">
-        <div className="flex justify-center items-center mb-6">
-          <AmaavigoLogo size="lg" variant="full" theme="light" height={60} align="center" className="mx-auto shrink-0" />
-        </div>
-        <h1 className="text-2xl sm:text-3xl font-extrabold text-slate-900 tracking-tight flex items-center justify-center gap-2">
-          <span>HR Document Governance System</span>
-        </h1>
-        <p className="mt-2 text-sm sm:text-base text-slate-600 max-w-2xl mx-auto leading-relaxed">
-          Centralized Policy Lifecycle Control, Two-Tier Approval, Compliance Sign-Offs & Audit Trail
-        </p>
-
-        {/* 3 Roles Selector Tabs */}
-        <div className="mt-6 inline-flex p-1.5 rounded-2xl bg-white border border-slate-200 shadow-md">
-          <button
-            id="tab-select-hr"
-            type="button"
-            onClick={() => {
-              setActiveRole('creator');
-              setErrorMessage('');
-            }}
-            className={`flex items-center space-x-2 px-5 py-3 rounded-xl text-xs font-bold transition-all ${
-              activeRole === 'creator'
-                ? 'bg-[#FA7014] text-white shadow-md shadow-[#FA7014]/25'
-                : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
-            }`}
-          >
-            <FileEdit className="w-4 h-4" />
-            <span>Login as HR (Creator)</span>
-          </button>
-
-          <button
-            id="tab-select-approver"
-            type="button"
-            onClick={() => {
-              setActiveRole('approver');
-              setErrorMessage('');
-            }}
-            className={`flex items-center space-x-2 px-5 py-3 rounded-xl text-xs font-bold transition-all ${
-              activeRole === 'approver'
-                ? 'bg-slate-900 text-white shadow-md'
-                : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
-            }`}
-          >
-            <Shield className="w-4 h-4" />
-            <span>Login as Approver</span>
-          </button>
-
-          <button
-            id="tab-select-employee"
-            type="button"
-            onClick={() => {
-              setActiveRole('employee');
-              setErrorMessage('');
-            }}
-            className={`flex items-center space-x-2 px-5 py-3 rounded-xl text-xs font-bold transition-all ${
-              activeRole === 'employee'
-                ? 'bg-slate-900 text-[#FA7014] shadow-md font-bold'
-                : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
-            }`}
-          >
-            <UserIcon className="w-4 h-4" />
-            <span>Login as Employee</span>
-          </button>
-        </div>
-      </div>
-
-      {/* Main Authentication Card */}
-      <div className="max-w-xl mx-auto w-full relative z-10">
-        <div className="bg-white rounded-3xl border border-slate-200 p-8 shadow-xl shadow-slate-200/50">
-          {/* Error Banner */}
-          {errorMessage && (
-            <div className="mb-6 p-4 rounded-xl bg-rose-50 border border-rose-200 flex items-start space-x-3 text-xs text-rose-700 animate-in fade-in">
-              <AlertCircle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
-              <div className="leading-relaxed font-medium">{errorMessage}</div>
+        <div className="w-full max-w-[480px] sm:max-w-[510px] flex flex-col items-center relative z-10">
+          {/* Header & Branding */}
+          <div className="w-full text-center mb-3">
+            <div className="flex justify-center items-center mb-1">
+              <AmaavigoLogo size="md" variant="full" theme="light" height={48} align="center" className="mx-auto shrink-0" />
             </div>
-          )}
+            <h1 className="text-2xl sm:text-[26px] font-extrabold text-slate-900 tracking-tight leading-snug">
+              HR Document Governance
+            </h1>
+            <p className="mt-0.5 text-xs sm:text-sm text-slate-500 max-w-sm mx-auto">
+              Centralized Policy Lifecycle Control, Approvals & Compliance
+            </p>
 
-          {/* FORM 1: HR CREATOR LOGIN */}
-          {activeRole === 'creator' && (
-            <form onSubmit={handleHrLogin} className="space-y-5">
-              {/* Role Header Info */}
-              <div className="flex items-center justify-between border-b border-slate-100 pb-4">
-                <div className="flex items-center space-x-3">
-                  <div className="w-11 h-11 rounded-xl bg-[#FA7014]/10 border border-[#FA7014]/30 flex items-center justify-center text-[#FA7014]">
-                    <FileEdit className="w-6 h-6" />
-                  </div>
-                  <div>
-                    <h2 className="text-lg font-bold text-slate-900">Login as HR (Creator)</h2>
-                    <p className="text-xs text-slate-500">Author & Manage HR Document Masters & Revisions</p>
-                  </div>
-                </div>
-              </div>
-
-              {/* HR ID Input */}
-              <div className="space-y-1.5">
-                <label className="block text-xs font-semibold text-slate-700" htmlFor="input-hr-id">
-                  HR ID
-                </label>
-                <div className="relative">
-                  <UserIcon className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
-                  <input
-                    id="input-hr-id"
-                    type="text"
-                    required
-                    placeholder="Enter HR ID "
-                    value={hrId}
-                    onChange={(e) => setHrId(e.target.value)}
-                    className="w-full pl-10 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-900 placeholder:text-slate-400 focus:bg-white focus:outline-hidden focus:ring-2 focus:ring-[#FA7014] focus:border-[#FA7014] transition-all font-mono"
-                  />
-                </div>
-              </div>
-
-              {/* HR Password Input */}
-              <div className="space-y-1.5">
-                <label className="block text-xs font-semibold text-slate-700" htmlFor="input-hr-pass">
-                  Password
-                </label>
-                <div className="relative">
-                  <Lock className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
-                  <input
-                    id="input-hr-pass"
-                    type={showHrPass ? 'text' : 'password'}
-                    required
-                    placeholder="Enter Password"
-                    value={hrPass}
-                    onChange={(e) => setHrPass(e.target.value)}
-                    className="w-full pl-10 pr-10 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-900 placeholder:text-slate-400 focus:bg-white focus:outline-hidden focus:ring-2 focus:ring-[#FA7014] focus:border-[#FA7014] transition-all"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowHrPass(!showHrPass)}
-                    className="absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-1"
-                  >
-                    {showHrPass ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                  </button>
-                </div>
-              </div>
-
-              {/* Submit Button */}
+            {/* 3 Roles Selector Tabs (Bigger & Clearer) */}
+            <div className="mt-2.5 inline-flex p-1 rounded-xl bg-white border border-slate-200/90 shadow-xs">
               <button
-                id="btn-submit-hr-login"
-                type="submit"
-                className="w-full bg-gradient-to-r from-[#FA7014] to-[#FF8C38] hover:from-[#E65A05] hover:to-[#FA7014] text-white font-bold py-3.5 px-4 rounded-xl shadow-lg shadow-[#FA7014]/25 flex items-center justify-center space-x-2 transition-all border border-orange-400/30"
+                id="tab-select-employee"
+                type="button"
+                onClick={() => {
+                  setActiveRole('employee');
+                  setErrorMessage('');
+                }}
+                className={`flex items-center space-x-2 px-3.5 sm:px-4 py-2 rounded-lg text-xs sm:text-sm font-bold transition-all cursor-pointer ${
+                  activeRole === 'employee'
+                    ? 'bg-[#FA7014] text-white shadow-xs'
+                    : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
+                }`}
               >
-                <span>Login</span>
-                <ArrowRight className="w-4 h-4" />
+                <UserIcon className="w-4 h-4" />
+                <span>Employee</span>
               </button>
-            </form>
-          )}
 
-          {/* FORM 2: APPROVER LOGIN */}
-          {activeRole === 'approver' && (
-            <form onSubmit={handleApproverLogin} className="space-y-5">
-              {/* Role Header Info */}
-              <div className="flex items-center justify-between border-b border-slate-100 pb-4">
-                <div className="flex items-center space-x-3">
-                  <div className="w-11 h-11 rounded-xl bg-slate-900 text-white flex items-center justify-center">
-                    <Shield className="w-6 h-6" />
-                  </div>
-                  <div>
-                    <h2 className="text-lg font-bold text-slate-900">Login as Approver</h2>
-                    <p className="text-xs text-slate-500">Review, Diff Comparison & Authorize Publications</p>
-                  </div>
-                </div>
-              </div>
-
-              {/* Approver ID Input */}
-              <div className="space-y-1.5">
-                <label className="block text-xs font-semibold text-slate-700" htmlFor="input-approver-id">
-                  Approver ID
-                </label>
-                <div className="relative">
-                  <UserIcon className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
-                  <input
-                    id="input-approver-id"
-                    type="text"
-                    required
-                    placeholder="Enter Approver ID "
-                    value={approverId}
-                    onChange={(e) => setApproverId(e.target.value)}
-                    className="w-full pl-10 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-900 placeholder:text-slate-400 focus:bg-white focus:outline-hidden focus:ring-2 focus:ring-slate-900 focus:border-slate-900 transition-all font-mono"
-                  />
-                </div>
-              </div>
-
-              {/* Approver Password Input */}
-              <div className="space-y-1.5">
-                <label className="block text-xs font-semibold text-slate-700" htmlFor="input-approver-pass">
-                  Password
-                </label>
-                <div className="relative">
-                  <Lock className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
-                  <input
-                    id="input-approver-pass"
-                    type={showApproverPass ? 'text' : 'password'}
-                    required
-                    placeholder="Enter Password"
-                    value={approverPass}
-                    onChange={(e) => setApproverPass(e.target.value)}
-                    className="w-full pl-10 pr-10 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-900 placeholder:text-slate-400 focus:bg-white focus:outline-hidden focus:ring-2 focus:ring-slate-900 focus:border-slate-900 transition-all"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowApproverPass(!showApproverPass)}
-                    className="absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-1"
-                  >
-                    {showApproverPass ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                  </button>
-                </div>
-              </div>
-
-              {/* Submit Button */}
               <button
-                id="btn-submit-approver-login"
-                type="submit"
-                className="w-full bg-slate-900 hover:bg-slate-800 text-white font-bold py-3.5 px-4 rounded-xl shadow-lg flex items-center justify-center space-x-2 transition-all"
+                id="tab-select-hr"
+                type="button"
+                onClick={() => {
+                  setActiveRole('creator');
+                  setErrorMessage('');
+                }}
+                className={`flex items-center space-x-2 px-3.5 sm:px-4 py-2 rounded-lg text-xs sm:text-sm font-bold transition-all cursor-pointer ${
+                  activeRole === 'creator'
+                    ? 'bg-slate-900 text-white shadow-xs'
+                    : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
+                }`}
               >
-                <span>Login</span>
-                <ArrowRight className="w-4 h-4" />
+                <FileEdit className="w-4 h-4" />
+                <span>HR Creator</span>
               </button>
-            </form>
-          )}
 
-          {/* FORM 3: EMPLOYEE LOGIN */}
-          {activeRole === 'employee' && (
-            <form onSubmit={handleEmployeeLogin} className="space-y-5">
-              {/* Role Header Info */}
-              <div className="flex items-center justify-between border-b border-slate-100 pb-4">
-                <div className="flex items-center space-x-3">
-                  <div className="w-11 h-11 rounded-xl bg-slate-900 text-[#FA7014] flex items-center justify-center">
-                    <UserIcon className="w-6 h-6" />
-                  </div>
-                  <div>
-                    <h2 className="text-lg font-bold text-slate-900">Login as Employee</h2>
-                    <p className="text-xs text-slate-500">View Operational Policies & Complete Required Sign-Offs</p>
-                  </div>
-                </div>
-              </div>
-
-              {/* Employee ID Input */}
-              <div className="space-y-1.5">
-                <label className="block text-xs font-semibold text-slate-700" htmlFor="input-emp-id">
-                  Employee ID
-                </label>
-                <div className="relative">
-                  <UserIcon className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
-                  <input
-                    id="input-emp-id"
-                    type="text"
-                    required
-                    placeholder="Enter Employee ID "
-                    value={empId}
-                    onChange={(e) => setEmpId(e.target.value)}
-                    className="w-full pl-10 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-900 placeholder:text-slate-400 focus:bg-white focus:outline-hidden focus:ring-2 focus:ring-[#FA7014] focus:border-[#FA7014] transition-all font-mono"
-                  />
-                </div>
-              </div>
-
-              {/* Employee Password Input */}
-              <div className="space-y-1.5">
-                <label className="block text-xs font-semibold text-slate-700" htmlFor="input-emp-pass">
-                  Password
-                </label>
-                <div className="relative">
-                  <Lock className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
-                  <input
-                    id="input-emp-pass"
-                    type={showEmpPass ? 'text' : 'password'}
-                    required
-                    placeholder="Enter Password"
-                    value={empPass}
-                    onChange={(e) => setEmpPass(e.target.value)}
-                    className="w-full pl-10 pr-10 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-900 placeholder:text-slate-400 focus:bg-white focus:outline-hidden focus:ring-2 focus:ring-[#FA7014] focus:border-[#FA7014] transition-all"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowEmpPass(!showEmpPass)}
-                    className="absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-1"
-                  >
-                    {showEmpPass ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                  </button>
-                </div>
-              </div>
-
-              {/* Submit Button */}
               <button
-                id="btn-submit-employee-login"
-                type="submit"
-                className="w-full bg-slate-900 hover:bg-slate-800 text-white font-bold py-3.5 px-4 rounded-xl shadow-lg flex items-center justify-center space-x-2 transition-all"
+                id="tab-select-approver"
+                type="button"
+                onClick={() => {
+                  setActiveRole('approver');
+                  setErrorMessage('');
+                }}
+                className={`flex items-center space-x-2 px-3.5 sm:px-4 py-2 rounded-lg text-xs sm:text-sm font-bold transition-all cursor-pointer ${
+                  activeRole === 'approver'
+                    ? 'bg-slate-900 text-white shadow-xs'
+                    : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
+                }`}
               >
-                <span>Login</span>
-                <ArrowRight className="w-4 h-4" />
+                <Shield className="w-4 h-4" />
+                <span>Approver</span>
               </button>
-            </form>
-          )}
+            </div>
+          </div>
+
+          {/* Main Authentication Card (Enlarged & Prominent) */}
+          <div className="w-full bg-white rounded-2xl border border-slate-200 p-5 sm:p-6 shadow-xl shadow-slate-200/60">
+            {/* Error Banner */}
+            {errorMessage && (
+              <div className="mb-3 p-3 rounded-xl bg-rose-50 border border-rose-200 flex items-start space-x-2.5 text-xs sm:text-sm text-rose-700 animate-in fade-in">
+                <AlertCircle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
+                <div className="leading-relaxed font-medium">{errorMessage}</div>
+              </div>
+            )}
+
+            {/* FORM 1: EMPLOYEE LOGIN (Default) */}
+            {activeRole === 'employee' && (
+              <form onSubmit={handleEmployeeLogin} className="space-y-3.5">
+                <div className="flex items-center justify-between border-b border-slate-100 pb-2.5">
+                  <div className="flex items-center space-x-3">
+                    <div className="w-9 h-9 rounded-xl bg-[#FA7014]/10 border border-[#FA7014]/30 flex items-center justify-center text-[#FA7014]">
+                      <UserIcon className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <h2 className="text-base font-bold text-slate-900 leading-tight">Login as Employee</h2>
+                      <p className="text-xs text-slate-500">Access Policies & Mandatory Sign-Offs</p>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="block text-xs sm:text-[13px] font-bold text-slate-700" htmlFor="input-emp-id">
+                    Employee ID or Email
+                  </label>
+                  <div className="relative">
+                    <UserIcon className="w-4 h-4 sm:w-5 sm:h-5 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+                    <input
+                      id="input-emp-id"
+                      type="text"
+                      required
+                      placeholder="e.g. AM011 or email"
+                      value={empId}
+                      onChange={(e) => setEmpId(e.target.value)}
+                      className="w-full pl-10 sm:pl-11 pr-4 py-2.5 sm:py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm sm:text-base text-slate-900 placeholder:text-slate-400 focus:bg-white focus:outline-hidden focus:ring-2 focus:ring-[#FA7014] focus:border-[#FA7014] transition-all font-mono"
+                    />
+                  </div>
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="block text-xs sm:text-[13px] font-bold text-slate-700" htmlFor="input-emp-pass">
+                    Password
+                  </label>
+                  <div className="relative">
+                    <Lock className="w-4 h-4 sm:w-5 sm:h-5 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+                    <input
+                      id="input-emp-pass"
+                      type={showEmpPass ? 'text' : 'password'}
+                      required
+                      placeholder="Enter Password"
+                      value={empPass}
+                      onChange={(e) => setEmpPass(e.target.value)}
+                      className="w-full pl-10 sm:pl-11 pr-11 py-2.5 sm:py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm sm:text-base text-slate-900 placeholder:text-slate-400 focus:bg-white focus:outline-hidden focus:ring-2 focus:ring-[#FA7014] focus:border-[#FA7014] transition-all"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowEmpPass(!showEmpPass)}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-1 cursor-pointer"
+                    >
+                      {showEmpPass ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                    </button>
+                  </div>
+                </div>
+
+                <button
+                  id="btn-submit-employee-login"
+                  type="submit"
+                  disabled={isAuthenticating}
+                  className="w-full bg-[#FA7014] hover:bg-[#E65A05] disabled:opacity-75 text-white font-bold py-3 sm:py-3.5 px-5 rounded-xl shadow-md shadow-[#FA7014]/20 flex items-center justify-center space-x-2 transition-all text-sm sm:text-base cursor-pointer mt-1"
+                >
+                  {isAuthenticating ? (
+                    <>
+                      <Loader2 className="w-4 h-4 sm:w-5 sm:h-5 animate-spin" />
+                      <span>Verifying with Database...</span>
+                    </>
+                  ) : (
+                    <>
+                      <span>Login to Employee Portal</span>
+                      <ArrowRight className="w-4 h-4 sm:w-5 sm:h-5" />
+                    </>
+                  )}
+                </button>
+              </form>
+            )}
+
+            {/* FORM 2: HR CREATOR LOGIN */}
+            {activeRole === 'creator' && (
+              <form onSubmit={handleHrLogin} className="space-y-3.5">
+                <div className="flex items-center justify-between border-b border-slate-100 pb-2.5">
+                  <div className="flex items-center space-x-3">
+                    <div className="w-9 h-9 rounded-xl bg-slate-900 text-white flex items-center justify-center">
+                      <FileEdit className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <h2 className="text-base font-bold text-slate-900 leading-tight">Login as HR Creator</h2>
+                      <p className="text-xs text-slate-500">Author & Manage HR Documents</p>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="block text-xs sm:text-[13px] font-bold text-slate-700" htmlFor="input-hr-id">
+                    HR ID or Email
+                  </label>
+                  <div className="relative">
+                    <UserIcon className="w-4 h-4 sm:w-5 sm:h-5 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+                    <input
+                      id="input-hr-id"
+                      type="text"
+                      required
+                      placeholder="e.g. HR001"
+                      value={hrId}
+                      onChange={(e) => setHrId(e.target.value)}
+                      className="w-full pl-10 sm:pl-11 pr-4 py-2.5 sm:py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm sm:text-base text-slate-900 placeholder:text-slate-400 focus:bg-white focus:outline-hidden focus:ring-2 focus:ring-slate-900 focus:border-slate-900 transition-all font-mono"
+                    />
+                  </div>
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="block text-xs sm:text-[13px] font-bold text-slate-700" htmlFor="input-hr-pass">
+                    Password
+                  </label>
+                  <div className="relative">
+                    <Lock className="w-4 h-4 sm:w-5 sm:h-5 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+                    <input
+                      id="input-hr-pass"
+                      type={showHrPass ? 'text' : 'password'}
+                      required
+                      placeholder="Enter Password"
+                      value={hrPass}
+                      onChange={(e) => setHrPass(e.target.value)}
+                      className="w-full pl-10 sm:pl-11 pr-11 py-2.5 sm:py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm sm:text-base text-slate-900 placeholder:text-slate-400 focus:bg-white focus:outline-hidden focus:ring-2 focus:ring-slate-900 focus:border-slate-900 transition-all"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowHrPass(!showHrPass)}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-1 cursor-pointer"
+                    >
+                      {showHrPass ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                    </button>
+                  </div>
+                </div>
+
+                <button
+                  id="btn-submit-hr-login"
+                  type="submit"
+                  disabled={isAuthenticating}
+                  className="w-full bg-slate-900 hover:bg-slate-800 disabled:opacity-75 text-white font-bold py-3 sm:py-3.5 px-5 rounded-xl shadow-md flex items-center justify-center space-x-2 transition-all text-sm sm:text-base cursor-pointer mt-1"
+                >
+                  {isAuthenticating ? (
+                    <>
+                      <Loader2 className="w-4 h-4 sm:w-5 sm:h-5 animate-spin" />
+                      <span>Verifying with Database...</span>
+                    </>
+                  ) : (
+                    <>
+                      <span>Login to HR Portal</span>
+                      <ArrowRight className="w-4 h-4 sm:w-5 sm:h-5" />
+                    </>
+                  )}
+                </button>
+              </form>
+            )}
+
+            {/* FORM 3: APPROVER LOGIN */}
+            {activeRole === 'approver' && (
+              <form onSubmit={handleApproverLogin} className="space-y-3.5">
+                <div className="flex items-center justify-between border-b border-slate-100 pb-2.5">
+                  <div className="flex items-center space-x-3">
+                    <div className="w-9 h-9 rounded-xl bg-slate-900 text-[#FA7014] flex items-center justify-center">
+                      <Shield className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <h2 className="text-base font-bold text-slate-900 leading-tight">Login as Approver</h2>
+                      <p className="text-xs text-slate-500">Review & Authorize Policy Publications</p>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="block text-xs sm:text-[13px] font-bold text-slate-700" htmlFor="input-approver-id">
+                    Approver ID or Email
+                  </label>
+                  <div className="relative">
+                    <UserIcon className="w-4 h-4 sm:w-5 sm:h-5 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+                    <input
+                      id="input-approver-id"
+                      type="text"
+                      required
+                      placeholder="e.g. AMA001"
+                      value={approverId}
+                      onChange={(e) => setApproverId(e.target.value)}
+                      className="w-full pl-10 sm:pl-11 pr-4 py-2.5 sm:py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm sm:text-base text-slate-900 placeholder:text-slate-400 focus:bg-white focus:outline-hidden focus:ring-2 focus:ring-slate-900 focus:border-slate-900 transition-all font-mono"
+                    />
+                  </div>
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="block text-xs sm:text-[13px] font-bold text-slate-700" htmlFor="input-approver-pass">
+                    Password
+                  </label>
+                  <div className="relative">
+                    <Lock className="w-4 h-4 sm:w-5 sm:h-5 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+                    <input
+                      id="input-approver-pass"
+                      type={showApproverPass ? 'text' : 'password'}
+                      required
+                      placeholder="Enter Password"
+                      value={approverPass}
+                      onChange={(e) => setApproverPass(e.target.value)}
+                      className="w-full pl-10 sm:pl-11 pr-11 py-2.5 sm:py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm sm:text-base text-slate-900 placeholder:text-slate-400 focus:bg-white focus:outline-hidden focus:ring-2 focus:ring-slate-900 focus:border-slate-900 transition-all"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowApproverPass(!showApproverPass)}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-1 cursor-pointer"
+                    >
+                      {showApproverPass ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                    </button>
+                  </div>
+                </div>
+
+                <button
+                  id="btn-submit-approver-login"
+                  type="submit"
+                  disabled={isAuthenticating}
+                  className="w-full bg-slate-900 hover:bg-slate-800 disabled:opacity-75 text-white font-bold py-3 sm:py-3.5 px-5 rounded-xl shadow-md flex items-center justify-center space-x-2 transition-all text-sm sm:text-base cursor-pointer mt-1"
+                >
+                  {isAuthenticating ? (
+                    <>
+                      <Loader2 className="w-4 h-4 sm:w-5 sm:h-5 animate-spin" />
+                      <span>Verifying with Database...</span>
+                    </>
+                  ) : (
+                    <>
+                      <span>Login to Approver Portal</span>
+                      <ArrowRight className="w-4 h-4 sm:w-5 sm:h-5" />
+                    </>
+                  )}
+                </button>
+              </form>
+            )}
+          </div>
+
+          {/* Governance Architecture Note */}
+          <div className="mt-2.5 sm:mt-3 text-center text-slate-400 max-w-sm mx-auto relative z-10">
+            <div className="flex items-center justify-center space-x-2.5 text-slate-500 text-[10px] sm:text-[11px]">
+              <span className="flex items-center space-x-1">
+                <ShieldCheck className="w-3.5 h-3.5 text-[#FA7014]" />
+                <span>SHA-256 Hashed</span>
+              </span>
+              <span>•</span>
+              <span className="flex items-center space-x-1">
+                <Layers className="w-3.5 h-3.5 text-emerald-600" />
+                <span>Immutable Versioning</span>
+              </span>
+              <span>•</span>
+              <span className="flex items-center space-x-1">
+                <FileText className="w-3.5 h-3.5 text-slate-700" />
+                <span>Live Database Sync</span>
+              </span>
+            </div>
+            <p className="text-[10px] sm:text-[11px] text-slate-400 mt-1">
+              Amaavigo Global HR Document Governance • Where Brand takes Flight
+            </p>
+          </div>
         </div>
       </div>
 
-      {/* Governance Architecture Note */}
-      <div className="mt-8 text-center text-xs text-slate-500 max-w-2xl mx-auto relative z-10">
-        <div className="flex items-center justify-center space-x-4 mb-2 text-slate-600">
-          <span className="flex items-center space-x-1">
-            <ShieldCheck className="w-3.5 h-3.5 text-[#FA7014]" />
-            <span>SHA-256 Hashed</span>
-          </span>
-          <span>•</span>
-          <span className="flex items-center space-x-1">
-            <Layers className="w-3.5 h-3.5 text-emerald-600" />
-            <span>Immutable Versioning</span>
-          </span>
-          <span>•</span>
-          <span className="flex items-center space-x-1">
-            <FileText className="w-3.5 h-3.5 text-slate-900" />
-            <span>Full Audit Trail</span>
-          </span>
-        </div>
-        Amaavigo Global HR Document Governance System • Where Brand takes Flight
-      </div>
+      {/* RIGHT COLUMN: Visual Showcase Stage with 3D Illustration matching brand colors */}
+      <LoginShowcase />
     </div>
   );
 };
+
