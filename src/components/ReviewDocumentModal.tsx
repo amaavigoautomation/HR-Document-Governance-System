@@ -35,6 +35,7 @@ import { governanceEngine } from '../services/governance';
 import { auditService } from '../services/audit';
 import { DocumentViewer } from './DocumentViewer';
 import { formatIST, formatISTDate } from '../utils/dateFormat';
+import { formatDDMMYYYY } from '../utils/documentHeaderFooter';
 
 interface ReviewDocumentModalProps {
   version: DocumentVersion;
@@ -554,6 +555,15 @@ export const ReviewDocumentModal: React.FC<ReviewDocumentModalProps> = ({
                     rawContent={version.rawContent}
                     fileUrl={version.fileUrl}
                     mimeType={version.mimeType}
+                    headerFooterData={{
+                      companyName: master?.companyName || 'Amaavigo',
+                      documentTitle: version.documentTitle || master?.title || 'Document',
+                      versionNumber: version.versionNumber,
+                      effectiveDate: formatDDMMYYYY(version.effectiveFrom || new Date()),
+                      createdByName: version.createdByName || master?.createdByName || 'Amee Shah',
+                      approvedByName: version.reviewedByName || currentUser.name,
+                      approvedDate: formatDDMMYYYY(version.reviewedAt || new Date()),
+                    }}
                   />
                 </div>
               )}
@@ -622,21 +632,27 @@ export const ReviewDocumentModal: React.FC<ReviewDocumentModalProps> = ({
               <strong className="text-slate-900">"{version.documentTitle}"</strong> will execute the following automated governance actions:
             </p>
 
-            <ul className="mt-3 space-y-1.5 text-xs text-slate-700 bg-slate-50 p-3 rounded-xl border border-slate-200">
-              <li className="flex items-center space-x-1.5">
-                <Check className="w-3.5 h-3.5 text-[#FA7014]" />
-                <span>Lock file and make version immutable</span>
+            <ul className="mt-3 space-y-2 text-xs text-slate-700 bg-slate-50 p-3.5 rounded-xl border border-slate-200">
+              <li className="flex items-start space-x-2">
+                <Check className="w-3.5 h-3.5 text-[#FA7014] mt-0.5 shrink-0" />
+                <span>
+                  <strong>Append & Save Dynamic Header/Footer:</strong> Injects official corporate header (Amaavigo, Document Name, Version, Effective Date: {formatDDMMYYYY(version.effectiveFrom || new Date())}) and approval footer (Created by: {version.createdByName || master?.createdByName || 'Amee Shah'}, Approved by: {currentUser.name}, Approved Date: {formatDDMMYYYY(new Date())}) directly into the saved file.
+                </span>
               </li>
-              <li className="flex items-center space-x-1.5">
-                <Check className="w-3.5 h-3.5 text-[#FA7014]" />
+              <li className="flex items-center space-x-2">
+                <Check className="w-3.5 h-3.5 text-[#FA7014] shrink-0" />
+                <span>Lock file and make version immutable with updated SHA-256 hash</span>
+              </li>
+              <li className="flex items-center space-x-2">
+                <Check className="w-3.5 h-3.5 text-[#FA7014] shrink-0" />
                 <span>
                   Supersede previous published version (
                   {master?.currentPublishedVersionNumber ? `v${master.currentPublishedVersionNumber}` : 'None'}
                   )
                 </span>
               </li>
-              <li className="flex items-center space-x-1.5">
-                <Check className="w-3.5 h-3.5 text-[#FA7014]" />
+              <li className="flex items-start space-x-2">
+                <Check className="w-3.5 h-3.5 text-[#FA7014] mt-0.5 shrink-0" />
                 <span>
                   {master?.confidentiality === ConfidentialityLevel.INTERNAL
                     ? '🔒 Internal Company Document: Access restricted to HR & Approvers. No employee emails will be sent and document is hidden from Employee Portal.'
@@ -645,8 +661,8 @@ export const ReviewDocumentModal: React.FC<ReviewDocumentModalProps> = ({
                     : '📢 Public Policy: Broadcast informational notice email to active employees (view/read only, no acknowledgement required).'}
                 </span>
               </li>
-              <li className="flex items-center space-x-1.5">
-                <Check className="w-3.5 h-3.5 text-[#FA7014]" />
+              <li className="flex items-center space-x-2">
+                <Check className="w-3.5 h-3.5 text-[#FA7014] shrink-0" />
                 <span>Write immutable audit logs with SHA-256 hash</span>
               </li>
             </ul>

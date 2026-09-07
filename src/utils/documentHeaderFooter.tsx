@@ -1,0 +1,342 @@
+import React from 'react';
+import { AmaavigoLogo } from '../components/AmaavigoLogo';
+
+export interface DocumentHeaderFooterData {
+  companyName: string;
+  documentTitle: string;
+  versionNumber: string;
+  effectiveDate: string; // DD/MM/YYYY
+  createdByName: string;
+  approvedByName: string;
+  approvedDate: string; // DD/MM/YYYY
+}
+
+export const HEADER_START_TAG = '<!-- AMAAVIGO_DOCUMENT_HEADER_START -->';
+export const HEADER_END_TAG = '<!-- AMAAVIGO_DOCUMENT_HEADER_END -->';
+export const FOOTER_START_TAG = '<!-- AMAAVIGO_DOCUMENT_FOOTER_START -->';
+export const FOOTER_END_TAG = '<!-- AMAAVIGO_DOCUMENT_FOOTER_END -->';
+
+/**
+ * Normalizes any date into DD/MM/YYYY format (e.g. 09/09/2026).
+ */
+export function formatDDMMYYYY(dateInput: string | number | Date | null | undefined): string {
+  if (!dateInput) {
+    const now = new Date();
+    const dd = String(now.getDate()).padStart(2, '0');
+    const mm = String(now.getMonth() + 1).padStart(2, '0');
+    const yyyy = now.getFullYear();
+    return `${dd}/${mm}/${yyyy}`;
+  }
+
+  const str = String(dateInput).trim();
+  // Already in DD/MM/YYYY
+  if (/^\d{2}\/\d{2}\/\d{4}$/.test(str)) {
+    return str;
+  }
+  // Standard ISO date YYYY-MM-DD
+  if (/^\d{4}-\d{2}-\d{2}$/.test(str)) {
+    const [yyyy, mm, dd] = str.split('-');
+    return `${dd}/${mm}/${yyyy}`;
+  }
+
+  try {
+    const d = typeof dateInput === 'string' || typeof dateInput === 'number' ? new Date(dateInput) : dateInput;
+    if (isNaN(d.getTime())) return str;
+    const dd = String(d.getDate()).padStart(2, '0');
+    const mm = String(d.getMonth() + 1).padStart(2, '0');
+    const yyyy = d.getFullYear();
+    return `${dd}/${mm}/${yyyy}`;
+  } catch {
+    return str;
+  }
+}
+
+export function cleanVersionNumber(ver: string): string {
+  if (!ver) return '1.0';
+  return ver.startsWith('v') || ver.startsWith('V') ? ver.slice(1) : ver;
+}
+
+/**
+ * Generates official HTML Table Header block with official Amaavigo Logo.
+ */
+export function generateHeaderHtml(data: DocumentHeaderFooterData): string {
+  const ver = cleanVersionNumber(data.versionNumber);
+  const title = data.documentTitle || 'Corporate Governance Document';
+  const effective = formatDDMMYYYY(data.effectiveDate);
+
+  return `${HEADER_START_TAG}
+<table class="amaavigo-document-header" style="width: 100%; border-collapse: collapse; border: 2px solid #0f172a; margin-bottom: 24px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background: #ffffff;">
+  <tr>
+    <td style="border: 1px solid #0f172a; padding: 10px 14px; width: 24%; vertical-align: middle; text-align: center; background: #ffffff;">
+      <div style="display: inline-block; text-align: center;">
+        <svg viewBox="0 0 240 52" fill="none" xmlns="http://www.w3.org/2000/svg" style="height: 34px; width: auto; max-width: 165px; display: block; margin: 0 auto;" aria-label="Amaavigo - Where Brand takes Flight">
+          <g id="amaavigo-wordmark">
+            <text x="0" y="28" fill="#181A1E" style="font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; font-weight: 900; font-size: 32px; letter-spacing: -0.035em;">amaavig</text>
+            <g transform="translate(196, 0)">
+              <rect x="-10" y="2" width="8" height="8" rx="1.2" fill="#FA7014" />
+              <circle cx="14" cy="18.5" r="11.5" stroke="#FA7014" stroke-width="6.5" fill="none" />
+            </g>
+          </g>
+          <g id="amaavigo-tagline" transform="translate(1, 46)">
+            <text x="0" y="0" fill="#6B7280" style="font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; font-weight: 600; font-size: 10.5px; letter-spacing: 0.075em;">Where Brand takes Flight</text>
+          </g>
+        </svg>
+      </div>
+    </td>
+    <td style="border: 1px solid #0f172a; padding: 12px 18px; width: 34%; vertical-align: middle;">
+      <div style="font-size: 11px; font-weight: 700; color: #0f172a; margin-bottom: 3px;">Document Name:</div>
+      <div style="font-size: 14px; font-weight: 600; color: #1e293b; line-height: 1.3;">${title}</div>
+    </td>
+    <td style="border: 1px solid #0f172a; padding: 12px 18px; width: 18%; vertical-align: middle;">
+      <div style="font-size: 14px; font-weight: 700; color: #0f172a;">Version: ${ver}</div>
+    </td>
+    <td style="border: 1px solid #0f172a; padding: 12px 18px; width: 24%; vertical-align: middle;">
+      <div style="font-size: 11px; font-weight: 700; color: #0f172a; margin-bottom: 3px;">Effective date :</div>
+      <div style="font-size: 14px; font-weight: 600; color: #1e293b;">${effective}</div>
+    </td>
+  </tr>
+</table>
+${HEADER_END_TAG}`;
+}
+
+/**
+ * Generates official HTML Table Footer block.
+ */
+export function generateFooterHtml(data: DocumentHeaderFooterData): string {
+  const creator = data.createdByName || 'HR Author';
+  const approver = data.approvedByName || 'Authorized Reviewer';
+  const approvedDate = formatDDMMYYYY(data.approvedDate);
+
+  return `${FOOTER_START_TAG}
+<table class="amaavigo-document-footer" style="width: 100%; border-collapse: collapse; border: 2px solid #0f172a; margin-top: 32px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background: #ffffff;">
+  <tr>
+    <td style="border: 1px solid #0f172a; padding: 12px 18px; width: 33.33%; vertical-align: middle;">
+      <div style="font-size: 11px; font-weight: 700; color: #0f172a; margin-bottom: 3px;">Created by:</div>
+      <div style="font-size: 14px; font-weight: 600; color: #1e293b;">${creator}</div>
+    </td>
+    <td style="border: 1px solid #0f172a; padding: 12px 18px; width: 33.33%; vertical-align: middle;">
+      <div style="font-size: 11px; font-weight: 700; color: #0f172a; margin-bottom: 3px;">Approved by:</div>
+      <div style="font-size: 14px; font-weight: 600; color: #1e293b;">${approver}</div>
+    </td>
+    <td style="border: 1px solid #0f172a; padding: 12px 18px; width: 33.33%; vertical-align: middle;">
+      <div style="font-size: 11px; font-weight: 700; color: #0f172a; margin-bottom: 3px;">Approved Date:</div>
+      <div style="font-size: 14px; font-weight: 600; color: #1e293b;">${approvedDate}</div>
+    </td>
+  </tr>
+</table>
+${FOOTER_END_TAG}`;
+}
+
+/**
+ * Strips previous header/footer HTML blocks to avoid duplicate insertions.
+ */
+export function extractCleanBody(content: string): string {
+  if (!content) return '';
+  let clean = content;
+  // Remove tagged header block
+  const headerRegex = new RegExp(
+    `${HEADER_START_TAG}[\\s\\S]*?${HEADER_END_TAG}\\n*`,
+    'gi'
+  );
+  clean = clean.replace(headerRegex, '');
+
+  // Remove tagged footer block
+  const footerRegex = new RegExp(
+    `\\n*${FOOTER_START_TAG}[\\s\\S]*?${FOOTER_END_TAG}`,
+    'gi'
+  );
+  clean = clean.replace(footerRegex, '');
+
+  // Remove any legacy untagged amaavigo header tables if present
+  clean = clean.replace(
+    /<table[^>]*class="[^"]*amaavigo-document-header[^"]*"[\s\S]*?<\/table>\n*/gi,
+    ''
+  );
+  clean = clean.replace(
+    /\n*<table[^>]*class="[^"]*amaavigo-document-footer[^"]*"[\s\S]*?<\/table>/gi,
+    ''
+  );
+
+  return clean.trim();
+}
+
+/**
+ * Prepends the dynamic Header and appends the dynamic Footer to raw document content.
+ */
+export function appendApprovedHeaderAndFooter(
+  rawContent: string,
+  data: DocumentHeaderFooterData
+): string {
+  const cleanBody = extractCleanBody(rawContent);
+  const header = generateHeaderHtml(data);
+  const footer = generateFooterHtml(data);
+
+  return `${header}\n\n${cleanBody}\n\n${footer}`;
+}
+
+/**
+ * Detects if the rawContent already has an embedded header/footer block.
+ */
+export function hasEmbeddedHeaderFooter(content: string): boolean {
+  if (!content) return false;
+  return (
+    content.includes(HEADER_START_TAG) ||
+    content.includes('amaavigo-document-header') ||
+    content.includes('Document Name:')
+  );
+}
+
+/**
+ * Parses header & footer dynamic fields from HTML or rawContent if present.
+ */
+export function extractHeaderFooterData(content: string): DocumentHeaderFooterData | null {
+  if (!content) return null;
+
+  const hasHeader =
+    content.includes(HEADER_START_TAG) || content.includes('amaavigo-document-header');
+  const hasFooter =
+    content.includes(FOOTER_START_TAG) || content.includes('amaavigo-document-footer');
+
+  if (!hasHeader && !hasFooter && !content.includes('Document Name:')) {
+    return null;
+  }
+
+  let companyName = 'Amaavigo';
+  let documentTitle = '';
+  let versionNumber = '1.0';
+  let effectiveDate = '';
+  let createdByName = '';
+  let approvedByName = '';
+  let approvedDate = '';
+
+  const docNameMatch = content.match(/Document Name:[\s\S]*?<div[^>]*>([\s\S]*?)<\/div>/i);
+  if (docNameMatch) documentTitle = docNameMatch[1].trim();
+
+  const verMatch = content.match(/Version:\s*([0-9.a-zA-Z]+)/i);
+  if (verMatch) versionNumber = verMatch[1].trim();
+
+  const effMatch = content.match(/Effective date\s*:[\s\S]*?<div[^>]*>([\s\S]*?)<\/div>/i);
+  if (effMatch) effectiveDate = effMatch[1].trim();
+
+  const creatorMatch = content.match(/Created by:[\s\S]*?<div[^>]*>([\s\S]*?)<\/div>/i);
+  if (creatorMatch) createdByName = creatorMatch[1].trim();
+
+  const approverMatch = content.match(/Approved by:[\s\S]*?<div[^>]*>([\s\S]*?)<\/div>/i);
+  if (approverMatch) approvedByName = approverMatch[1].trim();
+
+  const appDateMatch = content.match(/Approved Date:[\s\S]*?<div[^>]*>([\s\S]*?)<\/div>/i);
+  if (appDateMatch) approvedDate = appDateMatch[1].trim();
+
+  return {
+    companyName,
+    documentTitle: documentTitle || 'Document',
+    versionNumber: versionNumber || '1.0',
+    effectiveDate: effectiveDate || formatDDMMYYYY(new Date()),
+    createdByName: createdByName || 'HR Author',
+    approvedByName: approvedByName || 'Authorized Approver',
+    approvedDate: approvedDate || formatDDMMYYYY(new Date()),
+  };
+}
+
+/**
+ * React Component: Dynamic Document Header Table matching the provided screenshot specification.
+ */
+export const DocumentHeaderTable: React.FC<{
+  data: DocumentHeaderFooterData;
+  className?: string;
+}> = ({ data, className = '' }) => {
+  const company = data.companyName || 'Amaavigo';
+  const ver = cleanVersionNumber(data.versionNumber);
+  const title = data.documentTitle || 'Document';
+  const effective = formatDDMMYYYY(data.effectiveDate);
+
+  return (
+    <div
+      className={`w-full border-2 border-slate-900 bg-white text-slate-900 overflow-hidden font-sans my-4 shadow-2xs ${className}`}
+    >
+      <div className="grid grid-cols-12 text-xs divide-x divide-slate-900 items-stretch">
+        {/* Col 1: Brand Logo */}
+        <div className="col-span-3 sm:col-span-3 p-2 sm:p-3 flex items-center justify-center text-center bg-white">
+          <AmaavigoLogo size="sm" variant="full" height={36} showTagline={true} align="center" />
+        </div>
+
+        {/* Col 2: Document Name */}
+        <div className="col-span-4 sm:col-span-4 p-3 sm:p-4 flex flex-col justify-center bg-white">
+          <span className="text-[11px] sm:text-xs font-bold text-slate-900 block uppercase tracking-wide">
+            Document Name:
+          </span>
+          <span className="text-xs sm:text-sm font-semibold text-slate-800 mt-1 leading-snug break-words">
+            {title}
+          </span>
+        </div>
+
+        {/* Col 3: Version */}
+        <div className="col-span-2 sm:col-span-2 p-3 sm:p-4 flex items-center justify-center text-center bg-white">
+          <span className="text-xs sm:text-sm font-bold text-slate-900">
+            Version: {ver}
+          </span>
+        </div>
+
+        {/* Col 4: Effective Date */}
+        <div className="col-span-3 sm:col-span-3 p-3 sm:p-4 flex flex-col justify-center bg-white">
+          <span className="text-[11px] sm:text-xs font-bold text-slate-900 block uppercase tracking-wide">
+            Effective date :
+          </span>
+          <span className="text-xs sm:text-sm font-semibold text-slate-800 mt-1 font-mono">
+            {effective}
+          </span>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+/**
+ * React Component: Dynamic Document Footer Table matching the provided screenshot specification.
+ */
+export const DocumentFooterTable: React.FC<{
+  data: DocumentHeaderFooterData;
+  className?: string;
+}> = ({ data, className = '' }) => {
+  const creator = data.createdByName || 'Amee Shah';
+  const approver = data.approvedByName || 'Vishal Shah';
+  const approvedDate = formatDDMMYYYY(data.approvedDate);
+
+  return (
+    <div
+      className={`w-full border-2 border-slate-900 bg-white text-slate-900 overflow-hidden font-sans my-4 shadow-2xs ${className}`}
+    >
+      <div className="grid grid-cols-1 sm:grid-cols-3 text-xs divide-y sm:divide-y-0 sm:divide-x divide-slate-900 items-stretch">
+        {/* Col 1: Created by */}
+        <div className="p-3 sm:p-4 flex flex-col justify-center bg-white">
+          <span className="text-[11px] sm:text-xs font-bold text-slate-900 block uppercase tracking-wide">
+            Created by:
+          </span>
+          <span className="text-xs sm:text-sm font-semibold text-slate-800 mt-1">
+            {creator}
+          </span>
+        </div>
+
+        {/* Col 2: Approved by */}
+        <div className="p-3 sm:p-4 flex flex-col justify-center bg-white">
+          <span className="text-[11px] sm:text-xs font-bold text-slate-900 block uppercase tracking-wide">
+            Approved by:
+          </span>
+          <span className="text-xs sm:text-sm font-semibold text-slate-800 mt-1">
+            {approver}
+          </span>
+        </div>
+
+        {/* Col 3: Approved Date */}
+        <div className="p-3 sm:p-4 flex flex-col justify-center bg-white">
+          <span className="text-[11px] sm:text-xs font-bold text-slate-900 block uppercase tracking-wide">
+            Approved Date:
+          </span>
+          <span className="text-xs sm:text-sm font-semibold text-slate-800 mt-1 font-mono">
+            {approvedDate}
+          </span>
+        </div>
+      </div>
+    </div>
+  );
+};

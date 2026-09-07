@@ -23,6 +23,7 @@ import { DocumentViewer } from './DocumentViewer';
 import { governanceEngine } from '../services/governance';
 import { auditService } from '../services/audit';
 import { formatIST } from '../utils/dateFormat';
+import { formatDDMMYYYY } from '../utils/documentHeaderFooter';
 import { Trash2 } from 'lucide-react';
 
 interface DocumentDetailModalProps {
@@ -352,6 +353,21 @@ export const DocumentDetailModal: React.FC<DocumentDetailModalProps> = ({
                 rawContent={activeVersion.rawContent}
                 fileUrl={activeVersion.fileUrl}
                 mimeType={activeVersion.mimeType}
+                headerFooterData={
+                  activeVersion.status === VersionStatus.PUBLISHED || activeVersion.reviewedByName
+                    ? {
+                        companyName: document.companyName || 'Amaavigo',
+                        documentTitle: document.title || activeVersion.documentTitle,
+                        versionNumber: activeVersion.versionNumber,
+                        effectiveDate: formatDDMMYYYY(activeVersion.effectiveFrom || activeVersion.createdAt),
+                        createdByName: activeVersion.createdByName || document.createdByName || 'Amee Shah',
+                        approvedByName: activeVersion.reviewedByName || 'Vishal Shah',
+                        approvedDate: formatDDMMYYYY(
+                          activeVersion.reviewedAt || activeVersion.publishedAt || activeVersion.createdAt
+                        ),
+                      }
+                    : undefined
+                }
               />
             </div>
           )}

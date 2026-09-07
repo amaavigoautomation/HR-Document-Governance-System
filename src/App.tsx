@@ -26,6 +26,8 @@ import { ReviewDocumentModal } from './components/ReviewDocumentModal';
 import { DocumentDetailModal } from './components/DocumentDetailModal';
 import { NotificationDrawer } from './components/NotificationDrawer';
 import { DocumentViewer } from './components/DocumentViewer';
+import { formatDDMMYYYY } from './utils/documentHeaderFooter';
+import { downloadDocumentWithIntactFormat } from './utils/documentStamper';
 import { FileText, X, Download } from 'lucide-react';
 import { StatusBadge } from './components/StatusBadge';
 
@@ -555,14 +557,29 @@ export default function App() {
               </div>
 
               <div className="flex items-center space-x-2">
-                <a
-                  href={readerVersion.fileUrl}
-                  download={readerVersion.fileName}
-                  className="inline-flex items-center space-x-1.5 bg-slate-800 hover:bg-slate-700 text-white text-xs font-semibold px-3 py-1.5 rounded-lg transition-colors border border-slate-700"
+                <button
+                  type="button"
+                  onClick={() =>
+                    downloadDocumentWithIntactFormat({
+                      fileName: readerVersion.fileName,
+                      documentTitle: readerVersion.documentTitle,
+                      versionNumber: readerVersion.versionNumber,
+                      effectiveDate: formatDDMMYYYY(readerVersion.effectiveFrom || readerVersion.createdAt),
+                      createdByName: readerVersion.createdByName || 'Amee Shah',
+                      approvedByName: readerVersion.reviewedByName || 'Vishal Shah',
+                      approvedDate: formatDDMMYYYY(
+                        readerVersion.reviewedAt || readerVersion.publishedAt || readerVersion.createdAt
+                      ),
+                      companyName: 'Amaavigo',
+                      rawContent: readerVersion.rawContent,
+                      fileUrl: readerVersion.fileUrl,
+                    })
+                  }
+                  className="inline-flex items-center space-x-1.5 bg-slate-800 hover:bg-slate-700 text-white text-xs font-semibold px-3 py-1.5 rounded-lg transition-colors border border-slate-700 cursor-pointer"
                 >
                   <Download className="w-3.5 h-3.5" />
-                  <span>Download</span>
-                </a>
+                  <span>Download Intact</span>
+                </button>
                 <button
                   onClick={() => setReaderVersion(null)}
                   className="text-slate-400 hover:text-white p-2 rounded-lg hover:bg-slate-800 transition-colors"
@@ -578,6 +595,21 @@ export default function App() {
                 rawContent={readerVersion.rawContent}
                 fileUrl={readerVersion.fileUrl}
                 mimeType={readerVersion.mimeType}
+                headerFooterData={
+                  readerVersion.status === VersionStatus.PUBLISHED || readerVersion.reviewedByName
+                    ? {
+                        companyName: 'Amaavigo',
+                        documentTitle: readerVersion.documentTitle,
+                        versionNumber: readerVersion.versionNumber,
+                        effectiveDate: formatDDMMYYYY(readerVersion.effectiveFrom || readerVersion.createdAt),
+                        createdByName: readerVersion.createdByName || 'Amee Shah',
+                        approvedByName: readerVersion.reviewedByName || 'Vishal Shah',
+                        approvedDate: formatDDMMYYYY(
+                          readerVersion.reviewedAt || readerVersion.publishedAt || readerVersion.createdAt
+                        ),
+                      }
+                    : undefined
+                }
               />
             </div>
           </div>

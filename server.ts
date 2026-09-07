@@ -7,6 +7,7 @@ import { defaultStorageProvider } from './src/services/storage';
 import { defaultEmailProvider } from './src/services/email';
 import { dispatchLiveEmail, getEmailConfigStatus } from './src/services/serverEmail';
 import { UserRole } from './src/types';
+import { SEED_VERSIONS } from './src/data/seedData';
 
 async function startServer() {
   const app = express();
@@ -14,6 +15,9 @@ async function startServer() {
 
   app.use(express.json({ limit: '10mb' }));
   app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+
+  // Seed storage files from governance versions
+  governanceEngine.syncVersionsToStorage(SEED_VERSIONS);
 
   // API Health Check
   app.get('/api/health', (req, res) => {
@@ -329,7 +333,100 @@ async function startServer() {
       if (!key) {
         return res.status(400).json({ error: 'Storage key is required' });
       }
-      const file = await defaultStorageProvider.downloadFile(key);
+
+      let file: { data: string; metadata: any } | null = null;
+      try {
+        file = await defaultStorageProvider.downloadFile(key);
+      } catch {
+        // Fallback: search version from governanceEngine or SEED_VERSIONS
+        const allVersions = [...governanceEngine.getDocumentVersions(), ...SEED_VERSIONS];
+        const ver = allVersions.find(
+          v => v.storageKey === key || v.fileName === key || (v.storageKey && key.endsWith(v.storageKey))
+        );
+        if (ver && ver.rawContent) {
+          defaultStorageProvider.storeFile(ver.storageKey || key, ver.rawContent, {
+            fileName: ver.fileName,
+            mimeType: ver.mimeType,
+            sizeBytes: ver.fileSize,
+            storagePath: ver.storagePath,
+          });
+          file = await defaultStorageProvider.downloadFile(ver.storageKey || key);
+        }
+      }
+
+      if (!file) {
+        return res.status(404).json({ error: 'File not found in storage provider' });
+      }
+
+      // If requested as a PDF but stored as non-binary text/markdown, synthesize a valid standard PDF
+      if (
+        (file.metadata.fileName.endsWith('.pdf') || file.metadata.mimeType === 'application/pdf') &&
+        typeof file.data === 'string' &&
+        !file.data.startsWith('%PDF')
+      ) {
+        try {
+          const { jsPDF } = await import('jspdf');
+          const doc = new jsPDF({ orientation: 'portrait', unit: 'pt', format: 'a4' });
+          const margin = 40;
+          const pageWidth = doc.internal.pageSize.getWidth();
+          const contentWidth = pageWidth - margin * 2;
+
+          // Header Box
+          doc.setDrawColor(15, 23, 42);
+          doc.setLineWidth(1.5);
+          doc.rect(margin, 40, contentWidth, 54, 'S');
+          doc.setFont('helvetica', 'bold');
+          doc.setFontSize(16);
+          doc.setTextColor(24, 26, 30);
+          doc.text('amaavig', margin + 12, 68);
+
+          // Orange brand mark
+          doc.setFillColor(250, 112, 20);
+          doc.setDrawColor(250, 112, 20);
+          doc.rect(margin + 75, 56, 3.5, 3.5, 'F');
+          doc.setLineWidth(2.5);
+          doc.circle(margin + 83, 64, 4.5, 'S');
+
+          doc.setFont('helvetica', 'normal');
+          doc.setFontSize(6.5);
+          doc.setTextColor(100, 116, 139);
+          doc.text('Where Brand takes Flight', margin + 12, 84);
+
+          // Document title in header
+          doc.setFont('helvetica', 'bold');
+          doc.setFontSize(8);
+          doc.setTextColor(15, 23, 42);
+          doc.text('Document Name:', margin + 130, 58);
+          doc.setFontSize(9.5);
+          doc.setTextColor(30, 41, 59);
+          const title = file.metadata.fileName.replace(/\.pdf$/i, '');
+          doc.text(doc.splitTextToSize(title, 220).slice(0, 2), margin + 130, 72);
+
+          // Body text (stripping HTML comments)
+          const cleanText = file.data.replace(/<!--[\s\S]*?-->/g, '').trim();
+          const lines = doc.splitTextToSize(cleanText, contentWidth);
+          let y = 115;
+          for (const line of lines) {
+            if (y > 780) {
+              doc.addPage();
+              y = 50;
+            }
+            doc.setFont('helvetica', 'normal');
+            doc.setFontSize(9);
+            doc.setTextColor(51, 65, 85);
+            doc.text(line, margin, y);
+            y += 13;
+          }
+
+          const pdfBytes = Buffer.from(doc.output('arraybuffer'));
+          res.setHeader('Content-Type', 'application/pdf');
+          res.setHeader('Content-Disposition', `attachment; filename="${file.metadata.fileName}"`);
+          return res.send(pdfBytes);
+        } catch (pdfErr) {
+          console.warn('Server-side PDF generation fallback:', pdfErr);
+        }
+      }
+
       res.setHeader('Content-Type', file.metadata.mimeType || 'text/plain');
       res.setHeader('Content-Disposition', `attachment; filename="${file.metadata.fileName}"`);
       res.send(file.data);

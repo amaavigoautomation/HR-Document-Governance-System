@@ -14,8 +14,18 @@ import {
   AlertCircle,
   FileCheck,
   Printer,
+  ShieldCheck,
 } from 'lucide-react';
 import { extractTextFromRawPdfStream, isRawPdfStream, getBrowserPdfjs } from '../utils/fileParser';
+import {
+  DocumentHeaderTable,
+  DocumentFooterTable,
+  DocumentHeaderFooterData,
+  extractHeaderFooterData,
+  extractCleanBody,
+} from '../utils/documentHeaderFooter';
+import { generateCorporatePdfBlob } from '../utils/pdfGenerator';
+import { downloadDocumentWithIntactFormat, stampPdfWithHeaderFooter } from '../utils/documentStamper';
 
 interface DocumentViewerProps {
   fileName: string;
@@ -23,6 +33,7 @@ interface DocumentViewerProps {
   fileUrl?: string;
   mimeType?: string;
   className?: string;
+  headerFooterData?: DocumentHeaderFooterData;
 }
 
 export const DocumentViewer: React.FC<DocumentViewerProps> = ({
@@ -31,17 +42,12 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({
   fileUrl,
   mimeType,
   className = '',
+  headerFooterData,
 }) => {
-  const [viewMode, setViewMode] = useState<'pdf' | 'formatted' | 'raw'>('pdf');
-  const [numPages, setNumPages] = useState<number>(0);
-  const [pageNumber, setPageNumber] = useState<number>(1);
-  const [scale, setScale] = useState<number>(1.2);
-  const [loadingPdf, setLoadingPdf] = useState<boolean>(false);
-  const [pdfError, setPdfError] = useState<string | null>(null);
-  const [pdfDoc, setPdfDoc] = useState<any>(null);
-
-  const canvasRef = useRef<HTMLCanvasElement | null>(null);
-  const renderTaskRef = useRef<any>(null);
+  const isDocx =
+    fileName?.toLowerCase().endsWith('.docx') ||
+    mimeType?.includes('wordprocessingml') ||
+    (fileUrl && fileUrl.includes('wordprocessingml'));
 
   const isPdf =
     fileName?.toLowerCase().endsWith('.pdf') ||
@@ -49,8 +55,62 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({
     isRawPdfStream(rawContent) ||
     fileUrl?.startsWith('data:application/pdf');
 
+  const [viewMode, setViewMode] = useState<'pdf' | 'formatted' | 'raw'>(isPdf ? 'pdf' : 'formatted');
+  const [numPages, setNumPages] = useState<number>(0);
+  const [pageNumber, setPageNumber] = useState<number>(1);
+  const [scale, setScale] = useState<number>(1.2);
+  const [loadingPdf, setLoadingPdf] = useState<boolean>(false);
+  const [pdfError, setPdfError] = useState<string | null>(null);
+  const [pdfDoc, setPdfDoc] = useState<any>(null);
+  const [stampedPdfUrl, setStampedPdfUrl] = useState<string | null>(null);
+
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const renderTaskRef = useRef<any>(null);
+
+  const effectiveHeaderFooterData = React.useMemo(() => {
+    if (headerFooterData) return headerFooterData;
+    return extractHeaderFooterData(rawContent);
+  }, [headerFooterData, rawContent]);
+
+  // Stamp PDF with official corporate header & footer while keeping original document 100% intact
+  useEffect(() => {
+    let isMounted = true;
+    if (isPdf && effectiveHeaderFooterData) {
+      const source =
+        fileUrl && (fileUrl.startsWith('data:application/pdf') || fileUrl.startsWith('blob:'))
+          ? fileUrl
+          : isRawPdfStream(rawContent)
+          ? rawContent
+          : null;
+
+      if (source) {
+        stampPdfWithHeaderFooter(source, {
+          documentTitle: effectiveHeaderFooterData.documentTitle || fileName.replace(/\.[^/.]+$/, ''),
+          versionNumber: effectiveHeaderFooterData.versionNumber || '1.0',
+          effectiveDate: effectiveHeaderFooterData.effectiveDate || new Date().toISOString(),
+          createdByName: effectiveHeaderFooterData.createdByName,
+          approvedByName: effectiveHeaderFooterData.approvedByName,
+          approvedDate: effectiveHeaderFooterData.approvedDate,
+          companyName: effectiveHeaderFooterData.companyName,
+        })
+          .then((res) => {
+            if (isMounted) setStampedPdfUrl(res.dataUrl);
+          })
+          .catch((err) => {
+            console.warn('PDF intact stamping preview warning:', err);
+          });
+      }
+    }
+    return () => {
+      isMounted = false;
+    };
+  }, [isPdf, fileUrl, rawContent, effectiveHeaderFooterData, fileName]);
+
   // Convert raw PDF string to Base64 or Blob Data URL if needed
   const effectivePdfDataUrl = React.useMemo(() => {
+    if (stampedPdfUrl) {
+      return stampedPdfUrl;
+    }
     if (fileUrl && fileUrl.startsWith('data:application/pdf')) {
       return fileUrl;
     }
@@ -68,8 +128,29 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({
         console.warn('Failed to convert raw PDF bytes to blob:', e);
       }
     }
-    return fileUrl || '';
-  }, [fileUrl, rawContent]);
+
+    // Synthesize valid corporate PDF if isPdf is true
+    if (isPdf && rawContent) {
+      try {
+        const blob = generateCorporatePdfBlob({
+          documentTitle: effectiveHeaderFooterData?.documentTitle || fileName.replace(/\.[^/.]+$/, ''),
+          versionNumber: effectiveHeaderFooterData?.versionNumber || '1.0',
+          effectiveDate: effectiveHeaderFooterData?.effectiveDate || new Date().toISOString(),
+          createdByName: effectiveHeaderFooterData?.createdByName,
+          approvedByName: effectiveHeaderFooterData?.approvedByName,
+          approvedDate: effectiveHeaderFooterData?.approvedDate,
+          companyName: effectiveHeaderFooterData?.companyName || 'Amaavigo',
+          rawContent,
+          fileName,
+        });
+        return URL.createObjectURL(blob);
+      } catch (e) {
+        console.warn('Failed to generate corporate PDF preview blob:', e);
+      }
+    }
+
+    return '';
+  }, [stampedPdfUrl, fileUrl, rawContent, isPdf, effectiveHeaderFooterData, fileName]);
 
   // Load PDF Document with PDF.js
   useEffect(() => {
@@ -187,15 +268,31 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({
     return rawContent;
   }, [rawContent, fileName]);
 
-  const handleDownload = () => {
-    if (effectivePdfDataUrl) {
-      const a = document.createElement('a');
-      a.href = effectivePdfDataUrl;
-      a.download = fileName || 'document.pdf';
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-    } else {
+  const cleanBodyForFormatted = React.useMemo(() => {
+    return extractCleanBody(readableFormattedText);
+  }, [readableFormattedText]);
+
+  const [downloadingFormat, setDownloadingFormat] = useState<'pdf' | 'docx' | null>(null);
+
+  const handleDownload = async (forcedFormat?: 'pdf' | 'docx') => {
+    try {
+      setDownloadingFormat(forcedFormat || (isDocx ? 'docx' : 'pdf'));
+      await downloadDocumentWithIntactFormat({
+        fileName: fileName || (forcedFormat === 'docx' ? 'document.docx' : 'document.pdf'),
+        documentTitle: effectiveHeaderFooterData?.documentTitle || fileName.replace(/\.[^/.]+$/, ''),
+        versionNumber: effectiveHeaderFooterData?.versionNumber || '1.0',
+        effectiveDate: effectiveHeaderFooterData?.effectiveDate || new Date().toISOString(),
+        createdByName: effectiveHeaderFooterData?.createdByName,
+        approvedByName: effectiveHeaderFooterData?.approvedByName,
+        approvedDate: effectiveHeaderFooterData?.approvedDate,
+        companyName: effectiveHeaderFooterData?.companyName || 'Amaavigo',
+        rawContent,
+        fileUrl: stampedPdfUrl || fileUrl,
+        headerFooterData: effectiveHeaderFooterData,
+        forcedFormat,
+      });
+    } catch (err) {
+      console.error('Document download error, falling back to raw file download:', err);
       const blob = new Blob([rawContent], { type: mimeType || 'text/plain' });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
@@ -205,6 +302,8 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({
       a.click();
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
+    } finally {
+      setDownloadingFormat(null);
     }
   };
 
@@ -312,14 +411,50 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({
         )}
 
         {/* DOWNLOAD ACTION */}
-        <button
-          type="button"
-          onClick={handleDownload}
-          className="inline-flex items-center space-x-1.5 bg-white hover:bg-slate-100 text-slate-800 text-xs font-semibold px-3 py-1.5 rounded-xl border border-slate-300 transition-colors shadow-2xs"
-        >
-          <Download className="w-3.5 h-3.5 text-[#FA7014]" />
-          <span>Download Original</span>
-        </button>
+        <div className="flex items-center space-x-2">
+          {isDocx ? (
+            <>
+              <button
+                type="button"
+                disabled={downloadingFormat !== null}
+                onClick={() => handleDownload('docx')}
+                className="inline-flex items-center space-x-1.5 bg-blue-50 hover:bg-blue-100 text-blue-800 text-xs font-bold px-3 py-1.5 rounded-xl border border-blue-200 transition-colors shadow-2xs cursor-pointer disabled:opacity-50"
+                title="Download original DOCX with official header and footer"
+              >
+                <Download className="w-3.5 h-3.5 text-blue-600" />
+                <span>{downloadingFormat === 'docx' ? 'Preparing DOCX...' : 'Download Word (.docx)'}</span>
+              </button>
+
+              <button
+                type="button"
+                disabled={downloadingFormat !== null}
+                onClick={() => handleDownload('pdf')}
+                className="inline-flex items-center space-x-1.5 bg-white hover:bg-slate-100 text-slate-800 text-xs font-semibold px-3 py-1.5 rounded-xl border border-slate-300 transition-colors shadow-2xs cursor-pointer disabled:opacity-50"
+                title="Download document as PDF"
+              >
+                <Download className="w-3.5 h-3.5 text-[#FA7014]" />
+                <span>{downloadingFormat === 'pdf' ? 'Preparing PDF...' : 'Download PDF (.pdf)'}</span>
+              </button>
+            </>
+          ) : (
+            <button
+              type="button"
+              disabled={downloadingFormat !== null}
+              onClick={() => handleDownload('pdf')}
+              className="inline-flex items-center space-x-1.5 bg-white hover:bg-slate-100 text-slate-800 text-xs font-semibold px-3 py-1.5 rounded-xl border border-slate-300 transition-colors shadow-2xs cursor-pointer disabled:opacity-50"
+              title="Download original document with intact format and official corporate header & footer"
+            >
+              <Download className="w-3.5 h-3.5 text-[#FA7014]" />
+              <span>
+                {downloadingFormat !== null
+                  ? 'Preparing Download...'
+                  : isPdf
+                  ? 'Download PDF (.pdf)'
+                  : 'Download Document'}
+              </span>
+            </button>
+          )}
+        </div>
       </div>
 
       {/* VIEWER BODY */}
@@ -361,22 +496,38 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({
         {/* 2. FORMATTED DOCUMENT / POLICY VIEW */}
         {viewMode === 'formatted' && (
           <div className="w-full max-w-4xl bg-white border border-slate-200 rounded-2xl p-6 sm:p-8 shadow-xs text-slate-800">
-            <div className="border-b border-slate-200 pb-4 mb-6 flex items-center justify-between">
+            <div className="border-b border-slate-200 pb-4 mb-6 flex flex-wrap items-center justify-between gap-3">
               <div>
                 <span className="text-[10px] font-bold uppercase tracking-widest text-[#FA7014]">
-                  Formatted Document Content
+                  Official Document Content
                 </span>
                 <h3 className="text-lg font-bold text-slate-900 mt-0.5">{fileName}</h3>
               </div>
-              <span className="bg-orange-50 text-[#FA7014] text-xs px-2.5 py-1 rounded-lg border border-orange-200 font-mono font-bold flex items-center space-x-1.5">
-                <FileCheck className="w-3.5 h-3.5" />
-                <span>Text Extracted</span>
-              </span>
+              <div className="flex items-center space-x-2">
+                {effectiveHeaderFooterData && (
+                  <span className="bg-emerald-50 text-emerald-700 text-xs px-2.5 py-1 rounded-lg border border-emerald-200 font-semibold flex items-center space-x-1.5">
+                    <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
+                    <span>Approved & Authorized</span>
+                  </span>
+                )}
+                <span className="bg-orange-50 text-[#FA7014] text-xs px-2.5 py-1 rounded-lg border border-orange-200 font-mono font-bold flex items-center space-x-1.5">
+                  <FileCheck className="w-3.5 h-3.5" />
+                  <span>Text Extracted</span>
+                </span>
+              </div>
             </div>
 
-            <div className="prose max-w-none text-sm leading-relaxed space-y-4">
-              {readableFormattedText.split('\n\n').map((para, i) => {
+            {/* DYNAMIC CORPORATE HEADER TABLE */}
+            {effectiveHeaderFooterData && (
+              <div className="mb-6">
+                <DocumentHeaderTable data={effectiveHeaderFooterData} />
+              </div>
+            )}
+
+            <div className="prose max-w-none text-sm leading-relaxed space-y-4 py-2">
+              {cleanBodyForFormatted.split('\n\n').map((para, i) => {
                 const trimmed = para.trim();
+                if (!trimmed) return null;
                 if (trimmed.startsWith('# ')) {
                   return (
                     <h1 key={i} className="text-xl font-bold text-slate-900 border-b border-slate-200 pb-2 mt-4">
@@ -414,6 +565,13 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({
                 );
               })}
             </div>
+
+            {/* DYNAMIC CORPORATE FOOTER TABLE */}
+            {effectiveHeaderFooterData && (
+              <div className="mt-8 pt-4 border-t border-slate-100">
+                <DocumentFooterTable data={effectiveHeaderFooterData} />
+              </div>
+            )}
           </div>
         )}
 

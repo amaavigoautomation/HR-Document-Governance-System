@@ -173,27 +173,27 @@ export const LoginView: React.FC<LoginViewProps> = ({ users, onSelectUser }) => 
   };
 
   return (
-    <div className="w-full min-h-screen lg:h-screen lg:max-h-screen lg:overflow-hidden flex flex-col lg:flex-row bg-[#F8FAFC]">
-      {/* LEFT COLUMN: Expanded, Prominent Login Console with Zero-Scroll Fit */}
-      <div className="w-full lg:w-[55%] xl:w-[56%] flex flex-col justify-center items-center py-3 sm:py-5 px-4 sm:px-8 xl:px-12 relative lg:h-screen">
+    <div className="w-full min-h-screen flex flex-col lg:flex-row bg-[#F8FAFC] overflow-y-auto">
+      {/* LEFT COLUMN: Expanded, Prominent Login Console with Smooth Vertical Scroll */}
+      <div className="w-full lg:w-[58%] xl:w-[60%] flex flex-col justify-start lg:justify-center items-center py-8 sm:py-12 px-4 sm:px-10 xl:px-16 relative overflow-y-auto min-h-screen">
         {/* Subtle Background Glows */}
-        <div className="absolute top-1/4 left-1/2 -translate-x-1/2 w-80 h-80 bg-[#FA7014]/5 rounded-full blur-3xl pointer-events-none" />
+        <div className="absolute top-1/4 left-1/2 -translate-x-1/2 w-96 h-96 bg-[#FA7014]/5 rounded-full blur-3xl pointer-events-none" />
 
-        <div className="w-full max-w-[480px] sm:max-w-[510px] flex flex-col items-center relative z-10">
+        <div className="w-full max-w-[560px] sm:max-w-[590px] flex flex-col items-center relative z-10 my-auto">
           {/* Header & Branding */}
-          <div className="w-full text-center mb-3">
-            <div className="flex justify-center items-center mb-1">
-              <AmaavigoLogo size="md" variant="full" theme="light" height={48} align="center" className="mx-auto shrink-0" />
+          <div className="w-full text-center mb-5">
+            <div className="flex justify-center items-center mb-2">
+              <AmaavigoLogo size="md" variant="full" theme="light" height={52} align="center" className="mx-auto shrink-0" />
             </div>
-            <h1 className="text-2xl sm:text-[26px] font-extrabold text-slate-900 tracking-tight leading-snug">
+            <h1 className="text-2xl sm:text-[28px] font-extrabold text-slate-900 tracking-tight leading-snug">
               HR Document Governance
             </h1>
-            <p className="mt-0.5 text-xs sm:text-sm text-slate-500 max-w-sm mx-auto">
+            <p className="mt-1 text-xs sm:text-sm text-slate-500 max-w-md mx-auto">
               Centralized Policy Lifecycle Control, Approvals & Compliance
             </p>
 
             {/* 3 Roles Selector Tabs (Bigger & Clearer) */}
-            <div className="mt-2.5 inline-flex p-1 rounded-xl bg-white border border-slate-200/90 shadow-xs">
+            <div className="mt-4 inline-flex p-1.5 rounded-xl bg-white border border-slate-200 shadow-xs">
               <button
                 id="tab-select-employee"
                 type="button"
@@ -201,7 +201,7 @@ export const LoginView: React.FC<LoginViewProps> = ({ users, onSelectUser }) => 
                   setActiveRole('employee');
                   setErrorMessage('');
                 }}
-                className={`flex items-center space-x-2 px-3.5 sm:px-4 py-2 rounded-lg text-xs sm:text-sm font-bold transition-all cursor-pointer ${
+                className={`flex items-center space-x-2 px-4 sm:px-5 py-2.5 rounded-lg text-xs sm:text-sm font-bold transition-all cursor-pointer ${
                   activeRole === 'employee'
                     ? 'bg-[#FA7014] text-white shadow-xs'
                     : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
@@ -218,7 +218,7 @@ export const LoginView: React.FC<LoginViewProps> = ({ users, onSelectUser }) => 
                   setActiveRole('creator');
                   setErrorMessage('');
                 }}
-                className={`flex items-center space-x-2 px-3.5 sm:px-4 py-2 rounded-lg text-xs sm:text-sm font-bold transition-all cursor-pointer ${
+                className={`flex items-center space-x-2 px-4 sm:px-5 py-2.5 rounded-lg text-xs sm:text-sm font-bold transition-all cursor-pointer ${
                   activeRole === 'creator'
                     ? 'bg-slate-900 text-white shadow-xs'
                     : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
@@ -235,7 +235,7 @@ export const LoginView: React.FC<LoginViewProps> = ({ users, onSelectUser }) => 
                   setActiveRole('approver');
                   setErrorMessage('');
                 }}
-                className={`flex items-center space-x-2 px-3.5 sm:px-4 py-2 rounded-lg text-xs sm:text-sm font-bold transition-all cursor-pointer ${
+                className={`flex items-center space-x-2 px-4 sm:px-5 py-2.5 rounded-lg text-xs sm:text-sm font-bold transition-all cursor-pointer ${
                   activeRole === 'approver'
                     ? 'bg-slate-900 text-white shadow-xs'
                     : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
@@ -248,7 +248,7 @@ export const LoginView: React.FC<LoginViewProps> = ({ users, onSelectUser }) => 
           </div>
 
           {/* Main Authentication Card (Enlarged & Prominent) */}
-          <div className="w-full bg-white rounded-2xl border border-slate-200 p-5 sm:p-6 shadow-xl shadow-slate-200/60">
+          <div className="w-full bg-white rounded-2xl border border-slate-200 p-6 sm:p-8 shadow-xl shadow-slate-200/60">
             {/* Error Banner */}
             {errorMessage && (
               <div className="mb-3 p-3 rounded-xl bg-rose-50 border border-rose-200 flex items-start space-x-2.5 text-xs sm:text-sm text-rose-700 animate-in fade-in">

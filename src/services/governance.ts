@@ -18,6 +18,8 @@ import { compareDocumentTexts } from './comparison';
 import { defaultEmailProvider } from './email';
 import { calculateSha256, defaultStorageProvider } from './storage';
 import { firestoreService } from './firestoreService';
+import { appendApprovedHeaderAndFooter, formatDDMMYYYY } from '../utils/documentHeaderFooter';
+import { stampPdfWithHeaderFooter, stampDocxWithHeaderFooter } from '../utils/documentStamper';
 
 export class DocumentGovernanceEngine {
   private users: User[] = [];
@@ -569,14 +571,21 @@ export class DocumentGovernanceEngine {
     return this.documentMasters.find((d) => d.id === id || d.documentId === id);
   }
 
-  // Get all Versions for a Document Master
-  public getDocumentVersions(documentMasterId: string): DocumentVersion[] {
+  // Get all Versions for a Document Master, or all versions across system if omitted
+  public getDocumentVersions(documentMasterId?: string): DocumentVersion[] {
+    if (!documentMasterId) {
+      return [...this.documentVersions];
+    }
     return this.documentVersions
       .filter((v) => v.documentMasterId === documentMasterId)
       .sort((a, b) => {
         // Sort newest first
         return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
       });
+  }
+
+  public getAllVersions(): DocumentVersion[] {
+    return [...this.documentVersions];
   }
 
   public getVersionById(id: string): DocumentVersion | undefined {
@@ -1024,6 +1033,41 @@ export class DocumentGovernanceEngine {
 
     const nowIso = new Date().toISOString();
 
+    // 0. Append dynamic Corporate Header & Footer to the approved document BEFORE saving and dispatching emails
+    const headerFooterData = {
+      companyName: master.companyName || 'Amaavigo',
+      documentTitle: master.title || version.documentTitle,
+      versionNumber: version.versionNumber,
+      effectiveDate: formatDDMMYYYY(version.effectiveFrom || nowIso),
+      createdByName: version.createdByName || master.createdByName || 'Amee Shah',
+      approvedByName: reviewer.name,
+      approvedDate: formatDDMMYYYY(nowIso),
+    };
+
+    // Inject official dynamic Header & Footer into rawContent
+    version.rawContent = appendApprovedHeaderAndFooter(version.rawContent || '', headerFooterData);
+    version.contentHash = calculateSha256(version.rawContent);
+    try {
+      version.fileSize = new Blob([version.rawContent]).size;
+    } catch {
+      version.fileSize = (version.rawContent || '').length;
+    }
+
+    // Update physical/simulated storage with the approved document containing the header and footer
+    try {
+      await defaultStorageProvider.uploadFile(
+        master.documentId,
+        master.category,
+        version.versionNumber,
+        version.fileName || `${master.title.replace(/[^a-zA-Z0-9]/g, '_')}_v${version.versionNumber}.txt`,
+        version.rawContent,
+        version.mimeType || 'text/markdown'
+      );
+      version.fileUrl = defaultStorageProvider.getFileUrl(version.storageKey);
+    } catch (err) {
+      console.warn('Storage sync error with header/footer:', err);
+    }
+
     // 1. Lock the version & set status APPROVED/PUBLISHED
     version.locked = true;
     version.status = VersionStatus.PUBLISHED;
@@ -1122,12 +1166,16 @@ export class DocumentGovernanceEngine {
           `• Document ID: ${master.documentId}\n` +
           `• Category: ${master.category}\n` +
           `• Department: ${master.departmentName}\n` +
-          `• Effective Date: ${version.effectiveFrom || 'Immediate'}\n` +
+          `• Version: ${version.versionNumber}\n` +
+          `• Effective Date: ${formatDDMMYYYY(version.effectiveFrom || nowIso)}\n` +
+          `• Created By: ${version.createdByName || master.createdByName || 'HR Creator'}\n` +
+          `• Approved By: ${reviewer.name}\n` +
+          `• Approved Date: ${formatDDMMYYYY(nowIso)}\n` +
           `• Compliance Acknowledgement Required: YES (Mandatory within 14 calendar days)\n\n` +
           `HOW TO COMPLY:\n` +
           `1. Log in to your Amaavigo Employee Portal using your Employee ID and credentials.\n` +
           `2. Navigate to the Employee Portal tab.\n` +
-          `3. Review the complete document and complete your electronic compliance acknowledgment.\n\n` +
+          `3. Review the complete document with official corporate Header & Footer, and complete your electronic compliance acknowledgment.\n\n` +
           `Note: To ensure document security, confidentiality, and tamper-proof version control, documents are securely accessed directly inside the authenticated Employee Portal.\n\n` +
           `Sincerely,\nHuman Resources Governance & Compliance Team\n${master.companyName}`;
 
@@ -1178,9 +1226,13 @@ export class DocumentGovernanceEngine {
           `• Document ID: ${master.documentId}\n` +
           `• Category: ${master.category}\n` +
           `• Department: ${master.departmentName}\n` +
-          `• Effective Date: ${version.effectiveFrom || 'Immediate'}\n` +
+          `• Version: ${version.versionNumber}\n` +
+          `• Effective Date: ${formatDDMMYYYY(version.effectiveFrom || nowIso)}\n` +
+          `• Created By: ${version.createdByName || master.createdByName || 'HR Creator'}\n` +
+          `• Approved By: ${reviewer.name}\n` +
+          `• Approved Date: ${formatDDMMYYYY(nowIso)}\n` +
           `• Compliance Acknowledgement Required: NO (Informational / Reference only)\n\n` +
-          `You can view and read the complete document anytime by logging into the Amaavigo Employee Portal.\n\n` +
+          `You can view and read the complete document with official corporate Header & Footer anytime by logging into the Amaavigo Employee Portal.\n\n` +
           `Sincerely,\nHuman Resources Governance & Compliance Team\n${master.companyName}`;
 
         const employeeAudience = this.getEmployees();
