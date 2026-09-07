@@ -16,6 +16,8 @@ import {
   Lock,
   GitCompare,
   MessageSquare,
+  Trash2,
+  Loader2,
 } from 'lucide-react';
 import { AuditLogEntry, DocumentMaster, DocumentVersion, User, VersionStatus } from '../types';
 import { StatusBadge } from './StatusBadge';
@@ -24,7 +26,7 @@ import { governanceEngine } from '../services/governance';
 import { auditService } from '../services/audit';
 import { formatIST } from '../utils/dateFormat';
 import { formatDDMMYYYY } from '../utils/documentHeaderFooter';
-import { Trash2 } from 'lucide-react';
+import { downloadDocumentWithIntactFormat } from '../utils/documentStamper';
 
 interface DocumentDetailModalProps {
   document: DocumentMaster;
@@ -46,6 +48,35 @@ export const DocumentDetailModal: React.FC<DocumentDetailModalProps> = ({
   const [selectedVersionId, setSelectedVersionId] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<'timeline' | 'audit' | 'preview'>('timeline');
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [downloadingVersionId, setDownloadingVersionId] = useState<string | null>(null);
+
+  const handleDownloadVersion = async (ver: DocumentVersion, forcedFormat?: 'pdf' | 'docx') => {
+    try {
+      setDownloadingVersionId(ver.id);
+      await downloadDocumentWithIntactFormat({
+        fileName: ver.fileName || `${ver.documentId || document.documentId}_v${ver.versionNumber}.pdf`,
+        documentTitle: ver.documentTitle || document.title,
+        versionNumber: ver.versionNumber,
+        effectiveDate: formatDDMMYYYY(ver.effectiveFrom || ver.createdAt),
+        createdByName: ver.createdByName || document.createdByName || 'Amee Shah',
+        approvedByName:
+          ver.reviewedByName ||
+          (ver.status === VersionStatus.PUBLISHED ? 'Vishal Shah' : 'Pending Review'),
+        approvedDate:
+          ver.reviewedAt || ver.publishedAt
+            ? formatDDMMYYYY(ver.reviewedAt || ver.publishedAt!)
+            : formatDDMMYYYY(ver.createdAt),
+        companyName: document.companyName || 'Amaavigo',
+        rawContent: ver.rawContent,
+        fileUrl: ver.fileUrl,
+        forcedFormat,
+      });
+    } catch (err) {
+      console.error('Failed to download document version:', err);
+    } finally {
+      setDownloadingVersionId(null);
+    }
+  };
 
   const versions = governanceEngine.getDocumentVersions(document.id);
   const [auditLogs, setAuditLogs] = useState<AuditLogEntry[]>(() =>
@@ -200,18 +231,6 @@ export const DocumentDetailModal: React.FC<DocumentDetailModalProps> = ({
             <Eye className="w-4 h-4" />
             <span>Selected Version File Preview</span>
           </button>
-
-          <button
-            onClick={() => setActiveTab('audit')}
-            className={`pb-3 text-xs font-bold transition-all border-b-2 flex items-center space-x-1.5 ${
-              activeTab === 'audit'
-                ? 'border-[#FA7014] text-[#FA7014]'
-                : 'border-transparent text-slate-500 hover:text-slate-900'
-            }`}
-          >
-            <History className="w-4 h-4" />
-            <span>Audit Trail ({auditLogs.length})</span>
-          </button>
         </div>
 
         {/* BODY */}
@@ -266,22 +285,39 @@ export const DocumentDetailModal: React.FC<DocumentDetailModalProps> = ({
 
                         <div className="flex items-center space-x-2">
                           <button
+                            id={`btn-view-content-${ver.id}`}
                             onClick={() => {
                               setSelectedVersionId(ver.id);
                               setActiveTab('preview');
                             }}
-                            className="inline-flex items-center space-x-1 text-xs font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 px-2.5 py-1.5 rounded-lg transition-colors border border-slate-300"
+                            className="inline-flex items-center space-x-1 text-xs font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 px-2.5 py-1.5 rounded-lg transition-colors border border-slate-300 cursor-pointer"
                           >
                             <Eye className="w-3.5 h-3.5" />
                             <span>View Content</span>
                           </button>
 
                           <button
+                            id={`btn-compare-${ver.id}`}
                             onClick={() => onOpenComparison(ver.id)}
-                            className="inline-flex items-center space-x-1 text-xs font-semibold text-[#FA7014] bg-orange-50 hover:bg-orange-100 px-2.5 py-1.5 rounded-lg transition-colors border border-orange-200"
+                            className="inline-flex items-center space-x-1 text-xs font-semibold text-[#FA7014] bg-orange-50 hover:bg-orange-100 px-2.5 py-1.5 rounded-lg transition-colors border border-orange-200 cursor-pointer"
                           >
                             <GitCompare className="w-3.5 h-3.5" />
                             <span>Compare Baseline</span>
+                          </button>
+
+                          <button
+                            id={`btn-download-version-${ver.id}`}
+                            onClick={() => handleDownloadVersion(ver)}
+                            disabled={downloadingVersionId === ver.id}
+                            className="inline-flex items-center space-x-1.5 text-xs font-semibold text-slate-700 hover:text-slate-950 bg-white hover:bg-slate-100 px-2.5 py-1.5 rounded-lg transition-colors border border-slate-300 shadow-2xs cursor-pointer disabled:opacity-60"
+                            title={`Download ${ver.fileName || `Version ${ver.versionNumber}`}`}
+                          >
+                            {downloadingVersionId === ver.id ? (
+                              <Loader2 className="w-3.5 h-3.5 animate-spin text-[#FA7014]" />
+                            ) : (
+                              <Download className="w-3.5 h-3.5 text-slate-600" />
+                            )}
+                            <span>Download</span>
                           </button>
                         </div>
                       </div>
@@ -348,26 +384,52 @@ export const DocumentDetailModal: React.FC<DocumentDetailModalProps> = ({
           {/* TAB 2: SELECTED VERSION PREVIEW */}
           {activeTab === 'preview' && (
             <div className="space-y-4">
+              <div className="bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 flex items-center justify-between">
+                <div className="flex items-center space-x-2 text-xs">
+                  <span className="font-semibold text-slate-800">Previewing Version:</span>
+                  <span className="font-mono font-bold text-slate-900 bg-white px-2 py-0.5 rounded border border-slate-200">
+                    v{activeVersion.versionNumber}
+                  </span>
+                  <span className="text-slate-400">•</span>
+                  <span className="text-slate-600 font-mono text-[11px] truncate max-w-[200px]" title={activeVersion.fileName}>
+                    {activeVersion.fileName}
+                  </span>
+                </div>
+                <button
+                  id="btn-preview-download"
+                  onClick={() => handleDownloadVersion(activeVersion)}
+                  disabled={downloadingVersionId === activeVersion.id}
+                  className="inline-flex items-center space-x-1.5 text-xs font-semibold text-white bg-slate-900 hover:bg-slate-800 px-3 py-1.5 rounded-lg transition-colors cursor-pointer disabled:opacity-60 shadow-xs"
+                  title={`Download v${activeVersion.versionNumber}`}
+                >
+                  {downloadingVersionId === activeVersion.id ? (
+                    <Loader2 className="w-3.5 h-3.5 animate-spin text-[#FA7014]" />
+                  ) : (
+                    <Download className="w-3.5 h-3.5" />
+                  )}
+                  <span>Download Version</span>
+                </button>
+              </div>
+
               <DocumentViewer
                 fileName={activeVersion.fileName}
                 rawContent={activeVersion.rawContent}
                 fileUrl={activeVersion.fileUrl}
                 mimeType={activeVersion.mimeType}
-                headerFooterData={
-                  activeVersion.status === VersionStatus.PUBLISHED || activeVersion.reviewedByName
-                    ? {
-                        companyName: document.companyName || 'Amaavigo',
-                        documentTitle: document.title || activeVersion.documentTitle,
-                        versionNumber: activeVersion.versionNumber,
-                        effectiveDate: formatDDMMYYYY(activeVersion.effectiveFrom || activeVersion.createdAt),
-                        createdByName: activeVersion.createdByName || document.createdByName || 'Amee Shah',
-                        approvedByName: activeVersion.reviewedByName || 'Vishal Shah',
-                        approvedDate: formatDDMMYYYY(
-                          activeVersion.reviewedAt || activeVersion.publishedAt || activeVersion.createdAt
-                        ),
-                      }
-                    : undefined
-                }
+                headerFooterData={{
+                  companyName: document.companyName || 'Amaavigo',
+                  documentTitle: document.title || activeVersion.documentTitle,
+                  versionNumber: activeVersion.versionNumber,
+                  effectiveDate: formatDDMMYYYY(activeVersion.effectiveFrom || activeVersion.createdAt),
+                  createdByName: activeVersion.createdByName || document.createdByName || 'Amee Shah',
+                  approvedByName:
+                    activeVersion.reviewedByName ||
+                    (activeVersion.status === VersionStatus.PUBLISHED ? 'Authorized Approver' : 'Pending Review'),
+                  approvedDate:
+                    activeVersion.reviewedAt || activeVersion.publishedAt
+                      ? formatDDMMYYYY(activeVersion.reviewedAt || activeVersion.publishedAt!)
+                      : 'Pending Approval',
+                }}
               />
             </div>
           )}

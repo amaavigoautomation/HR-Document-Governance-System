@@ -1,4 +1,6 @@
 import JSZip from 'jszip';
+import { stripPolicyMetadataHeader } from './documentHeaderFooter';
+import { removePolicyMetadataFromDocxXml, cleanDocxBytes } from './documentStamper';
 
 export interface ParsedFileResult {
   fileName: string;
@@ -47,14 +49,15 @@ export async function extractTextFromDocx(arrayBuffer: ArrayBuffer): Promise<str
   }
 
   const xmlString = await docXmlFile.async('text');
+  const cleanedXml = removePolicyMetadataFromDocxXml(xmlString);
   const parser = new DOMParser();
-  const xmlDoc = parser.parseFromString(xmlString, 'application/xml');
+  const xmlDoc = parser.parseFromString(cleanedXml, 'application/xml');
 
   // Check for XML parsing errors
   const parseError = xmlDoc.getElementsByTagName('parsererror');
   if (parseError.length > 0) {
     // Regex fallback if DOMParser fails
-    return extractTextFromDocxXmlRegex(xmlString);
+    return extractTextFromDocxXmlRegex(cleanedXml);
   }
 
   const paragraphs = xmlDoc.getElementsByTagName('w:p');
@@ -216,13 +219,30 @@ export async function parseUploadedFile(file: File): Promise<ParsedFileResult> {
       const arrayBuffer = await file.arrayBuffer();
       const extractedText = await extractTextFromDocx(arrayBuffer);
 
+      // Clean redundant metadata directly from the DOCX zip XML (tables & paragraphs)
+      let cleanedDataUrl = fileDataUrl;
+      try {
+        const cleanedBytes = await cleanDocxBytes(arrayBuffer);
+        const blob = new Blob([cleanedBytes], {
+          type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        });
+        cleanedDataUrl = await new Promise<string>((resolve) => {
+          const r = new FileReader();
+          r.onload = () => resolve(r.result as string);
+          r.onerror = () => resolve(fileDataUrl);
+          r.readAsDataURL(blob);
+        });
+      } catch (cleanErr) {
+        console.warn('Could not pre-clean DOCX binary:', cleanErr);
+      }
+
       if (extractedText && extractedText.trim().length > 0) {
         return {
           fileName: file.name,
           mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
           fileSize: file.size,
-          extractedText: extractedText.trim(),
-          fileDataUrl,
+          extractedText: stripPolicyMetadataHeader(extractedText.trim()),
+          fileDataUrl: cleanedDataUrl,
           isPdf: false,
         };
       }
@@ -262,7 +282,7 @@ export async function parseUploadedFile(file: File): Promise<ParsedFileResult> {
             fileName: file.name,
             mimeType: 'application/pdf',
             fileSize: file.size,
-            extractedText: fullText.trim(),
+            extractedText: stripPolicyMetadataHeader(fullText.trim()),
             fileDataUrl,
             isPdf: true,
             pageCount: numPages,
@@ -281,9 +301,10 @@ export async function parseUploadedFile(file: File): Promise<ParsedFileResult> {
       fileName: file.name,
       mimeType: 'application/pdf',
       fileSize: file.size,
-      extractedText:
+      extractedText: stripPolicyMetadataHeader(
         streamExtracted ||
-        `# Document: ${file.name.replace(/\.pdf$/i, '')}\n\n*Uploaded PDF document containing formatted pages.*`,
+        `# Document: ${file.name.replace(/\.pdf$/i, '')}\n\n*Uploaded PDF document containing formatted pages.*`
+      ),
       fileDataUrl,
       isPdf: true,
       pageCount: 1,
@@ -296,7 +317,7 @@ export async function parseUploadedFile(file: File): Promise<ParsedFileResult> {
     fileName: file.name,
     mimeType,
     fileSize: file.size,
-    extractedText: text,
+    extractedText: stripPolicyMetadataHeader(text),
     fileDataUrl,
     isPdf: false,
   };

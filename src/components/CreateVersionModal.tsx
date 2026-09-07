@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import {
   X,
   GitBranch,
@@ -11,10 +11,12 @@ import {
   Layers,
   ArrowRight,
   Sparkles,
+  Calendar,
 } from 'lucide-react';
 import { DocumentMaster, DocumentVersion, User, VersionStatus, VersionType } from '../types';
 import { governanceEngine } from '../services/governance';
 import { parseUploadedFile, extractTextFromRawPdfStream, isRawPdfStream } from '../utils/fileParser';
+import { stripPolicyMetadataHeader, extractCleanBody, formatDDMMYYYY, DocumentHeaderTable } from '../utils/documentHeaderFooter';
 
 interface CreateVersionModalProps {
   currentUser: User;
@@ -89,23 +91,52 @@ export const CreateVersionModal: React.FC<CreateVersionModalProps> = ({
     docVersions
   );
 
+  const lastLoadedDocIdRef = useRef<string | null>(null);
+
   // When selected document changes, populate rawContent with rejected draft (if exists) or baseline text
   useEffect(() => {
+    if (!selectedDocId) return;
+
+    // Only re-initialize content and effective date when switching to a different document master
+    if (lastLoadedDocIdRef.current === selectedDocId) {
+      return;
+    }
+    lastLoadedDocIdRef.current = selectedDocId;
+
     const sourceVer = rejectedVersion || baselineVersion;
     if (sourceVer) {
       const cleanContent = isRawPdfStream(sourceVer.rawContent)
         ? extractTextFromRawPdfStream(sourceVer.rawContent)
         : sourceVer.rawContent;
-      setRawContent(cleanContent || '');
+      // Strip any previous header/footer tags and redundant policy metadata lines
+      setRawContent(cleanContent ? extractCleanBody(cleanContent) : '');
       setFileName(`${selectedMaster?.documentId}_revised_v${calculatedNextVersion}.md`);
       setFileDataUrl('');
       setMimeType('text/markdown');
       setUploadStatus('');
+
+      // Default effective date for this new revision to today's date (or rejected draft's date if future)
+      const todayStr = new Date().toISOString().split('T')[0];
+      if (rejectedVersion?.effectiveFrom && rejectedVersion.effectiveFrom >= todayStr) {
+        setEffectiveFrom(rejectedVersion.effectiveFrom);
+      } else {
+        setEffectiveFrom(todayStr);
+      }
+
       if (rejectedVersion?.reviewerComments) {
         setChangeSummary(`Addressed reviewer feedback on v${rejectedVersion.versionNumber}: ${rejectedVersion.reviewerComments.slice(0, 100)}`);
+      } else {
+        setChangeSummary('');
       }
     }
-  }, [selectedDocId, calculatedNextVersion]);
+  }, [selectedDocId, rejectedVersion, baselineVersion, selectedMaster]);
+
+  // Keep default file name updated when revision magnitude changes without wiping user inputs
+  useEffect(() => {
+    if (!fileDataUrl && selectedMaster && calculatedNextVersion) {
+      setFileName(`${selectedMaster.documentId}_revised_v${calculatedNextVersion}.md`);
+    }
+  }, [calculatedNextVersion, selectedMaster, fileDataUrl]);
 
   // Quick Revision Mutator for demo testing
   const applyQuickRevisionExample = (kind: 'broadband' | 'parental' | 'remoteDays') => {
@@ -189,10 +220,10 @@ export const CreateVersionModal: React.FC<CreateVersionModalProps> = ({
       await governanceEngine.createNewVersion(currentUser, {
         documentMasterId: selectedDocId,
         revisionType,
-        rawContent,
+        rawContent: extractCleanBody(rawContent),
         fileName: fileName || `${selectedMaster?.documentId}_v${calculatedNextVersion}.txt`,
         changeSummary: changeSummary.trim(),
-        effectiveFrom,
+        effectiveFrom: effectiveFrom || new Date().toISOString().split('T')[0],
         fileDataUrl,
         mimeType: mimeType || (fileName.endsWith('.pdf') ? 'application/pdf' : 'text/markdown'),
         previousVersionId: rejectedVersion?.id || selectedMaster?.currentPublishedVersionId || docVersions[0]?.id,
@@ -312,12 +343,77 @@ export const CreateVersionModal: React.FC<CreateVersionModalProps> = ({
             </div>
           )}
 
+          {/* 1. EFFECTIVE DATE (TAKEN & ADDED FIRST FOR REVISION AS REQUESTED) */}
+          <div className="bg-orange-50/40 border-2 border-orange-200/90 rounded-2xl p-4 space-y-3 shadow-xs">
+            <div>
+              <div className="flex items-center space-x-2">
+                <span className="w-5 h-5 rounded-md bg-[#FA7014] text-white flex items-center justify-center text-xs font-black shadow-xs">
+                  1
+                </span>
+                <label className="text-xs font-bold text-slate-900 uppercase tracking-wider flex items-center space-x-1.5" htmlFor="input-revision-effective-date">
+                  <Calendar className="w-4 h-4 text-[#FA7014]" />
+                  <span>Effective Date for Revision</span>
+                  <span className="text-[#FA7014] font-black">*</span>
+                </label>
+              </div>
+              <p className="text-[11px] text-slate-500 mt-1 ml-7">
+                Specify when this revision becomes effective. This will be stamped into the official document header.
+              </p>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-12 gap-3 items-center pt-1">
+              <div className="sm:col-span-6">
+                <input
+                  id="input-revision-effective-date"
+                  type="date"
+                  value={effectiveFrom}
+                  onChange={(e) => setEffectiveFrom(e.target.value)}
+                  className="w-full text-sm font-semibold p-2.5 bg-white border border-slate-300 text-slate-900 rounded-xl focus:outline-hidden focus:ring-2 focus:ring-[#FA7014] shadow-xs cursor-pointer"
+                  required
+                />
+              </div>
+
+              {/* Quick presets */}
+              <div className="sm:col-span-6 flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  onClick={() => setEffectiveFrom(new Date().toISOString().split('T')[0])}
+                  className="text-[11px] font-semibold px-2.5 py-1.5 bg-white hover:bg-orange-50 text-slate-700 hover:text-[#FA7014] border border-slate-200 rounded-lg transition-colors shadow-2xs cursor-pointer"
+                >
+                  Today
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const d = new Date();
+                    d.setDate(d.getDate() + 7);
+                    setEffectiveFrom(d.toISOString().split('T')[0]);
+                  }}
+                  className="text-[11px] font-semibold px-2.5 py-1.5 bg-white hover:bg-orange-50 text-slate-700 hover:text-[#FA7014] border border-slate-200 rounded-lg transition-colors shadow-2xs cursor-pointer"
+                >
+                  +7 Days
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const d = new Date();
+                    d.setMonth(d.getMonth() + 1, 1);
+                    setEffectiveFrom(d.toISOString().split('T')[0]);
+                  }}
+                  className="text-[11px] font-semibold px-2.5 py-1.5 bg-white hover:bg-orange-50 text-slate-700 hover:text-[#FA7014] border border-slate-200 rounded-lg transition-colors shadow-2xs cursor-pointer"
+                >
+                  1st Next Month
+                </button>
+              </div>
+            </div>
+          </div>
+
           {/* BASELINE & CALCULATED VERSION CARD */}
           {selectedMaster && (
             <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4 grid grid-cols-1 sm:grid-cols-3 gap-4 text-xs">
               <div>
                 <span className="text-slate-500 font-semibold uppercase tracking-wider text-[10px]">
-                  Document ID
+                  Document ID & Category
                 </span>
                 <div className="font-mono text-sm font-bold text-slate-900 mt-0.5">
                   {selectedMaster.documentId}
@@ -327,7 +423,7 @@ export const CreateVersionModal: React.FC<CreateVersionModalProps> = ({
 
               <div>
                 <span className="text-slate-500 font-semibold uppercase tracking-wider text-[10px]">
-                  {rejectedVersion ? 'Predecessor Draft' : 'Current Published Baseline'}
+                  {rejectedVersion ? 'Predecessor Draft' : 'Baseline Version'}
                 </span>
                 <div className="font-bold text-sm text-slate-900 mt-0.5">
                   {rejectedVersion
@@ -335,17 +431,20 @@ export const CreateVersionModal: React.FC<CreateVersionModalProps> = ({
                     : `v${selectedMaster.currentPublishedVersionNumber || '1.0'}`}
                 </div>
                 <span className="text-slate-500">
-                  {rejectedVersion ? 'Addressed by this version' : 'Operational Live Version'}
+                  {baselineVersion?.effectiveFrom ? `Effective: ${formatDDMMYYYY(baselineVersion.effectiveFrom)}` : 'Operational Baseline'}
                 </span>
               </div>
 
               <div className="bg-white p-3 rounded-xl border border-slate-200 shadow-xs">
                 <span className="text-slate-700 font-bold uppercase tracking-wider text-[10px]">
-                  Calculated New Version
+                  New Revision Target
                 </span>
                 <div className="font-mono text-base font-extrabold text-slate-900 mt-0.5 flex items-center space-x-1.5">
                   <span className="text-[#FA7014]">v{calculatedNextVersion}</span>
                   <span className="text-xs font-normal font-sans text-slate-500">({revisionType})</span>
+                </div>
+                <div className="text-[11px] text-[#FA7014] font-semibold mt-0.5">
+                  Effective: {formatDDMMYYYY(effectiveFrom)}
                 </div>
               </div>
             </div>
@@ -427,6 +526,46 @@ export const CreateVersionModal: React.FC<CreateVersionModalProps> = ({
               required
             />
           </div>
+
+          {/* UPDATED DOCUMENT HEADER & FOOTER PREVIEW FOR REVISION */}
+          {selectedMaster && (
+            <div className="border border-slate-200 rounded-2xl p-4 bg-white shadow-2xs space-y-2.5">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center space-x-2">
+                  <Sparkles className="w-4 h-4 text-[#FA7014]" />
+                  <span className="text-xs font-bold text-slate-900 uppercase tracking-wider">
+                    Updated Document Header for v{calculatedNextVersion}
+                  </span>
+                </div>
+                <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-md">
+                  Auto-Updated
+                </span>
+              </div>
+
+              {/* Dynamic Header Table */}
+              <DocumentHeaderTable
+                data={{
+                  companyName: selectedMaster.companyName || 'Amaavigo',
+                  documentTitle: selectedMaster.title,
+                  versionNumber: calculatedNextVersion,
+                  effectiveDate: formatDDMMYYYY(effectiveFrom),
+                  createdByName: currentUser.name,
+                  approvedByName: 'Pending Review',
+                  approvedDate: 'Pending Approval',
+                }}
+                className="!my-0 scale-95 sm:scale-100 origin-top"
+              />
+
+              <div className="flex items-center justify-between text-[11px] text-slate-500 pt-1">
+                <span>
+                  Header will be stamped with Effective Date: <strong className="text-slate-800 font-mono">{formatDDMMYYYY(effectiveFrom)}</strong>
+                </span>
+                <span className="text-[10px] font-medium text-slate-400">
+                  Footer stamps Created by: {currentUser.name}
+                </span>
+              </div>
+            </div>
+          )}
 
           {/* REVISED CONTENT EDITOR / UPLOAD */}
           <div className="border border-slate-200 rounded-2xl p-4 bg-slate-50/50">

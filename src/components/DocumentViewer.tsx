@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import {
   FileText,
-  Download,
   Eye,
   ZoomIn,
   ZoomOut,
@@ -23,9 +22,10 @@ import {
   DocumentHeaderFooterData,
   extractHeaderFooterData,
   extractCleanBody,
+  stripPolicyMetadataHeader,
 } from '../utils/documentHeaderFooter';
 import { generateCorporatePdfBlob } from '../utils/pdfGenerator';
-import { downloadDocumentWithIntactFormat, stampPdfWithHeaderFooter } from '../utils/documentStamper';
+import { stampPdfWithHeaderFooter } from '../utils/documentStamper';
 
 interface DocumentViewerProps {
   fileName: string;
@@ -272,41 +272,6 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({
     return extractCleanBody(readableFormattedText);
   }, [readableFormattedText]);
 
-  const [downloadingFormat, setDownloadingFormat] = useState<'pdf' | 'docx' | null>(null);
-
-  const handleDownload = async (forcedFormat?: 'pdf' | 'docx') => {
-    try {
-      setDownloadingFormat(forcedFormat || (isDocx ? 'docx' : 'pdf'));
-      await downloadDocumentWithIntactFormat({
-        fileName: fileName || (forcedFormat === 'docx' ? 'document.docx' : 'document.pdf'),
-        documentTitle: effectiveHeaderFooterData?.documentTitle || fileName.replace(/\.[^/.]+$/, ''),
-        versionNumber: effectiveHeaderFooterData?.versionNumber || '1.0',
-        effectiveDate: effectiveHeaderFooterData?.effectiveDate || new Date().toISOString(),
-        createdByName: effectiveHeaderFooterData?.createdByName,
-        approvedByName: effectiveHeaderFooterData?.approvedByName,
-        approvedDate: effectiveHeaderFooterData?.approvedDate,
-        companyName: effectiveHeaderFooterData?.companyName || 'Amaavigo',
-        rawContent,
-        fileUrl: stampedPdfUrl || fileUrl,
-        headerFooterData: effectiveHeaderFooterData,
-        forcedFormat,
-      });
-    } catch (err) {
-      console.error('Document download error, falling back to raw file download:', err);
-      const blob = new Blob([rawContent], { type: mimeType || 'text/plain' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = fileName || 'document.txt';
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
-    } finally {
-      setDownloadingFormat(null);
-    }
-  };
-
   return (
     <div className={`flex flex-col bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-sm ${className}`}>
       {/* TOOLBAR */}
@@ -409,52 +374,6 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({
             </div>
           </div>
         )}
-
-        {/* DOWNLOAD ACTION */}
-        <div className="flex items-center space-x-2">
-          {isDocx ? (
-            <>
-              <button
-                type="button"
-                disabled={downloadingFormat !== null}
-                onClick={() => handleDownload('docx')}
-                className="inline-flex items-center space-x-1.5 bg-blue-50 hover:bg-blue-100 text-blue-800 text-xs font-bold px-3 py-1.5 rounded-xl border border-blue-200 transition-colors shadow-2xs cursor-pointer disabled:opacity-50"
-                title="Download original DOCX with official header and footer"
-              >
-                <Download className="w-3.5 h-3.5 text-blue-600" />
-                <span>{downloadingFormat === 'docx' ? 'Preparing DOCX...' : 'Download Word (.docx)'}</span>
-              </button>
-
-              <button
-                type="button"
-                disabled={downloadingFormat !== null}
-                onClick={() => handleDownload('pdf')}
-                className="inline-flex items-center space-x-1.5 bg-white hover:bg-slate-100 text-slate-800 text-xs font-semibold px-3 py-1.5 rounded-xl border border-slate-300 transition-colors shadow-2xs cursor-pointer disabled:opacity-50"
-                title="Download document as PDF"
-              >
-                <Download className="w-3.5 h-3.5 text-[#FA7014]" />
-                <span>{downloadingFormat === 'pdf' ? 'Preparing PDF...' : 'Download PDF (.pdf)'}</span>
-              </button>
-            </>
-          ) : (
-            <button
-              type="button"
-              disabled={downloadingFormat !== null}
-              onClick={() => handleDownload('pdf')}
-              className="inline-flex items-center space-x-1.5 bg-white hover:bg-slate-100 text-slate-800 text-xs font-semibold px-3 py-1.5 rounded-xl border border-slate-300 transition-colors shadow-2xs cursor-pointer disabled:opacity-50"
-              title="Download original document with intact format and official corporate header & footer"
-            >
-              <Download className="w-3.5 h-3.5 text-[#FA7014]" />
-              <span>
-                {downloadingFormat !== null
-                  ? 'Preparing Download...'
-                  : isPdf
-                  ? 'Download PDF (.pdf)'
-                  : 'Download Document'}
-              </span>
-            </button>
-          )}
-        </div>
       </div>
 
       {/* VIEWER BODY */}
@@ -528,6 +447,12 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({
               {cleanBodyForFormatted.split('\n\n').map((para, i) => {
                 const trimmed = para.trim();
                 if (!trimmed) return null;
+                const isMetaPara =
+                  /^(?:(?:\*{1,2}|#+\s*|[-•|]\s*)?Policy\s*Owner\s*[:\-–—]?)/i.test(trimmed) ||
+                  /^(?:(?:\*{1,2}|#+\s*|[-•|]\s*)?Effective\s*Date\s*[:\-–—]?)/i.test(trimmed) ||
+                  /^(?:(?:\*{1,2}|#+\s*|[-•|]\s*)?Review\s*Frequency\s*[:\-–—]?)/i.test(trimmed) ||
+                  /^(?:(?:\*{1,2}|#+\s*|[-•|]\s*)?Applies\s*To\s*[:\-–—]?)/i.test(trimmed);
+                if (isMetaPara) return null;
                 if (trimmed.startsWith('# ')) {
                   return (
                     <h1 key={i} className="text-xl font-bold text-slate-900 border-b border-slate-200 pb-2 mt-4">
@@ -579,7 +504,7 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({
         {viewMode === 'raw' && (
           <div className="w-full">
             <pre className="font-mono text-xs text-slate-800 bg-white border border-slate-200 p-4 rounded-xl whitespace-pre-wrap leading-relaxed max-h-[50vh] overflow-y-auto">
-              {rawContent}
+              {stripPolicyMetadataHeader(rawContent)}
             </pre>
           </div>
         )}

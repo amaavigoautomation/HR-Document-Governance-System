@@ -25,6 +25,7 @@ import { ConfidentialityLevel, DocumentCategory, DocumentMaster, DocumentVersion
 import { StatusBadge } from './StatusBadge';
 import { governanceEngine } from '../services/governance';
 import { formatISTDate } from '../utils/dateFormat';
+import { formatDDMMYYYY } from '../utils/documentHeaderFooter';
 
 interface CreatorDashboardProps {
   currentUser: User;
@@ -388,7 +389,12 @@ export const CreatorDashboard: React.FC<CreatorDashboardProps> = ({
                         {inReview ? (
                           <div className="text-[11px] text-[#FA7014] mt-1 flex items-center space-x-1 font-medium">
                             <Clock className="w-3 h-3 text-[#FA7014]" />
-                            <span>v{inReview.versionNumber} in review</span>
+                            <span>
+                              v{inReview.versionNumber} in review{' '}
+                              <span className="text-slate-500 font-mono font-normal">
+                                (Eff: {formatDDMMYYYY(inReview.effectiveFrom || inReview.createdAt)})
+                              </span>
+                            </span>
                           </div>
                         ) : needsRevision ? (
                           <div className="text-[11px] text-[#FA7014] mt-1 flex items-center space-x-1 font-semibold">

@@ -8,6 +8,8 @@ import { defaultEmailProvider } from './src/services/email';
 import { dispatchLiveEmail, getEmailConfigStatus } from './src/services/serverEmail';
 import { UserRole } from './src/types';
 import { SEED_VERSIONS } from './src/data/seedData';
+import { generateCorporatePdfBlob } from './src/utils/pdfGenerator';
+import { generateCorporateDocxBlob } from './src/utils/documentStamper';
 
 async function startServer() {
   const app = express();
@@ -358,67 +360,52 @@ async function startServer() {
         return res.status(404).json({ error: 'File not found in storage provider' });
       }
 
-      // If requested as a PDF but stored as non-binary text/markdown, synthesize a valid standard PDF
+      // If requested as DOCX but stored as text/markdown, synthesize authentic corporate DOCX
+      if (
+        (file.metadata.fileName.endsWith('.docx') || file.metadata.mimeType?.includes('wordprocessingml')) &&
+        typeof file.data === 'string' &&
+        !file.data.startsWith('PK')
+      ) {
+        try {
+          const docxBlob = await generateCorporateDocxBlob({
+            documentTitle: file.metadata.fileName.replace(/\.docx$/i, ''),
+            versionNumber: '2.0',
+            effectiveDate: new Date().toISOString(),
+            createdByName: 'Amee Shah',
+            approvedByName: 'Vishal Shah',
+            approvedDate: new Date().toISOString(),
+            companyName: 'Amaavigo',
+            rawContent: file.data,
+            fileName: file.metadata.fileName,
+          });
+          const docxBytes = Buffer.from(await docxBlob.arrayBuffer());
+          res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
+          res.setHeader('Content-Disposition', `attachment; filename="${file.metadata.fileName}"`);
+          return res.send(docxBytes);
+        } catch (docxErr) {
+          console.warn('Server-side DOCX generation fallback:', docxErr);
+        }
+      }
+
+      // If requested as a PDF but stored as non-binary text/markdown, synthesize a valid corporate PDF
       if (
         (file.metadata.fileName.endsWith('.pdf') || file.metadata.mimeType === 'application/pdf') &&
         typeof file.data === 'string' &&
         !file.data.startsWith('%PDF')
       ) {
         try {
-          const { jsPDF } = await import('jspdf');
-          const doc = new jsPDF({ orientation: 'portrait', unit: 'pt', format: 'a4' });
-          const margin = 40;
-          const pageWidth = doc.internal.pageSize.getWidth();
-          const contentWidth = pageWidth - margin * 2;
-
-          // Header Box
-          doc.setDrawColor(15, 23, 42);
-          doc.setLineWidth(1.5);
-          doc.rect(margin, 40, contentWidth, 54, 'S');
-          doc.setFont('helvetica', 'bold');
-          doc.setFontSize(16);
-          doc.setTextColor(24, 26, 30);
-          doc.text('amaavig', margin + 12, 68);
-
-          // Orange brand mark
-          doc.setFillColor(250, 112, 20);
-          doc.setDrawColor(250, 112, 20);
-          doc.rect(margin + 75, 56, 3.5, 3.5, 'F');
-          doc.setLineWidth(2.5);
-          doc.circle(margin + 83, 64, 4.5, 'S');
-
-          doc.setFont('helvetica', 'normal');
-          doc.setFontSize(6.5);
-          doc.setTextColor(100, 116, 139);
-          doc.text('Where Brand takes Flight', margin + 12, 84);
-
-          // Document title in header
-          doc.setFont('helvetica', 'bold');
-          doc.setFontSize(8);
-          doc.setTextColor(15, 23, 42);
-          doc.text('Document Name:', margin + 130, 58);
-          doc.setFontSize(9.5);
-          doc.setTextColor(30, 41, 59);
-          const title = file.metadata.fileName.replace(/\.pdf$/i, '');
-          doc.text(doc.splitTextToSize(title, 220).slice(0, 2), margin + 130, 72);
-
-          // Body text (stripping HTML comments)
-          const cleanText = file.data.replace(/<!--[\s\S]*?-->/g, '').trim();
-          const lines = doc.splitTextToSize(cleanText, contentWidth);
-          let y = 115;
-          for (const line of lines) {
-            if (y > 780) {
-              doc.addPage();
-              y = 50;
-            }
-            doc.setFont('helvetica', 'normal');
-            doc.setFontSize(9);
-            doc.setTextColor(51, 65, 85);
-            doc.text(line, margin, y);
-            y += 13;
-          }
-
-          const pdfBytes = Buffer.from(doc.output('arraybuffer'));
+          const pdfBlob = generateCorporatePdfBlob({
+            documentTitle: file.metadata.fileName.replace(/\.pdf$/i, ''),
+            versionNumber: '2.0',
+            effectiveDate: new Date().toISOString(),
+            createdByName: 'Amee Shah',
+            approvedByName: 'Vishal Shah',
+            approvedDate: new Date().toISOString(),
+            companyName: 'Amaavigo',
+            rawContent: file.data,
+            fileName: file.metadata.fileName,
+          });
+          const pdfBytes = Buffer.from(await pdfBlob.arrayBuffer());
           res.setHeader('Content-Type', 'application/pdf');
           res.setHeader('Content-Disposition', `attachment; filename="${file.metadata.fileName}"`);
           return res.send(pdfBytes);

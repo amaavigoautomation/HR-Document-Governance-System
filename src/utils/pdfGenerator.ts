@@ -20,46 +20,33 @@ export interface CorporatePdfOptions {
 }
 
 /**
- * Generates a fully compliant, production-grade PDF document
- * with official Amaavigo corporate header table (including logo)
- * and governance approval footer sign-off.
+ * Draws the official Amaavigo Corporate Header Table on any given page.
+ * Table Dimensions: marginX = 40pt, width = 515.28pt, y = 32pt, height = 52pt.
  */
-export function generateCorporatePdfBlob(options: CorporatePdfOptions): Blob {
-  const doc = new jsPDF({
-    orientation: 'portrait',
-    unit: 'pt',
-    format: 'a4',
-  });
-
-  const pageWidth = doc.internal.pageSize.getWidth(); // ~595.28 pt
-  const pageHeight = doc.internal.pageSize.getHeight(); // ~841.89 pt
-  const marginX = 40;
-  const contentWidth = pageWidth - marginX * 2; // ~515.28 pt
-  const maxContentY = pageHeight - 65; // Leave room for running footer
-
-  const cleanVer = cleanVersionNumber(options.versionNumber);
-  const effective = formatDDMMYYYY(options.effectiveDate);
-  const approvedDt = formatDDMMYYYY(options.approvedDate || options.effectiveDate);
-  const creator = options.createdByName || 'Amee Shah';
-  const approver = options.approvedByName || 'Vishal Shah';
-  const title = options.documentTitle || 'Document';
-
-  // --- DRAW PAGE 1 HEADER TABLE ---
-  const headerY = 40;
-  const headerHeight = 58;
-
+export function drawCorporateHeaderTable(
+  doc: jsPDF,
+  meta: {
+    title: string;
+    version: string;
+    effectiveDate: string;
+  },
+  marginX: number,
+  contentWidth: number,
+  headerY = 32,
+  headerHeight = 52
+) {
   // Outer border & background
   doc.setFillColor(255, 255, 255);
   doc.rect(marginX, headerY, contentWidth, headerHeight, 'F');
   doc.setDrawColor(15, 23, 42); // slate-900
-  doc.setLineWidth(1.5);
+  doc.setLineWidth(1.3);
   doc.rect(marginX, headerY, contentWidth, headerHeight, 'S');
 
   // Column Boundaries
   const col1W = 125; // Logo
   const col2W = 175; // Document Name
-  const col3W = 80;  // Version
-  const col4W = contentWidth - col1W - col2W - col3W; // ~135.28 pt Effective Date
+  const col3W = 82;  // Version
+  const col4W = contentWidth - col1W - col2W - col3W; // ~133.28 pt Effective Date
 
   const col1X = marginX;
   const col2X = col1X + col1W;
@@ -67,191 +54,83 @@ export function generateCorporatePdfBlob(options: CorporatePdfOptions): Blob {
   const col4X = col3X + col3W;
 
   // Column Dividers
-  doc.setLineWidth(1);
+  doc.setLineWidth(0.8);
   doc.line(col2X, headerY, col2X, headerY + headerHeight);
   doc.line(col3X, headerY, col3X, headerY + headerHeight);
   doc.line(col4X, headerY, col4X, headerY + headerHeight);
 
   // Column 1: Amaavigo Brand Logo (Wordmark + Pip Notch + Ring)
   doc.setFont('helvetica', 'bold');
-  doc.setFontSize(16);
+  doc.setFontSize(15);
   doc.setTextColor(24, 26, 30);
-  doc.text('amaavig', col1X + 12, headerY + 28);
+  doc.text('amaavig', col1X + 10, headerY + 25);
 
   // Brand Orange Mark: "o" ring and pip notch (#FA7014 -> 250, 112, 20)
   doc.setFillColor(250, 112, 20);
   doc.setDrawColor(250, 112, 20);
   // Pip notch
-  doc.rect(col1X + 75, headerY + 16, 3.5, 3.5, 'F');
+  doc.rect(col1X + 70, headerY + 14, 3.2, 3.2, 'F');
   // Ring
-  doc.setLineWidth(2.5);
-  doc.circle(col1X + 83, headerY + 24, 4.5, 'S');
+  doc.setLineWidth(2.2);
+  doc.circle(col1X + 77, headerY + 22, 4.2, 'S');
 
   // Brand Tagline
   doc.setFont('helvetica', 'normal');
-  doc.setFontSize(6.5);
+  doc.setFontSize(6.2);
   doc.setTextColor(100, 116, 139); // slate-500
-  doc.text('Where Brand takes Flight', col1X + 12, headerY + 44);
+  doc.text('Where Brand takes Flight', col1X + 10, headerY + 39);
 
   // Column 2: Document Name
   doc.setFont('helvetica', 'bold');
-  doc.setFontSize(8);
+  doc.setFontSize(7.5);
   doc.setTextColor(15, 23, 42);
-  doc.text('Document Name:', col2X + 10, headerY + 18);
+  doc.text('Document Name:', col2X + 8, headerY + 16);
 
   doc.setFont('helvetica', 'bold');
-  doc.setFontSize(9.5);
+  doc.setFontSize(9);
   doc.setTextColor(30, 41, 59); // slate-800
-  const titleLines = doc.splitTextToSize(title, col2W - 20);
-  doc.text(titleLines.slice(0, 2), col2X + 10, headerY + 32);
+  const titleLines = doc.splitTextToSize(meta.title, col2W - 16);
+  doc.text(titleLines.slice(0, 2), col2X + 8, headerY + 29);
 
   // Column 3: Version
   doc.setFont('helvetica', 'bold');
-  doc.setFontSize(9.5);
+  doc.setFontSize(9);
   doc.setTextColor(15, 23, 42);
-  doc.text(`Version: ${cleanVer}`, col3X + 10, headerY + 34);
+  doc.text(`Version: ${meta.version}`, col3X + 8, headerY + 30);
 
   // Column 4: Effective Date
   doc.setFont('helvetica', 'bold');
-  doc.setFontSize(8);
+  doc.setFontSize(7.5);
   doc.setTextColor(15, 23, 42);
-  doc.text('Effective date :', col4X + 10, headerY + 18);
+  doc.text('Effective date :', col4X + 8, headerY + 16);
 
   doc.setFont('helvetica', 'normal');
-  doc.setFontSize(9.5);
+  doc.setFontSize(9);
   doc.setTextColor(30, 41, 59);
-  doc.text(effective, col4X + 10, headerY + 34);
+  doc.text(meta.effectiveDate, col4X + 8, headerY + 30);
+}
 
-  // --- RENDER CLEAN BODY CONTENT ---
-  let cursorY = headerY + headerHeight + 28;
-  const cleanBody = extractCleanBody(options.rawContent);
-  const paragraphs = cleanBody.split('\n\n');
-
-  for (const rawPara of paragraphs) {
-    const para = rawPara.trim();
-    if (!para) continue;
-
-    // Check for Heading 1 (# ...)
-    if (para.startsWith('# ')) {
-      const headingText = para.replace(/^#\s+/, '').trim();
-      if (cursorY + 35 > maxContentY) {
-        doc.addPage();
-        cursorY = 50;
-      } else {
-        cursorY += 12;
-      }
-
-      doc.setFont('helvetica', 'bold');
-      doc.setFontSize(14);
-      doc.setTextColor(15, 23, 42); // slate-900
-      const lines = doc.splitTextToSize(headingText, contentWidth);
-      doc.text(lines, marginX, cursorY);
-      cursorY += lines.length * 16 + 8;
-
-      // Divider below H1
-      doc.setDrawColor(226, 232, 240); // slate-200
-      doc.setLineWidth(1);
-      doc.line(marginX, cursorY - 4, marginX + contentWidth, cursorY - 4);
-      cursorY += 6;
-      continue;
-    }
-
-    // Check for Heading 2 (## ...)
-    if (para.startsWith('## ')) {
-      const headingText = para.replace(/^##\s+/, '').trim();
-      if (cursorY + 30 > maxContentY) {
-        doc.addPage();
-        cursorY = 50;
-      } else {
-        cursorY += 10;
-      }
-
-      doc.setFont('helvetica', 'bold');
-      doc.setFontSize(11.5);
-      doc.setTextColor(30, 41, 59); // slate-800
-      const lines = doc.splitTextToSize(headingText, contentWidth);
-      doc.text(lines, marginX, cursorY);
-      cursorY += lines.length * 14 + 6;
-      continue;
-    }
-
-    // Check for Heading 3 (### ...)
-    if (para.startsWith('### ')) {
-      const headingText = para.replace(/^###\s+/, '').trim();
-      if (cursorY + 25 > maxContentY) {
-        doc.addPage();
-        cursorY = 50;
-      } else {
-        cursorY += 8;
-      }
-
-      doc.setFont('helvetica', 'bold');
-      doc.setFontSize(10);
-      doc.setTextColor(51, 65, 85); // slate-700
-      const lines = doc.splitTextToSize(headingText, contentWidth);
-      doc.text(lines, marginX, cursorY);
-      cursorY += lines.length * 13 + 4;
-      continue;
-    }
-
-    // Check for bullet list block
-    if (para.includes('\n- ') || para.includes('\n• ') || para.startsWith('- ') || para.startsWith('• ')) {
-      const bulletLines = para.split('\n');
-      for (const bLine of bulletLines) {
-        const cleanBLine = bLine.replace(/^[-*•]\s+/, '').trim();
-        if (!cleanBLine) continue;
-
-        doc.setFont('helvetica', 'normal');
-        doc.setFontSize(9);
-        doc.setTextColor(51, 65, 85);
-        const wrapped = doc.splitTextToSize(cleanBLine, contentWidth - 20);
-        const blockHeight = wrapped.length * 13 + 4;
-
-        if (cursorY + blockHeight > maxContentY) {
-          doc.addPage();
-          cursorY = 50;
-        }
-
-        // Draw bullet dot
-        doc.setFillColor(250, 112, 20); // Amaavigo Orange
-        doc.circle(marginX + 5, cursorY + 4, 2, 'F');
-        doc.text(wrapped, marginX + 16, cursorY + 7);
-        cursorY += blockHeight;
-      }
-      cursorY += 6;
-      continue;
-    }
-
-    // Standard body paragraph
-    doc.setFont('helvetica', 'normal');
-    doc.setFontSize(9.2);
-    doc.setTextColor(51, 65, 85); // slate-700
-    const lines = doc.splitTextToSize(para, contentWidth);
-    const blockHeight = lines.length * 13.5;
-
-    if (cursorY + blockHeight > maxContentY) {
-      doc.addPage();
-      cursorY = 50;
-    }
-
-    doc.text(lines, marginX, cursorY);
-    cursorY += blockHeight + 8;
-  }
-
-  // --- DRAW FOOTER TABLE (Governance Approval Sign-Off) ---
-  const footerHeight = 48;
-  if (cursorY + footerHeight + 15 > maxContentY) {
-    doc.addPage();
-    cursorY = 50;
-  } else {
-    cursorY += 15;
-  }
-
-  const footerY = cursorY;
+/**
+ * Draws the official Amaavigo Governance Approval Footer Table on any given page.
+ * Table Dimensions: marginX = 40pt, width = 515.28pt, y = 760pt, height = 40pt.
+ */
+export function drawCorporateFooterTable(
+  doc: jsPDF,
+  meta: {
+    creator: string;
+    approver: string;
+    approvedDate: string;
+  },
+  marginX: number,
+  contentWidth: number,
+  footerY = 760,
+  footerHeight = 40
+) {
+  // Outer border & background
   doc.setFillColor(255, 255, 255);
   doc.rect(marginX, footerY, contentWidth, footerHeight, 'F');
   doc.setDrawColor(15, 23, 42); // slate-900
-  doc.setLineWidth(1.5);
+  doc.setLineWidth(1.3);
   doc.rect(marginX, footerY, contentWidth, footerHeight, 'S');
 
   const fColW = contentWidth / 3;
@@ -260,49 +139,324 @@ export function generateCorporatePdfBlob(options: CorporatePdfOptions): Blob {
   const fCol3X = fCol2X + fColW;
 
   // Footer Column Dividers
-  doc.setLineWidth(1);
+  doc.setLineWidth(0.8);
   doc.line(fCol2X, footerY, fCol2X, footerY + footerHeight);
   doc.line(fCol3X, footerY, fCol3X, footerY + footerHeight);
 
   // Col 1: Created by
   doc.setFont('helvetica', 'bold');
-  doc.setFontSize(8);
+  doc.setFontSize(7.5);
   doc.setTextColor(15, 23, 42);
-  doc.text('Created by:', fCol1X + 12, footerY + 18);
+  doc.text('Created by:', fCol1X + 10, footerY + 15);
   doc.setFont('helvetica', 'normal');
-  doc.setFontSize(9.5);
+  doc.setFontSize(9);
   doc.setTextColor(30, 41, 59);
-  doc.text(creator, fCol1X + 12, footerY + 34);
+  doc.text(meta.creator, fCol1X + 10, footerY + 29);
 
   // Col 2: Approved by
   doc.setFont('helvetica', 'bold');
-  doc.setFontSize(8);
+  doc.setFontSize(7.5);
   doc.setTextColor(15, 23, 42);
-  doc.text('Approved by:', fCol2X + 12, footerY + 18);
+  doc.text('Approved by:', fCol2X + 10, footerY + 15);
   doc.setFont('helvetica', 'normal');
-  doc.setFontSize(9.5);
+  doc.setFontSize(9);
   doc.setTextColor(30, 41, 59);
-  doc.text(approver, fCol2X + 12, footerY + 34);
+  doc.text(meta.approver, fCol2X + 10, footerY + 29);
 
   // Col 3: Approved Date
   doc.setFont('helvetica', 'bold');
-  doc.setFontSize(8);
+  doc.setFontSize(7.5);
   doc.setTextColor(15, 23, 42);
-  doc.text('Approved Date:', fCol3X + 12, footerY + 18);
+  doc.text('Approved Date:', fCol3X + 10, footerY + 15);
   doc.setFont('helvetica', 'normal');
-  doc.setFontSize(9.5);
+  doc.setFontSize(9);
   doc.setTextColor(30, 41, 59);
-  doc.text(approvedDt, fCol3X + 12, footerY + 34);
+  doc.text(meta.approvedDate, fCol3X + 10, footerY + 29);
+}
 
-  // --- RUNNING FOOTER ON ALL PAGES ---
+/**
+ * Generates a fully compliant, production-grade PDF document
+ * with official Amaavigo corporate header table on EVERY page,
+ * official governance approval footer sign-off on EVERY page,
+ * and body content flowing naturally between them without overlapping or compression.
+ */
+export function generateCorporatePdfBlob(options: CorporatePdfOptions): Blob {
+  const doc = new jsPDF({
+    orientation: 'portrait',
+    unit: 'pt',
+    format: 'a4',
+  });
+
+  const pageWidth = doc.internal.pageSize.getWidth(); // 595.28 pt
+  const pageHeight = doc.internal.pageSize.getHeight(); // 841.89 pt
+  const marginX = 40;
+  const contentWidth = pageWidth - marginX * 2; // ~515.28 pt
+
+  const headerY = 32;
+  const headerHeight = 52;
+  const footerHeight = 40;
+  const footerY = 760;
+
+  // Content flow boundaries (zero overlap with header or footer)
+  const contentStartY = 100; // 16pt below header
+  const contentEndY = 746;   // 14pt above footer
+
+  const cleanVer = cleanVersionNumber(options.versionNumber);
+  const effective = formatDDMMYYYY(options.effectiveDate);
+  const approvedDt = formatDDMMYYYY(options.approvedDate || options.effectiveDate);
+  const creator = options.createdByName || 'Amee Shah';
+  const approver = options.approvedByName || 'Vishal Shah';
+  const title = options.documentTitle || 'Corporate Policy Document';
+
+  const headerMeta = { title, version: cleanVer, effectiveDate: effective };
+  const footerMeta = { creator, approver, approvedDate: approvedDt };
+
+  // Helper to decorate any active page with official Header & Footer
+  const decoratePage = () => {
+    drawCorporateHeaderTable(doc, headerMeta, marginX, contentWidth, headerY, headerHeight);
+    drawCorporateFooterTable(doc, footerMeta, marginX, contentWidth, footerY, footerHeight);
+  };
+
+  // Draw Page 1 decoration
+  decoratePage();
+
+  let cursorY = contentStartY;
+
+  const addNewPage = () => {
+    doc.addPage();
+    decoratePage();
+    cursorY = contentStartY;
+  };
+
+  // Extract clean body content (stripping any accidental duplicate HTML table markers)
+  const cleanBody = extractCleanBody(options.rawContent);
+  const rawParagraphs = cleanBody.split('\n\n');
+
+  for (const rawPara of rawParagraphs) {
+    const para = rawPara.trim();
+    if (!para) continue;
+
+    // Skip redundant policy metadata paragraphs if any survived
+    const isMetaPara =
+      /^(?:(?:\*{1,2}|#+\s*|[-•|]\s*)?Policy\s*Owner\s*[:\-–—]?)/i.test(para) ||
+      /^(?:(?:\*{1,2}|#+\s*|[-•|]\s*)?Effective\s*Date\s*[:\-–—]?)/i.test(para) ||
+      /^(?:(?:\*{1,2}|#+\s*|[-•|]\s*)?Review\s*Frequency\s*[:\-–—]?)/i.test(para) ||
+      /^(?:(?:\*{1,2}|#+\s*|[-•|]\s*)?Applies\s*To\s*[:\-–—]?)/i.test(para);
+    if (isMetaPara) continue;
+
+    // Check for Document Metadata properties (e.g. **Document ID:** ... \n **Version:** ...)
+    if (para.includes('**Document ID:**') || (para.startsWith('**') && para.includes('**Version:**'))) {
+      const metaLines = para.split('\n').filter(l => l.trim().length > 0);
+      const boxHeight = metaLines.length * 16 + 16;
+
+      if (cursorY + boxHeight > contentEndY) {
+        addNewPage();
+      }
+
+      // Draw subtle metadata card
+      doc.setFillColor(248, 250, 252); // slate-50
+      doc.rect(marginX, cursorY, contentWidth, boxHeight, 'F');
+      doc.setDrawColor(226, 232, 240); // slate-200
+      doc.setLineWidth(1);
+      doc.rect(marginX, cursorY, contentWidth, boxHeight, 'S');
+
+      let mY = cursorY + 16;
+      for (const mLine of metaLines) {
+        const cleanLine = mLine.replace(/\*\*/g, '').trim();
+        const colonIdx = cleanLine.indexOf(':');
+        if (colonIdx > -1) {
+          const key = cleanLine.substring(0, colonIdx + 1);
+          const val = cleanLine.substring(colonIdx + 1).trim();
+
+          doc.setFont('helvetica', 'bold');
+          doc.setFontSize(9);
+          doc.setTextColor(15, 23, 42); // slate-900
+          doc.text(key, marginX + 14, mY);
+
+          const keyWidth = doc.getTextWidth(key);
+          doc.setFont('helvetica', 'normal');
+          doc.setTextColor(71, 85, 105); // slate-600
+          doc.text(val, marginX + 18 + keyWidth, mY);
+        } else {
+          doc.setFont('helvetica', 'normal');
+          doc.setFontSize(9);
+          doc.setTextColor(71, 85, 105);
+          doc.text(cleanLine, marginX + 14, mY);
+        }
+        mY += 16;
+      }
+
+      cursorY += boxHeight + 14;
+      continue;
+    }
+
+    // Check for Heading 1 (# ...)
+    if (para.startsWith('# ')) {
+      const headingText = para.replace(/^#\s+/, '').trim();
+      const headingHeight = 28;
+
+      if (cursorY + headingHeight + 20 > contentEndY) {
+        addNewPage();
+      } else if (cursorY > contentStartY + 10) {
+        cursorY += 8;
+      }
+
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(14.5);
+      doc.setTextColor(15, 23, 42); // slate-900
+      const lines = doc.splitTextToSize(headingText, contentWidth);
+      doc.text(lines, marginX, cursorY + 14);
+      cursorY += lines.length * 18 + 4;
+
+      // Divider below H1
+      doc.setDrawColor(226, 232, 240); // slate-200
+      doc.setLineWidth(1);
+      doc.line(marginX, cursorY, marginX + contentWidth, cursorY);
+      cursorY += 12;
+      continue;
+    }
+
+    // Check for Heading 2 (## ...)
+    if (para.startsWith('## ')) {
+      const headingText = para.replace(/^##\s+/, '').trim();
+      const headingHeight = 24;
+
+      if (cursorY + headingHeight + 16 > contentEndY) {
+        addNewPage();
+      } else if (cursorY > contentStartY + 10) {
+        cursorY += 10;
+      }
+
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(11.5);
+      doc.setTextColor(250, 112, 20); // Amaavigo Brand Orange accent for H2
+      const lines = doc.splitTextToSize(headingText, contentWidth);
+      doc.text(lines, marginX, cursorY + 12);
+      cursorY += lines.length * 15 + 6;
+      continue;
+    }
+
+    // Check for Heading 3 (### ...)
+    if (para.startsWith('### ')) {
+      const headingText = para.replace(/^###\s+/, '').trim();
+      const headingHeight = 20;
+
+      if (cursorY + headingHeight + 12 > contentEndY) {
+        addNewPage();
+      } else if (cursorY > contentStartY + 10) {
+        cursorY += 6;
+      }
+
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(10.5);
+      doc.setTextColor(30, 41, 59); // slate-800
+      const lines = doc.splitTextToSize(headingText, contentWidth);
+      doc.text(lines, marginX, cursorY + 10);
+      cursorY += lines.length * 14 + 4;
+      continue;
+    }
+
+    // Check for Numbered list items (e.g. 1. ... \n 2. ...)
+    if (/^\d+\.\s+/.test(para)) {
+      const listLines = para.split('\n');
+      for (const item of listLines) {
+        const numMatch = item.match(/^(\d+\.)\s+(.*)/);
+        if (numMatch) {
+          const numPrefix = numMatch[1];
+          const textContent = numMatch[2].replace(/\*\*/g, '');
+
+          doc.setFont('helvetica', 'normal');
+          doc.setFontSize(9.8);
+          const wrapped = doc.splitTextToSize(textContent, contentWidth - 24);
+          const itemHeight = wrapped.length * 14 + 4;
+
+          if (cursorY + itemHeight > contentEndY) {
+            addNewPage();
+          }
+
+          doc.setFont('helvetica', 'bold');
+          doc.setTextColor(250, 112, 20); // Amaavigo Orange
+          doc.text(numPrefix, marginX + 4, cursorY + 10);
+
+          doc.setFont('helvetica', 'normal');
+          doc.setTextColor(51, 65, 85); // slate-700
+          doc.text(wrapped, marginX + 24, cursorY + 10);
+
+          cursorY += itemHeight;
+        } else {
+          // Standard line within numbered block
+          doc.setFont('helvetica', 'normal');
+          doc.setFontSize(9.8);
+          doc.setTextColor(51, 65, 85);
+          const wrapped = doc.splitTextToSize(item, contentWidth - 24);
+          const itemHeight = wrapped.length * 14 + 4;
+
+          if (cursorY + itemHeight > contentEndY) {
+            addNewPage();
+          }
+
+          doc.text(wrapped, marginX + 24, cursorY + 10);
+          cursorY += itemHeight;
+        }
+      }
+      cursorY += 8;
+      continue;
+    }
+
+    // Check for bullet list block (- ... or • ...)
+    if (para.includes('\n- ') || para.includes('\n• ') || para.startsWith('- ') || para.startsWith('• ')) {
+      const bulletLines = para.split('\n');
+      for (const bLine of bulletLines) {
+        const cleanBLine = bLine.replace(/^[-*•]\s+/, '').replace(/\*\*/g, '').trim();
+        if (!cleanBLine) continue;
+
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(9.8);
+        const wrapped = doc.splitTextToSize(cleanBLine, contentWidth - 20);
+        const blockHeight = wrapped.length * 14 + 4;
+
+        if (cursorY + blockHeight > contentEndY) {
+          addNewPage();
+        }
+
+        // Draw bullet dot
+        doc.setFillColor(250, 112, 20); // Amaavigo Orange
+        doc.circle(marginX + 6, cursorY + 6, 2, 'F');
+
+        doc.setFont('helvetica', 'normal');
+        doc.setTextColor(51, 65, 85);
+        doc.text(wrapped, marginX + 18, cursorY + 9);
+        cursorY += blockHeight;
+      }
+      cursorY += 8;
+      continue;
+    }
+
+    // Standard body paragraph
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(10);
+    doc.setTextColor(51, 65, 85); // slate-700
+    const cleanParaText = para.replace(/\*\*/g, '');
+    const lines = doc.splitTextToSize(cleanParaText, contentWidth);
+    const blockHeight = lines.length * 14.5;
+
+    if (cursorY + blockHeight > contentEndY) {
+      addNewPage();
+    }
+
+    doc.text(lines, marginX, cursorY + 10);
+    cursorY += blockHeight + 10;
+  }
+
+  // --- RUNNING BOTTOM FOOTER NOTE ON ALL PAGES ---
   const totalPages = doc.getNumberOfPages();
   for (let p = 1; p <= totalPages; p++) {
     doc.setPage(p);
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(7.5);
     doc.setTextColor(148, 163, 184); // slate-400
-    doc.text('Amaavigo HR Governance & Compliance System • Controlled Document', marginX, pageHeight - 25);
-    doc.text(`Page ${p} of ${totalPages}`, marginX + contentWidth, pageHeight - 25, { align: 'right' });
+    doc.text('Amaavigo HR Governance & Compliance System • Controlled Document', marginX, 818);
+    doc.text(`Page ${p} of ${totalPages}`, marginX + contentWidth, 818, { align: 'right' });
   }
 
   return doc.output('blob');
@@ -310,8 +464,6 @@ export function generateCorporatePdfBlob(options: CorporatePdfOptions): Blob {
 
 /**
  * Downloads a document as a genuine, valid PDF.
- * If rawContent is already a binary PDF (starts with %PDF), it downloads that.
- * Otherwise, it generates a full corporate PDF with header table, logo, and approval footer.
  */
 export async function downloadDocumentAsPdf(params: {
   fileName?: string;
@@ -328,46 +480,8 @@ export async function downloadDocumentAsPdf(params: {
 }): Promise<void> {
   const effectiveName = (params.fileName || 'Amaavigo_Policy.pdf').replace(/\.(txt|md|docx)$/i, '.pdf');
   const ensuredPdfName = effectiveName.endsWith('.pdf') ? effectiveName : `${effectiveName}.pdf`;
-
   const raw = params.rawContent || '';
 
-  // Check if rawContent is already a binary PDF (%PDF-...)
-  if (raw.startsWith('%PDF') || (raw.length > 10 && raw.substring(0, 10).includes('%PDF'))) {
-    try {
-      const len = raw.length;
-      const bytes = new Uint8Array(len);
-      for (let i = 0; i < len; i++) {
-        bytes[i] = raw.charCodeAt(i) & 0xff;
-      }
-      const blob = new Blob([bytes], { type: 'application/pdf' });
-      triggerBrowserDownload(blob, ensuredPdfName);
-      return;
-    } catch (e) {
-      console.warn('Binary PDF download fallback:', e);
-    }
-  }
-
-  // If fileUrl is a valid Base64 data:application/pdf
-  if (params.fileUrl && params.fileUrl.startsWith('data:application/pdf;base64,')) {
-    try {
-      const base64Data = params.fileUrl.split(',')[1];
-      const binaryString = atob(base64Data);
-      if (binaryString.startsWith('%PDF')) {
-        const len = binaryString.length;
-        const bytes = new Uint8Array(len);
-        for (let i = 0; i < len; i++) {
-          bytes[i] = binaryString.charCodeAt(i);
-        }
-        const blob = new Blob([bytes], { type: 'application/pdf' });
-        triggerBrowserDownload(blob, ensuredPdfName);
-        return;
-      }
-    } catch (e) {
-      console.warn('Base64 PDF download fallback:', e);
-    }
-  }
-
-  // Otherwise, synthesize an authentic, standard PDF document with official header and footer
   const meta = params.headerFooterData || extractHeaderFooterData(raw);
 
   const pdfBlob = generateCorporatePdfBlob({

@@ -128,7 +128,110 @@ ${FOOTER_END_TAG}`;
 }
 
 /**
- * Strips previous header/footer HTML blocks to avoid duplicate insertions.
+ * Strips obsolete, unneeded policy metadata header blocks such as:
+ * - Policy Owner: Human Resources
+ * - Effective Date: 26 August 2026
+ * - Review Frequency: Annual or as required
+ * - Applies To: All employees, subject to role and business requirements
+ * Official corporate headers and governance footers are dynamically injected by the system,
+ * so redundant document metadata headers must be excluded.
+ */
+export function stripPolicyMetadataHeader(text: string): string {
+  if (!text) return '';
+  let res = text;
+
+  // 1. Remove HTML table blocks containing policy metadata
+  res = res.replace(/<table[^>]*>[\s\S]*?<\/table>/gi, (tbl) => {
+    if (
+      /Policy\s*Owner/i.test(tbl) &&
+      (/Effective\s*Date/i.test(tbl) || /Review\s*Frequency/i.test(tbl) || /Applies\s*To/i.test(tbl))
+    ) {
+      return '';
+    }
+    return tbl;
+  });
+
+  // 2. Remove Markdown table rows containing policy metadata
+  res = res.replace(
+    /^[ \t]*\|?[ \t]*(?:(?:\*{1,2}|<[^>]+>)*)(?:Policy\s*Owner|Effective\s*Date|Review\s*Frequency|Applies\s*To)[\s\S]*?\|?[ \t]*$/gim,
+    ''
+  );
+
+  // 3. Remove HTML paragraph/div/td blocks containing policy metadata
+  res = res.replace(
+    /<(?:p|div|tr|td)[^>]*>(?:[\s\S]*?)(?:Policy\s*Owner|Effective\s*Date|Review\s*Frequency|Applies\s*To)[\s\S]*?<\/(?:p|div|tr|td)>/gi,
+    ''
+  );
+
+  // 4. Line-by-line filtering for multi-line documents
+  const lines = res.split(/\r?\n/);
+  const filteredLines: string[] = [];
+  let skipNextValue = false;
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    const trimmed = line.trim();
+    if (!trimmed) {
+      if (!skipNextValue) {
+        filteredLines.push('');
+      }
+      continue;
+    }
+
+    const normalized = trimmed
+      .replace(/^[-*•#|>\s]+/, '')
+      .replace(/<[^>]+>/g, '')
+      .replace(/\*\*/g, '')
+      .trim();
+
+    // Check if line is purely a metadata label (e.g. "Policy Owner:" or "Policy Owner")
+    const isPureLabel = /^(?:Policy\s*Owner|Effective\s*Date|Review\s*Frequency|Applies\s*To)\s*[:\-–—]?$/i.test(normalized);
+    if (isPureLabel) {
+      skipNextValue = true;
+      continue;
+    }
+
+    // Check if line is a metadata line with value (e.g. "Policy Owner: Human Resources")
+    const isMetaLine = /^(?:Policy\s*Owner|Effective\s*Date|Review\s*Frequency|Applies\s*To)\s*[:\-–—]/i.test(normalized);
+    if (isMetaLine) {
+      continue;
+    }
+
+    // If previous line was a pure label, this line is the value (unless it looks like a heading)
+    if (skipNextValue) {
+      skipNextValue = false;
+      if (!/^(?:[0-9]+\.|#|\bPurpose\b|\bScope\b)/i.test(normalized)) {
+        continue;
+      }
+    }
+
+    filteredLines.push(line);
+  }
+  res = filteredLines.join('\n');
+
+  // 5. Full multi-field metadata block removal (works across single-line or compressed paragraphs)
+  res = res.replace(
+    /(?:^|\s+)(?:\*{0,2})Policy\s*Owner\s*:?[\s\S]*?(?:Applies\s*To\s*:?[^\n\r]*?(?:business\s*requirements|requirements|employees[^\n\r]*?|All\s*employees))(?=\s*(?:1\.|\bPurpose\b|\n\n|##|\bScope\b|$))/gi,
+    '\n\n'
+  );
+
+  // 6. Isolated inline phrases if present on the same line as titles
+  res = res.replace(/(?:^|\s+)(?:\*{0,2}|<[^>]+>)*Policy\s*Owner\s*[:\-–—]?\s*[^,\n\r]+(?:\.|\,|\n|$|\s+(?=Effective|Review|Applies|1\.))/gi, ' ');
+  res = res.replace(/(?:^|\s+)(?:\*{0,2}|<[^>]+>)*Effective\s*Date\s*[:\-–—]?\s*[0-9A-Za-z\s,/-]+(?=\s*(?:Review|Applies|1\.|\n|$))/gi, ' ');
+  res = res.replace(/(?:^|\s+)(?:\*{0,2}|<[^>]+>)*Review\s*Frequency\s*[:\-–—]?\s*[^,\n\r]+(?:\.|\,|\n|$|\s+(?=Applies|Effective|1\.))/gi, ' ');
+  res = res.replace(/(?:^|\s+)(?:\*{0,2}|<[^>]+>)*Applies\s*To\s*[:\-–—]?\s*[^.\n\r]+(?:\.|\,|\n|$|\s+(?=1\.|\bPurpose\b))/gi, ' ');
+
+  // 7. Remove any remnant label strings on a line by themselves
+  res = res.replace(/^[ \t]*(?:(?:\*{1,2}|<[^>]+>)*)(?:Policy\s*Owner|Effective\s*Date|Review\s*Frequency|Applies\s*To)\s*[:\-–—]?[ \t]*$/gim, '');
+
+  // 8. Format clean line-breaks before numbered headings (e.g. "1. Purpose", "2. Eligibility") if single-line
+  res = res.replace(/([^\n])\s+(?=[0-9]+\.\s+[A-Z])/g, '$1\n\n');
+
+  return res.replace(/\n{3,}/g, '\n\n').trim();
+}
+
+/**
+ * Strips previous header/footer HTML blocks and redundant metadata headers to avoid duplicate insertions.
  */
 export function extractCleanBody(content: string): string {
   if (!content) return '';
@@ -156,6 +259,9 @@ export function extractCleanBody(content: string): string {
     /\n*<table[^>]*class="[^"]*amaavigo-document-footer[^"]*"[\s\S]*?<\/table>/gi,
     ''
   );
+
+  // Strip unneeded redundant policy metadata header
+  clean = stripPolicyMetadataHeader(clean);
 
   return clean.trim();
 }

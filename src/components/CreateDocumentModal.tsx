@@ -13,6 +13,7 @@ import {
 import { ConfidentialityLevel, DocumentCategory, User } from '../types';
 import { governanceEngine } from '../services/governance';
 import { parseUploadedFile } from '../utils/fileParser';
+import { stripPolicyMetadataHeader } from '../utils/documentHeaderFooter';
 
 interface CreateDocumentModalProps {
   currentUser: User;
@@ -58,9 +59,6 @@ export const CreateDocumentModal: React.FC<CreateDocumentModalProps> = ({
       setDescription('Company-wide guidelines for remote workplace safety, core overlap hours, and reimbursement.');
       setFileName('AMA-HR-POL_Hybrid-Workplace_v1.0.md');
       setRawContent(`# Hybrid Workplace & Remote Work Agreement
-**Document ID:** ${previewDocId}
-**Version:** 1.0 (Initial Baseline)
-**Effective Date:** ${effectiveFrom}
 
 ## 1. Purpose & Scope
 This policy establishes standard protocols for eligible staff to work remotely up to three days per week across Amaavigo Global Inc.
@@ -79,9 +77,6 @@ Corporate-issued laptops configured with encrypted disk storage and active VPN c
       setDescription('Mandatory standards for professional integrity, non-discrimination, anti-harassment, and conflict of interest disclosure.');
       setFileName('AMA-HR-POL_Code-of-Conduct_v1.0.md');
       setRawContent(`# Corporate Code of Ethics and Professional Conduct
-**Document ID:** ${previewDocId}
-**Version:** 1.0 (Initial Baseline)
-**Effective Date:** ${effectiveFrom}
 
 ## 1. Executive Summary
 Amaavigo Global Inc. is committed to fostering an inclusive, respectful, and legally compliant workplace culture.
@@ -97,9 +92,6 @@ Employees must immediately disclose any secondary employment or external financi
       setDescription('Standard procedure for logging wellness days without physician notes.');
       setFileName('AMA-HR-SOP_Wellness-Days_v1.0.md');
       setRawContent(`# Standard Operating Procedure: Employee Wellness Days
-**Document ID:** ${previewDocId}
-**Version:** 1.0 (Initial Baseline)
-**Effective Date:** ${effectiveFrom}
 
 ## 1. Objective
 To streamline the scheduling and taking of designated company mental health and wellness days.
@@ -175,7 +167,7 @@ Employees should notify their immediate manager via the HR self-service portal a
         reviewDueDate,
         description,
         fileName: fileName || `${title.replace(/[^a-zA-Z0-9]/g, '_')}_v1.0.txt`,
-        rawContent,
+        rawContent: stripPolicyMetadataHeader(rawContent),
         fileDataUrl,
         mimeType: mimeType || (fileName.endsWith('.pdf') ? 'application/pdf' : 'text/markdown'),
       });

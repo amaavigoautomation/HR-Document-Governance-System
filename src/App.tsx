@@ -595,21 +595,20 @@ export default function App() {
                 rawContent={readerVersion.rawContent}
                 fileUrl={readerVersion.fileUrl}
                 mimeType={readerVersion.mimeType}
-                headerFooterData={
-                  readerVersion.status === VersionStatus.PUBLISHED || readerVersion.reviewedByName
-                    ? {
-                        companyName: 'Amaavigo',
-                        documentTitle: readerVersion.documentTitle,
-                        versionNumber: readerVersion.versionNumber,
-                        effectiveDate: formatDDMMYYYY(readerVersion.effectiveFrom || readerVersion.createdAt),
-                        createdByName: readerVersion.createdByName || 'Amee Shah',
-                        approvedByName: readerVersion.reviewedByName || 'Vishal Shah',
-                        approvedDate: formatDDMMYYYY(
-                          readerVersion.reviewedAt || readerVersion.publishedAt || readerVersion.createdAt
-                        ),
-                      }
-                    : undefined
-                }
+                headerFooterData={{
+                  companyName: 'Amaavigo',
+                  documentTitle: readerVersion.documentTitle,
+                  versionNumber: readerVersion.versionNumber,
+                  effectiveDate: formatDDMMYYYY(readerVersion.effectiveFrom || readerVersion.createdAt),
+                  createdByName: readerVersion.createdByName || 'Amee Shah',
+                  approvedByName:
+                    readerVersion.reviewedByName ||
+                    (readerVersion.status === VersionStatus.PUBLISHED ? 'Authorized Approver' : 'Pending Review'),
+                  approvedDate:
+                    readerVersion.reviewedAt || readerVersion.publishedAt
+                      ? formatDDMMYYYY(readerVersion.reviewedAt || readerVersion.publishedAt!)
+                      : 'Pending Approval',
+                }}
               />
             </div>
           </div>

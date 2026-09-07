@@ -1,9 +1,25 @@
 import { PDFDocument, rgb, StandardFonts } from 'pdf-lib';
 import JSZip from 'jszip';
 import {
+  Document,
+  Header,
+  Footer,
+  Paragraph,
+  TextRun,
+  Table,
+  TableRow,
+  TableCell,
+  WidthType,
+  BorderStyle,
+  AlignmentType,
+  ShadingType,
+  Packer,
+} from 'docx';
+import {
   DocumentHeaderFooterData,
   cleanVersionNumber,
   formatDDMMYYYY,
+  extractCleanBody,
   extractHeaderFooterData,
 } from './documentHeaderFooter';
 import { generateCorporatePdfBlob } from './pdfGenerator';
@@ -16,6 +32,18 @@ export interface HeaderFooterMetadata {
   approvedByName?: string;
   approvedDate?: string;
   companyName?: string;
+}
+
+export interface CorporateDocxOptions {
+  documentTitle: string;
+  versionNumber: string;
+  effectiveDate: string;
+  createdByName?: string;
+  approvedByName?: string;
+  approvedDate?: string;
+  companyName?: string;
+  rawContent: string;
+  fileName?: string;
 }
 
 export interface StampResult {
@@ -32,7 +60,6 @@ export function toUint8Array(input: Uint8Array | ArrayBuffer | string): Uint8Arr
   if (input instanceof ArrayBuffer) return new Uint8Array(input);
 
   if (typeof input === 'string') {
-    // If it's a data URL
     let cleanBase64 = input;
     if (input.includes(',')) {
       cleanBase64 = input.split(',')[1];
@@ -46,7 +73,6 @@ export function toUint8Array(input: Uint8Array | ArrayBuffer | string): Uint8Arr
       }
       return bytes;
     } catch {
-      // If string is raw binary characters
       const bytes = new Uint8Array(input.length);
       for (let i = 0; i < input.length; i++) {
         bytes[i] = input.charCodeAt(i) & 0xff;
@@ -59,10 +85,22 @@ export function toUint8Array(input: Uint8Array | ArrayBuffer | string): Uint8Arr
 }
 
 /**
- * Stamping engine for PDF documents:
- * Preserves the original document 100% INTACT (all vectors, pages, fonts, graphics, layouts).
+ * Escapes XML special characters for OpenXML Word documents
+ */
+function escapeXml(str: string): string {
+  return str
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&apos;');
+}
+
+/**
+ * Stamping engine for existing PDF documents:
+ * Preserves the original document pages, vector objects, fonts, and graphics 100% INTACT.
  * Injects the official Amaavigo Header Table at the top of EVERY page
- * and the Governance Approval Footer Sign-Off at the bottom of EVERY page.
+ * and the Governance Approval Footer Sign-Off at the bottom of EVERY page as a non-destructive separate layer.
  */
 export async function stampPdfWithHeaderFooter(
   sourcePdfInput: Uint8Array | ArrayBuffer | string,
@@ -73,7 +111,8 @@ export async function stampPdfWithHeaderFooter(
   const pageIndices = srcDoc.getPageIndices();
 
   const targetDoc = await PDFDocument.create();
-  const embeddedPages = await targetDoc.embedPdf(srcDoc, pageIndices);
+  // Copy original pages directly to preserve all fonts, vector streams, and layouts 100% untouched
+  const copiedPages = await targetDoc.copyPages(srcDoc, pageIndices);
 
   const font = await targetDoc.embedFont(StandardFonts.Helvetica);
   const fontBold = await targetDoc.embedFont(StandardFonts.HelveticaBold);
@@ -85,37 +124,17 @@ export async function stampPdfWithHeaderFooter(
   const approver = meta.approvedByName || 'Vishal Shah';
   const title = meta.documentTitle || 'Document';
 
-  for (let i = 0; i < embeddedPages.length; i++) {
-    const emb = embeddedPages[i];
-    const { width: origW, height: origH } = emb;
+  for (let i = 0; i < copiedPages.length; i++) {
+    const page = copiedPages[i];
+    targetDoc.addPage(page);
 
-    const page = targetDoc.addPage([origW, origH]);
+    const { width: origW, height: origH } = page.getSize();
 
-    // Calculate vertical scaling to guarantee the original document content
-    // sits neatly between the header and footer without being clipped or overlapped.
-    const topReserved = 96; // margin + header height + breathing room
-    const bottomReserved = 76; // margin + footer height + breathing room
-    const availableH = origH - topReserved - bottomReserved;
-    const scale = Math.min(1, availableH / origH);
-
-    const scaledW = origW * scale;
-    const scaledH = origH * scale;
-    const offsetX = (origW - scaledW) / 2;
-    const offsetY = bottomReserved + (availableH - scaledH) / 2;
-
-    // 1. Draw original intact document page
-    page.drawPage(emb, {
-      x: offsetX,
-      y: offsetY,
-      xScale: scale,
-      yScale: scale,
-    });
-
-    // 2. Draw Official Amaavigo Header Table on EVERY page
+    // Dimensions for Header Table
     const marginX = 36;
-    const tableW = origW - 72;
-    const headerH = 50;
-    const headerY = origH - 32 - headerH;
+    const tableW = origW - marginX * 2;
+    const headerH = 48;
+    const headerY = origH - 24 - headerH;
 
     // Header Background & Slate Border
     page.drawRectangle({
@@ -129,9 +148,9 @@ export async function stampPdfWithHeaderFooter(
     });
 
     // Column boundaries
-    const col1W = 125;
-    const col2W = 175;
-    const col3W = 80;
+    const col1W = 120;
+    const col2W = 180;
+    const col3W = 75;
     const col4W = tableW - col1W - col2W - col3W;
 
     const col1X = marginX;
@@ -143,100 +162,97 @@ export async function stampPdfWithHeaderFooter(
     page.drawLine({
       start: { x: col2X, y: headerY },
       end: { x: col2X, y: headerY + headerH },
-      thickness: 1,
+      thickness: 0.8,
       color: rgb(15 / 255, 23 / 255, 42 / 255),
     });
     page.drawLine({
       start: { x: col3X, y: headerY },
       end: { x: col3X, y: headerY + headerH },
-      thickness: 1,
+      thickness: 0.8,
       color: rgb(15 / 255, 23 / 255, 42 / 255),
     });
     page.drawLine({
       start: { x: col4X, y: headerY },
       end: { x: col4X, y: headerY + headerH },
-      thickness: 1,
+      thickness: 0.8,
       color: rgb(15 / 255, 23 / 255, 42 / 255),
     });
 
-    // Column 1: Amaavigo Logo + Flight Ring + Pip Notch + Tagline
+    // Col 1: Amaavigo Logo
     page.drawText('amaavig', {
       x: col1X + 10,
-      y: headerY + 24,
+      y: headerY + 23,
       font: fontBold,
-      size: 15,
+      size: 14,
       color: rgb(24 / 255, 26 / 255, 30 / 255),
     });
-    // Orange flight ring "o"
     page.drawCircle({
-      x: col1X + 76,
-      y: headerY + 29,
-      size: 4.5,
+      x: col1X + 72,
+      y: headerY + 28,
+      size: 4,
       borderColor: rgb(250 / 255, 112 / 255, 20 / 255),
-      borderWidth: 2.2,
+      borderWidth: 2,
     });
-    // Orange pip notch
     page.drawRectangle({
-      x: col1X + 68,
-      y: headerY + 36,
-      width: 3.2,
-      height: 3.2,
+      x: col1X + 65,
+      y: headerY + 34,
+      width: 3,
+      height: 3,
       color: rgb(250 / 255, 112 / 255, 20 / 255),
     });
-    // Brand Tagline
     page.drawText('Where Brand takes Flight', {
       x: col1X + 10,
       y: headerY + 10,
       font,
-      size: 6,
+      size: 5.8,
       color: rgb(100 / 255, 116 / 255, 139 / 255),
     });
 
-    // Column 2: Document Name
+    // Col 2: Document Name
     page.drawText('Document Name:', {
       x: col2X + 8,
-      y: headerY + 32,
+      y: headerY + 31,
       font: fontBold,
-      size: 8,
+      size: 7.5,
       color: rgb(15 / 255, 23 / 255, 42 / 255),
     });
-    const safeTitle = title.length > 28 ? `${title.substring(0, 26)}...` : title;
+    const safeTitle = title.length > 30 ? `${title.substring(0, 28)}...` : title;
     page.drawText(safeTitle, {
       x: col2X + 8,
       y: headerY + 16,
       font: fontBold,
-      size: 9.5,
+      size: 8.5,
       color: rgb(30 / 255, 41 / 255, 59 / 255),
     });
 
-    // Column 3: Version
+    // Col 3: Version
     page.drawText(`Version: ${cleanVer}`, {
       x: col3X + 8,
-      y: headerY + 22,
+      y: headerY + 21,
       font: fontBold,
-      size: 9,
+      size: 8.5,
       color: rgb(15 / 255, 23 / 255, 42 / 255),
     });
 
-    // Column 4: Effective Date
+    // Col 4: Effective Date
     page.drawText('Effective date :', {
       x: col4X + 8,
-      y: headerY + 32,
+      y: headerY + 31,
       font: fontBold,
-      size: 8,
+      size: 7.5,
       color: rgb(15 / 255, 23 / 255, 42 / 255),
     });
     page.drawText(effective, {
       x: col4X + 8,
       y: headerY + 16,
       font,
-      size: 9,
+      size: 8.5,
       color: rgb(30 / 255, 41 / 255, 59 / 255),
     });
 
-    // 3. Draw Official Governance Approval Footer Table on EVERY page
+    // Dimensions for Footer Table
     const footerH = 36;
-    const footerY = 28;
+    const footerY = 24;
 
     page.drawRectangle({
       x: marginX,
@@ -252,61 +268,61 @@ export async function stampPdfWithHeaderFooter(
     page.drawLine({
       start: { x: marginX + footColW, y: footerY },
       end: { x: marginX + footColW, y: footerY + footerH },
-      thickness: 1,
+      thickness: 0.8,
       color: rgb(15 / 255, 23 / 255, 42 / 255),
     });
     page.drawLine({
       start: { x: marginX + footColW * 2, y: footerY },
       end: { x: marginX + footColW * 2, y: footerY + footerH },
-      thickness: 1,
+      thickness: 0.8,
       color: rgb(15 / 255, 23 / 255, 42 / 255),
     });
 
-    // Footer Col 1: Created by
+    // Col 1: Created by
     page.drawText('Created by:', {
       x: marginX + 8,
       y: footerY + 22,
       font: fontBold,
-      size: 7.5,
+      size: 7.2,
       color: rgb(15 / 255, 23 / 255, 42 / 255),
     });
     page.drawText(creator, {
       x: marginX + 8,
       y: footerY + 8,
       font,
-      size: 8.5,
+      size: 8.2,
       color: rgb(30 / 255, 41 / 255, 59 / 255),
     });
 
-    // Footer Col 2: Approved by
+    // Col 2: Approved by
     page.drawText('Approved by:', {
       x: marginX + footColW + 8,
       y: footerY + 22,
       font: fontBold,
-      size: 7.5,
+      size: 7.2,
       color: rgb(15 / 255, 23 / 255, 42 / 255),
     });
     page.drawText(approver, {
       x: marginX + footColW + 8,
       y: footerY + 8,
       font,
-      size: 8.5,
+      size: 8.2,
       color: rgb(30 / 255, 41 / 255, 59 / 255),
     });
 
-    // Footer Col 3: Approved Date
+    // Col 3: Approved Date
     page.drawText('Approved Date:', {
       x: marginX + footColW * 2 + 8,
       y: footerY + 22,
       font: fontBold,
-      size: 7.5,
+      size: 7.2,
       color: rgb(15 / 255, 23 / 255, 42 / 255),
     });
     page.drawText(approvedDt, {
       x: marginX + footColW * 2 + 8,
       y: footerY + 8,
       font,
-      size: 8.5,
+      size: 8.2,
       color: rgb(30 / 255, 41 / 255, 59 / 255),
     });
   }
@@ -323,21 +339,251 @@ export async function stampPdfWithHeaderFooter(
 }
 
 /**
- * Escapes XML special characters for OpenXML Word documents
+ * Builds the official WordprocessingML Table Header for native DOCX injection
  */
-function escapeXml(str: string): string {
-  return str
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&apos;');
+function buildNativeHeaderXml(meta: {
+  title: string;
+  version: string;
+  effectiveDate: string;
+}): string {
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<w:hdr xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+  <w:tbl>
+    <w:tblPr>
+      <w:tblW w:w="5000" w:type="pct"/>
+      <w:tblBorders>
+        <w:top w:val="single" w:sz="10" w:space="0" w:color="0F172A"/>
+        <w:left w:val="single" w:sz="10" w:space="0" w:color="0F172A"/>
+        <w:bottom w:val="single" w:sz="10" w:space="0" w:color="0F172A"/>
+        <w:right w:val="single" w:sz="10" w:space="0" w:color="0F172A"/>
+        <w:insideH w:val="none"/>
+        <w:insideV w:val="single" w:sz="6" w:space="0" w:color="0F172A"/>
+      </w:tblBorders>
+      <w:tblCellMar>
+        <w:top w:w="80" w:type="dxa"/>
+        <w:left w:w="120" w:type="dxa"/>
+        <w:bottom w:w="80" w:type="dxa"/>
+        <w:right w:w="120" w:type="dxa"/>
+      </w:tblCellMar>
+    </w:tblPr>
+    <w:tr>
+      <!-- Col 1: Logo -->
+      <w:tc>
+        <w:tcPr><w:tcW w:w="1300" w:type="pct"/></w:tcPr>
+        <w:p>
+          <w:pPr><w:spacing w:before="0" w:after="10"/></w:pPr>
+          <w:r><w:rPr><w:rFonts w:ascii="Arial" w:hAnsi="Arial"/><w:b/><w:sz w:val="28"/><w:color w:val="181A1E"/></w:rPr><w:t>amaavig</w:t></w:r>
+          <w:r><w:rPr><w:rFonts w:ascii="Arial" w:hAnsi="Arial"/><w:b/><w:sz w:val="28"/><w:color w:val="FA7014"/></w:rPr><w:t>o</w:t></w:r>
+        </w:p>
+        <w:p>
+          <w:pPr><w:spacing w:before="0" w:after="0"/></w:pPr>
+          <w:r><w:rPr><w:rFonts w:ascii="Arial" w:hAnsi="Arial"/><w:sz w:val="13"/><w:color w:val="64748B"/></w:rPr><w:t>Where Brand takes Flight</w:t></w:r>
+        </w:p>
+      </w:tc>
+      <!-- Col 2: Document Name -->
+      <w:tc>
+        <w:tcPr><w:tcW w:w="1850" w:type="pct"/></w:tcPr>
+        <w:p>
+          <w:pPr><w:spacing w:before="0" w:after="15"/></w:pPr>
+          <w:r><w:rPr><w:rFonts w:ascii="Arial" w:hAnsi="Arial"/><w:b/><w:sz w:val="15"/><w:color w:val="0F172A"/></w:rPr><w:t>Document Name:</w:t></w:r>
+        </w:p>
+        <w:p>
+          <w:pPr><w:spacing w:before="0" w:after="0"/></w:pPr>
+          <w:r><w:rPr><w:rFonts w:ascii="Arial" w:hAnsi="Arial"/><w:b/><w:sz w:val="19"/><w:color w:val="1E293B"/></w:rPr><w:t>${escapeXml(meta.title)}</w:t></w:r>
+        </w:p>
+      </w:tc>
+      <!-- Col 3: Version -->
+      <w:tc>
+        <w:tcPr><w:tcW w:w="850" w:type="pct"/></w:tcPr>
+        <w:p>
+          <w:pPr><w:spacing w:before="60" w:after="0"/></w:pPr>
+          <w:r><w:rPr><w:rFonts w:ascii="Arial" w:hAnsi="Arial"/><w:b/><w:sz w:val="18"/><w:color w:val="0F172A"/></w:rPr><w:t>Version: ${escapeXml(meta.version)}</w:t></w:r>
+        </w:p>
+      </w:tc>
+      <!-- Col 4: Effective Date -->
+      <w:tc>
+        <w:tcPr><w:tcW w:w="1000" w:type="pct"/></w:tcPr>
+        <w:p>
+          <w:pPr><w:spacing w:before="0" w:after="15"/></w:pPr>
+          <w:r><w:rPr><w:rFonts w:ascii="Arial" w:hAnsi="Arial"/><w:b/><w:sz w:val="15"/><w:color w:val="0F172A"/></w:rPr><w:t>Effective date :</w:t></w:r>
+        </w:p>
+        <w:p>
+          <w:pPr><w:spacing w:before="0" w:after="0"/></w:pPr>
+          <w:r><w:rPr><w:rFonts w:ascii="Arial" w:hAnsi="Arial"/><w:sz w:val="18"/><w:color w:val="1E293B"/></w:rPr><w:t>${escapeXml(meta.effectiveDate)}</w:t></w:r>
+        </w:p>
+      </w:tc>
+    </w:tr>
+  </w:tbl>
+  <w:p><w:pPr><w:spacing w:before="0" w:after="60"/></w:pPr></w:p>
+</w:hdr>`;
 }
 
 /**
- * Stamping engine for DOCX Word documents:
+ * Builds the official WordprocessingML Table Footer for native DOCX injection
+ */
+function buildNativeFooterXml(meta: {
+  creator: string;
+  approver: string;
+  approvedDate: string;
+}): string {
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<w:ftr xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+  <w:p><w:pPr><w:spacing w:before="60" w:after="0"/></w:pPr></w:p>
+  <w:tbl>
+    <w:tblPr>
+      <w:tblW w:w="5000" w:type="pct"/>
+      <w:tblBorders>
+        <w:top w:val="single" w:sz="10" w:space="0" w:color="0F172A"/>
+        <w:left w:val="single" w:sz="10" w:space="0" w:color="0F172A"/>
+        <w:bottom w:val="single" w:sz="10" w:space="0" w:color="0F172A"/>
+        <w:right w:val="single" w:sz="10" w:space="0" w:color="0F172A"/>
+        <w:insideH w:val="none"/>
+        <w:insideV w:val="single" w:sz="6" w:space="0" w:color="0F172A"/>
+      </w:tblBorders>
+      <w:tblCellMar>
+        <w:top w:w="60" w:type="dxa"/>
+        <w:left w:w="120" w:type="dxa"/>
+        <w:bottom w:w="60" w:type="dxa"/>
+        <w:right w:w="120" w:type="dxa"/>
+      </w:tblCellMar>
+    </w:tblPr>
+    <w:tr>
+      <!-- Col 1: Created by -->
+      <w:tc>
+        <w:tcPr><w:tcW w:w="1666" w:type="pct"/></w:tcPr>
+        <w:p>
+          <w:pPr><w:spacing w:before="0" w:after="12"/></w:pPr>
+          <w:r><w:rPr><w:rFonts w:ascii="Arial" w:hAnsi="Arial"/><w:b/><w:sz w:val="15"/><w:color w:val="0F172A"/></w:rPr><w:t>Created by:</w:t></w:r>
+        </w:p>
+        <w:p>
+          <w:pPr><w:spacing w:before="0" w:after="0"/></w:pPr>
+          <w:r><w:rPr><w:rFonts w:ascii="Arial" w:hAnsi="Arial"/><w:sz w:val="17"/><w:color w:val="1E293B"/></w:rPr><w:t>${escapeXml(meta.creator)}</w:t></w:r>
+        </w:p>
+      </w:tc>
+      <!-- Col 2: Approved by -->
+      <w:tc>
+        <w:tcPr><w:tcW w:w="1667" w:type="pct"/></w:tcPr>
+        <w:p>
+          <w:pPr><w:spacing w:before="0" w:after="12"/></w:pPr>
+          <w:r><w:rPr><w:rFonts w:ascii="Arial" w:hAnsi="Arial"/><w:b/><w:sz w:val="15"/><w:color w:val="0F172A"/></w:rPr><w:t>Approved by:</w:t></w:r>
+        </w:p>
+        <w:p>
+          <w:pPr><w:spacing w:before="0" w:after="0"/></w:pPr>
+          <w:r><w:rPr><w:rFonts w:ascii="Arial" w:hAnsi="Arial"/><w:sz w:val="17"/><w:color w:val="1E293B"/></w:rPr><w:t>${escapeXml(meta.approver)}</w:t></w:r>
+        </w:p>
+      </w:tc>
+      <!-- Col 3: Approved Date -->
+      <w:tc>
+        <w:tcPr><w:tcW w:w="1667" w:type="pct"/></w:tcPr>
+        <w:p>
+          <w:pPr><w:spacing w:before="0" w:after="12"/></w:pPr>
+          <w:r><w:rPr><w:rFonts w:ascii="Arial" w:hAnsi="Arial"/><w:b/><w:sz w:val="15"/><w:color w:val="0F172A"/></w:rPr><w:t>Approved Date:</w:t></w:r>
+        </w:p>
+        <w:p>
+          <w:pPr><w:spacing w:before="0" w:after="0"/></w:pPr>
+          <w:r><w:rPr><w:rFonts w:ascii="Arial" w:hAnsi="Arial"/><w:sz w:val="17"/><w:color w:val="1E293B"/></w:rPr><w:t>${escapeXml(meta.approvedDate)}</w:t></w:r>
+        </w:p>
+      </w:tc>
+    </w:tr>
+  </w:tbl>
+</w:ftr>`;
+}
+
+/**
+ * Safely removes redundant policy metadata paragraphs from DOCX word/document.xml.
+ * Targets exclusively paragraphs containing these 4 metadata labels:
+ * - Policy Owner:
+ * - Effective Date:
+ * - Review Frequency:
+ * - Applies To:
+ *
+ * It removes the complete paragraph containing each field, including its Word XML formatting.
+ * Preserves all other paragraphs, tables, images, styles, section breaks, and document layout.
+ */
+export function removePolicyMetadataFromDocxXml(xml: string): string {
+  if (!xml) return '';
+
+  let res = xml;
+
+  // 1. Remove metadata tables (<w:tbl> that contain Policy Owner and Effective Date / Review Frequency / Applies To)
+  res = res.replace(/<w:tbl(?:[\s>][\s\S]*?)<\/w:tbl>/g, (tblMatch) => {
+    const textMatches = tblMatch.match(/<w:t[^>]*>([\s\S]*?)<\/w:t>/gi) || [];
+    const fullText = textMatches.map((t) => t.replace(/<[^>]+>/g, '')).join(' ').trim();
+    const isMetaTable =
+      /Policy\s*Owner/i.test(fullText) &&
+      (/Effective\s*Date/i.test(fullText) || /Review\s*Frequency/i.test(fullText) || /Applies\s*To/i.test(fullText));
+    if (isMetaTable) {
+      return '';
+    }
+    return tblMatch;
+  });
+
+  // 2. Remove metadata paragraphs (<w:p> representing any of the 4 metadata fields)
+  res = res.replace(/<w:p(?:[\s>][\s\S]*?)<\/w:p>/g, (pMatch) => {
+    // Safety check: never remove paragraphs containing drawings or pictures
+    if (pMatch.includes('<w:drawing') || pMatch.includes('<w:pict')) {
+      return pMatch;
+    }
+
+    // Extract plain text content from all Word text runs (<w:t>)
+    const textMatches = pMatch.match(/<w:t[^>]*>([\s\S]*?)<\/w:t>/gi) || [];
+    const fullText = textMatches.map((t) => t.replace(/<[^>]+>/g, '')).join('').trim();
+    const normalized = fullText.replace(/\s+/g, ' ').trim();
+
+    if (!normalized) return pMatch;
+
+    // Match paragraphs that represent any of the 4 metadata fields
+    const isMetadata =
+      /^(?:(?:\*{1,2}|#+\s*|[-•|]\s*)?Policy\s*Owner\s*[:\-–—]?)/i.test(normalized) ||
+      /^(?:(?:\*{1,2}|#+\s*|[-•|]\s*)?Effective\s*Date\s*[:\-–—]?)/i.test(normalized) ||
+      /^(?:(?:\*{1,2}|#+\s*|[-•|]\s*)?Review\s*Frequency\s*[:\-–—]?)/i.test(normalized) ||
+      /^(?:(?:\*{1,2}|#+\s*|[-•|]\s*)?Applies\s*To\s*[:\-–—]?)/i.test(normalized);
+
+    if (isMetadata) {
+      // Critical safety: If section properties (<w:sectPr>) are nested inside this paragraph, preserve them
+      const sectPrMatch = pMatch.match(/<w:sectPr[\s\S]*?<\/w:sectPr>/);
+      if (sectPrMatch) {
+        return `<w:p><w:pPr>${sectPrMatch[0]}</w:pPr></w:p>`;
+      }
+      return '';
+    }
+
+    return pMatch;
+  });
+
+  return res;
+}
+
+/**
+ * Strips redundant policy metadata paragraphs and tables directly from DOCX binary without changing anything else.
+ */
+export async function cleanDocxBytes(sourceDocxInput: Uint8Array | ArrayBuffer | string): Promise<Uint8Array> {
+  const sourceBytes = toUint8Array(sourceDocxInput);
+  const zip = await JSZip.loadAsync(sourceBytes);
+  const docXmlFile = zip.file('word/document.xml');
+  if (docXmlFile) {
+    const originalDocXml = await docXmlFile.async('text');
+    const cleanedDocXml = removePolicyMetadataFromDocxXml(originalDocXml);
+    zip.file('word/document.xml', cleanedDocXml);
+  }
+  return await zip.generateAsync({ type: 'uint8array' });
+}
+
+/**
+ * Strips redundant policy metadata directly from a DOCX data URL.
+ */
+export async function cleanDocxDataUrl(dataUrl: string): Promise<string> {
+  if (!dataUrl || !dataUrl.startsWith('data:')) return dataUrl;
+  const cleanedBytes = await cleanDocxBytes(dataUrl);
+  const mimeType = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+  return `data:${mimeType};base64,${bytesToBase64(cleanedBytes)}`;
+}
+
+/**
+ * Stamping engine for existing DOCX Word documents:
  * Preserves the original word/document.xml content, formatting, tables, and styles 100% INTACT.
- * Injects OpenXML header1.xml and footer1.xml containing the official Header & Footer tables.
+ * Injects OpenXML header1.xml and footer1.xml containing the official Header & Footer tables,
+ * and sets section margins so body flows cleanly between them without overlapping.
  */
 export async function stampDocxWithHeaderFooter(
   sourceDocxInput: Uint8Array | ArrayBuffer | string,
@@ -353,146 +599,14 @@ export async function stampDocxWithHeaderFooter(
   const approver = meta.approvedByName || 'Vishal Shah';
   const title = meta.documentTitle || 'Document';
 
-  // 1. Generate Header XML in WordprocessingML
-  const headerXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<w:hdr xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
-  <w:tbl>
-    <w:tblPr>
-      <w:tblW w:w="5000" w:type="pct"/>
-      <w:tblBorders>
-        <w:top w:val="single" w:sz="12" w:space="0" w:color="0F172A"/>
-        <w:left w:val="single" w:sz="12" w:space="0" w:color="0F172A"/>
-        <w:bottom w:val="single" w:sz="12" w:space="0" w:color="0F172A"/>
-        <w:right w:val="single" w:sz="12" w:space="0" w:color="0F172A"/>
-        <w:insideH w:val="none"/>
-        <w:insideV w:val="single" w:sz="8" w:space="0" w:color="0F172A"/>
-      </w:tblBorders>
-      <w:tblCellMar>
-        <w:top w:w="80" w:type="dxa"/>
-        <w:left w:w="120" w:type="dxa"/>
-        <w:bottom w:w="80" w:type="dxa"/>
-        <w:right w:w="120" w:type="dxa"/>
-      </w:tblCellMar>
-    </w:tblPr>
-    <w:tr>
-      <!-- Col 1: Logo -->
-      <w:tc>
-        <w:tcPr><w:tcW w:w="1350" w:type="pct"/></w:tcPr>
-        <w:p>
-          <w:pPr><w:spacing w:before="0" w:after="20"/></w:pPr>
-          <w:r><w:rPr><w:b/><w:sz w:val="28"/><w:color w:val="181A1E"/></w:rPr><w:t>amaavig</w:t></w:r>
-          <w:r><w:rPr><w:b/><w:sz w:val="28"/><w:color w:val="FA7014"/></w:rPr><w:t>o</w:t></w:r>
-        </w:p>
-        <w:p>
-          <w:pPr><w:spacing w:before="0" w:after="0"/></w:pPr>
-          <w:r><w:rPr><w:sz w:val="14"/><w:color w:val="64748B"/></w:rPr><w:t>Where Brand takes Flight</w:t></w:r>
-        </w:p>
-      </w:tc>
-      <!-- Col 2: Document Name -->
-      <w:tc>
-        <w:tcPr><w:tcW w:w="1850" w:type="pct"/></w:tcPr>
-        <w:p>
-          <w:pPr><w:spacing w:before="0" w:after="20"/></w:pPr>
-          <w:r><w:rPr><w:b/><w:sz w:val="15"/><w:color w:val="0F172A"/></w:rPr><w:t>Document Name:</w:t></w:r>
-        </w:p>
-        <w:p>
-          <w:pPr><w:spacing w:before="0" w:after="0"/></w:pPr>
-          <w:r><w:rPr><w:b/><w:sz w:val="20"/><w:color w:val="1E293B"/></w:rPr><w:t>${escapeXml(title)}</w:t></w:r>
-        </w:p>
-      </w:tc>
-      <!-- Col 3: Version -->
-      <w:tc>
-        <w:tcPr><w:tcW w:w="800" w:type="pct"/></w:tcPr>
-        <w:p>
-          <w:pPr><w:spacing w:before="60" w:after="0"/></w:pPr>
-          <w:r><w:rPr><w:b/><w:sz w:val="18"/><w:color w:val="0F172A"/></w:rPr><w:t>Version: ${escapeXml(cleanVer)}</w:t></w:r>
-        </w:p>
-      </w:tc>
-      <!-- Col 4: Effective Date -->
-      <w:tc>
-        <w:tcPr><w:tcW w:w="1000" w:type="pct"/></w:tcPr>
-        <w:p>
-          <w:pPr><w:spacing w:before="0" w:after="20"/></w:pPr>
-          <w:r><w:rPr><w:b/><w:sz w:val="15"/><w:color w:val="0F172A"/></w:rPr><w:t>Effective date :</w:t></w:r>
-        </w:p>
-        <w:p>
-          <w:pPr><w:spacing w:before="0" w:after="0"/></w:pPr>
-          <w:r><w:rPr><w:sz w:val="18"/><w:color w:val="1E293B"/></w:rPr><w:t>${escapeXml(effective)}</w:t></w:r>
-        </w:p>
-      </w:tc>
-    </w:tr>
-  </w:tbl>
-  <w:p><w:pPr><w:spacing w:before="0" w:after="80"/></w:pPr></w:p>
-</w:hdr>`;
+  // 1. Generate Header & Footer XML
+  const headerXml = buildNativeHeaderXml({ title, version: cleanVer, effectiveDate: effective });
+  const footerXml = buildNativeFooterXml({ creator, approver, approvedDate: approvedDt });
 
-  // 2. Generate Footer XML in WordprocessingML
-  const footerXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<w:ftr xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
-  <w:p><w:pPr><w:spacing w:before="80" w:after="0"/></w:pPr></w:p>
-  <w:tbl>
-    <w:tblPr>
-      <w:tblW w:w="5000" w:type="pct"/>
-      <w:tblBorders>
-        <w:top w:val="single" w:sz="12" w:space="0" w:color="0F172A"/>
-        <w:left w:val="single" w:sz="12" w:space="0" w:color="0F172A"/>
-        <w:bottom w:val="single" w:sz="12" w:space="0" w:color="0F172A"/>
-        <w:right w:val="single" w:sz="12" w:space="0" w:color="0F172A"/>
-        <w:insideH w:val="none"/>
-        <w:insideV w:val="single" w:sz="8" w:space="0" w:color="0F172A"/>
-      </w:tblBorders>
-      <w:tblCellMar>
-        <w:top w:w="60" w:type="dxa"/>
-        <w:left w:w="120" w:type="dxa"/>
-        <w:bottom w:w="60" w:type="dxa"/>
-        <w:right w:w="120" w:type="dxa"/>
-      </w:tblCellMar>
-    </w:tblPr>
-    <w:tr>
-      <!-- Col 1: Created by -->
-      <w:tc>
-        <w:tcPr><w:tcW w:w="1666" w:type="pct"/></w:tcPr>
-        <w:p>
-          <w:pPr><w:spacing w:before="0" w:after="15"/></w:pPr>
-          <w:r><w:rPr><w:b/><w:sz w:val="15"/><w:color w:val="0F172A"/></w:rPr><w:t>Created by:</w:t></w:r>
-        </w:p>
-        <w:p>
-          <w:pPr><w:spacing w:before="0" w:after="0"/></w:pPr>
-          <w:r><w:rPr><w:sz w:val="17"/><w:color w:val="1E293B"/></w:rPr><w:t>${escapeXml(creator)}</w:t></w:r>
-        </w:p>
-      </w:tc>
-      <!-- Col 2: Approved by -->
-      <w:tc>
-        <w:tcPr><w:tcW w:w="1667" w:type="pct"/></w:tcPr>
-        <w:p>
-          <w:pPr><w:spacing w:before="0" w:after="15"/></w:pPr>
-          <w:r><w:rPr><w:b/><w:sz w:val="15"/><w:color w:val="0F172A"/></w:rPr><w:t>Approved by:</w:t></w:r>
-        </w:p>
-        <w:p>
-          <w:pPr><w:spacing w:before="0" w:after="0"/></w:pPr>
-          <w:r><w:rPr><w:sz w:val="17"/><w:color w:val="1E293B"/></w:rPr><w:t>${escapeXml(approver)}</w:t></w:r>
-        </w:p>
-      </w:tc>
-      <!-- Col 3: Approved Date -->
-      <w:tc>
-        <w:tcPr><w:tcW w:w="1667" w:type="pct"/></w:tcPr>
-        <w:p>
-          <w:pPr><w:spacing w:before="0" w:after="15"/></w:pPr>
-          <w:r><w:rPr><w:b/><w:sz w:val="15"/><w:color w:val="0F172A"/></w:rPr><w:t>Approved Date:</w:t></w:r>
-        </w:p>
-        <w:p>
-          <w:pPr><w:spacing w:before="0" w:after="0"/></w:pPr>
-          <w:r><w:rPr><w:sz w:val="17"/><w:color w:val="1E293B"/></w:rPr><w:t>${escapeXml(approvedDt)}</w:t></w:r>
-        </w:p>
-      </w:tc>
-    </w:tr>
-  </w:tbl>
-</w:ftr>`;
-
-  // Place header & footer files into zip
   zip.file('word/header1.xml', headerXml);
   zip.file('word/footer1.xml', footerXml);
 
-  // 3. Register Header & Footer in [Content_Types].xml
+  // 2. Register Header & Footer in [Content_Types].xml
   let contentTypesXml = (await zip.file('[Content_Types].xml')?.async('text')) || '';
   if (!contentTypesXml.includes('/word/header1.xml')) {
     contentTypesXml = contentTypesXml.replace(
@@ -502,7 +616,7 @@ export async function stampDocxWithHeaderFooter(
     zip.file('[Content_Types].xml', contentTypesXml);
   }
 
-  // 4. Register Header & Footer in word/_rels/document.xml.rels
+  // 3. Register Header & Footer in word/_rels/document.xml.rels
   let relsXml = (await zip.file('word/_rels/document.xml.rels')?.async('text')) || '';
   if (!relsXml.includes('Target="header1.xml"')) {
     const headerRel =
@@ -518,13 +632,17 @@ export async function stampDocxWithHeaderFooter(
     zip.file('word/_rels/document.xml.rels', relsXml);
   }
 
-  // 5. Link Header & Footer inside word/document.xml section properties (<w:sectPr>)
-  // KEEPING ALL OTHER DOCUMENT CONTENT COMPLETELY INTACT!
+  // 4. Link Header & Footer inside word/document.xml section properties (<w:sectPr>)
+  // Ensures w:top="1800" (1.25 in) and w:bottom="1600" (1.11 in) so original body flows safely without collision
   let docXml = (await zip.file('word/document.xml')?.async('text')) || '';
-  if (!docXml.includes('r:id="rIdHeader1"')) {
-    const headerFooterRefs =
-      '<w:headerReference w:type="default" r:id="rIdHeader1"/><w:footerReference w:type="default" r:id="rIdFooter1"/>';
 
+  // Clean the original word/document.xml body before adding/linking the official header/footer
+  docXml = removePolicyMetadataFromDocxXml(docXml);
+
+  const headerFooterRefs =
+    '<w:headerReference w:type="default" r:id="rIdHeader1"/><w:footerReference w:type="default" r:id="rIdFooter1"/>';
+
+  if (!docXml.includes('r:id="rIdHeader1"')) {
     if (docXml.includes('<w:sectPr>')) {
       docXml = docXml.replace('<w:sectPr>', `<w:sectPr>${headerFooterRefs}`);
     } else if (docXml.includes('<w:sectPr ')) {
@@ -532,8 +650,26 @@ export async function stampDocxWithHeaderFooter(
     } else if (docXml.includes('</w:body>')) {
       docXml = docXml.replace('</w:body>', `<w:sectPr>${headerFooterRefs}</w:sectPr></w:body>`);
     }
-    zip.file('word/document.xml', docXml);
   }
+
+  // Update or insert page margins <w:pgMar> to give ample clearance for header & footer
+  if (docXml.includes('<w:pgMar')) {
+    docXml = docXml.replace(
+      /<w:pgMar\s+([^>]*)\/>/g,
+      (match, attrs) => {
+        let updated = attrs;
+        if (!/w:header=/i.test(updated)) updated += ' w:header="720"';
+        if (!/w:footer=/i.test(updated)) updated += ' w:footer="720"';
+        // Ensure top margin is at least 1800 dxa (1.25 in)
+        updated = updated.replace(/w:top="\d+"/i, 'w:top="1800"');
+        // Ensure bottom margin is at least 1600 dxa (1.11 in)
+        updated = updated.replace(/w:bottom="\d+"/i, 'w:bottom="1600"');
+        return `<w:pgMar ${updated}/>`;
+      }
+    );
+  }
+
+  zip.file('word/document.xml', docXml);
 
   const stampedBytes = await zip.generateAsync({
     type: 'uint8array',
@@ -553,10 +689,403 @@ export async function stampDocxWithHeaderFooter(
 }
 
 /**
- * Universal document downloader that preserves original formatting 100%:
- * - If PDF: Stamped with pdf-lib so original document layout is intact with Header & Footer on every page.
- * - If DOCX: Stamped with JSZip so original Word layout is intact with Header & Footer tables.
- * - If Text / Markdown: Renders via corporate PDF generator.
+ * Builds a genuine, fully editable Microsoft Word (.docx) document
+ * with native Header Table on EVERY page, native Footer Table on EVERY page,
+ * and high-fidelity body typography (H1, H2, H3, bullet lists, numbered lists, metadata cards).
+ */
+export async function generateCorporateDocxBlob(options: CorporateDocxOptions): Promise<Blob> {
+  const cleanVer = cleanVersionNumber(options.versionNumber);
+  const effective = formatDDMMYYYY(options.effectiveDate);
+  const approvedDt = formatDDMMYYYY(options.approvedDate || options.effectiveDate);
+  const creator = options.createdByName || 'Amee Shah';
+  const approver = options.approvedByName || 'Vishal Shah';
+  const title = options.documentTitle || 'Corporate Policy Document';
+
+  const borderNone = { style: BorderStyle.NONE, size: 0, color: 'auto' };
+  const borderSolid = { style: BorderStyle.SINGLE, size: 8, color: '0F172A' };
+
+  // 1. Native Word Header Table (Repeats on EVERY page automatically)
+  const headerTable = new Table({
+    width: { size: 100, type: WidthType.PERCENTAGE },
+    borders: {
+      top: borderSolid,
+      bottom: borderSolid,
+      left: borderSolid,
+      right: borderSolid,
+      insideHorizontal: borderNone,
+      insideVertical: borderSolid,
+    },
+    rows: [
+      new TableRow({
+        children: [
+          // Col 1: Logo
+          new TableCell({
+            width: { size: 26, type: WidthType.PERCENTAGE },
+            margins: { top: 90, bottom: 90, left: 140, right: 140 },
+            children: [
+              new Paragraph({
+                spacing: { before: 0, after: 20 },
+                children: [
+                  new TextRun({ text: 'amaavig', bold: true, size: 28, color: '181A1E', font: 'Arial' }),
+                  new TextRun({ text: 'o', bold: true, size: 28, color: 'FA7014', font: 'Arial' }),
+                ],
+              }),
+              new Paragraph({
+                spacing: { before: 0, after: 0 },
+                children: [
+                  new TextRun({ text: 'Where Brand takes Flight', size: 13, color: '64748B', font: 'Arial' }),
+                ],
+              }),
+            ],
+          }),
+          // Col 2: Document Name
+          new TableCell({
+            width: { size: 36, type: WidthType.PERCENTAGE },
+            margins: { top: 90, bottom: 90, left: 140, right: 140 },
+            children: [
+              new Paragraph({
+                spacing: { before: 0, after: 20 },
+                children: [
+                  new TextRun({ text: 'Document Name:', bold: true, size: 15, color: '0F172A', font: 'Arial' }),
+                ],
+              }),
+              new Paragraph({
+                spacing: { before: 0, after: 0 },
+                children: [
+                  new TextRun({ text: title, bold: true, size: 19, color: '1E293B', font: 'Arial' }),
+                ],
+              }),
+            ],
+          }),
+          // Col 3: Version
+          new TableCell({
+            width: { size: 16, type: WidthType.PERCENTAGE },
+            margins: { top: 90, bottom: 90, left: 140, right: 140 },
+            children: [
+              new Paragraph({
+                spacing: { before: 60, after: 0 },
+                children: [
+                  new TextRun({ text: `Version: ${cleanVer}`, bold: true, size: 18, color: '0F172A', font: 'Arial' }),
+                ],
+              }),
+            ],
+          }),
+          // Col 4: Effective Date
+          new TableCell({
+            width: { size: 22, type: WidthType.PERCENTAGE },
+            margins: { top: 90, bottom: 90, left: 140, right: 140 },
+            children: [
+              new Paragraph({
+                spacing: { before: 0, after: 20 },
+                children: [
+                  new TextRun({ text: 'Effective date :', bold: true, size: 15, color: '0F172A', font: 'Arial' }),
+                ],
+              }),
+              new Paragraph({
+                spacing: { before: 0, after: 0 },
+                children: [
+                  new TextRun({ text: effective, size: 18, color: '1E293B', font: 'Arial' }),
+                ],
+              }),
+            ],
+          }),
+        ],
+      }),
+    ],
+  });
+
+  // 2. Native Word Footer Table (Repeats on EVERY page automatically)
+  const footerTable = new Table({
+    width: { size: 100, type: WidthType.PERCENTAGE },
+    borders: {
+      top: borderSolid,
+      bottom: borderSolid,
+      left: borderSolid,
+      right: borderSolid,
+      insideHorizontal: borderNone,
+      insideVertical: borderSolid,
+    },
+    rows: [
+      new TableRow({
+        children: [
+          // Col 1: Created by
+          new TableCell({
+            width: { size: 33.33, type: WidthType.PERCENTAGE },
+            margins: { top: 70, bottom: 70, left: 140, right: 140 },
+            children: [
+              new Paragraph({
+                spacing: { before: 0, after: 15 },
+                children: [new TextRun({ text: 'Created by:', bold: true, size: 15, color: '0F172A', font: 'Arial' })],
+              }),
+              new Paragraph({
+                spacing: { before: 0, after: 0 },
+                children: [new TextRun({ text: creator, size: 17, color: '1E293B', font: 'Arial' })],
+              }),
+            ],
+          }),
+          // Col 2: Approved by
+          new TableCell({
+            width: { size: 33.33, type: WidthType.PERCENTAGE },
+            margins: { top: 70, bottom: 70, left: 140, right: 140 },
+            children: [
+              new Paragraph({
+                spacing: { before: 0, after: 15 },
+                children: [new TextRun({ text: 'Approved by:', bold: true, size: 15, color: '0F172A', font: 'Arial' })],
+              }),
+              new Paragraph({
+                spacing: { before: 0, after: 0 },
+                children: [new TextRun({ text: approver, size: 17, color: '1E293B', font: 'Arial' })],
+              }),
+            ],
+          }),
+          // Col 3: Approved Date
+          new TableCell({
+            width: { size: 33.34, type: WidthType.PERCENTAGE },
+            margins: { top: 70, bottom: 70, left: 140, right: 140 },
+            children: [
+              new Paragraph({
+                spacing: { before: 0, after: 15 },
+                children: [new TextRun({ text: 'Approved Date:', bold: true, size: 15, color: '0F172A', font: 'Arial' })],
+              }),
+              new Paragraph({
+                spacing: { before: 0, after: 0 },
+                children: [new TextRun({ text: approvedDt, size: 17, color: '1E293B', font: 'Arial' })],
+              }),
+            ],
+          }),
+        ],
+      }),
+    ],
+  });
+
+  // 3. Parse Body Content
+  const cleanBody = extractCleanBody(options.rawContent);
+  const rawParagraphs = cleanBody.split('\n\n');
+  const bodyChildren: any[] = [];
+
+  for (const rawPara of rawParagraphs) {
+    const para = rawPara.trim();
+    if (!para) continue;
+
+    // Skip redundant policy metadata paragraphs if any survived
+    const isMetaPara =
+      /^(?:(?:\*{1,2}|#+\s*|[-•|]\s*)?Policy\s*Owner\s*[:\-–—]?)/i.test(para) ||
+      /^(?:(?:\*{1,2}|#+\s*|[-•|]\s*)?Effective\s*Date\s*[:\-–—]?)/i.test(para) ||
+      /^(?:(?:\*{1,2}|#+\s*|[-•|]\s*)?Review\s*Frequency\s*[:\-–—]?)/i.test(para) ||
+      /^(?:(?:\*{1,2}|#+\s*|[-•|]\s*)?Applies\s*To\s*[:\-–—]?)/i.test(para);
+    if (isMetaPara) continue;
+
+    // Heading 1 (# ...)
+    if (para.startsWith('# ')) {
+      const headingText = para.replace(/^#\s+/, '').trim();
+      bodyChildren.push(
+        new Paragraph({
+          spacing: { before: 240, after: 120 },
+          children: [
+            new TextRun({
+              text: headingText,
+              bold: true,
+              size: 32, // 16pt
+              color: '0F172A',
+              font: 'Arial',
+            }),
+          ],
+        })
+      );
+      continue;
+    }
+
+    // Heading 2 (## ...)
+    if (para.startsWith('## ')) {
+      const headingText = para.replace(/^##\s+/, '').trim();
+      bodyChildren.push(
+        new Paragraph({
+          spacing: { before: 200, after: 80 },
+          children: [
+            new TextRun({
+              text: headingText,
+              bold: true,
+              size: 25, // 12.5pt
+              color: 'FA7014', // Amaavigo Orange
+              font: 'Arial',
+            }),
+          ],
+        })
+      );
+      continue;
+    }
+
+    // Heading 3 (### ...)
+    if (para.startsWith('### ')) {
+      const headingText = para.replace(/^###\s+/, '').trim();
+      bodyChildren.push(
+        new Paragraph({
+          spacing: { before: 160, after: 60 },
+          children: [
+            new TextRun({
+              text: headingText,
+              bold: true,
+              size: 22, // 11pt
+              color: '1E293B',
+              font: 'Arial',
+            }),
+          ],
+        })
+      );
+      continue;
+    }
+
+    // Document Metadata Box (**Document ID:** ...)
+    if (para.includes('**Document ID:**') || (para.startsWith('**') && para.includes('**Version:**'))) {
+      const metaLines = para.split('\n').filter(l => l.trim().length > 0);
+      const cellParagraphs = metaLines.map(mLine => {
+        const clean = mLine.replace(/\*\*/g, '').trim();
+        const colonIdx = clean.indexOf(':');
+        if (colonIdx > -1) {
+          const k = clean.substring(0, colonIdx + 1);
+          const v = clean.substring(colonIdx + 1).trim();
+          return new Paragraph({
+            spacing: { before: 20, after: 20 },
+            children: [
+              new TextRun({ text: `${k} `, bold: true, size: 19, color: '0F172A', font: 'Arial' }),
+              new TextRun({ text: v, size: 19, color: '334155', font: 'Arial' }),
+            ],
+          });
+        }
+        return new Paragraph({
+          spacing: { before: 20, after: 20 },
+          children: [new TextRun({ text: clean, size: 19, color: '334155', font: 'Arial' })],
+        });
+      });
+
+      bodyChildren.push(
+        new Table({
+          width: { size: 100, type: WidthType.PERCENTAGE },
+          borders: {
+            top: { style: BorderStyle.SINGLE, size: 4, color: 'E2E8F0' },
+            bottom: { style: BorderStyle.SINGLE, size: 4, color: 'E2E8F0' },
+            left: { style: BorderStyle.SINGLE, size: 8, color: 'FA7014' }, // Orange accent bar
+            right: { style: BorderStyle.SINGLE, size: 4, color: 'E2E8F0' },
+            insideHorizontal: borderNone,
+            insideVertical: borderNone,
+          },
+          rows: [
+            new TableRow({
+              children: [
+                new TableCell({
+                  width: { size: 100, type: WidthType.PERCENTAGE },
+                  shading: { fill: 'F8FAFC', type: ShadingType.CLEAR, color: 'auto' },
+                  margins: { top: 120, bottom: 120, left: 160, right: 160 },
+                  children: cellParagraphs,
+                }),
+              ],
+            }),
+          ],
+        })
+      );
+      continue;
+    }
+
+    // Numbered list (1. ... 2. ...)
+    if (/^\d+\.\s+/.test(para)) {
+      const listLines = para.split('\n');
+      for (const item of listLines) {
+        const numMatch = item.match(/^(\d+\.)\s+(.*)/);
+        if (numMatch) {
+          bodyChildren.push(
+            new Paragraph({
+              spacing: { before: 40, after: 40 },
+              indent: { left: 360 },
+              children: [
+                new TextRun({ text: `${numMatch[1]} `, bold: true, size: 21, color: 'FA7014', font: 'Arial' }),
+                new TextRun({ text: numMatch[2].replace(/\*\*/g, ''), size: 21, color: '334155', font: 'Arial' }),
+              ],
+            })
+          );
+        } else {
+          bodyChildren.push(
+            new Paragraph({
+              spacing: { before: 40, after: 40 },
+              indent: { left: 360 },
+              children: [new TextRun({ text: item.replace(/\*\*/g, ''), size: 21, color: '334155', font: 'Arial' })],
+            })
+          );
+        }
+      }
+      continue;
+    }
+
+    // Bullet list (- ... or • ...)
+    if (para.includes('\n- ') || para.includes('\n• ') || para.startsWith('- ') || para.startsWith('• ')) {
+      const bulletLines = para.split('\n');
+      for (const bLine of bulletLines) {
+        const cleanBLine = bLine.replace(/^[-*•]\s+/, '').replace(/\*\*/g, '').trim();
+        if (!cleanBLine) continue;
+        bodyChildren.push(
+          new Paragraph({
+            spacing: { before: 30, after: 30 },
+            bullet: { level: 0 },
+            children: [new TextRun({ text: cleanBLine, size: 21, color: '334155', font: 'Arial' })],
+          })
+        );
+      }
+      continue;
+    }
+
+    // Standard body paragraph
+    bodyChildren.push(
+      new Paragraph({
+        spacing: { before: 60, after: 80, line: 276 },
+        children: [
+          new TextRun({
+            text: para.replace(/\*\*/g, ''),
+            size: 21, // 10.5pt
+            color: '334155',
+            font: 'Arial',
+          }),
+        ],
+      })
+    );
+  }
+
+  // 4. Assemble Document with Section Margins & Native Headers/Footers
+  const doc = new Document({
+    sections: [
+      {
+        properties: {
+          page: {
+            margin: {
+              top: 1800,    // 1.25 in (Leaves room for Header table)
+              bottom: 1600, // 1.11 in (Leaves room for Footer table)
+              left: 1440,   // 1.0 in
+              right: 1440,  // 1.0 in
+              header: 650,  // 0.45 in
+              footer: 650,  // 0.45 in
+            },
+          },
+        },
+        headers: {
+          default: new Header({
+            children: [headerTable],
+          }),
+        },
+        footers: {
+          default: new Footer({
+            children: [footerTable],
+          }),
+        },
+        children: bodyChildren,
+      },
+    ],
+  });
+
+  return await Packer.toBlob(doc);
+}
+
+/**
+ * Universal document downloader that guarantees 100% intact layout:
+ * - If DOCX requested: Downloads native Word DOCX with native header & footer on every page.
+ * - If PDF requested: Downloads multi-page PDF with header on every page and footer on every page.
  */
 export async function downloadDocumentWithIntactFormat(params: {
   fileName?: string;
@@ -573,8 +1102,10 @@ export async function downloadDocumentWithIntactFormat(params: {
   forcedFormat?: 'pdf' | 'docx';
 }): Promise<void> {
   const originalName = params.fileName || 'Amaavigo_Policy.pdf';
-  const isDocx = originalName.toLowerCase().endsWith('.docx') || (params.fileUrl && params.fileUrl.includes('wordprocessingml'));
-  const isPdf = originalName.toLowerCase().endsWith('.pdf') || (params.fileUrl && (params.fileUrl.includes('application/pdf') || params.fileUrl.startsWith('data:application/pdf')));
+  const isDocxTarget =
+    params.forcedFormat === 'docx' ||
+    originalName.toLowerCase().endsWith('.docx') ||
+    (params.fileUrl && params.fileUrl.includes('wordprocessingml'));
 
   const meta: HeaderFooterMetadata = {
     documentTitle: params.documentTitle || params.headerFooterData?.documentTitle || originalName.replace(/\.[^/.]+$/, ''),
@@ -586,63 +1117,67 @@ export async function downloadDocumentWithIntactFormat(params: {
     companyName: params.companyName || params.headerFooterData?.companyName || 'Amaavigo',
   };
 
-  // Case 1: PDF Document (Intact modification via pdf-lib)
-  if (isPdf && params.forcedFormat !== 'docx') {
-    const downloadName = originalName.endsWith('.pdf') ? originalName : `${originalName.replace(/\.[^/.]+$/, '')}.pdf`;
+  // Case 1: Target DOCX
+  if (isDocxTarget) {
+    const downloadName = originalName.replace(/\.[^/.]+$/, '') + '.docx';
 
-    // Retrieve original PDF bytes
-    let sourceBytes: Uint8Array | null = null;
-    if (params.fileUrl && (params.fileUrl.startsWith('data:') || params.fileUrl.startsWith('blob:'))) {
-      if (params.fileUrl.startsWith('data:')) {
-        sourceBytes = toUint8Array(params.fileUrl);
-      } else {
-        const resp = await fetch(params.fileUrl);
-        const buf = await resp.arrayBuffer();
-        sourceBytes = new Uint8Array(buf);
-      }
-    } else if (params.rawContent && (params.rawContent.startsWith('%PDF') || params.rawContent.includes('%PDF'))) {
-      sourceBytes = toUint8Array(params.rawContent);
-    }
-
-    if (sourceBytes) {
+    // If source has actual uploaded DOCX bytes, stamp them directly
+    if (params.fileUrl && (params.fileUrl.startsWith('data:application/vnd.openxmlformats') || params.fileUrl.startsWith('blob:'))) {
       try {
-        const stamped = await stampPdfWithHeaderFooter(sourceBytes, meta);
-        triggerDownload(stamped.blob, downloadName);
-        return;
-      } catch (err) {
-        console.warn('PDF-lib stamping error, falling back to corporate generator:', err);
-      }
-    }
-  }
-
-  // Case 2: DOCX Document (Intact OpenXML modification via JSZip)
-  if (isDocx && params.forcedFormat !== 'pdf') {
-    const downloadName = originalName.endsWith('.docx') ? originalName : `${originalName.replace(/\.[^/.]+$/, '')}.docx`;
-
-    let sourceBytes: Uint8Array | null = null;
-    if (params.fileUrl && (params.fileUrl.startsWith('data:') || params.fileUrl.startsWith('blob:'))) {
-      if (params.fileUrl.startsWith('data:')) {
-        sourceBytes = toUint8Array(params.fileUrl);
-      } else {
-        const resp = await fetch(params.fileUrl);
-        const buf = await resp.arrayBuffer();
-        sourceBytes = new Uint8Array(buf);
-      }
-    }
-
-    if (sourceBytes) {
-      try {
+        let sourceBytes: Uint8Array;
+        if (params.fileUrl.startsWith('data:')) {
+          sourceBytes = toUint8Array(params.fileUrl);
+        } else {
+          const resp = await fetch(params.fileUrl);
+          sourceBytes = new Uint8Array(await resp.arrayBuffer());
+        }
         const stamped = await stampDocxWithHeaderFooter(sourceBytes, meta);
         triggerDownload(stamped.blob, downloadName);
         return;
       } catch (err) {
-        console.warn('DOCX stamping error, falling back to corporate generator:', err);
+        console.warn('Existing DOCX stamping fallback to generator:', err);
       }
+    }
+
+    // Generate genuine DOCX with native header & footer
+    const docxBlob = await generateCorporateDocxBlob({
+      documentTitle: meta.documentTitle,
+      versionNumber: meta.versionNumber,
+      effectiveDate: meta.effectiveDate,
+      createdByName: meta.createdByName,
+      approvedByName: meta.approvedByName,
+      approvedDate: meta.approvedDate,
+      companyName: meta.companyName,
+      rawContent: params.rawContent || '',
+      fileName: downloadName,
+    });
+    triggerDownload(docxBlob, downloadName);
+    return;
+  }
+
+  // Case 2: Target PDF
+  const downloadName = originalName.replace(/\.[^/.]+$/, '') + '.pdf';
+
+  // If source has uploaded PDF bytes, stamp them directly
+  if (params.fileUrl && (params.fileUrl.startsWith('data:application/pdf') || params.fileUrl.startsWith('blob:'))) {
+    try {
+      let sourceBytes: Uint8Array;
+      if (params.fileUrl.startsWith('data:')) {
+        sourceBytes = toUint8Array(params.fileUrl);
+      } else {
+        const resp = await fetch(params.fileUrl);
+        sourceBytes = new Uint8Array(await resp.arrayBuffer());
+      }
+      const stamped = await stampPdfWithHeaderFooter(sourceBytes, meta);
+      triggerDownload(stamped.blob, downloadName);
+      return;
+    } catch (err) {
+      console.warn('Existing PDF stamping fallback to generator:', err);
     }
   }
 
-  // Fallback: Synthesize corporate PDF from content
-  const fallbackPdfBlob = generateCorporatePdfBlob({
+  // Generate genuine corporate PDF with header and footer on EVERY page
+  const pdfBlob = generateCorporatePdfBlob({
     documentTitle: meta.documentTitle,
     versionNumber: meta.versionNumber,
     effectiveDate: meta.effectiveDate,
@@ -651,11 +1186,10 @@ export async function downloadDocumentWithIntactFormat(params: {
     approvedDate: meta.approvedDate,
     companyName: meta.companyName,
     rawContent: params.rawContent || '',
-    fileName: originalName,
+    fileName: downloadName,
   });
 
-  const finalPdfName = originalName.replace(/\.[^/.]+$/, '') + '.pdf';
-  triggerDownload(fallbackPdfBlob, finalPdfName);
+  triggerDownload(pdfBlob, downloadName);
 }
 
 function bytesToBase64(bytes: Uint8Array): string {

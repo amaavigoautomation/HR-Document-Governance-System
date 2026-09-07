@@ -21,11 +21,15 @@ import {
   Check,
   Building,
   Calendar,
+  Download,
+  Loader2,
 } from 'lucide-react';
 import { ConfidentialityLevel, DocumentMaster, DocumentVersion, User, VersionStatus } from '../types';
 import { StatusBadge } from './StatusBadge';
 import { governanceEngine } from '../services/governance';
 import { formatISTDate } from '../utils/dateFormat';
+import { formatDDMMYYYY } from '../utils/documentHeaderFooter';
+import { downloadDocumentWithIntactFormat } from '../utils/documentStamper';
 
 interface ReviewerDashboardProps {
   currentUser: User;
@@ -49,6 +53,37 @@ export const ReviewerDashboard: React.FC<ReviewerDashboardProps> = ({
   const [selectedCategory, setSelectedCategory] = useState<string>('ALL');
   const [selectedDept, setSelectedDept] = useState<string>('ALL');
   const [selectedStatus, setSelectedStatus] = useState<string>('ALL');
+  const [downloadingVersionId, setDownloadingVersionId] = useState<string | null>(null);
+
+  const handleDownloadVersion = async (ver: DocumentVersion) => {
+    try {
+      setDownloadingVersionId(ver.id);
+      const parentMaster = documents.find(
+        (d) => d.id === ver.documentMasterId || d.documentId === ver.documentId
+      );
+      await downloadDocumentWithIntactFormat({
+        fileName: ver.fileName || `${ver.documentId}_v${ver.versionNumber}.pdf`,
+        documentTitle: ver.documentTitle || parentMaster?.title,
+        versionNumber: ver.versionNumber,
+        effectiveDate: formatDDMMYYYY(ver.effectiveFrom || ver.createdAt),
+        createdByName: ver.createdByName || 'Amee Shah',
+        approvedByName:
+          ver.reviewedByName ||
+          (ver.status === VersionStatus.PUBLISHED ? 'Vishal Shah' : currentUser.name),
+        approvedDate:
+          ver.reviewedAt || ver.publishedAt
+            ? formatDDMMYYYY(ver.reviewedAt || ver.publishedAt!)
+            : formatDDMMYYYY(ver.createdAt),
+        companyName: parentMaster?.companyName || 'Amaavigo',
+        rawContent: ver.rawContent,
+        fileUrl: ver.fileUrl,
+      });
+    } catch (err) {
+      console.error('Failed to download version in reviewer dashboard:', err);
+    } finally {
+      setDownloadingVersionId(null);
+    }
+  };
 
   const acks = governanceEngine.getAcknowledgements();
   const pendingAcks = acks.filter((a) => a.status === 'PENDING').length;
@@ -361,9 +396,14 @@ export const ReviewerDashboard: React.FC<ReviewerDashboardProps> = ({
                         </td>
 
                         <td className="px-6 py-4 whitespace-nowrap">
-                          <span className="font-bold text-xs text-[#FA7014] bg-[#FA7014]/10 border border-[#FA7014]/25 px-2.5 py-1 rounded-lg">
-                            v{ver.versionNumber}
-                          </span>
+                          <div className="flex flex-col items-start gap-1">
+                            <span className="font-bold text-xs text-[#FA7014] bg-[#FA7014]/10 border border-[#FA7014]/25 px-2.5 py-1 rounded-lg">
+                              v{ver.versionNumber}
+                            </span>
+                            <span className="text-[11px] text-slate-500 font-mono font-medium">
+                              Eff: {formatDDMMYYYY(ver.effectiveFrom || ver.createdAt)}
+                            </span>
+                          </div>
                         </td>
 
                         <td className="px-6 py-4 whitespace-nowrap">
@@ -399,22 +439,39 @@ export const ReviewerDashboard: React.FC<ReviewerDashboardProps> = ({
                         </td>
 
                         <td className="px-6 py-4 whitespace-nowrap text-right">
-                          {isDecided ? (
-                            <span className="inline-flex items-center space-x-1.5 text-xs font-semibold text-slate-700 bg-slate-100 border border-slate-200 px-3 py-1.5 rounded-xl">
-                              <Lock className="w-3.5 h-3.5 text-slate-500" />
-                              <span>Decision Given ({ver.status})</span>
-                            </span>
-                          ) : (
+                          <div className="flex items-center justify-end space-x-2">
                             <button
-                              id={`btn-review-${ver.id}`}
-                              onClick={() => onOpenReviewModal(ver)}
-                              className="inline-flex items-center space-x-1.5 bg-[#FA7014] hover:bg-[#E65A05] text-white font-semibold text-xs px-4 py-2 rounded-xl shadow-md shadow-[#FA7014]/20 transition-all border border-orange-500/30 cursor-pointer"
+                              id={`btn-download-pending-${ver.id}`}
+                              onClick={() => handleDownloadVersion(ver)}
+                              disabled={downloadingVersionId === ver.id}
+                              className="inline-flex items-center space-x-1 text-xs font-semibold text-slate-700 hover:text-slate-950 bg-white hover:bg-slate-100 border border-slate-300 px-3 py-2 rounded-xl transition-all cursor-pointer shadow-2xs disabled:opacity-60"
+                              title={`Download Version v${ver.versionNumber}`}
                             >
-                              <GitCompare className="w-3.5 h-3.5" />
-                              <span>Review & Decide</span>
-                              <ArrowRight className="w-3.5 h-3.5 ml-0.5" />
+                              {downloadingVersionId === ver.id ? (
+                                <Loader2 className="w-3.5 h-3.5 animate-spin text-[#FA7014]" />
+                              ) : (
+                                <Download className="w-3.5 h-3.5 text-slate-600" />
+                              )}
+                              <span>Download</span>
                             </button>
-                          )}
+
+                            {isDecided ? (
+                              <span className="inline-flex items-center space-x-1.5 text-xs font-semibold text-slate-700 bg-slate-100 border border-slate-200 px-3 py-1.5 rounded-xl">
+                                <Lock className="w-3.5 h-3.5 text-slate-500" />
+                                <span>Decision Given ({ver.status})</span>
+                              </span>
+                            ) : (
+                              <button
+                                id={`btn-review-${ver.id}`}
+                                onClick={() => onOpenReviewModal(ver)}
+                                className="inline-flex items-center space-x-1.5 bg-[#FA7014] hover:bg-[#E65A05] text-white font-semibold text-xs px-4 py-2 rounded-xl shadow-md shadow-[#FA7014]/20 transition-all border border-orange-500/30 cursor-pointer"
+                              >
+                                <GitCompare className="w-3.5 h-3.5" />
+                                <span>Review & Decide</span>
+                                <ArrowRight className="w-3.5 h-3.5 ml-0.5" />
+                              </button>
+                            )}
+                          </div>
                         </td>
                       </tr>
                     );
@@ -699,13 +756,29 @@ export const ReviewerDashboard: React.FC<ReviewerDashboardProps> = ({
                       </td>
 
                       <td className="px-6 py-4 whitespace-nowrap text-right">
-                        <button
-                          onClick={() => onOpenReviewModal(ver)}
-                          className="inline-flex items-center space-x-1 text-xs font-semibold text-slate-800 hover:text-slate-950 bg-slate-100 hover:bg-slate-200 px-3 py-1.5 rounded-lg transition-colors border border-slate-200"
-                        >
-                          <Lock className="w-3.5 h-3.5 text-slate-500" />
-                          <span>View Decision (Locked)</span>
-                        </button>
+                        <div className="flex items-center justify-end space-x-2">
+                          <button
+                            id={`btn-download-history-${ver.id}`}
+                            onClick={() => handleDownloadVersion(ver)}
+                            disabled={downloadingVersionId === ver.id}
+                            className="inline-flex items-center space-x-1 text-xs font-semibold text-slate-700 hover:text-slate-950 bg-white hover:bg-slate-100 border border-slate-300 px-2.5 py-1.5 rounded-lg transition-all cursor-pointer shadow-2xs disabled:opacity-60"
+                            title={`Download Version v${ver.versionNumber}`}
+                          >
+                            {downloadingVersionId === ver.id ? (
+                              <Loader2 className="w-3.5 h-3.5 animate-spin text-[#FA7014]" />
+                            ) : (
+                              <Download className="w-3.5 h-3.5 text-slate-600" />
+                            )}
+                            <span>Download</span>
+                          </button>
+                          <button
+                            onClick={() => onOpenReviewModal(ver)}
+                            className="inline-flex items-center space-x-1 text-xs font-semibold text-slate-800 hover:text-slate-950 bg-slate-100 hover:bg-slate-200 px-3 py-1.5 rounded-lg transition-colors border border-slate-200 cursor-pointer"
+                          >
+                            <Lock className="w-3.5 h-3.5 text-slate-500" />
+                            <span>View Decision (Locked)</span>
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   ))

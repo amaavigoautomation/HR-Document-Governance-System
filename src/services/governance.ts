@@ -18,8 +18,8 @@ import { compareDocumentTexts } from './comparison';
 import { defaultEmailProvider } from './email';
 import { calculateSha256, defaultStorageProvider } from './storage';
 import { firestoreService } from './firestoreService';
-import { appendApprovedHeaderAndFooter, formatDDMMYYYY } from '../utils/documentHeaderFooter';
-import { stampPdfWithHeaderFooter, stampDocxWithHeaderFooter } from '../utils/documentStamper';
+import { appendApprovedHeaderAndFooter, formatDDMMYYYY, stripPolicyMetadataHeader, extractCleanBody } from '../utils/documentHeaderFooter';
+import { stampPdfWithHeaderFooter, stampDocxWithHeaderFooter, cleanDocxDataUrl } from '../utils/documentStamper';
 
 export class DocumentGovernanceEngine {
   private users: User[] = [];
@@ -635,13 +635,26 @@ export class DocumentGovernanceEngine {
     const versionId = `ver-${Date.now()}-v10`;
     const versionNumber = '1.0';
 
+    // Clean redundant policy metadata lines from rawContent
+    const sanitizedRawContent = stripPolicyMetadataHeader(data.rawContent || '');
+
+    // Clean DOCX binary if present so uploaded files never carry duplicate metadata
+    let sanitizedFileUrl = data.fileDataUrl;
+    if (sanitizedFileUrl && (sanitizedFileUrl.includes('wordprocessingml') || data.fileName?.toLowerCase().endsWith('.docx'))) {
+      try {
+        sanitizedFileUrl = await cleanDocxDataUrl(sanitizedFileUrl);
+      } catch (cleanErr) {
+        console.warn('Could not clean DOCX data URL on createDocument:', cleanErr);
+      }
+    }
+
     // Store file in Storage Provider
     const storageMeta = await defaultStorageProvider.uploadFile(
       documentId,
       data.category,
       versionNumber,
       data.fileName || `${data.title.replace(/[^a-zA-Z0-9]/g, '_')}_v1.0.txt`,
-      data.rawContent,
+      sanitizedRawContent,
       data.mimeType || 'text/markdown'
     );
 
@@ -682,9 +695,9 @@ export class DocumentGovernanceEngine {
       mimeType: storageMeta.mimeType,
       storageKey: storageMeta.storageKey,
       storagePath: storageMeta.storagePath,
-      fileUrl: data.fileDataUrl || defaultStorageProvider.getFileUrl(storageMeta.storageKey),
+      fileUrl: sanitizedFileUrl || defaultStorageProvider.getFileUrl(storageMeta.storageKey),
       contentHash: storageMeta.contentHash,
-      rawContent: data.rawContent,
+      rawContent: sanitizedRawContent,
       createdById: creator.id,
       createdByName: creator.name,
       createdAt: new Date().toISOString(),
@@ -826,13 +839,65 @@ export class DocumentGovernanceEngine {
 
     const versionId = `ver-${Date.now()}-v${nextVersionNumber.replace('.', '')}`;
 
-    // Store revised file in Storage Provider
+    // 1. Take effective date first for this revision and build updated header/footer data
+    const revisionEffectiveDate = data.effectiveFrom || new Date().toISOString().split('T')[0];
+    const formattedEffectiveDate = formatDDMMYYYY(revisionEffectiveDate);
+
+    const revisionHeaderFooterData = {
+      companyName: master.companyName || 'Amaavigo',
+      documentTitle: master.title,
+      versionNumber: nextVersionNumber,
+      effectiveDate: formattedEffectiveDate,
+      createdByName: creator.name || 'Amee Shah',
+      approvedByName: 'Pending Review',
+      approvedDate: 'Pending Approval',
+    };
+
+    const isPdf =
+      data.fileName?.toLowerCase().endsWith('.pdf') ||
+      data.mimeType === 'application/pdf' ||
+      (data.fileDataUrl && data.fileDataUrl.startsWith('data:application/pdf')) ||
+      (data.rawContent && data.rawContent.startsWith('%PDF'));
+
+    const isDocx =
+      data.fileName?.toLowerCase().endsWith('.docx') ||
+      data.mimeType?.includes('wordprocessingml') ||
+      (data.fileDataUrl && data.fileDataUrl.includes('wordprocessingml'));
+
+    // 2. Clean previous header/footer and duplicate metadata from body
+    let sanitizedRawContent = extractCleanBody(data.rawContent || '');
+
+    // 3. Update document header and footer when it is being revised
+    let sanitizedFileUrl = data.fileDataUrl;
+    if (isDocx && sanitizedFileUrl) {
+      try {
+        sanitizedFileUrl = await cleanDocxDataUrl(sanitizedFileUrl);
+        const stampedDocx = await stampDocxWithHeaderFooter(sanitizedFileUrl, revisionHeaderFooterData);
+        sanitizedFileUrl = stampedDocx.dataUrl;
+      } catch (cleanErr) {
+        console.warn('Could not clean or stamp DOCX data URL on createNewVersion:', cleanErr);
+      }
+    } else if (isPdf && sanitizedFileUrl) {
+      try {
+        const stampedPdf = await stampPdfWithHeaderFooter(sanitizedFileUrl, revisionHeaderFooterData);
+        sanitizedFileUrl = stampedPdf.dataUrl;
+      } catch (pdfErr) {
+        console.warn('Could not stamp PDF on createNewVersion:', pdfErr);
+      }
+    }
+
+    // If text/markdown, embed the newly updated header and footer
+    if (!isPdf && !isDocx && sanitizedRawContent) {
+      sanitizedRawContent = appendApprovedHeaderAndFooter(sanitizedRawContent, revisionHeaderFooterData);
+    }
+
+    // Store revised file in Storage Provider with updated header & footer
     const storageMeta = await defaultStorageProvider.uploadFile(
       master.documentId,
       master.category,
       nextVersionNumber,
       data.fileName || `${master.title.replace(/[^a-zA-Z0-9]/g, '_')}_v${nextVersionNumber}.txt`,
-      data.rawContent,
+      sanitizedRawContent,
       data.mimeType || 'text/markdown'
     );
 
@@ -849,9 +914,9 @@ export class DocumentGovernanceEngine {
       mimeType: storageMeta.mimeType,
       storageKey: storageMeta.storageKey,
       storagePath: storageMeta.storagePath,
-      fileUrl: data.fileDataUrl || defaultStorageProvider.getFileUrl(storageMeta.storageKey),
+      fileUrl: sanitizedFileUrl || defaultStorageProvider.getFileUrl(storageMeta.storageKey),
       contentHash: storageMeta.contentHash,
-      rawContent: data.rawContent,
+      rawContent: sanitizedRawContent,
       createdById: creator.id,
       createdByName: creator.name,
       createdAt: new Date().toISOString(),
@@ -1044,11 +1109,58 @@ export class DocumentGovernanceEngine {
       approvedDate: formatDDMMYYYY(nowIso),
     };
 
-    // Inject official dynamic Header & Footer into rawContent
-    version.rawContent = appendApprovedHeaderAndFooter(version.rawContent || '', headerFooterData);
-    version.contentHash = calculateSha256(version.rawContent);
+    const isPdf =
+      version.fileName?.toLowerCase().endsWith('.pdf') ||
+      version.mimeType === 'application/pdf' ||
+      (version.fileUrl && version.fileUrl.startsWith('data:application/pdf')) ||
+      (version.rawContent && version.rawContent.startsWith('%PDF'));
+
+    const isDocx =
+      version.fileName?.toLowerCase().endsWith('.docx') ||
+      version.mimeType?.includes('wordprocessingml') ||
+      (version.fileUrl && version.fileUrl.includes('wordprocessingml'));
+
+    // Clean redundant policy metadata lines from rawContent before stamping/approving
+    if (version.rawContent) {
+      version.rawContent = stripPolicyMetadataHeader(version.rawContent);
+    }
+
+    if (isPdf) {
+      try {
+        const sourcePdf =
+          version.fileUrl && (version.fileUrl.startsWith('data:application/pdf') || version.fileUrl.startsWith('blob:'))
+            ? version.fileUrl
+            : version.rawContent && version.rawContent.startsWith('%PDF')
+            ? version.rawContent
+            : null;
+        if (sourcePdf) {
+          const stamped = await stampPdfWithHeaderFooter(sourcePdf, headerFooterData);
+          version.fileUrl = stamped.dataUrl;
+        }
+      } catch (e) {
+        console.warn('Could not stamp PDF binary on approval:', e);
+      }
+    } else if (isDocx) {
+      try {
+        const sourceDocx =
+          version.fileUrl && (version.fileUrl.startsWith('data:') || version.fileUrl.startsWith('blob:'))
+            ? version.fileUrl
+            : null;
+        if (sourceDocx) {
+          const stamped = await stampDocxWithHeaderFooter(sourceDocx, headerFooterData);
+          version.fileUrl = stamped.dataUrl;
+        }
+      } catch (e) {
+        console.warn('Could not stamp DOCX binary on approval:', e);
+      }
+    } else {
+      // Inject official dynamic Header & Footer into rawContent for text/markdown
+      version.rawContent = appendApprovedHeaderAndFooter(version.rawContent || '', headerFooterData);
+    }
+
+    version.contentHash = calculateSha256(version.rawContent || version.fileUrl || '');
     try {
-      version.fileSize = new Blob([version.rawContent]).size;
+      version.fileSize = new Blob([version.rawContent || '']).size;
     } catch {
       version.fileSize = (version.rawContent || '').length;
     }
@@ -1060,10 +1172,12 @@ export class DocumentGovernanceEngine {
         master.category,
         version.versionNumber,
         version.fileName || `${master.title.replace(/[^a-zA-Z0-9]/g, '_')}_v${version.versionNumber}.txt`,
-        version.rawContent,
+        version.rawContent || '',
         version.mimeType || 'text/markdown'
       );
-      version.fileUrl = defaultStorageProvider.getFileUrl(version.storageKey);
+      if (!version.fileUrl || !version.fileUrl.startsWith('data:')) {
+        version.fileUrl = defaultStorageProvider.getFileUrl(version.storageKey);
+      }
     } catch (err) {
       console.warn('Storage sync error with header/footer:', err);
     }

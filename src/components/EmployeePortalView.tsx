@@ -179,9 +179,6 @@ export const EmployeePortalView: React.FC<EmployeePortalViewProps> = ({
                   </div>
 
                   <h2 className="text-base font-bold text-slate-900 leading-snug">{doc.title}</h2>
-                  <p className="text-xs text-slate-500 mt-1 line-clamp-2">
-                    {doc.description || pubVersion?.changeSummary || 'Official corporate HR operational policy.'}
-                  </p>
 
                   <div className="mt-4 pt-3 border-t border-slate-100 grid grid-cols-2 gap-2 text-xs text-slate-500">
                     <div>

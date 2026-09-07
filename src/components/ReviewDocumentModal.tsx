@@ -20,6 +20,7 @@ import {
   Building,
   UserCheck,
   Info,
+  Loader2,
 } from 'lucide-react';
 import {
   DocumentComparisonResult,
@@ -36,6 +37,7 @@ import { auditService } from '../services/audit';
 import { DocumentViewer } from './DocumentViewer';
 import { formatIST, formatISTDate } from '../utils/dateFormat';
 import { formatDDMMYYYY } from '../utils/documentHeaderFooter';
+import { downloadDocumentWithIntactFormat } from '../utils/documentStamper';
 
 interface ReviewDocumentModalProps {
   version: DocumentVersion;
@@ -66,8 +68,36 @@ export const ReviewDocumentModal: React.FC<ReviewDocumentModalProps> = ({
   const [rejectionComments, setRejectionComments] = useState('');
   const [rejectionError, setRejectionError] = useState('');
   const [isRejecting, setIsRejecting] = useState(false);
+  const [isDownloading, setIsDownloading] = useState(false);
 
   const master = governanceEngine.getDocumentMasterById(version.documentMasterId);
+
+  const handleDownloadVersion = async () => {
+    try {
+      setIsDownloading(true);
+      await downloadDocumentWithIntactFormat({
+        fileName: version.fileName || `${version.documentId}_v${version.versionNumber}.pdf`,
+        documentTitle: version.documentTitle || master?.title,
+        versionNumber: version.versionNumber,
+        effectiveDate: formatDDMMYYYY(version.effectiveFrom || version.createdAt),
+        createdByName: version.createdByName || 'Amee Shah',
+        approvedByName:
+          version.reviewedByName ||
+          (version.status === VersionStatus.PUBLISHED ? 'Vishal Shah' : currentUser.name),
+        approvedDate:
+          version.reviewedAt || version.publishedAt
+            ? formatDDMMYYYY(version.reviewedAt || version.publishedAt!)
+            : formatDDMMYYYY(new Date().toISOString()),
+        companyName: master?.companyName || 'Amaavigo',
+        rawContent: version.rawContent,
+        fileUrl: version.fileUrl,
+      });
+    } catch (err) {
+      console.error('Failed to download version in review modal:', err);
+    } finally {
+      setIsDownloading(false);
+    }
+  };
   const docVersions = useMemo(() => {
     return governanceEngine.getDocumentVersions(version.documentMasterId || master?.id || '');
   }, [version.documentMasterId, master?.id]);
@@ -207,6 +237,21 @@ export const ReviewDocumentModal: React.FC<ReviewDocumentModalProps> = ({
 
           <div className="flex items-center space-x-2">
             <button
+              id="btn-download-review-version"
+              onClick={handleDownloadVersion}
+              disabled={isDownloading}
+              className="inline-flex items-center space-x-1.5 text-xs font-semibold text-slate-200 hover:text-white bg-slate-800 hover:bg-slate-700 px-3 py-2 rounded-xl transition-all border border-slate-700 cursor-pointer disabled:opacity-60 shadow-xs"
+              title={`Download Version v${version.versionNumber} (${version.fileName || 'PDF'})`}
+            >
+              {isDownloading ? (
+                <Loader2 className="w-3.5 h-3.5 animate-spin text-[#FA7014]" />
+              ) : (
+                <Download className="w-3.5 h-3.5 text-slate-300" />
+              )}
+              <span>Download v{version.versionNumber}</span>
+            </button>
+
+            <button
               onClick={onClose}
               className="text-slate-400 hover:text-white p-2 rounded-xl hover:bg-slate-800 transition-colors"
             >
@@ -246,6 +291,10 @@ export const ReviewDocumentModal: React.FC<ReviewDocumentModalProps> = ({
             </div>
             <div>
               <span className="text-slate-500">Confidentiality:</span> <span className="font-semibold text-slate-800">{master?.confidentiality}</span>
+            </div>
+            <div>
+              <span className="text-slate-500">Revised Effective Date:</span>{' '}
+              <span className="font-bold text-[#FA7014] font-mono">{formatDDMMYYYY(version.effectiveFrom || version.createdAt)}</span>
             </div>
             <div>
               <span className="text-slate-500">Acknowledgement:</span>{' '}
@@ -367,15 +416,23 @@ export const ReviewDocumentModal: React.FC<ReviewDocumentModalProps> = ({
                   {/* Side-by-side table */}
                   <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden font-mono text-xs">
                     <div className="grid grid-cols-2 bg-slate-900 text-white font-sans text-xs font-bold py-2.5 px-4 border-b border-slate-800">
-                      <div className="flex items-center space-x-2">
+                      <div className="flex items-center space-x-2 flex-wrap gap-y-1">
                         <span className="bg-slate-800 px-2 py-0.5 rounded text-[11px] border border-slate-700 text-slate-300">
                           {activeBaseline?.id === master?.currentPublishedVersionId ? 'LIVE BASELINE' : 'PREVIOUS VERSION'}
                         </span>
                         <span>{activeBaseline ? `v${activeBaseline.versionNumber} (${activeBaseline.status.replace('_', ' ')})` : 'Baseline Not Set'}</span>
+                        {activeBaseline?.effectiveFrom && (
+                          <span className="text-slate-400 font-mono text-[11px] font-normal">
+                            • Eff: {formatDDMMYYYY(activeBaseline.effectiveFrom)}
+                          </span>
+                        )}
                       </div>
-                      <div className="flex items-center space-x-2 pl-4 border-l border-slate-800">
-                        <span className="bg-[#FA7014] px-2 py-0.5 rounded text-[11px] text-white">NEW VERSION</span>
+                      <div className="flex items-center space-x-2 pl-4 border-l border-slate-800 flex-wrap gap-y-1">
+                        <span className="bg-[#FA7014] px-2 py-0.5 rounded text-[11px] text-white font-bold">NEW VERSION</span>
                         <span>v{version.versionNumber} (In Review)</span>
+                        <span className="text-orange-200 font-mono text-[11px] font-semibold bg-orange-950/60 px-2 py-0.5 rounded border border-orange-700/50">
+                          Eff: {formatDDMMYYYY(version.effectiveFrom || version.createdAt)}
+                        </span>
                       </div>
                     </div>
 
