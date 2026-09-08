@@ -1,5 +1,4 @@
 import React from 'react';
-import { CheckCircle2, FileCheck, Send } from 'lucide-react';
 import hrPolicyShowcaseImg from '../assets/images/hr_policy_showcase_1788517796283.jpg';
 
 export const LoginShowcase: React.FC = () => {
@@ -34,39 +33,6 @@ export const LoginShowcase: React.FC = () => {
               referrerPolicy="no-referrer"
               className="w-full max-h-[38vh] object-cover transform hover:scale-102 transition-transform duration-500"
             />
-          </div>
-
-          {/* Floating Glassmorphic Badge 1: Acknowledge (Top-Right) */}
-          <div className="absolute -top-2.5 -right-4 bg-white/95 backdrop-blur-md px-3 py-1.5 rounded-xl shadow-lg shadow-orange-950/10 border border-orange-100 flex items-center space-x-2">
-            <div className="w-5 h-5 rounded-md bg-[#FA7014]/10 border border-[#FA7014]/30 flex items-center justify-center text-[#FA7014]">
-              <CheckCircle2 className="w-3 h-3" />
-            </div>
-            <div>
-              <div className="text-[10px] font-bold text-slate-800 leading-tight">Acknowledge</div>
-              <div className="text-[8px] text-[#FA7014] font-semibold">100% Sign-Off</div>
-            </div>
-          </div>
-
-          {/* Floating Glassmorphic Badge 2: Review (Left) */}
-          <div className="absolute top-1/3 -left-4 bg-white/95 backdrop-blur-md px-3 py-1.5 rounded-xl shadow-lg shadow-orange-950/10 border border-orange-100 flex items-center space-x-2">
-            <div className="w-5 h-5 rounded-md bg-[#FA7014]/10 border border-[#FA7014]/30 flex items-center justify-center text-[#FA7014]">
-              <FileCheck className="w-3 h-3" />
-            </div>
-            <div>
-              <div className="text-[10px] font-bold text-slate-800 leading-tight">Review</div>
-              <div className="text-[8px] text-slate-500 font-medium">Diff Comparison</div>
-            </div>
-          </div>
-
-          {/* Floating Glassmorphic Badge 3: Publish (Bottom-Right) */}
-          <div className="absolute bottom-8 -right-4 bg-white/95 backdrop-blur-md px-3 py-1.5 rounded-xl shadow-lg shadow-orange-950/10 border border-orange-100 flex items-center space-x-2">
-            <div className="w-5 h-5 rounded-md bg-[#FA7014]/10 border border-[#FA7014]/30 flex items-center justify-center text-[#FA7014]">
-              <Send className="w-3 h-3" />
-            </div>
-            <div>
-              <div className="text-[10px] font-bold text-slate-800 leading-tight">Publish</div>
-              <div className="text-[8px] text-emerald-600 font-semibold">Audit Active</div>
-            </div>
           </div>
         </div>
 
