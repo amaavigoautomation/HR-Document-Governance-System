@@ -489,6 +489,18 @@ export default function App() {
         />
       )}
 
+      {/* MODAL: DOCUMENT DETAIL & VERSION TIMELINE */}
+      {detailDocument && currentUser && (
+        <DocumentDetailModal
+          document={documents.find((d) => d.id === detailDocument.id || d.documentId === detailDocument.documentId) || detailDocument}
+          currentUser={currentUser}
+          onClose={() => setDetailDocument(null)}
+          onOpenCreateVersion={handleOpenCreateVersion}
+          onOpenComparison={handleOpenComparison}
+          onDeleteDocument={handleDeleteDocument}
+        />
+      )}
+
       {/* MODAL: CREATE NEW VERSION */}
       {showCreateVerModal && currentUser && (
         <CreateVersionModal
@@ -504,7 +516,7 @@ export default function App() {
         />
       )}
 
-      {/* MODAL: REVIEWER DECISION & SIDE-BY-SIDE DIFF */}
+      {/* MODAL: REVIEWER DECISION & SIDE-BY-SIDE DIFF / BASELINE COMPARISON */}
       {reviewVersion && currentUser && (
         <ReviewDocumentModal
           version={reviewVersion}
@@ -518,18 +530,6 @@ export default function App() {
             setReviewVersion(null);
             refreshData();
           }}
-        />
-      )}
-
-      {/* MODAL: DOCUMENT DETAIL & VERSION TIMELINE */}
-      {detailDocument && currentUser && (
-        <DocumentDetailModal
-          document={detailDocument}
-          currentUser={currentUser}
-          onClose={() => setDetailDocument(null)}
-          onOpenCreateVersion={handleOpenCreateVersion}
-          onOpenComparison={handleOpenComparison}
-          onDeleteDocument={handleDeleteDocument}
         />
       )}
 
@@ -566,10 +566,14 @@ export default function App() {
                       versionNumber: readerVersion.versionNumber,
                       effectiveDate: formatDDMMYYYY(readerVersion.effectiveFrom || readerVersion.createdAt),
                       createdByName: readerVersion.createdByName || 'Amee Shah',
-                      approvedByName: readerVersion.reviewedByName || 'Vishal Shah',
-                      approvedDate: formatDDMMYYYY(
-                        readerVersion.reviewedAt || readerVersion.publishedAt || readerVersion.createdAt
-                      ),
+                      approvedByName:
+                        readerVersion.status === VersionStatus.PUBLISHED
+                          ? (readerVersion.reviewedByName || readerVersion.publishedByName || 'Vishal Shah')
+                          : 'Not yet approved',
+                      approvedDate:
+                        readerVersion.status === VersionStatus.PUBLISHED && (readerVersion.reviewedAt || readerVersion.publishedAt)
+                          ? formatDDMMYYYY(readerVersion.reviewedAt || readerVersion.publishedAt!)
+                          : 'Not yet approved',
                       companyName: 'Amaavigo',
                       rawContent: readerVersion.rawContent,
                       fileUrl: readerVersion.fileUrl,
@@ -602,12 +606,13 @@ export default function App() {
                   effectiveDate: formatDDMMYYYY(readerVersion.effectiveFrom || readerVersion.createdAt),
                   createdByName: readerVersion.createdByName || 'Amee Shah',
                   approvedByName:
-                    readerVersion.reviewedByName ||
-                    (readerVersion.status === VersionStatus.PUBLISHED ? 'Authorized Approver' : 'Pending Review'),
+                    readerVersion.status === VersionStatus.PUBLISHED
+                      ? (readerVersion.reviewedByName || readerVersion.publishedByName || 'Authorized Approver')
+                      : 'Not yet approved',
                   approvedDate:
-                    readerVersion.reviewedAt || readerVersion.publishedAt
+                    readerVersion.status === VersionStatus.PUBLISHED && (readerVersion.reviewedAt || readerVersion.publishedAt)
                       ? formatDDMMYYYY(readerVersion.reviewedAt || readerVersion.publishedAt!)
-                      : 'Pending Approval',
+                      : 'Not yet approved',
                 }}
               />
             </div>

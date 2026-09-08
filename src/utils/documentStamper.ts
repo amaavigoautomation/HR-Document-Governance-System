@@ -119,9 +119,20 @@ export async function stampPdfWithHeaderFooter(
 
   const cleanVer = cleanVersionNumber(meta.versionNumber);
   const effective = formatDDMMYYYY(meta.effectiveDate);
-  const approvedDt = formatDDMMYYYY(meta.approvedDate || meta.effectiveDate);
-  const creator = meta.createdByName || 'Amee Shah';
-  const approver = meta.approvedByName || 'Vishal Shah';
+  const isApproved = Boolean(
+    meta.approvedByName &&
+    meta.approvedByName !== 'Not yet approved' &&
+    meta.approvedByName !== 'Pending Review' &&
+    meta.approvedByName !== 'Pending Approval' &&
+    !meta.approvedByName.toLowerCase().includes('not yet') &&
+    meta.approvedDate &&
+    meta.approvedDate !== 'Not yet approved' &&
+    meta.approvedDate !== 'Pending Approval' &&
+    !meta.approvedDate.toLowerCase().includes('not yet')
+  );
+  const approvedDt = isApproved ? formatDDMMYYYY(meta.approvedDate) : 'Not yet approved';
+  const approver = isApproved ? meta.approvedByName : 'Not yet approved';
+  const creator = meta.createdByName || 'HR Author';
   const title = meta.documentTitle || 'Document';
 
   for (let i = 0; i < copiedPages.length; i++) {
@@ -594,9 +605,20 @@ export async function stampDocxWithHeaderFooter(
 
   const cleanVer = cleanVersionNumber(meta.versionNumber);
   const effective = formatDDMMYYYY(meta.effectiveDate);
-  const approvedDt = formatDDMMYYYY(meta.approvedDate || meta.effectiveDate);
-  const creator = meta.createdByName || 'Amee Shah';
-  const approver = meta.approvedByName || 'Vishal Shah';
+  const isDocxApproved = Boolean(
+    meta.approvedByName &&
+    meta.approvedByName !== 'Not yet approved' &&
+    meta.approvedByName !== 'Pending Review' &&
+    meta.approvedByName !== 'Pending Approval' &&
+    !meta.approvedByName.toLowerCase().includes('not yet') &&
+    meta.approvedDate &&
+    meta.approvedDate !== 'Not yet approved' &&
+    meta.approvedDate !== 'Pending Approval' &&
+    !meta.approvedDate.toLowerCase().includes('not yet')
+  );
+  const approvedDt = isDocxApproved ? formatDDMMYYYY(meta.approvedDate) : 'Not yet approved';
+  const approver = isDocxApproved ? meta.approvedByName : 'Not yet approved';
+  const creator = meta.createdByName || 'HR Author';
   const title = meta.documentTitle || 'Document';
 
   // 1. Generate Header & Footer XML
@@ -696,9 +718,20 @@ export async function stampDocxWithHeaderFooter(
 export async function generateCorporateDocxBlob(options: CorporateDocxOptions): Promise<Blob> {
   const cleanVer = cleanVersionNumber(options.versionNumber);
   const effective = formatDDMMYYYY(options.effectiveDate);
-  const approvedDt = formatDDMMYYYY(options.approvedDate || options.effectiveDate);
-  const creator = options.createdByName || 'Amee Shah';
-  const approver = options.approvedByName || 'Vishal Shah';
+  const isDocxApproved = Boolean(
+    options.approvedByName &&
+    options.approvedByName !== 'Not yet approved' &&
+    options.approvedByName !== 'Pending Review' &&
+    options.approvedByName !== 'Pending Approval' &&
+    !options.approvedByName.toLowerCase().includes('not yet') &&
+    options.approvedDate &&
+    options.approvedDate !== 'Not yet approved' &&
+    options.approvedDate !== 'Pending Approval' &&
+    !options.approvedDate.toLowerCase().includes('not yet')
+  );
+  const approvedDt = isDocxApproved ? formatDDMMYYYY(options.approvedDate) : 'Not yet approved';
+  const approver = isDocxApproved ? options.approvedByName : 'Not yet approved';
+  const creator = options.createdByName || 'HR Author';
   const title = options.documentTitle || 'Corporate Policy Document';
 
   const borderNone = { style: BorderStyle.NONE, size: 0, color: 'auto' };

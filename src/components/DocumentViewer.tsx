@@ -14,6 +14,7 @@ import {
   FileCheck,
   Printer,
   ShieldCheck,
+  Clock,
 } from 'lucide-react';
 import { extractTextFromRawPdfStream, isRawPdfStream, getBrowserPdfjs } from '../utils/fileParser';
 import {
@@ -424,10 +425,25 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({
               </div>
               <div className="flex items-center space-x-2">
                 {effectiveHeaderFooterData && (
-                  <span className="bg-emerald-50 text-emerald-700 text-xs px-2.5 py-1 rounded-lg border border-emerald-200 font-semibold flex items-center space-x-1.5">
-                    <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
-                    <span>Approved & Authorized</span>
-                  </span>
+                  effectiveHeaderFooterData.approvedByName &&
+                  effectiveHeaderFooterData.approvedByName !== 'Not yet approved' &&
+                  effectiveHeaderFooterData.approvedByName !== 'Pending Review' &&
+                  effectiveHeaderFooterData.approvedByName !== 'Pending Approval' &&
+                  !effectiveHeaderFooterData.approvedByName.toLowerCase().includes('not yet') &&
+                  effectiveHeaderFooterData.approvedDate &&
+                  effectiveHeaderFooterData.approvedDate !== 'Not yet approved' &&
+                  effectiveHeaderFooterData.approvedDate !== 'Pending Approval' &&
+                  !effectiveHeaderFooterData.approvedDate.toLowerCase().includes('not yet') ? (
+                    <span className="bg-emerald-50 text-emerald-700 text-xs px-2.5 py-1 rounded-lg border border-emerald-200 font-semibold flex items-center space-x-1.5">
+                      <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
+                      <span>Approved & Authorized</span>
+                    </span>
+                  ) : (
+                    <span className="bg-amber-50 text-amber-700 text-xs px-2.5 py-1 rounded-lg border border-amber-200 font-semibold flex items-center space-x-1.5">
+                      <Clock className="w-3.5 h-3.5 text-amber-600" />
+                      <span>Not Yet Approved</span>
+                    </span>
+                  )
                 )}
                 <span className="bg-orange-50 text-[#FA7014] text-xs px-2.5 py-1 rounded-lg border border-orange-200 font-mono font-bold flex items-center space-x-1.5">
                   <FileCheck className="w-3.5 h-3.5" />

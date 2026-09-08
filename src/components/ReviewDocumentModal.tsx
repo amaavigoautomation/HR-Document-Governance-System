@@ -82,12 +82,13 @@ export const ReviewDocumentModal: React.FC<ReviewDocumentModalProps> = ({
         effectiveDate: formatDDMMYYYY(version.effectiveFrom || version.createdAt),
         createdByName: version.createdByName || 'Amee Shah',
         approvedByName:
-          version.reviewedByName ||
-          (version.status === VersionStatus.PUBLISHED ? 'Vishal Shah' : currentUser.name),
+          version.status === VersionStatus.PUBLISHED
+            ? (version.reviewedByName || version.publishedByName || 'Authorized Approver')
+            : 'Not yet approved',
         approvedDate:
-          version.reviewedAt || version.publishedAt
+          version.status === VersionStatus.PUBLISHED && (version.reviewedAt || version.publishedAt)
             ? formatDDMMYYYY(version.reviewedAt || version.publishedAt!)
-            : formatDDMMYYYY(new Date().toISOString()),
+            : 'Not yet approved',
         companyName: master?.companyName || 'Amaavigo',
         rawContent: version.rawContent,
         fileUrl: version.fileUrl,
@@ -197,7 +198,7 @@ export const ReviewDocumentModal: React.FC<ReviewDocumentModalProps> = ({
   const isAlreadyDecided = version.status !== VersionStatus.IN_REVIEW || !!version.reviewedAt;
 
   return (
-    <div className="fixed inset-0 z-50 overflow-y-auto bg-black/60 backdrop-blur-xs flex items-center justify-center p-2 sm:p-4">
+    <div className="fixed inset-0 z-[70] overflow-y-auto bg-black/60 backdrop-blur-xs flex items-center justify-center p-2 sm:p-4">
       <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-6xl max-h-[94vh] flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-150">
         {/* MODAL HEADER */}
         <div className="bg-slate-900 text-white px-6 py-4 flex items-center justify-between border-b border-slate-800 shrink-0">
@@ -618,8 +619,14 @@ export const ReviewDocumentModal: React.FC<ReviewDocumentModalProps> = ({
                       versionNumber: version.versionNumber,
                       effectiveDate: formatDDMMYYYY(version.effectiveFrom || new Date()),
                       createdByName: version.createdByName || master?.createdByName || 'Amee Shah',
-                      approvedByName: version.reviewedByName || currentUser.name,
-                      approvedDate: formatDDMMYYYY(version.reviewedAt || new Date()),
+                      approvedByName:
+                        version.status === VersionStatus.PUBLISHED
+                          ? (version.reviewedByName || version.publishedByName || 'Authorized Approver')
+                          : 'Not yet approved',
+                      approvedDate:
+                        version.status === VersionStatus.PUBLISHED && (version.reviewedAt || version.publishedAt)
+                          ? formatDDMMYYYY(version.reviewedAt || version.publishedAt!)
+                          : 'Not yet approved',
                     }}
                   />
                 </div>
@@ -674,7 +681,7 @@ export const ReviewDocumentModal: React.FC<ReviewDocumentModalProps> = ({
 
       {/* APPROVAL CONFIRMATION MODAL */}
       {showApproveConfirm && (
-        <div className="fixed inset-0 z-60 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-[80] bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl p-6 max-w-md w-full shadow-2xl border border-slate-200 animate-in zoom-in-95 duration-150">
             <div className="w-12 h-12 rounded-xl bg-orange-50 border border-orange-200 text-[#FA7014] flex items-center justify-center mb-4">
               <CheckCircle2 className="w-7 h-7" />
@@ -760,7 +767,7 @@ export const ReviewDocumentModal: React.FC<ReviewDocumentModalProps> = ({
 
       {/* REJECTION / MANDATORY COMMENTS MODAL */}
       {showRejectModal && (
-        <div className="fixed inset-0 z-60 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-[80] bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl p-6 max-w-md w-full shadow-2xl border border-slate-200 animate-in zoom-in-95 duration-150">
             <div className="w-12 h-12 rounded-xl bg-slate-100 border border-slate-200 text-slate-800 flex items-center justify-center mb-4">
               <AlertTriangle className="w-7 h-7 text-[#FA7014]" />

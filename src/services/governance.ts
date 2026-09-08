@@ -849,8 +849,8 @@ export class DocumentGovernanceEngine {
       versionNumber: nextVersionNumber,
       effectiveDate: formattedEffectiveDate,
       createdByName: creator.name || 'Amee Shah',
-      approvedByName: 'Pending Review',
-      approvedDate: 'Pending Approval',
+      approvedByName: 'Not yet approved',
+      approvedDate: 'Not yet approved',
     };
 
     const isPdf =

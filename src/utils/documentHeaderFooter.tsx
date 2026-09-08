@@ -19,8 +19,9 @@ export const FOOTER_END_TAG = '<!-- AMAAVIGO_DOCUMENT_FOOTER_END -->';
 /**
  * Normalizes any date into DD/MM/YYYY format (e.g. 09/09/2026).
  */
-export function formatDDMMYYYY(dateInput: string | number | Date | null | undefined): string {
+export function formatDDMMYYYY(dateInput: string | number | Date | null | undefined, fallback: string = ''): string {
   if (!dateInput) {
+    if (fallback !== undefined && fallback !== '') return fallback;
     const now = new Date();
     const dd = String(now.getDate()).padStart(2, '0');
     const mm = String(now.getMonth() + 1).padStart(2, '0');
@@ -29,14 +30,25 @@ export function formatDDMMYYYY(dateInput: string | number | Date | null | undefi
   }
 
   const str = String(dateInput).trim();
+  if (
+    str === 'Not yet approved' ||
+    str === 'Pending Approval' ||
+    str === 'Pending Review' ||
+    str.toLowerCase().includes('not yet')
+  ) {
+    return 'Not yet approved';
+  }
   // Already in DD/MM/YYYY
   if (/^\d{2}\/\d{2}\/\d{4}$/.test(str)) {
     return str;
   }
   // Standard ISO date YYYY-MM-DD
-  if (/^\d{4}-\d{2}-\d{2}$/.test(str)) {
-    const [yyyy, mm, dd] = str.split('-');
-    return `${dd}/${mm}/${yyyy}`;
+  if (/^\d{4}-\d{2}-\d{2}/.test(str)) {
+    const parts = str.slice(0, 10).split('-');
+    if (parts.length === 3) {
+      const [yyyy, mm, dd] = parts;
+      return `${dd}/${mm}/${yyyy}`;
+    }
   }
 
   try {
@@ -104,8 +116,20 @@ ${HEADER_END_TAG}`;
  */
 export function generateFooterHtml(data: DocumentHeaderFooterData): string {
   const creator = data.createdByName || 'HR Author';
-  const approver = data.approvedByName || 'Authorized Reviewer';
-  const approvedDate = formatDDMMYYYY(data.approvedDate);
+  const isApproved = Boolean(
+    data.approvedByName &&
+    data.approvedByName !== 'Not yet approved' &&
+    data.approvedByName !== 'Pending Review' &&
+    data.approvedByName !== 'Pending Approval' &&
+    !data.approvedByName.toLowerCase().includes('not yet') &&
+    data.approvedDate &&
+    data.approvedDate !== 'Not yet approved' &&
+    data.approvedDate !== 'Pending Approval' &&
+    !data.approvedDate.toLowerCase().includes('not yet')
+  );
+
+  const approver = isApproved ? data.approvedByName : 'Not yet approved';
+  const approvedDate = isApproved ? formatDDMMYYYY(data.approvedDate) : 'Not yet approved';
 
   return `${FOOTER_START_TAG}
 <table class="amaavigo-document-footer" style="width: 100%; border-collapse: collapse; border: 2px solid #0f172a; margin-top: 32px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background: #ffffff;">
@@ -116,11 +140,11 @@ export function generateFooterHtml(data: DocumentHeaderFooterData): string {
     </td>
     <td style="border: 1px solid #0f172a; padding: 12px 18px; width: 33.33%; vertical-align: middle;">
       <div style="font-size: 11px; font-weight: 700; color: #0f172a; margin-bottom: 3px;">Approved by:</div>
-      <div style="font-size: 14px; font-weight: 600; color: #1e293b;">${approver}</div>
+      <div style="font-size: 14px; font-weight: ${isApproved ? '600' : '500'}; color: ${isApproved ? '#1e293b' : '#64748b'};">${approver}</div>
     </td>
     <td style="border: 1px solid #0f172a; padding: 12px 18px; width: 33.33%; vertical-align: middle;">
       <div style="font-size: 11px; font-weight: 700; color: #0f172a; margin-bottom: 3px;">Approved Date:</div>
-      <div style="font-size: 14px; font-weight: 600; color: #1e293b;">${approvedDate}</div>
+      <div style="font-size: 14px; font-weight: ${isApproved ? '600' : '500'}; color: ${isApproved ? '#1e293b' : '#64748b'};">${approvedDate}</div>
     </td>
   </tr>
 </table>
@@ -333,14 +357,26 @@ export function extractHeaderFooterData(content: string): DocumentHeaderFooterDa
   const appDateMatch = content.match(/Approved Date:[\s\S]*?<div[^>]*>([\s\S]*?)<\/div>/i);
   if (appDateMatch) approvedDate = appDateMatch[1].trim();
 
+  const isApproved = Boolean(
+    approvedByName &&
+    approvedByName !== 'Not yet approved' &&
+    approvedByName !== 'Pending Review' &&
+    approvedByName !== 'Pending Approval' &&
+    !approvedByName.toLowerCase().includes('not yet') &&
+    approvedDate &&
+    approvedDate !== 'Not yet approved' &&
+    approvedDate !== 'Pending Approval' &&
+    !approvedDate.toLowerCase().includes('not yet')
+  );
+
   return {
     companyName,
     documentTitle: documentTitle || 'Document',
     versionNumber: versionNumber || '1.0',
     effectiveDate: effectiveDate || formatDDMMYYYY(new Date()),
     createdByName: createdByName || 'HR Author',
-    approvedByName: approvedByName || 'Authorized Approver',
-    approvedDate: approvedDate || formatDDMMYYYY(new Date()),
+    approvedByName: isApproved ? approvedByName : 'Not yet approved',
+    approvedDate: isApproved ? formatDDMMYYYY(approvedDate) : 'Not yet approved',
   };
 }
 
@@ -404,9 +440,21 @@ export const DocumentFooterTable: React.FC<{
   data: DocumentHeaderFooterData;
   className?: string;
 }> = ({ data, className = '' }) => {
-  const creator = data.createdByName || 'Amee Shah';
-  const approver = data.approvedByName || 'Vishal Shah';
-  const approvedDate = formatDDMMYYYY(data.approvedDate);
+  const creator = data.createdByName || 'HR Author';
+  const isApproved = Boolean(
+    data.approvedByName &&
+    data.approvedByName !== 'Not yet approved' &&
+    data.approvedByName !== 'Pending Review' &&
+    data.approvedByName !== 'Pending Approval' &&
+    !data.approvedByName.toLowerCase().includes('not yet') &&
+    data.approvedDate &&
+    data.approvedDate !== 'Not yet approved' &&
+    data.approvedDate !== 'Pending Approval' &&
+    !data.approvedDate.toLowerCase().includes('not yet')
+  );
+
+  const approver = isApproved ? data.approvedByName : 'Not yet approved';
+  const approvedDate = isApproved ? formatDDMMYYYY(data.approvedDate) : 'Not yet approved';
 
   return (
     <div
@@ -428,7 +476,11 @@ export const DocumentFooterTable: React.FC<{
           <span className="text-[11px] sm:text-xs font-bold text-slate-900 block uppercase tracking-wide">
             Approved by:
           </span>
-          <span className="text-xs sm:text-sm font-semibold text-slate-800 mt-1">
+          <span
+            className={`text-xs sm:text-sm mt-1 ${
+              isApproved ? 'font-semibold text-slate-800' : 'font-medium text-slate-500 italic'
+            }`}
+          >
             {approver}
           </span>
         </div>
@@ -438,7 +490,11 @@ export const DocumentFooterTable: React.FC<{
           <span className="text-[11px] sm:text-xs font-bold text-slate-900 block uppercase tracking-wide">
             Approved Date:
           </span>
-          <span className="text-xs sm:text-sm font-semibold text-slate-800 mt-1 font-mono">
+          <span
+            className={`text-xs sm:text-sm mt-1 font-mono ${
+              isApproved ? 'font-semibold text-slate-800' : 'font-medium text-slate-500 italic'
+            }`}
+          >
             {approvedDate}
           </span>
         </div>

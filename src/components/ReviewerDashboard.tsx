@@ -24,7 +24,7 @@ import {
   Download,
   Loader2,
 } from 'lucide-react';
-import { ConfidentialityLevel, DocumentMaster, DocumentVersion, User, VersionStatus } from '../types';
+import { ConfidentialityLevel, DocumentCategory, DocumentMaster, DocumentVersion, User, VersionStatus } from '../types';
 import { StatusBadge } from './StatusBadge';
 import { governanceEngine } from '../services/governance';
 import { formatISTDate } from '../utils/dateFormat';
@@ -68,12 +68,13 @@ export const ReviewerDashboard: React.FC<ReviewerDashboardProps> = ({
         effectiveDate: formatDDMMYYYY(ver.effectiveFrom || ver.createdAt),
         createdByName: ver.createdByName || 'Amee Shah',
         approvedByName:
-          ver.reviewedByName ||
-          (ver.status === VersionStatus.PUBLISHED ? 'Vishal Shah' : currentUser.name),
+          ver.status === VersionStatus.PUBLISHED
+            ? (ver.reviewedByName || ver.publishedByName || 'Vishal Shah')
+            : 'Not yet approved',
         approvedDate:
-          ver.reviewedAt || ver.publishedAt
+          ver.status === VersionStatus.PUBLISHED && (ver.reviewedAt || ver.publishedAt)
             ? formatDDMMYYYY(ver.reviewedAt || ver.publishedAt!)
-            : formatDDMMYYYY(ver.createdAt),
+            : 'Not yet approved',
         companyName: parentMaster?.companyName || 'Amaavigo',
         rawContent: ver.rawContent,
         fileUrl: ver.fileUrl,
@@ -522,18 +523,17 @@ export const ReviewerDashboard: React.FC<ReviewerDashboardProps> = ({
               </div>
 
               <select
+                id="filter-category-approver"
                 value={selectedCategory}
                 onChange={(e) => setSelectedCategory(e.target.value)}
-                className="bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs text-slate-700 focus:outline-hidden focus:ring-1 focus:ring-[#FA7014]"
+                className="bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs text-slate-700 focus:outline-hidden focus:ring-1 focus:ring-[#FA7014] cursor-pointer"
               >
                 <option value="ALL">All Categories</option>
-                <option value="HR_POLICIES">HR Policies</option>
-                <option value="LEAVE_ATTENDANCE">Leave & Attendance</option>
-                <option value="CODE_OF_CONDUCT">Code of Conduct</option>
-                <option value="HEALTH_SAFETY">Health & Safety</option>
-                <option value="REMOTE_WORK">Remote Work</option>
-                <option value="IT_SECURITY">IT & Security</option>
-                <option value="COMPENSATION_BENEFITS">Compensation & Benefits</option>
+                {Object.values(DocumentCategory).map((cat) => (
+                  <option key={cat} value={cat}>
+                    {cat}
+                  </option>
+                ))}
               </select>
 
               <select

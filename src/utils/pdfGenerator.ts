@@ -203,9 +203,20 @@ export function generateCorporatePdfBlob(options: CorporatePdfOptions): Blob {
 
   const cleanVer = cleanVersionNumber(options.versionNumber);
   const effective = formatDDMMYYYY(options.effectiveDate);
-  const approvedDt = formatDDMMYYYY(options.approvedDate || options.effectiveDate);
-  const creator = options.createdByName || 'Amee Shah';
-  const approver = options.approvedByName || 'Vishal Shah';
+  const isPdfApproved = Boolean(
+    options.approvedByName &&
+    options.approvedByName !== 'Not yet approved' &&
+    options.approvedByName !== 'Pending Review' &&
+    options.approvedByName !== 'Pending Approval' &&
+    !options.approvedByName.toLowerCase().includes('not yet') &&
+    options.approvedDate &&
+    options.approvedDate !== 'Not yet approved' &&
+    options.approvedDate !== 'Pending Approval' &&
+    !options.approvedDate.toLowerCase().includes('not yet')
+  );
+  const approvedDt = isPdfApproved ? formatDDMMYYYY(options.approvedDate) : 'Not yet approved';
+  const approver = isPdfApproved ? options.approvedByName : 'Not yet approved';
+  const creator = options.createdByName || 'HR Author';
   const title = options.documentTitle || 'Corporate Policy Document';
 
   const headerMeta = { title, version: cleanVer, effectiveDate: effective };

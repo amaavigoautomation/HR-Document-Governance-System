@@ -60,12 +60,13 @@ export const DocumentDetailModal: React.FC<DocumentDetailModalProps> = ({
         effectiveDate: formatDDMMYYYY(ver.effectiveFrom || ver.createdAt),
         createdByName: ver.createdByName || document.createdByName || 'Amee Shah',
         approvedByName:
-          ver.reviewedByName ||
-          (ver.status === VersionStatus.PUBLISHED ? 'Vishal Shah' : 'Pending Review'),
+          ver.status === VersionStatus.PUBLISHED
+            ? (ver.reviewedByName || ver.publishedByName || 'Vishal Shah')
+            : 'Not yet approved',
         approvedDate:
-          ver.reviewedAt || ver.publishedAt
+          ver.status === VersionStatus.PUBLISHED && (ver.reviewedAt || ver.publishedAt)
             ? formatDDMMYYYY(ver.reviewedAt || ver.publishedAt!)
-            : formatDDMMYYYY(ver.createdAt),
+            : 'Not yet approved',
         companyName: document.companyName || 'Amaavigo',
         rawContent: ver.rawContent,
         fileUrl: ver.fileUrl,
@@ -423,12 +424,13 @@ export const DocumentDetailModal: React.FC<DocumentDetailModalProps> = ({
                   effectiveDate: formatDDMMYYYY(activeVersion.effectiveFrom || activeVersion.createdAt),
                   createdByName: activeVersion.createdByName || document.createdByName || 'Amee Shah',
                   approvedByName:
-                    activeVersion.reviewedByName ||
-                    (activeVersion.status === VersionStatus.PUBLISHED ? 'Authorized Approver' : 'Pending Review'),
+                    activeVersion.status === VersionStatus.PUBLISHED
+                      ? (activeVersion.reviewedByName || activeVersion.publishedByName || 'Authorized Approver')
+                      : 'Not yet approved',
                   approvedDate:
-                    activeVersion.reviewedAt || activeVersion.publishedAt
+                    activeVersion.status === VersionStatus.PUBLISHED && (activeVersion.reviewedAt || activeVersion.publishedAt)
                       ? formatDDMMYYYY(activeVersion.reviewedAt || activeVersion.publishedAt!)
-                      : 'Pending Approval',
+                      : 'Not yet approved',
                 }}
               />
             </div>
