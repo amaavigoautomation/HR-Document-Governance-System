@@ -3,7 +3,6 @@ import {
   ShieldCheck,
   Users,
   History,
-  Bell,
   LogOut,
 } from 'lucide-react';
 import { User } from '../types';
@@ -24,9 +23,7 @@ export const ApproverHeader: React.FC<ApproverHeaderProps> = ({
   onLogout,
   activeTab,
   setActiveTab,
-  notificationCount = 0,
   pendingComplianceCount = 0,
-  onOpenNotifications,
 }) => {
   const displayId = currentUser.empId || currentUser.loginId || currentUser.id || '';
 
@@ -103,28 +100,10 @@ export const ApproverHeader: React.FC<ApproverHeaderProps> = ({
             </button>
           </nav>
 
-          {/* Right actions: Notifications, Approver Profile & Logout */}
+          {/* Right actions: Approver Profile & Logout */}
           <div className="flex items-center space-x-2.5">
-            {/* Email Notifications Drawer Button */}
-            {onOpenNotifications && (
-              <button
-                id="btn-approver-notifications"
-                type="button"
-                onClick={onOpenNotifications}
-                className="relative p-2 text-slate-600 hover:text-slate-900 hover:bg-slate-100 rounded-lg transition-colors border border-transparent hover:border-slate-200"
-                title="Broadcasted Email Notifications"
-              >
-                <Bell className="w-4.5 h-4.5" />
-                {notificationCount > 0 && (
-                  <span className="absolute top-1 right-1 w-4 h-4 bg-emerald-600 text-white text-[10px] font-bold rounded-full flex items-center justify-center shadow-xs">
-                    {notificationCount > 9 ? '9+' : notificationCount}
-                  </span>
-                )}
-              </button>
-            )}
-
             {/* Approver Profile Details */}
-            <div className="flex items-center space-x-2 pl-2 border-l border-slate-200">
+            <div className="flex items-center space-x-2">
               <div className="hidden sm:block text-left">
                 <div className="flex items-center space-x-1.5">
                   <div className="text-xs font-bold text-slate-900 leading-tight">

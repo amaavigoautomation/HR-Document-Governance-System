@@ -143,25 +143,8 @@ export const Header: React.FC<HeaderProps> = ({
             </nav>
           )}
 
-          {/* Right actions: Quick switcher, Notifications, Reset */}
+          {/* Right actions: Quick switcher, Reset */}
           <div className="flex items-center space-x-2.5">
-            {/* Email Notifications Drawer Button */}
-            {currentUser && currentUser.role !== UserRole.CREATOR && currentUser.role !== UserRole.REVIEWER && currentUser.role !== UserRole.EMPLOYEE && (
-              <button
-                id="btn-notification-drawer"
-                onClick={onOpenNotifications}
-                className="relative p-2 text-slate-600 hover:text-slate-900 hover:bg-slate-100 rounded-lg transition-colors border border-transparent hover:border-slate-200"
-                title="Broadcasted Email Notifications"
-              >
-                <Bell className="w-4.5 h-4.5" />
-                {notificationCount > 0 && (
-                  <span className="absolute top-1 right-1 w-4 h-4 bg-[#FA7014] text-white text-[10px] font-bold rounded-full flex items-center justify-center shadow-xs">
-                    {notificationCount > 9 ? '9+' : notificationCount}
-                  </span>
-                )}
-              </button>
-            )}
-
             {/* Reset Database Button */}
             {currentUser && currentUser.role !== UserRole.CREATOR && currentUser.role !== UserRole.REVIEWER && currentUser.role !== UserRole.EMPLOYEE && (
               <button

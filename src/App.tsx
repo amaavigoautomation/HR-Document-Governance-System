@@ -395,9 +395,7 @@ export default function App() {
           onLogout={handleLogout}
           activeTab={activeTab === 'compliance' || activeTab === 'audit' ? activeTab : 'reviewer'}
           setActiveTab={(tab) => setActiveTab(tab)}
-          notificationCount={notificationCount}
           pendingComplianceCount={pendingComplianceCount}
-          onOpenNotifications={() => setIsNotifDrawerOpen(true)}
         />
       ) : (
         <EmployeeHeader
