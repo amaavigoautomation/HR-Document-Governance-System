@@ -566,34 +566,24 @@ export function removePolicyMetadataFromDocxXml(xml: string): string {
 }
 
 /**
- * Strips redundant policy metadata paragraphs and tables directly from DOCX binary without changing anything else.
+ * Returns source DOCX bytes directly without destructive metadata stripping,
+ * ensuring the original document structure, fonts, sizes, colors, and layout remain completely intact.
  */
 export async function cleanDocxBytes(sourceDocxInput: Uint8Array | ArrayBuffer | string): Promise<Uint8Array> {
-  const sourceBytes = toUint8Array(sourceDocxInput);
-  const zip = await JSZip.loadAsync(sourceBytes);
-  const docXmlFile = zip.file('word/document.xml');
-  if (docXmlFile) {
-    const originalDocXml = await docXmlFile.async('text');
-    const cleanedDocXml = removePolicyMetadataFromDocxXml(originalDocXml);
-    zip.file('word/document.xml', cleanedDocXml);
-  }
-  return await zip.generateAsync({ type: 'uint8array' });
+  return toUint8Array(sourceDocxInput);
 }
 
 /**
- * Strips redundant policy metadata directly from a DOCX data URL.
+ * Returns DOCX data URL directly without altering or stripping document contents.
  */
 export async function cleanDocxDataUrl(dataUrl: string): Promise<string> {
-  if (!dataUrl || !dataUrl.startsWith('data:')) return dataUrl;
-  const cleanedBytes = await cleanDocxBytes(dataUrl);
-  const mimeType = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
-  return `data:${mimeType};base64,${bytesToBase64(cleanedBytes)}`;
+  return dataUrl;
 }
 
 /**
  * Stamping engine for existing DOCX Word documents:
- * Preserves the original word/document.xml content, formatting, tables, and styles 100% INTACT.
- * Injects OpenXML header1.xml and footer1.xml containing the official Header & Footer tables,
+ * Preserves the original word/document.xml content, formatting, fonts, sizes, colors, tables, and styles 100% INTACT.
+ * Injects OpenXML header1.xml and footer1.xml containing the official corporate Header & Footer tables,
  * and sets section margins so body flows cleanly between them without overlapping.
  */
 export async function stampDocxWithHeaderFooter(
@@ -625,73 +615,118 @@ export async function stampDocxWithHeaderFooter(
   const headerXml = buildNativeHeaderXml({ title, version: cleanVer, effectiveDate: effective });
   const footerXml = buildNativeFooterXml({ creator, approver, approvedDate: approvedDt });
 
-  zip.file('word/header1.xml', headerXml);
-  zip.file('word/footer1.xml', footerXml);
+  const headerPartName = 'header1.xml';
+  const footerPartName = 'footer1.xml';
+  zip.file(`word/${headerPartName}`, headerXml);
+  zip.file(`word/${footerPartName}`, footerXml);
 
   // 2. Register Header & Footer in [Content_Types].xml
   let contentTypesXml = (await zip.file('[Content_Types].xml')?.async('text')) || '';
-  if (!contentTypesXml.includes('/word/header1.xml')) {
-    contentTypesXml = contentTypesXml.replace(
-      '</Types>',
-      '<Override PartName="/word/header1.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.header+xml"/><Override PartName="/word/footer1.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.footer+xml"/></Types>'
-    );
+  if (contentTypesXml) {
+    if (!contentTypesXml.includes(`PartName="/word/${headerPartName}"`)) {
+      contentTypesXml = contentTypesXml.replace(
+        '</Types>',
+        `<Override PartName="/word/${headerPartName}" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.header+xml"/></Types>`
+      );
+    }
+    if (!contentTypesXml.includes(`PartName="/word/${footerPartName}"`)) {
+      contentTypesXml = contentTypesXml.replace(
+        '</Types>',
+        `<Override PartName="/word/${footerPartName}" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.footer+xml"/></Types>`
+      );
+    }
     zip.file('[Content_Types].xml', contentTypesXml);
   }
 
   // 3. Register Header & Footer in word/_rels/document.xml.rels
   let relsXml = (await zip.file('word/_rels/document.xml.rels')?.async('text')) || '';
-  if (!relsXml.includes('Target="header1.xml"')) {
-    const headerRel =
-      '<Relationship Id="rIdHeader1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/header" Target="header1.xml"/>';
-    const footerRel =
-      '<Relationship Id="rIdFooter1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/footer" Target="footer1.xml"/>';
+  let headerRelId = 'rIdGovHdr';
+  let footerRelId = 'rIdGovFtr';
 
-    if (relsXml.includes('</Relationships>')) {
-      relsXml = relsXml.replace('</Relationships>', `${headerRel}${footerRel}</Relationships>`);
+  if (relsXml) {
+    const existingHeaderMatch = relsXml.match(/<Relationship[^>]+Target="header1\.xml"[^>]*>/i);
+    if (existingHeaderMatch) {
+      const idMatch = existingHeaderMatch[0].match(/Id="([^"]+)"/i);
+      if (idMatch) headerRelId = idMatch[1];
     } else {
-      relsXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">${headerRel}${footerRel}</Relationships>`;
+      if (relsXml.includes(`Id="${headerRelId}"`)) {
+        headerRelId = `rIdGovHdr_${Math.floor(Math.random() * 10000)}`;
+      }
+      const headerRel = `<Relationship Id="${headerRelId}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/header" Target="${headerPartName}"/>`;
+      if (relsXml.includes('</Relationships>')) {
+        relsXml = relsXml.replace('</Relationships>', `${headerRel}</Relationships>`);
+      } else {
+        relsXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">${headerRel}</Relationships>`;
+      }
+    }
+
+    const existingFooterMatch = relsXml.match(/<Relationship[^>]+Target="footer1\.xml"[^>]*>/i);
+    if (existingFooterMatch) {
+      const idMatch = existingFooterMatch[0].match(/Id="([^"]+)"/i);
+      if (idMatch) footerRelId = idMatch[1];
+    } else {
+      if (relsXml.includes(`Id="${footerRelId}"`)) {
+        footerRelId = `rIdGovFtr_${Math.floor(Math.random() * 10000)}`;
+      }
+      const footerRel = `<Relationship Id="${footerRelId}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/footer" Target="${footerPartName}"/>`;
+      if (relsXml.includes('</Relationships>')) {
+        relsXml = relsXml.replace('</Relationships>', `${footerRel}</Relationships>`);
+      }
     }
     zip.file('word/_rels/document.xml.rels', relsXml);
   }
 
-  // 4. Link Header & Footer inside word/document.xml section properties (<w:sectPr>)
-  // Ensures w:top="1800" (1.25 in) and w:bottom="1600" (1.11 in) so original body flows safely without collision
+  // 4. Update section properties (<w:sectPr>) in word/document.xml
+  // CRITICAL: We preserve the original document body, fonts, sizes, colors, tables, and images 100% INTACT!
   let docXml = (await zip.file('word/document.xml')?.async('text')) || '';
+  if (docXml) {
+    const headerFooterRefs = `<w:headerReference w:type="default" r:id="${headerRelId}"/><w:headerReference w:type="first" r:id="${headerRelId}"/><w:footerReference w:type="default" r:id="${footerRelId}"/><w:footerReference w:type="first" r:id="${footerRelId}"/>`;
 
-  // Clean the original word/document.xml body before adding/linking the official header/footer
-  docXml = removePolicyMetadataFromDocxXml(docXml);
+    const updateSectPrInner = (sectPrContent: string): string => {
+      // Remove any pre-existing header and footer references
+      let cleaned = sectPrContent.replace(/<w:headerReference[^>]*\/>/g, '');
+      cleaned = cleaned.replace(/<w:footerReference[^>]*\/>/g, '');
+      cleaned = cleaned.replace(/<w:titlePg[^>]*\/>/g, '');
 
-  const headerFooterRefs =
-    '<w:headerReference w:type="default" r:id="rIdHeader1"/><w:footerReference w:type="default" r:id="rIdFooter1"/>';
-
-  if (!docXml.includes('r:id="rIdHeader1"')) {
-    if (docXml.includes('<w:sectPr>')) {
-      docXml = docXml.replace('<w:sectPr>', `<w:sectPr>${headerFooterRefs}`);
-    } else if (docXml.includes('<w:sectPr ')) {
-      docXml = docXml.replace(/(<w:sectPr[^>]*>)/, `$1${headerFooterRefs}`);
-    } else if (docXml.includes('</w:body>')) {
-      docXml = docXml.replace('</w:body>', `<w:sectPr>${headerFooterRefs}</w:sectPr></w:body>`);
-    }
-  }
-
-  // Update or insert page margins <w:pgMar> to give ample clearance for header & footer
-  if (docXml.includes('<w:pgMar')) {
-    docXml = docXml.replace(
-      /<w:pgMar\s+([^>]*)\/>/g,
-      (match, attrs) => {
-        let updated = attrs;
-        if (!/w:header=/i.test(updated)) updated += ' w:header="720"';
-        if (!/w:footer=/i.test(updated)) updated += ' w:footer="720"';
-        // Ensure top margin is at least 1800 dxa (1.25 in)
-        updated = updated.replace(/w:top="\d+"/i, 'w:top="1800"');
-        // Ensure bottom margin is at least 1600 dxa (1.11 in)
-        updated = updated.replace(/w:bottom="\d+"/i, 'w:bottom="1600"');
-        return `<w:pgMar ${updated}/>`;
+      // Ensure margins accommodate header and footer without colliding with body content
+      if (cleaned.includes('<w:pgMar')) {
+        cleaned = cleaned.replace(/<w:pgMar\s+([^>]*)\/>/g, (match, attrs) => {
+          let updated = attrs;
+          if (!/w:header=/i.test(updated)) updated += ' w:header="720"';
+          if (!/w:footer=/i.test(updated)) updated += ' w:footer="720"';
+          if (/w:top="\d+"/i.test(updated)) {
+            updated = updated.replace(/w:top="(\d+)"/i, (m, val) => (Number(val) < 1800 ? 'w:top="1800"' : m));
+          } else {
+            updated += ' w:top="1800"';
+          }
+          if (/w:bottom="\d+"/i.test(updated)) {
+            updated = updated.replace(/w:bottom="(\d+)"/i, (m, val) => (Number(val) < 1600 ? 'w:bottom="1600"' : m));
+          } else {
+            updated += ' w:bottom="1600"';
+          }
+          return `<w:pgMar ${updated}/>`;
+        });
+      } else {
+        cleaned += '<w:pgMar w:top="1800" w:right="1440" w:bottom="1600" w:left="1440" w:header="720" w:footer="720" w:gutter="0"/>';
       }
-    );
-  }
 
-  zip.file('word/document.xml', docXml);
+      // Per OpenXML specification, headerReference and footerReference MUST be placed first inside w:sectPr
+      return `${headerFooterRefs}${cleaned}`;
+    };
+
+    if (/<w:sectPr[\s>]/i.test(docXml)) {
+      docXml = docXml.replace(/<w:sectPr([^>]*)>([\s\S]*?)<\/w:sectPr>/g, (fullMatch, attrs, inner) => {
+        return `<w:sectPr${attrs}>${updateSectPrInner(inner)}</w:sectPr>`;
+      });
+      docXml = docXml.replace(/<w:sectPr\s*\/>/g, () => {
+        return `<w:sectPr>${updateSectPrInner('')}</w:sectPr>`;
+      });
+    } else if (docXml.includes('</w:body>')) {
+      docXml = docXml.replace('</w:body>', `<w:sectPr>${updateSectPrInner('')}</w:sectPr></w:body>`);
+    }
+
+    zip.file('word/document.xml', docXml);
+  }
 
   const stampedBytes = await zip.generateAsync({
     type: 'uint8array',
@@ -1155,7 +1190,7 @@ export async function downloadDocumentWithIntactFormat(params: {
     const downloadName = originalName.replace(/\.[^/.]+$/, '') + '.docx';
 
     // If source has actual uploaded DOCX bytes, stamp them directly
-    if (params.fileUrl && (params.fileUrl.startsWith('data:application/vnd.openxmlformats') || params.fileUrl.startsWith('blob:'))) {
+    if (params.fileUrl) {
       try {
         let sourceBytes: Uint8Array;
         if (params.fileUrl.startsWith('data:')) {
@@ -1164,9 +1199,12 @@ export async function downloadDocumentWithIntactFormat(params: {
           const resp = await fetch(params.fileUrl);
           sourceBytes = new Uint8Array(await resp.arrayBuffer());
         }
-        const stamped = await stampDocxWithHeaderFooter(sourceBytes, meta);
-        triggerDownload(stamped.blob, downloadName);
-        return;
+        // Verify it is a valid zip (starts with 'PK' 0x50 0x4B)
+        if (sourceBytes.length > 4 && sourceBytes[0] === 0x50 && sourceBytes[1] === 0x4b) {
+          const stamped = await stampDocxWithHeaderFooter(sourceBytes, meta);
+          triggerDownload(stamped.blob, downloadName);
+          return;
+        }
       } catch (err) {
         console.warn('Existing DOCX stamping fallback to generator:', err);
       }

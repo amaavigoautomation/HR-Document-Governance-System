@@ -19,7 +19,7 @@ import { defaultEmailProvider } from './email';
 import { calculateSha256, defaultStorageProvider } from './storage';
 import { firestoreService } from './firestoreService';
 import { appendApprovedHeaderAndFooter, formatDDMMYYYY, stripPolicyMetadataHeader, extractCleanBody } from '../utils/documentHeaderFooter';
-import { stampPdfWithHeaderFooter, stampDocxWithHeaderFooter, cleanDocxDataUrl } from '../utils/documentStamper';
+import { stampPdfWithHeaderFooter, stampDocxWithHeaderFooter, cleanDocxDataUrl, HeaderFooterMetadata } from '../utils/documentStamper';
 
 export class DocumentGovernanceEngine {
   private users: User[] = [];
@@ -638,13 +638,39 @@ export class DocumentGovernanceEngine {
     // Clean redundant policy metadata lines from rawContent
     const sanitizedRawContent = stripPolicyMetadataHeader(data.rawContent || '');
 
-    // Clean DOCX binary if present so uploaded files never carry duplicate metadata
+    // If a DOCX or PDF file was uploaded, stamp it with the initial Header & Footer
+    // while keeping the document structure, fonts, sizes, colors, and layout 100% intact!
     let sanitizedFileUrl = data.fileDataUrl;
-    if (sanitizedFileUrl && (sanitizedFileUrl.includes('wordprocessingml') || data.fileName?.toLowerCase().endsWith('.docx'))) {
+    const isDocxUpload =
+      Boolean(sanitizedFileUrl) &&
+      (sanitizedFileUrl.includes('wordprocessingml') || data.fileName?.toLowerCase().endsWith('.docx'));
+    const isPdfUpload =
+      Boolean(sanitizedFileUrl) &&
+      (sanitizedFileUrl.startsWith('data:application/pdf') || data.fileName?.toLowerCase().endsWith('.pdf'));
+
+    const initialHeaderFooter: HeaderFooterMetadata = {
+      documentTitle: data.title.trim(),
+      versionNumber: '1.0',
+      effectiveDate: data.effectiveFrom || new Date().toISOString().split('T')[0],
+      createdByName: creator.name,
+      approvedByName: 'Not yet approved',
+      approvedDate: 'Not yet approved',
+      companyName: data.companyName || creator.companyName || 'Amaavigo',
+    };
+
+    if (isDocxUpload && sanitizedFileUrl) {
       try {
-        sanitizedFileUrl = await cleanDocxDataUrl(sanitizedFileUrl);
+        const stampedDocx = await stampDocxWithHeaderFooter(sanitizedFileUrl, initialHeaderFooter);
+        sanitizedFileUrl = stampedDocx.dataUrl;
       } catch (cleanErr) {
-        console.warn('Could not clean DOCX data URL on createDocument:', cleanErr);
+        console.warn('Could not stamp initial DOCX data URL on createDocument:', cleanErr);
+      }
+    } else if (isPdfUpload && sanitizedFileUrl) {
+      try {
+        const stampedPdf = await stampPdfWithHeaderFooter(sanitizedFileUrl, initialHeaderFooter);
+        sanitizedFileUrl = stampedPdf.dataUrl;
+      } catch (pdfErr) {
+        console.warn('Could not stamp initial PDF on createDocument:', pdfErr);
       }
     }
 

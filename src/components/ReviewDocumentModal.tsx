@@ -28,6 +28,7 @@ import {
   DocumentVersion,
   ConfidentialityLevel,
   User,
+  UserRole,
   VersionStatus,
   VersionType,
   AuditAction,
@@ -54,6 +55,7 @@ export const ReviewDocumentModal: React.FC<ReviewDocumentModalProps> = ({
   onApproveSuccess,
   onRejectSuccess,
 }) => {
+  const isApprover = currentUser.role === UserRole.REVIEWER;
   const [activeTab, setActiveTab] = useState<'sideBySide' | 'summary' | 'unified' | 'fullText'>('sideBySide');
   const [comparison, setComparison] = useState<DocumentComparisonResult | null>(null);
   const [loading, setLoading] = useState(true);
@@ -147,9 +149,11 @@ export const ReviewDocumentModal: React.FC<ReviewDocumentModalProps> = ({
       documentId: version.documentId,
       documentVersionId: version.id,
       versionNumber: version.versionNumber,
-      reason: `Reviewer ${currentUser.name} (${currentUser.role}) initiated governance inspection on v${version.versionNumber}.`,
+      reason: isApprover
+        ? `Approver ${currentUser.name} (${currentUser.role}) initiated governance inspection on v${version.versionNumber}.`
+        : `HR Author ${currentUser.name} (${currentUser.role}) inspected baseline comparison on v${version.versionNumber}.`,
     });
-  }, [version.id]);
+  }, [version.id, isApprover]);
 
   useEffect(() => {
     if (!version.id) return;
@@ -165,6 +169,11 @@ export const ReviewDocumentModal: React.FC<ReviewDocumentModalProps> = ({
   }, [version.id, selectedBaselineId]);
 
   const handleApprove = async () => {
+    if (!isApprover) {
+      alert('Forbidden: HR Authors cannot approve documents. Only authorized Approvers can render decisions.');
+      return;
+    }
+
     setIsApproving(true);
     try {
       await governanceEngine.approveVersion(currentUser, version.id, approvalNotes);
@@ -178,6 +187,11 @@ export const ReviewDocumentModal: React.FC<ReviewDocumentModalProps> = ({
   };
 
   const handleReject = async () => {
+    if (!isApprover) {
+      setRejectionError('Forbidden: HR Authors cannot reject documents. Only authorized Approvers can render decisions.');
+      return;
+    }
+
     if (!rejectionComments.trim()) {
       setRejectionError('Rejection comments are mandatory. Please detail the required revisions.');
       return;
@@ -276,6 +290,22 @@ export const ReviewDocumentModal: React.FC<ReviewDocumentModalProps> = ({
               </div>
             </div>
             <span className="shrink-0 bg-slate-200 text-slate-700 px-2.5 py-1 rounded-md font-semibold text-[11px] border border-slate-300">
+              Read-Only Inspection
+            </span>
+          </div>
+        )}
+
+        {/* HR AUTHOR READ-ONLY COMPARISON BANNER (When HR or non-approver inspects a version in review) */}
+        {!isApprover && !isAlreadyDecided && (
+          <div className="bg-amber-50 border-b border-amber-200 px-6 py-2.5 flex items-center justify-between gap-3 text-xs text-amber-950">
+            <div className="flex items-center space-x-2.5">
+              <Info className="w-4 h-4 text-amber-600 shrink-0" />
+              <div>
+                <span className="font-bold text-amber-950">Baseline Comparison (HR Author View):</span>{' '}
+                This document is <span className="font-semibold text-amber-900">Pending Review</span> by the designated Approver. HR Authors have read-only access to baseline diffs and content for auditing. Approval and rejection decisions are strictly restricted to Approvers.
+              </div>
+            </div>
+            <span className="shrink-0 bg-amber-100 text-amber-800 px-2.5 py-1 rounded-md font-semibold text-[11px] border border-amber-300">
               Read-Only Inspection
             </span>
           </div>
@@ -637,42 +667,76 @@ export const ReviewDocumentModal: React.FC<ReviewDocumentModalProps> = ({
 
         {/* DECISION ACTION BAR (Sticky Bottom) */}
         <div className="bg-slate-900 text-white px-6 py-4 border-t border-slate-800 flex flex-col sm:flex-row items-center justify-between gap-3 shrink-0">
-          <div className="text-xs text-slate-400">
-            Approver: <span className="font-semibold text-white">{currentUser.name}</span> ({currentUser.title})
-          </div>
-
-          {isAlreadyDecided ? (
-            <div className="flex items-center space-x-3 w-full sm:w-auto justify-end">
-              <span className="inline-flex items-center space-x-1.5 bg-slate-800 text-slate-300 border border-slate-700 font-semibold px-4 py-2 rounded-xl text-xs">
-                <Lock className="w-3.5 h-3.5 text-slate-400" />
-                <span>Decision Finalized ({version.status.replace('_', ' ')})</span>
-              </span>
-              <button
-                id="btn-close-decided-modal"
-                onClick={onClose}
-                className="inline-flex items-center space-x-1.5 bg-[#FA7014] hover:bg-[#E65A05] text-white font-bold px-5 py-2 rounded-xl text-xs transition-all shadow-md shadow-[#FA7014]/20"
-              >
-                <span>Close Window</span>
-              </button>
+          {/* USER CONTEXT / ROLE BADGE */}
+          {isApprover ? (
+            <div className="text-xs text-slate-400">
+              Approver: <span className="font-semibold text-white">{currentUser.name}</span> ({currentUser.title || 'HR Policy & Governance Lead'})
             </div>
           ) : (
-            <div className="flex items-center space-x-3 w-full sm:w-auto justify-end">
-              <button
-                id="btn-open-reject-modal"
-                onClick={() => setShowRejectModal(true)}
-                className="inline-flex items-center space-x-1.5 bg-white hover:bg-slate-100 text-slate-900 border border-slate-300 font-semibold px-4 py-2.5 rounded-xl text-sm transition-colors shadow-xs"
-              >
-                <XCircle className="w-4 h-4 text-slate-500" />
-                <span>Reject (Request Revisions)</span>
-              </button>
+            <div className="flex items-center space-x-2 text-xs text-slate-400">
+              <span className="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-semibold bg-slate-800 text-amber-400 border border-slate-700">
+                {currentUser.role === UserRole.CREATOR ? 'HR Author View' : 'Read-Only View'}
+              </span>
+              <span>
+                Logged in as: <strong className="text-white">{currentUser.name}</strong> ({currentUser.title || currentUser.role})
+              </span>
+            </div>
+          )}
 
+          {/* ACTION CONTROLS */}
+          {isApprover ? (
+            isAlreadyDecided ? (
+              <div className="flex items-center space-x-3 w-full sm:w-auto justify-end">
+                <span className="inline-flex items-center space-x-1.5 bg-slate-800 text-slate-300 border border-slate-700 font-semibold px-4 py-2 rounded-xl text-xs">
+                  <Lock className="w-3.5 h-3.5 text-slate-400" />
+                  <span>Decision Finalized ({version.status.replace('_', ' ')})</span>
+                </span>
+                <button
+                  id="btn-close-decided-modal"
+                  onClick={onClose}
+                  className="inline-flex items-center space-x-1.5 bg-[#FA7014] hover:bg-[#E65A05] text-white font-bold px-5 py-2 rounded-xl text-xs transition-all shadow-md shadow-[#FA7014]/20 cursor-pointer"
+                >
+                  <span>Close Window</span>
+                </button>
+              </div>
+            ) : (
+              <div className="flex items-center space-x-3 w-full sm:w-auto justify-end">
+                <button
+                  id="btn-open-reject-modal"
+                  onClick={() => setShowRejectModal(true)}
+                  className="inline-flex items-center space-x-1.5 bg-white hover:bg-slate-100 text-slate-900 border border-slate-300 font-semibold px-4 py-2.5 rounded-xl text-sm transition-colors shadow-xs cursor-pointer"
+                >
+                  <XCircle className="w-4 h-4 text-slate-500" />
+                  <span>Reject (Request Revisions)</span>
+                </button>
+
+                <button
+                  id="btn-open-approve-confirm"
+                  onClick={() => setShowApproveConfirm(true)}
+                  className="inline-flex items-center space-x-2 bg-[#FA7014] hover:bg-[#E65A05] text-white font-bold px-6 py-2.5 rounded-xl text-sm transition-all shadow-md shadow-[#FA7014]/20 cursor-pointer"
+                >
+                  <Check className="w-4 h-4 stroke-[3]" />
+                  <span>Approve & Auto-Publish</span>
+                </button>
+              </div>
+            )
+          ) : (
+            /* NON-APPROVER (HR CREATOR) - NO REJECT / APPROVE BUTTONS CAN EVER BE SHOWN */
+            <div className="flex items-center space-x-3 w-full sm:w-auto justify-end">
+              <div className="flex items-center space-x-2 text-xs text-slate-400 bg-slate-800/80 px-3.5 py-1.5 rounded-xl border border-slate-700">
+                <Lock className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                <span>
+                  {version.status === VersionStatus.IN_REVIEW
+                    ? 'Awaiting Approver Decision • Actions restricted to Approvers'
+                    : `Status: ${version.status.replace('_', ' ')}`}
+                </span>
+              </div>
               <button
-                id="btn-open-approve-confirm"
-                onClick={() => setShowApproveConfirm(true)}
-                className="inline-flex items-center space-x-2 bg-[#FA7014] hover:bg-[#E65A05] text-white font-bold px-6 py-2.5 rounded-xl text-sm transition-all shadow-md shadow-[#FA7014]/20"
+                id="btn-close-readonly-compare-modal"
+                onClick={onClose}
+                className="inline-flex items-center space-x-1.5 bg-[#FA7014] hover:bg-[#E65A05] text-white font-bold px-5 py-2.5 rounded-xl text-xs transition-all shadow-md shadow-[#FA7014]/20 cursor-pointer"
               >
-                <Check className="w-4 h-4 stroke-[3]" />
-                <span>Approve & Auto-Publish</span>
+                <span>Close Comparison</span>
               </button>
             </div>
           )}
@@ -680,7 +744,7 @@ export const ReviewDocumentModal: React.FC<ReviewDocumentModalProps> = ({
       </div>
 
       {/* APPROVAL CONFIRMATION MODAL */}
-      {showApproveConfirm && (
+      {showApproveConfirm && isApprover && (
         <div className="fixed inset-0 z-[80] bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl p-6 max-w-md w-full shadow-2xl border border-slate-200 animate-in zoom-in-95 duration-150">
             <div className="w-12 h-12 rounded-xl bg-orange-50 border border-orange-200 text-[#FA7014] flex items-center justify-center mb-4">
@@ -766,7 +830,7 @@ export const ReviewDocumentModal: React.FC<ReviewDocumentModalProps> = ({
       )}
 
       {/* REJECTION / MANDATORY COMMENTS MODAL */}
-      {showRejectModal && (
+      {showRejectModal && isApprover && (
         <div className="fixed inset-0 z-[80] bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl p-6 max-w-md w-full shadow-2xl border border-slate-200 animate-in zoom-in-95 duration-150">
             <div className="w-12 h-12 rounded-xl bg-slate-100 border border-slate-200 text-slate-800 flex items-center justify-center mb-4">

@@ -26,7 +26,8 @@ import {
   stripPolicyMetadataHeader,
 } from '../utils/documentHeaderFooter';
 import { generateCorporatePdfBlob } from '../utils/pdfGenerator';
-import { stampPdfWithHeaderFooter } from '../utils/documentStamper';
+import { stampPdfWithHeaderFooter, stampDocxWithHeaderFooter, toUint8Array } from '../utils/documentStamper';
+import { renderAsync } from 'docx-preview';
 
 interface DocumentViewerProps {
   fileName: string;
@@ -56,7 +57,9 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({
     isRawPdfStream(rawContent) ||
     fileUrl?.startsWith('data:application/pdf');
 
-  const [viewMode, setViewMode] = useState<'pdf' | 'formatted' | 'raw'>(isPdf ? 'pdf' : 'formatted');
+  const [viewMode, setViewMode] = useState<'docx' | 'pdf' | 'formatted' | 'raw'>(
+    isPdf ? 'pdf' : isDocx ? 'docx' : 'formatted'
+  );
   const [numPages, setNumPages] = useState<number>(0);
   const [pageNumber, setPageNumber] = useState<number>(1);
   const [scale, setScale] = useState<number>(1.2);
@@ -65,13 +68,131 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({
   const [pdfDoc, setPdfDoc] = useState<any>(null);
   const [stampedPdfUrl, setStampedPdfUrl] = useState<string | null>(null);
 
+  // DOCX Interactive View State
+  const [loadingDocx, setLoadingDocx] = useState<boolean>(false);
+  const [docxError, setDocxError] = useState<string | null>(null);
+  const [stampedDocxBlob, setStampedDocxBlob] = useState<Blob | null>(null);
+  const docxContainerRef = useRef<HTMLDivElement | null>(null);
+
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const renderTaskRef = useRef<any>(null);
+
+  // Keep viewMode synchronized with document type if props change
+  useEffect(() => {
+    if (isPdf) {
+      setViewMode('pdf');
+    } else if (isDocx) {
+      setViewMode('docx');
+    } else {
+      setViewMode('formatted');
+    }
+  }, [isPdf, isDocx]);
 
   const effectiveHeaderFooterData = React.useMemo(() => {
     if (headerFooterData) return headerFooterData;
     return extractHeaderFooterData(rawContent);
   }, [headerFooterData, rawContent]);
+
+  // Prepare stamped DOCX for high-fidelity interactive preview
+  // Preserves 100% of original fonts, sizes, colors, and layout while displaying the official header & footer
+  useEffect(() => {
+    let isMounted = true;
+    if (isDocx) {
+      const source = fileUrl || null;
+      if (source) {
+        setLoadingDocx(true);
+        setDocxError(null);
+        (async () => {
+          try {
+            let bytes: Uint8Array;
+            if (source.startsWith('data:')) {
+              bytes = toUint8Array(source);
+            } else {
+              const res = await fetch(source);
+              bytes = new Uint8Array(await res.arrayBuffer());
+            }
+
+            if (bytes.length > 4 && bytes[0] === 0x50 && bytes[1] === 0x4b) {
+              if (effectiveHeaderFooterData) {
+                const stamped = await stampDocxWithHeaderFooter(bytes, {
+                  documentTitle: effectiveHeaderFooterData.documentTitle || fileName.replace(/\.[^/.]+$/, ''),
+                  versionNumber: effectiveHeaderFooterData.versionNumber || '1.0',
+                  effectiveDate: effectiveHeaderFooterData.effectiveDate || new Date().toISOString(),
+                  createdByName: effectiveHeaderFooterData.createdByName,
+                  approvedByName: effectiveHeaderFooterData.approvedByName,
+                  approvedDate: effectiveHeaderFooterData.approvedDate,
+                  companyName: effectiveHeaderFooterData.companyName,
+                });
+                if (isMounted) {
+                  setStampedDocxBlob(stamped.blob);
+                  setLoadingDocx(false);
+                }
+              } else {
+                const blob = new Blob([bytes], {
+                  type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+                });
+                if (isMounted) {
+                  setStampedDocxBlob(blob);
+                  setLoadingDocx(false);
+                }
+              }
+            } else {
+              if (isMounted) {
+                setLoadingDocx(false);
+                setViewMode('formatted');
+              }
+            }
+          } catch (err: any) {
+            console.warn('Could not prepare stamped DOCX preview:', err);
+            if (isMounted) {
+              setDocxError('Interactive Word preview could not render.');
+              setLoadingDocx(false);
+              setViewMode('formatted');
+            }
+          }
+        })();
+      } else {
+        setLoadingDocx(false);
+        setViewMode('formatted');
+      }
+    }
+    return () => {
+      isMounted = false;
+    };
+  }, [isDocx, fileUrl, effectiveHeaderFooterData, fileName]);
+
+  // Render Word document via docx-preview into container
+  useEffect(() => {
+    let isCurrent = true;
+    if (viewMode === 'docx' && stampedDocxBlob && docxContainerRef.current) {
+      const container = docxContainerRef.current;
+      container.innerHTML = '';
+      setLoadingDocx(true);
+      renderAsync(stampedDocxBlob, container, undefined, {
+        inWrapper: true,
+        ignoreWidth: false,
+        ignoreHeight: false,
+        ignoreFonts: false,
+        breakPages: true,
+        renderHeaders: true,
+        renderFooters: true,
+        className: 'docx-preview-doc',
+      })
+        .then(() => {
+          if (isCurrent) setLoadingDocx(false);
+        })
+        .catch((err) => {
+          console.warn('docx-preview render warning:', err);
+          if (isCurrent) {
+            setLoadingDocx(false);
+            setDocxError('Interactive Word preview encountered an issue. Switch to Formatted View to read content.');
+          }
+        });
+    }
+    return () => {
+      isCurrent = false;
+    };
+  }, [viewMode, stampedDocxBlob]);
 
   // Stamp PDF with official corporate header & footer while keeping original document 100% intact
   useEffect(() => {
@@ -155,10 +276,7 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({
 
   // Load PDF Document with PDF.js
   useEffect(() => {
-    if (!isPdf) {
-      setViewMode('formatted');
-      return;
-    }
+    if (!isPdf) return;
 
     let isMounted = true;
     setLoadingPdf(true);
@@ -279,6 +397,21 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({
       <div className="bg-slate-50 px-4 py-3 border-b border-slate-200 flex flex-wrap items-center justify-between gap-3">
         {/* VIEW MODE SELECTOR */}
         <div className="flex items-center space-x-1.5 bg-white p-1 rounded-xl border border-slate-200">
+          {isDocx && (
+            <button
+              type="button"
+              onClick={() => setViewMode('docx')}
+              className={`px-3 py-1.5 text-xs rounded-lg font-bold flex items-center space-x-1.5 transition-all ${
+                viewMode === 'docx'
+                  ? 'bg-slate-900 text-white shadow-xs'
+                  : 'text-slate-500 hover:text-slate-900'
+              }`}
+            >
+              <Eye className="w-3.5 h-3.5 text-[#FA7014]" />
+              <span>Word Document (DOCX)</span>
+            </button>
+          )}
+
           {isPdf && (
             <button
               type="button"
@@ -379,7 +512,40 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({
 
       {/* VIEWER BODY */}
       <div className="flex-1 bg-slate-100/70 p-4 overflow-y-auto max-h-[62vh] flex justify-center items-start min-h-[300px]">
-        {/* 1. PDF CANVAS VIEWER */}
+        {/* 1. INTERACTIVE WORD (DOCX) DOCUMENT VIEWER */}
+        {viewMode === 'docx' && (
+          <div className="flex flex-col items-center justify-center w-full">
+            {loadingDocx && (
+              <div className="py-16 text-center text-slate-500">
+                <div className="w-8 h-8 border-2 border-[#FA7014] border-t-transparent rounded-full animate-spin mx-auto mb-3" />
+                <p className="text-xs">Rendering Word Document with intact fonts, styles, and header/footer...</p>
+              </div>
+            )}
+
+            {docxError && !loadingDocx && (
+              <div className="text-center py-10 text-slate-500 max-w-md">
+                <AlertCircle className="w-8 h-8 mx-auto text-[#FA7014] mb-2" />
+                <p className="text-xs font-semibold text-slate-900 mb-1">Interactive Word Document Preview</p>
+                <p className="text-xs text-slate-500 mb-4">{docxError}</p>
+                <button
+                  onClick={() => setViewMode('formatted')}
+                  className="bg-[#FA7014] hover:bg-[#E65A05] text-white text-xs font-bold px-4 py-2 rounded-xl"
+                >
+                  View Readable Policy Content
+                </button>
+              </div>
+            )}
+
+            <div
+              ref={docxContainerRef}
+              className={`docx-preview-container flex flex-col items-center py-4 px-2 bg-transparent overflow-x-auto w-full max-w-5xl ${
+                loadingDocx ? 'hidden' : 'block'
+              }`}
+            />
+          </div>
+        )}
+
+        {/* 2. PDF CANVAS VIEWER */}
         {viewMode === 'pdf' && (
           <div className="flex flex-col items-center justify-center w-full">
             {loadingPdf && (

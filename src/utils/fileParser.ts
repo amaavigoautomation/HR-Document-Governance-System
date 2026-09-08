@@ -49,15 +49,14 @@ export async function extractTextFromDocx(arrayBuffer: ArrayBuffer): Promise<str
   }
 
   const xmlString = await docXmlFile.async('text');
-  const cleanedXml = removePolicyMetadataFromDocxXml(xmlString);
   const parser = new DOMParser();
-  const xmlDoc = parser.parseFromString(cleanedXml, 'application/xml');
+  const xmlDoc = parser.parseFromString(xmlString, 'application/xml');
 
   // Check for XML parsing errors
   const parseError = xmlDoc.getElementsByTagName('parsererror');
   if (parseError.length > 0) {
     // Regex fallback if DOMParser fails
-    return extractTextFromDocxXmlRegex(cleanedXml);
+    return extractTextFromDocxXmlRegex(xmlString);
   }
 
   const paragraphs = xmlDoc.getElementsByTagName('w:p');
@@ -219,33 +218,21 @@ export async function parseUploadedFile(file: File): Promise<ParsedFileResult> {
       const arrayBuffer = await file.arrayBuffer();
       const extractedText = await extractTextFromDocx(arrayBuffer);
 
-      // Clean redundant metadata directly from the DOCX zip XML (tables & paragraphs)
-      let cleanedDataUrl = fileDataUrl;
-      try {
-        const cleanedBytes = await cleanDocxBytes(arrayBuffer);
-        const blob = new Blob([cleanedBytes], {
-          type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-        });
-        cleanedDataUrl = await new Promise<string>((resolve) => {
-          const r = new FileReader();
-          r.onload = () => resolve(r.result as string);
-          r.onerror = () => resolve(fileDataUrl);
-          r.readAsDataURL(blob);
-        });
-      } catch (cleanErr) {
-        console.warn('Could not pre-clean DOCX binary:', cleanErr);
+      // Ensure dataUrl has proper docx MIME prefix while keeping original bytes 100% intact
+      let docxDataUrl = fileDataUrl;
+      if (docxDataUrl.includes(',')) {
+        const base64 = docxDataUrl.split(',')[1];
+        docxDataUrl = `data:application/vnd.openxmlformats-officedocument.wordprocessingml.document;base64,${base64}`;
       }
 
-      if (extractedText && extractedText.trim().length > 0) {
-        return {
-          fileName: file.name,
-          mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-          fileSize: file.size,
-          extractedText: stripPolicyMetadataHeader(extractedText.trim()),
-          fileDataUrl: cleanedDataUrl,
-          isPdf: false,
-        };
-      }
+      return {
+        fileName: file.name,
+        mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        fileSize: file.size,
+        extractedText: extractedText || '',
+        fileDataUrl: docxDataUrl,
+        isPdf: false,
+      };
     } catch (docxErr) {
       console.error('Failed to parse .docx file:', docxErr);
       throw new Error('Could not parse Word (.docx) document. Please ensure it is a valid .docx file.');

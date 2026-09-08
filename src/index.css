@@ -58,3 +58,27 @@
   background: rgba(250, 112, 20, 0.8);
 }
 
+/* Interactive Word (DOCX) Document Preview Styles */
+.docx-preview-container .docx-wrapper {
+  background: transparent !important;
+  padding: 1rem 0 !important;
+  display: flex !important;
+  flex-direction: column !important;
+  align-items: center !important;
+  gap: 1.5rem !important;
+}
+
+.docx-preview-container .docx {
+  background: #ffffff !important;
+  box-shadow: 0 4px 24px -2px rgba(0, 0, 0, 0.08), 0 2px 8px -1px rgba(0, 0, 0, 0.04) !important;
+  border: 1px solid #e2e8f0 !important;
+  border-radius: 6px !important;
+  margin-bottom: 1.5rem !important;
+  box-sizing: border-box !important;
+}
+
+.docx-preview-container .docx table {
+  border-collapse: collapse !important;
+  max-width: 100% !important;
+}
+
