@@ -24,19 +24,37 @@ interface LoginViewProps {
   onSelectUser: (user: User) => void;
 }
 
+const normalizeUserRole = (role?: string | null): UserRole => {
+  if (!role) return UserRole.EMPLOYEE;
+  const upper = String(role).toUpperCase().trim();
+  if (upper === 'CREATOR' || upper === 'HR' || upper === 'AUTHOR') {
+    return UserRole.CREATOR;
+  }
+  if (upper === 'REVIEWER' || upper === 'APPROVER') {
+    return UserRole.REVIEWER;
+  }
+  return UserRole.EMPLOYEE;
+};
+
 export const LoginView: React.FC<LoginViewProps> = ({ users, onSelectUser }) => {
-  // Combine all users from props and engine
+  // Combine all users from props and engine safely preserving distinct records
   const allUsersPool = useMemo(() => {
-    const map = new Map<string, User>();
+    const list: User[] = [];
+    const seen = new Set<string>();
+    const appendUser = (u: User) => {
+      const uniqueKey = (u.id || `${u.role}_${u.empId || u.loginId || u.email}`).toUpperCase().trim();
+      if (uniqueKey && !seen.has(uniqueKey)) {
+        seen.add(uniqueKey);
+        list.push(u);
+      }
+    };
     for (const u of governanceEngine.getUsers()) {
-      const key = (u.empId || u.loginId || u.id || u.email || '').toUpperCase();
-      if (key) map.set(key, u);
+      appendUser(u);
     }
     for (const u of users) {
-      const key = (u.empId || u.loginId || u.id || u.email || '').toUpperCase();
-      if (key) map.set(key, u);
+      appendUser(u);
     }
-    return Array.from(map.values());
+    return list;
   }, [users]);
 
   // Selected login role mode: 'creator' | 'approver' | 'employee'
@@ -59,7 +77,7 @@ export const LoginView: React.FC<LoginViewProps> = ({ users, onSelectUser }) => 
   const [isAuthenticating, setIsAuthenticating] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
 
-  // Core robust authenticator that supports memory cache AND live database lookups for dynamically created DB records
+  // Core robust authenticator with strict portal role isolation
   const authenticateWithDatabase = async (
     targetRole: UserRole,
     rawId: string,
@@ -80,12 +98,12 @@ export const LoginView: React.FC<LoginViewProps> = ({ users, onSelectUser }) => 
     try {
       const lowerId = trimmedId.toLowerCase();
 
-      // 1. Search in local memory pool first
-      let matchedUser = allUsersPool.find((u) => {
-        const uEmpId = (u.empId || '').toLowerCase();
-        const uLoginId = (u.loginId || '').toLowerCase();
-        const uEmail = (u.email || '').toLowerCase();
-        const uId = (u.id || '').toLowerCase();
+      // 1. Search in local memory pool
+      const candidates = allUsersPool.filter((u) => {
+        const uEmpId = (u.empId || '').toLowerCase().trim();
+        const uLoginId = (u.loginId || '').toLowerCase().trim();
+        const uEmail = (u.email || '').toLowerCase().trim();
+        const uId = (u.id || '').toLowerCase().trim();
         return (
           uEmpId === lowerId ||
           uLoginId === lowerId ||
@@ -94,7 +112,13 @@ export const LoginView: React.FC<LoginViewProps> = ({ users, onSelectUser }) => 
         );
       });
 
-      // 2. If not found in memory (e.g. newly created directly in database, or async sync pending), query live Firestore
+      // Prefer candidate matching targetRole if one exists
+      let matchedUser = candidates.find((u) => normalizeUserRole(u.role) === targetRole);
+      if (!matchedUser && candidates.length > 0) {
+        matchedUser = candidates[0];
+      }
+
+      // 2. If not found in memory, query live Firestore database
       if (!matchedUser) {
         matchedUser = await firestoreService.findEmployeeInDatabase(trimmedId);
         if (matchedUser) {
@@ -109,7 +133,36 @@ export const LoginView: React.FC<LoginViewProps> = ({ users, onSelectUser }) => 
         return;
       }
 
-      // 3. Verify Account Active
+      // 3. STRICT PORTAL ROLE BOUNDARY VALIDATION:
+      // Enforce zero tolerance for cross-portal credential usage.
+      // Employee portal only permits Employee credentials.
+      // HR portal only permits HR Creator credentials.
+      // Approver portal only permits Approver credentials.
+      const userRole = normalizeUserRole(matchedUser.role);
+      if (userRole !== targetRole) {
+        const portalNames: Record<UserRole, string> = {
+          [UserRole.EMPLOYEE]: 'Employee Portal',
+          [UserRole.CREATOR]: 'HR Creator Portal',
+          [UserRole.REVIEWER]: 'Approver Portal',
+        };
+        const roleLabels: Record<UserRole, string> = {
+          [UserRole.EMPLOYEE]: 'Employee',
+          [UserRole.CREATOR]: 'HR Creator',
+          [UserRole.REVIEWER]: 'Approver',
+        };
+
+        const targetPortalName = portalNames[targetRole] || `${roleLabel} Portal`;
+        const allowedRoleName = roleLabels[targetRole] || roleLabel;
+        const actualRoleName = roleLabels[userRole] || 'another role';
+
+        setErrorMessage(
+          `Access Denied: The ${targetPortalName} is strictly restricted to ${allowedRoleName} accounts. Credentials for ${actualRoleName} accounts cannot be used on this portal.`
+        );
+        setIsAuthenticating(false);
+        return;
+      }
+
+      // 4. Verify Account Active Status
       if (
         matchedUser.active === false ||
         String(matchedUser.active).toLowerCase() === 'false' ||
@@ -121,7 +174,7 @@ export const LoginView: React.FC<LoginViewProps> = ({ users, onSelectUser }) => 
         return;
       }
 
-      // 4. Verify Password (handles string or number representations safely)
+      // 5. Verify Password
       const storedPassword = String(matchedUser.password ?? '1').trim();
       const enteredPassword = String(trimmedPass).trim();
       const isPasswordValid =
@@ -135,20 +188,13 @@ export const LoginView: React.FC<LoginViewProps> = ({ users, onSelectUser }) => 
         return;
       }
 
-      // 5. Automatic role routing: if user entered their Employee ID on HR tab or vice versa, transition seamlessly
-      if (matchedUser.role !== targetRole) {
-        if (matchedUser.role === UserRole.EMPLOYEE) {
-          setActiveRole('employee');
-        } else if (matchedUser.role === UserRole.CREATOR) {
-          setActiveRole('creator');
-        } else if (matchedUser.role === UserRole.REVIEWER) {
-          setActiveRole('approver');
-        }
-      }
-
-      // 6. Complete login and register into local engine state
-      governanceEngine.setEmployees([matchedUser]);
-      onSelectUser(matchedUser);
+      // 6. Complete login with verified role
+      const authenticatedUser: User = {
+        ...matchedUser,
+        role: targetRole,
+      };
+      governanceEngine.setEmployees([authenticatedUser]);
+      onSelectUser(authenticatedUser);
     } catch (err: any) {
       console.error('Authentication verification error:', err);
       setErrorMessage('A connection error occurred while verifying credentials. Please try again.');
