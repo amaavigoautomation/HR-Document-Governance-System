@@ -41,7 +41,16 @@ interface EmployeeComplianceModuleProps {
   documents: DocumentMaster[];
   versions: DocumentVersion[];
   onOpenDocumentView?: (version: DocumentVersion) => void;
+  onRefreshData?: () => void;
 }
+
+const isOfflineSignOff = (ack?: AcknowledgementRecord | null): boolean => {
+  if (!ack) return false;
+  if (ack.offlineSignOff === true || ack.signOffType === 'OFFLINE') return true;
+  if (ack.signatureReference && ack.signatureReference.startsWith('MANUAL-ATTEST')) return true;
+  const n = (ack.notes || '').toLowerCase();
+  return n.includes('offline') || n.includes('manual') || n.includes('attested by') || n.includes('paper attestation');
+};
 
 export const EmployeeComplianceModule: React.FC<EmployeeComplianceModuleProps> = ({
   currentUser,
@@ -49,6 +58,7 @@ export const EmployeeComplianceModule: React.FC<EmployeeComplianceModuleProps> =
   documents,
   versions,
   onOpenDocumentView,
+  onRefreshData,
 }) => {
   const [viewMode, setViewMode] = useState<'employees' | 'documents'>('employees');
   const [searchTerm, setSearchTerm] = useState('');
@@ -385,14 +395,16 @@ export const EmployeeComplianceModule: React.FC<EmployeeComplianceModuleProps> =
   };
 
   // Handle manual sign-off
-  const handleConfirmManualSignOff = () => {
+  const handleConfirmManualSignOff = async () => {
     if (!manualSignOffAck) return;
     try {
-      governanceEngine.recordManualSignOff(manualSignOffAck, manualSignOffNotes, currentUser);
+      setActionLoadingId(manualSignOffAck.id);
+      await governanceEngine.recordManualSignOff(manualSignOffAck, manualSignOffNotes, currentUser);
       refreshAcks();
+      onRefreshData?.();
       setFeedbackMessage({
         type: 'success',
-        text: `Manual sign-off recorded for ${manualSignOffAck.employeeName} (${manualSignOffAck.documentId})`,
+        text: `Offline sign-off recorded and permanently saved for ${manualSignOffAck.employeeName} (${manualSignOffAck.documentId})`,
       });
       setManualSignOffAck(null);
       setManualSignOffNotes('');
@@ -401,6 +413,8 @@ export const EmployeeComplianceModule: React.FC<EmployeeComplianceModuleProps> =
         type: 'error',
         text: err.message || 'Failed to record manual sign-off',
       });
+    } finally {
+      setActionLoadingId(null);
     }
   };
 
@@ -767,7 +781,9 @@ export const EmployeeComplianceModule: React.FC<EmployeeComplianceModuleProps> =
                                     <span className="text-slate-900 flex items-center space-x-1 font-medium">
                                       <CheckCircle2 className="w-3.5 h-3.5 text-[#FA7014]" />
                                       <span>
-                                        Signed on {formatIST(ack.acknowledgedAt || '')}
+                                        {isOfflineSignOff(ack)
+                                          ? `Record Offline Sign-off on ${formatIST(ack.acknowledgedAt || '')}`
+                                          : `Signed on ${formatIST(ack.acknowledgedAt || '')}`}
                                       </span>
                                     </span>
                                   ) : (
@@ -798,6 +814,11 @@ export const EmployeeComplianceModule: React.FC<EmployeeComplianceModuleProps> =
                                   <p className="text-xs text-slate-600 italic bg-slate-50 px-2.5 py-1 rounded border border-slate-200 inline-block mt-1">
                                     Note: {ack.notes}
                                   </p>
+                                )}
+                                {ack.recordedBy && (
+                                  <span className="text-[11px] text-slate-500 font-medium block mt-0.5">
+                                    Recorder: {ack.recordedBy}
+                                  </span>
                                 )}
                               </div>
 
@@ -836,9 +857,9 @@ export const EmployeeComplianceModule: React.FC<EmployeeComplianceModuleProps> =
                                 )}
 
                                 {isAcked && (
-                                  <span className="px-3 py-1.5 rounded-lg bg-slate-100 text-slate-900 text-xs font-semibold border border-slate-200 flex items-center space-x-1">
-                                    <Check className="w-3.5 h-3.5 text-[#FA7014]" />
-                                    <span>Verified</span>
+                                  <span className="px-3 py-1.5 rounded-lg bg-emerald-50 text-emerald-800 text-xs font-semibold border border-emerald-200 flex items-center space-x-1">
+                                    <Check className="w-3.5 h-3.5 text-emerald-600" />
+                                    <span>{isOfflineSignOff(ack) ? 'Offline Sign-off Verified' : 'Verified'}</span>
                                   </span>
                                 )}
 
@@ -1036,7 +1057,7 @@ export const EmployeeComplianceModule: React.FC<EmployeeComplianceModuleProps> =
               <div><strong>Document:</strong> {manualSignOffAck.documentTitle} (v{manualSignOffAck.versionNumber})</div>
               <div><strong>Document ID:</strong> {manualSignOffAck.documentId}</div>
               <div>
-                <strong>Recorded By:</strong> {currentUser.name} ({currentUser.title || (currentUser.role === 'REVIEWER' ? 'Compliance Approver' : 'HR Policy & Governance Lead')})
+                <strong>Recorder Name:</strong> {currentUser.name} ({currentUser.title || (currentUser.role === 'REVIEWER' ? 'Compliance Approver' : 'HR Policy & Governance Lead')})
               </div>
             </div>
 
@@ -1064,9 +1085,14 @@ export const EmployeeComplianceModule: React.FC<EmployeeComplianceModuleProps> =
               <button
                 id="btn-confirm-manual-signoff"
                 onClick={handleConfirmManualSignOff}
-                className="px-4 py-2 rounded-xl bg-[#FA7014] hover:bg-[#E65A05] text-white text-xs font-semibold shadow-md shadow-[#FA7014]/20 flex items-center space-x-1.5 transition-colors"
+                disabled={actionLoadingId === manualSignOffAck.id}
+                className="px-4 py-2 rounded-xl bg-[#FA7014] hover:bg-[#E65A05] text-white text-xs font-semibold shadow-md shadow-[#FA7014]/20 flex items-center space-x-1.5 transition-colors disabled:opacity-50"
               >
-                <Check className="w-4 h-4" />
+                {actionLoadingId === manualSignOffAck.id ? (
+                  <RefreshCw className="w-4 h-4 animate-spin" />
+                ) : (
+                  <Check className="w-4 h-4" />
+                )}
                 <span>Confirm & Record Sign-off</span>
               </button>
             </div>

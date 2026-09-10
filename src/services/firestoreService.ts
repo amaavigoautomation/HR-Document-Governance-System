@@ -416,8 +416,25 @@ export const firestoreService = {
       const cleanDocId = (ack.documentId || '').toLowerCase().replace(/[^a-z0-9_-]/g, '_');
       const cleanVer = (ack.versionNumber || '1.0').replace(/\./g, '_');
       const deterministicId = `ack_${cleanDocId}_v${cleanVer}_${cleanEmpId}`;
-      const record = { ...ack, id: deterministicId };
-      await setDoc(doc(db, ACKS_COLLECTION, deterministicId), cleanFirestoreData(record), { merge: true });
+      const docRef = doc(db, ACKS_COLLECTION, deterministicId);
+
+      // If writing a PENDING record, verify that an existing ACKNOWLEDGED record is never downgraded
+      if (ack.status === 'PENDING') {
+        const existingSnap = await getDoc(docRef);
+        if (existingSnap.exists()) {
+          const existingData = existingSnap.data();
+          if (existingData?.status === 'ACKNOWLEDGED') {
+            return;
+          }
+        }
+      }
+
+      const record: AcknowledgementRecord = {
+        ...ack,
+        id: deterministicId,
+        offlineSignOff: ack.offlineSignOff ?? (ack.signOffType === 'OFFLINE' || (ack.signatureReference?.startsWith('MANUAL-ATTEST') ?? false)),
+      };
+      await setDoc(docRef, cleanFirestoreData(record), { merge: true });
     } catch (e) {
       console.warn('[Firestore] Save acknowledgement offline note:', e);
     }

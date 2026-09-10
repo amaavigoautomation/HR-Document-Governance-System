@@ -25,6 +25,14 @@ interface EmployeePortalViewProps {
   onOpenDocumentView: (version: DocumentVersion) => void;
 }
 
+const isOfflineSignOff = (ack?: AcknowledgementRecord | null): boolean => {
+  if (!ack) return false;
+  if (ack.offlineSignOff === true || ack.signOffType === 'OFFLINE') return true;
+  if (ack.signatureReference && ack.signatureReference.startsWith('MANUAL-ATTEST')) return true;
+  const n = (ack.notes || '').toLowerCase();
+  return n.includes('offline') || n.includes('manual') || n.includes('attested by') || n.includes('paper attestation');
+};
+
 export const EmployeePortalView: React.FC<EmployeePortalViewProps> = ({
   currentUser,
   documents,
@@ -70,7 +78,18 @@ export const EmployeePortalView: React.FC<EmployeePortalViewProps> = ({
     .filter(Boolean)
     .map((s) => s!.toLowerCase());
 
-  const handleAcknowledge = (doc: DocumentMaster, verNumber: string) => {
+  const matchedUser = governanceEngine.findUserByIdentifiers(currentUser.id) ||
+                      governanceEngine.findUserByIdentifiers(currentUser.empId) ||
+                      governanceEngine.findUserByIdentifiers(currentUser.email);
+  if (matchedUser) {
+    [matchedUser.id, matchedUser.empId, matchedUser.loginId, matchedUser.email].forEach((id) => {
+      if (id && !userIdentifiers.includes(id.toLowerCase())) {
+        userIdentifiers.push(id.toLowerCase());
+      }
+    });
+  }
+
+  const handleAcknowledge = async (doc: DocumentMaster, verNumber: string) => {
     governanceEngine.acknowledgeDocument(currentUser, doc.documentId, verNumber);
     setLocalAcks(governanceEngine.getAcknowledgements());
   };
@@ -78,7 +97,7 @@ export const EmployeePortalView: React.FC<EmployeePortalViewProps> = ({
   const effectiveAcks = localAcks.length > 0 ? localAcks : (acknowledgements || []);
   const userAcks = effectiveAcks.filter(
     (a) =>
-      userIdentifiers.includes(a.employeeId?.toLowerCase()) ||
+      (a.employeeId && userIdentifiers.includes(a.employeeId.toLowerCase())) ||
       (a.employeeEmail && userIdentifiers.includes(a.employeeEmail.toLowerCase()))
   );
 
@@ -87,7 +106,7 @@ export const EmployeePortalView: React.FC<EmployeePortalViewProps> = ({
     const verNumber = doc.currentPublishedVersionNumber || '1.0';
     const ack = userAcks.find(
       (a) =>
-        a.documentId === doc.documentId &&
+        a.documentId.toLowerCase() === doc.documentId.toLowerCase() &&
         a.versionNumber === verNumber &&
         a.status === 'ACKNOWLEDGED'
     );
@@ -196,10 +215,22 @@ export const EmployeePortalView: React.FC<EmployeePortalViewProps> = ({
                   {/* Acknowledgement Status / Action */}
                   {doc.acknowledgementRequired ? (
                     isAcked ? (
-                      <span className="inline-flex items-center space-x-1.5 text-xs font-semibold text-emerald-800 bg-emerald-50 px-3 py-1.5 rounded-xl border border-emerald-200">
-                        <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-                        <span>Acknowledged (v{verNumber}) {ack?.acknowledgedAt ? `• ${formatISTDate(ack.acknowledgedAt)}` : ''}</span>
-                      </span>
+                      <div className="flex flex-col gap-0.5">
+                        <span className="inline-flex items-center space-x-1.5 text-xs font-semibold text-emerald-800 bg-emerald-50 px-3 py-1.5 rounded-xl border border-emerald-200">
+                          <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                          <span>
+                            {isOfflineSignOff(ack)
+                              ? `Acknowledged (Record Offline Sign-off)`
+                              : `Acknowledged (v${verNumber})`}
+                            {ack?.acknowledgedAt ? ` • ${formatISTDate(ack.acknowledgedAt)}` : ''}
+                          </span>
+                        </span>
+                        {isOfflineSignOff(ack) && ack?.recordedBy && (
+                          <span className="text-[11px] text-slate-500 font-medium pl-1">
+                            Recorded by: {ack.recordedBy}
+                          </span>
+                        )}
+                      </div>
                     ) : (
                       <button
                         id={`btn-ack-${doc.id}`}

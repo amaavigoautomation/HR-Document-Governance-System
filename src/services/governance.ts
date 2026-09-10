@@ -30,7 +30,30 @@ export class DocumentGovernanceEngine {
   private comparisons: Map<string, DocumentComparisonResult> = new Map();
 
   constructor() {
-    // Clean empty state. All data is loaded and synchronized from Cloud Firestore database.
+    // Load cached acknowledgements if available
+    this.loadAcknowledgementsFromStorage();
+  }
+
+  private loadAcknowledgementsFromStorage(): void {
+    try {
+      const stored = localStorage.getItem('ama_governance_acks');
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          this.setAcknowledgements(parsed);
+        }
+      }
+    } catch (e) {
+      console.warn('Could not load cached acks from storage', e);
+    }
+  }
+
+  public saveAcknowledgementsToStorage(): void {
+    try {
+      localStorage.setItem('ama_governance_acks', JSON.stringify(this.acknowledgements));
+    } catch (e) {
+      console.warn('Could not save acks to storage', e);
+    }
   }
 
   public syncVersionsToStorage(versions: DocumentVersion[] = this.documentVersions): void {
@@ -530,6 +553,15 @@ export class DocumentGovernanceEngine {
 
   public setAcknowledgements(acks: AcknowledgementRecord[]): void {
     const canonicalMap = new Map<string, AcknowledgementRecord>();
+    // First preserve any existing ACKNOWLEDGED records
+    for (const item of this.acknowledgements) {
+      if (item.status === 'ACKNOWLEDGED') {
+        const emp = (item.employeeId || item.employeeEmail || '').toLowerCase().trim();
+        const ver = (item.versionNumber || '1.0').trim();
+        const key = `${item.documentId.toLowerCase()}_${ver}_${emp}`;
+        canonicalMap.set(key, item);
+      }
+    }
     for (const item of acks) {
       if (!item.documentId) continue;
       const emp = (item.employeeId || item.employeeEmail || '').toLowerCase().trim();
@@ -541,6 +573,7 @@ export class DocumentGovernanceEngine {
       }
     }
     this.acknowledgements = Array.from(canonicalMap.values());
+    this.saveAcknowledgementsToStorage();
   }
 
   public getUserById(id: string): User | undefined {
@@ -1626,6 +1659,8 @@ export class DocumentGovernanceEngine {
       this.acknowledgements.push(ack);
     }
 
+    this.saveAcknowledgementsToStorage();
+
     try {
       firestoreService.saveAcknowledgement(ack).catch((e) => console.warn('Firestore ack sync:', e));
     } catch (e) {
@@ -1660,7 +1695,8 @@ export class DocumentGovernanceEngine {
     // Deduplicate so ACKNOWLEDGED always takes precedence per document version & employee
     const canonicalMap = new Map<string, AcknowledgementRecord>();
     for (const item of validStoredAcks) {
-      const emp = (item.employeeId || item.employeeEmail || '').toLowerCase().trim();
+      const matchedUser = this.findUserByIdentifiers(item.employeeId) || this.findUserByIdentifiers(item.employeeEmail);
+      const emp = (matchedUser?.empId || matchedUser?.id || item.employeeId || item.employeeEmail || '').toLowerCase().trim();
       const ver = (item.versionNumber || '1.0').trim();
       const key = `${item.documentId.toLowerCase()}_${ver}_${emp}`;
       const existing = canonicalMap.get(key);
@@ -1841,44 +1877,111 @@ export class DocumentGovernanceEngine {
     };
   }
 
+  public findUserByIdentifiers(identifier?: string): User | undefined {
+    if (!identifier) return undefined;
+    const target = identifier.toLowerCase().trim();
+    return this.users.find(
+      (u) =>
+        (u.id && u.id.toLowerCase() === target) ||
+        (u.empId && u.empId.toLowerCase() === target) ||
+        (u.loginId && u.loginId.toLowerCase() === target) ||
+        (u.email && u.email.toLowerCase() === target)
+    );
+  }
+
   // Record a manual offline sign-off / attestation
-  public recordManualSignOff(
+  public async recordManualSignOff(
     ackOrId: string | AcknowledgementRecord,
     notes: string,
     adminUser: User
-  ): AcknowledgementRecord {
+  ): Promise<AcknowledgementRecord> {
     let ack: AcknowledgementRecord | undefined;
+    const nowIso = new Date().toISOString();
+    const recorderTitle = adminUser.title || (adminUser.role === UserRole.REVIEWER ? 'Compliance Approver' : 'HR Policy & Governance Lead');
+    const recorderLabel = `${adminUser.name} (${recorderTitle})`;
 
     if (typeof ackOrId === 'object' && ackOrId) {
       const empTarget = (ackOrId.employeeId || ackOrId.employeeEmail || '').toLowerCase().trim();
-      ack = this.acknowledgements.find((a) => a.id === ackOrId.id) ||
-            this.acknowledgements.find((a) =>
-              a.documentId === ackOrId.documentId &&
-              a.versionNumber === ackOrId.versionNumber &&
-              ((a.employeeId && a.employeeId.toLowerCase() === empTarget) ||
-               (a.employeeEmail && a.employeeEmail.toLowerCase() === empTarget))
-            );
+      const matchedUser = this.findUserByIdentifiers(empTarget) || this.findUserByIdentifiers(ackOrId.employeeEmail);
+      const empIdentifiers = [
+        matchedUser?.id,
+        matchedUser?.empId,
+        matchedUser?.loginId,
+        matchedUser?.email,
+        ackOrId.employeeId,
+        ackOrId.employeeEmail,
+      ]
+        .filter(Boolean)
+        .map((s) => s!.toLowerCase());
+
+      const primaryEmpId = matchedUser?.empId || matchedUser?.id || ackOrId.employeeId || ackOrId.employeeEmail || 'unknown';
+      const cleanEmpId = primaryEmpId.toLowerCase().replace(/[^a-z0-9_-]/g, '_');
+      const cleanDocId = (ackOrId.documentId || '').toLowerCase().replace(/[^a-z0-9_-]/g, '_');
+      const cleanVer = (ackOrId.versionNumber || '1.0').replace(/\./g, '_');
+      const deterministicId = `ack_${cleanDocId}_v${cleanVer}_${cleanEmpId}`;
+
+      ack = this.acknowledgements.find(
+        (a) =>
+          a.id === deterministicId ||
+          (a.documentId.toLowerCase() === (ackOrId.documentId || '').toLowerCase() &&
+            a.versionNumber === (ackOrId.versionNumber || '1.0') &&
+            (empIdentifiers.includes(a.employeeId?.toLowerCase()) || (a.employeeEmail && empIdentifiers.includes(a.employeeEmail.toLowerCase()))))
+      );
 
       if (!ack) {
-        ack = { ...ackOrId, status: 'PENDING' };
+        ack = {
+          ...ackOrId,
+          id: deterministicId,
+          documentId: ackOrId.documentId,
+          documentTitle: ackOrId.documentTitle,
+          versionNumber: ackOrId.versionNumber || '1.0',
+          documentVersionId: ackOrId.documentVersionId || '',
+          employeeId: matchedUser?.empId || matchedUser?.id || ackOrId.employeeId,
+          employeeName: matchedUser?.name || ackOrId.employeeName,
+          employeeEmail: matchedUser?.email || ackOrId.employeeEmail,
+          departmentName: matchedUser?.departmentName || ackOrId.departmentName,
+          status: 'PENDING',
+        };
         this.acknowledgements.push(ack);
       }
+
+      // Ensure duplicate pending records for this doc & user are removed
+      this.acknowledgements = this.acknowledgements.filter(
+        (a) =>
+          a === ack ||
+          !(
+            a.documentId.toLowerCase() === (ackOrId.documentId || '').toLowerCase() &&
+            a.versionNumber === (ackOrId.versionNumber || '1.0') &&
+            (empIdentifiers.includes(a.employeeId?.toLowerCase()) || (a.employeeEmail && empIdentifiers.includes(a.employeeEmail.toLowerCase())))
+          )
+      );
+
+      ack.id = deterministicId;
+      ack.employeeId = matchedUser?.empId || matchedUser?.id || ack.employeeId;
+      ack.employeeName = matchedUser?.name || ack.employeeName;
+      ack.employeeEmail = matchedUser?.email || ack.employeeEmail;
+      ack.departmentName = matchedUser?.departmentName || ack.departmentName;
     } else {
       ack = this.acknowledgements.find((a) => a.id === ackOrId);
     }
 
     if (!ack) throw new Error('Acknowledgement record not found.');
 
-    const nowIso = new Date().toISOString();
     ack.status = 'ACKNOWLEDGED';
     ack.acknowledgedAt = nowIso;
-    const recorderTitle = adminUser.title || (adminUser.role === UserRole.REVIEWER ? 'Compliance Approver' : 'HR Policy & Governance Lead');
-    const recorderLabel = `${adminUser.name} (${recorderTitle})`;
-    ack.notes = notes || `Manually attested by ${recorderLabel}`;
+    ack.offlineSignOff = true;
+    ack.signOffType = 'OFFLINE';
+    ack.recordedBy = recorderLabel;
+    ack.recordedByUserId = adminUser.id;
+    ack.notes = notes ? `${notes} (Attested by ${recorderLabel})` : `Manually attested by ${recorderLabel}`;
     ack.signatureReference = `MANUAL-ATTEST-${adminUser.loginId || adminUser.id}-${Date.now().toString().slice(-4)}`;
 
+    // Save locally immediately so state is preserved across reloads and tab switches
+    this.saveAcknowledgementsToStorage();
+
+    // Persist to Cloud Firestore
     try {
-      firestoreService.saveAcknowledgement(ack).catch((e) => console.warn('Firestore manual sign-off sync:', e));
+      await firestoreService.saveAcknowledgement(ack);
     } catch (e) {
       console.warn('Firestore manual sign-off sync error:', e);
     }

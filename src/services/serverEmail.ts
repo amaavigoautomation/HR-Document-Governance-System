@@ -149,7 +149,7 @@ export async function dispatchLiveEmail(payload: EmailDispatchPayload): Promise<
     ? 'HR Document Revision Notice'
     : 'Official HR Policy Notice';
 
-  const appPortalUrl = process.env.APP_URL || 'https://ais-pre-4g4p3tkuiovhdkivqf7aa6-168274840149.asia-southeast1.run.app';
+  const appPortalUrl = process.env.APP_URL || 'https://hr-document-governance-system.vercel.app/';
   const bodyHtmlContent = convertBodyToOutlookHtml(cleanBody);
 
   const formattedHtml = `
@@ -255,15 +255,17 @@ export async function dispatchLiveEmail(payload: EmailDispatchPayload): Promise<
                       <p style="margin: 0 0 14px 0; font-family: Arial, Helvetica, sans-serif; font-size: 13px; color: #94a3b8; font-weight: 500; line-height: 19px; mso-line-height-rule: exactly;">
                         For security and governance compliance, complete document text and digital acknowledgments are handled inside the secure Employee Portal.
                       </p>
-                      <table border="0" cellpadding="0" cellspacing="0" align="center">
-                        <tr>
-                          <td align="center" bgcolor="#FA7014" style="background-color: #FA7014; border-radius: 6px; padding: 12px 26px;">
-                            <a href="${appPortalUrl}" target="_blank" style="font-family: Arial, Helvetica, sans-serif; font-size: 13px; font-weight: bold; color: #ffffff !important; text-decoration: none; display: inline-block;">
-                              Sign In &amp; View in Employee Portal &rarr;
-                            </a>
-                          </td>
-                        </tr>
-                      </table>
+                      <a href="https://hr-document-governance-system.vercel.app/" target="_blank" style="text-decoration: none; color: #ffffff; display: inline-block;">
+                        <table border="0" cellpadding="0" cellspacing="0" align="center">
+                          <tr>
+                            <td align="center" bgcolor="#FA7014" style="background-color: #FA7014; border-radius: 6px; padding: 12px 32px;">
+                              <span style="font-family: Arial, Helvetica, sans-serif; font-size: 13px; font-weight: bold; color: #ffffff !important; text-decoration: none; display: inline-block;">
+                                Sign In
+                              </span>
+                            </td>
+                          </tr>
+                        </table>
+                      </a>
                     </td>
                   </tr>
                 </table>

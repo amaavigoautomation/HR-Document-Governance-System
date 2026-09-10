@@ -435,6 +435,7 @@ export default function App() {
                 documents={documents}
                 versions={versions}
                 onOpenDocumentView={(ver) => setReaderVersion(ver)}
+                onRefreshData={refreshData}
               />
             )}
 
@@ -461,6 +462,7 @@ export default function App() {
                 documents={documents}
                 versions={versions}
                 onOpenDocumentView={(ver) => setReaderVersion(ver)}
+                onRefreshData={refreshData}
               />
             )}
 

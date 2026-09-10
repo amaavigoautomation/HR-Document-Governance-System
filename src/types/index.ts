@@ -253,6 +253,10 @@ export interface AcknowledgementRecord {
   notes?: string;
   signatureReference?: string;
   reminderSentAt?: string;
+  offlineSignOff?: boolean;
+  signOffType?: 'ONLINE' | 'OFFLINE';
+  recordedBy?: string;
+  recordedByUserId?: string;
 }
 
 export interface EmployeeComplianceStats {
