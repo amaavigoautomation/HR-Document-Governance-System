@@ -1035,7 +1035,9 @@ export const EmployeeComplianceModule: React.FC<EmployeeComplianceModuleProps> =
             <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 text-xs text-slate-700 space-y-1">
               <div><strong>Document:</strong> {manualSignOffAck.documentTitle} (v{manualSignOffAck.versionNumber})</div>
               <div><strong>Document ID:</strong> {manualSignOffAck.documentId}</div>
-              <div><strong>Recorded By:</strong> {currentUser.name} (HR Officer)</div>
+              <div>
+                <strong>Recorded By:</strong> {currentUser.name} ({currentUser.title || (currentUser.role === 'REVIEWER' ? 'Compliance Approver' : 'HR Policy & Governance Lead')})
+              </div>
             </div>
 
             <div>

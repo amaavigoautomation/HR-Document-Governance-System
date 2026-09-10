@@ -42,7 +42,7 @@ export const SEED_USERS: User[] = [
     companyName: 'Amaavigo Global Inc.',
     departmentId: 'dept-hr',
     departmentName: 'Human Resources',
-    title: 'HR Director & Policy Author',
+    title: 'HR Policy & Governance Lead',
     active: true,
     createdAt: '2026-01-10T08:00:00Z',
     updatedAt: '2026-08-01T08:00:00Z',

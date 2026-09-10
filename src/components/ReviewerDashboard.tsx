@@ -128,11 +128,6 @@ export const ReviewerDashboard: React.FC<ReviewerDashboardProps> = ({
     }
   };
 
-  const acks = governanceEngine.getAcknowledgements();
-  const pendingAcks = acks.filter((a) => a.status === 'PENDING').length;
-  const totalAcks = acks.length;
-  const compliantPercent = totalAcks > 0 ? Math.round(((totalAcks - pendingAcks) / totalAcks) * 100) : 100;
-
   // Queue of pending reviews (only versions that are actively IN_REVIEW and pending decision, sorted newest first)
   const reviewQueue = useMemo(() => {
     return versions
@@ -323,21 +318,7 @@ export const ReviewerDashboard: React.FC<ReviewerDashboardProps> = ({
             <Users className="w-5 h-5" />
           </div>
           <div>
-            <div className="flex items-center space-x-2">
-              <h3 className="text-sm font-bold text-slate-900">Employee Compliance & Acknowledgement Radar</h3>
-              <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-full ${
-                compliantPercent >= 80 ? 'bg-slate-100 text-slate-900 border border-slate-200' : 'bg-[#FA7014]/10 text-[#FA7014] border border-[#FA7014]/30'
-              }`}>
-                {compliantPercent}% Completed
-              </span>
-            </div>
-            <p className="text-xs text-slate-500 mt-0.5">
-              {pendingAcks > 0 ? (
-                <span><strong>{pendingAcks} pending employee acknowledgement(s)</strong> require follow-up or automatic reminder dispatch.</span>
-              ) : (
-                <span>All employee acknowledgements are fully compliant.</span>
-              )}
-            </p>
+            <h3 className="text-sm font-bold text-slate-900">Employee Compliance & Acknowledgement Radar</h3>
           </div>
         </div>
 

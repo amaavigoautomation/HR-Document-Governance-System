@@ -1870,7 +1870,9 @@ export class DocumentGovernanceEngine {
     const nowIso = new Date().toISOString();
     ack.status = 'ACKNOWLEDGED';
     ack.acknowledgedAt = nowIso;
-    ack.notes = notes || `Manually attested by HR Admin (${adminUser.name})`;
+    const recorderTitle = adminUser.title || (adminUser.role === UserRole.REVIEWER ? 'Compliance Approver' : 'HR Policy & Governance Lead');
+    const recorderLabel = `${adminUser.name} (${recorderTitle})`;
+    ack.notes = notes || `Manually attested by ${recorderLabel}`;
     ack.signatureReference = `MANUAL-ATTEST-${adminUser.loginId || adminUser.id}-${Date.now().toString().slice(-4)}`;
 
     try {
@@ -1882,7 +1884,7 @@ export class DocumentGovernanceEngine {
     auditService.logEvent(AuditAction.DOCUMENT_ACKNOWLEDGED, adminUser, {
       documentId: ack.documentId,
       versionNumber: ack.versionNumber,
-      reason: `HR Officer ${adminUser.name} recorded manual physical/offline sign-off for ${ack.employeeName}: ${notes || 'Verified paper attestation'}`,
+      reason: `${recorderLabel} recorded manual physical/offline sign-off for ${ack.employeeName}: ${notes || 'Verified paper attestation'}`,
     });
 
     return ack;
