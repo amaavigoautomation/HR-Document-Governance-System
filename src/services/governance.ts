@@ -650,6 +650,8 @@ export class DocumentGovernanceEngine {
     }
 
     if (!data.title?.trim()) throw new Error('Validation error: Document title is required.');
+    if (!data.confidentiality) throw new Error('Validation error: Confidentiality level is required.');
+    if (!data.effectiveFrom?.trim()) throw new Error('Validation error: Effective from Date is required.');
     if (!data.rawContent?.trim()) throw new Error('Validation error: Document content or file upload is required.');
 
     const documentId = this.generateNextDocumentId(data.category);

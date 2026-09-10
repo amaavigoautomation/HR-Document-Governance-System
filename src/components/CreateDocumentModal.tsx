@@ -29,9 +29,9 @@ export const CreateDocumentModal: React.FC<CreateDocumentModalProps> = ({
   const [title, setTitle] = useState('');
   const [category, setCategory] = useState<DocumentCategory>(DocumentCategory.POLICY);
   const [department, setDepartment] = useState('Human Resources');
-  const [confidentiality, setConfidentiality] = useState<ConfidentialityLevel>(ConfidentialityLevel.PUBLIC);
+  const [confidentiality, setConfidentiality] = useState<ConfidentialityLevel | ''>('');
   const [acknowledgementRequired, setAcknowledgementRequired] = useState(true);
-  const [effectiveFrom, setEffectiveFrom] = useState(new Date().toISOString().split('T')[0]);
+  const [effectiveFrom, setEffectiveFrom] = useState('');
   const [reviewDueDate, setReviewDueDate] = useState(
     new Date(Date.now() + 365 * 86400000).toISOString().split('T')[0]
   );
@@ -53,6 +53,8 @@ export const CreateDocumentModal: React.FC<CreateDocumentModalProps> = ({
     setFileDataUrl('');
     setMimeType('text/markdown');
     setUploadStatus('');
+    setConfidentiality(ConfidentialityLevel.PUBLIC);
+    setEffectiveFrom(new Date().toISOString().split('T')[0]);
     if (type === 'remote') {
       setTitle('Hybrid Workplace & Remote Work Agreement');
       setCategory(DocumentCategory.POLICY);
@@ -143,6 +145,14 @@ Employees should notify their immediate manager via the HR self-service portal a
       setError('Document title is required.');
       return;
     }
+    if (!confidentiality) {
+      setError('Confidentiality level is mandatory. Please select a confidentiality level.');
+      return;
+    }
+    if (!effectiveFrom || !effectiveFrom.trim()) {
+      setError('Effective from Date is mandatory. Please select an effective date.');
+      return;
+    }
     if (!rawContent.trim()) {
       setError('Document content or file upload is required.');
       return;
@@ -161,9 +171,9 @@ Employees should notify their immediate manager via the HR self-service portal a
         departmentName: department,
         processOwnerId: currentUser.id,
         processOwnerName: currentUser.name,
-        confidentiality,
+        confidentiality: confidentiality as ConfidentialityLevel,
         acknowledgementRequired: confidentiality === ConfidentialityLevel.INTERNAL ? false : acknowledgementRequired,
-        effectiveFrom,
+        effectiveFrom: effectiveFrom.trim(),
         reviewDueDate,
         description,
         fileName: fileName || `${title.replace(/[^a-zA-Z0-9]/g, '_')}_v1.0.txt`,
@@ -288,7 +298,7 @@ Employees should notify their immediate manager via the HR self-service portal a
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5" htmlFor="select-document-confidentiality">
-                Confidentiality Level
+                Confidentiality Level <span className="text-[#FA7014]">*</span>
               </label>
               <select
                 id="select-document-confidentiality"
@@ -302,8 +312,12 @@ Employees should notify their immediate manager via the HR self-service portal a
                     setAcknowledgementRequired(true);
                   }
                 }}
-                className="w-full text-sm p-2.5 bg-slate-50 border border-slate-200 text-slate-900 rounded-xl focus:outline-hidden focus:ring-2 focus:ring-[#FA7014] focus:bg-white cursor-pointer"
+                className={`w-full text-sm p-2.5 bg-slate-50 border rounded-xl focus:outline-hidden focus:ring-2 focus:ring-[#FA7014] focus:bg-white cursor-pointer ${
+                  !confidentiality ? 'border-slate-300 text-slate-500' : 'border-slate-200 text-slate-900'
+                }`}
+                required
               >
+                <option value="" disabled>-- Select Confidentiality Level (Mandatory) --</option>
                 <option value={ConfidentialityLevel.PUBLIC} className="bg-white text-slate-900 py-1">
                   Public (All Employees)
                 </option>
@@ -311,11 +325,6 @@ Employees should notify their immediate manager via the HR self-service portal a
                   Internal Company
                 </option>
               </select>
-              <p className="text-[11px] text-slate-500 mt-1">
-                {confidentiality === ConfidentialityLevel.INTERNAL
-                  ? '🔒 Restricted to HR & Approver only. Hidden from Employee Portal.'
-                  : '📢 Published to all employees with compliance notifications.'}
-              </p>
             </div>
 
             <div className="flex flex-col justify-start">
@@ -350,14 +359,16 @@ Employees should notify their immediate manager via the HR self-service portal a
 
           {/* EFFECTIVE DATE */}
           <div>
-            <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
-              Effective From Date
+            <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5" htmlFor="input-effective-from">
+              Effective From Date <span className="text-[#FA7014]">*</span>
             </label>
             <input
+              id="input-effective-from"
               type="date"
               value={effectiveFrom}
               onChange={(e) => setEffectiveFrom(e.target.value)}
-              className="w-full text-sm p-2.5 bg-slate-50 border border-slate-200 text-slate-900 rounded-xl focus:outline-hidden focus:ring-2 focus:ring-[#FA7014] focus:bg-white"
+              className="w-full text-sm p-2.5 bg-slate-50 border border-slate-200 text-slate-900 rounded-xl focus:outline-hidden focus:ring-2 focus:ring-[#FA7014] focus:bg-white cursor-pointer"
+              required
             />
           </div>
 
