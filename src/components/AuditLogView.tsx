@@ -12,8 +12,8 @@ import {
   FileText,
   CheckCircle2,
   AlertTriangle,
-  Lock,
   Trash2,
+  X,
 } from 'lucide-react';
 import { AuditAction, AuditLogEntry, User, UserRole } from '../types';
 import { auditService } from '../services/audit';
@@ -24,9 +24,18 @@ interface AuditLogViewProps {
   users?: User[];
 }
 
+const EXCLUDED_AUDIT_ACTIONS = new Set<string>([
+  'VERSION_ARCHIVED',
+  'ALL_DOCUMENTS_CLEARED',
+  'ALL_DOCUMENT_CLEARED',
+  'FILE_HASH_VALIDATED',
+  'USER_UPDATED',
+]);
+
 export const AuditLogView: React.FC<AuditLogViewProps> = ({ users }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedAction, setSelectedAction] = useState<string>('ALL');
+  const [selectedDate, setSelectedDate] = useState<string>('');
   const [allLogs, setAllLogs] = useState<AuditLogEntry[]>(() => auditService.getLogs());
 
   useEffect(() => {
@@ -108,19 +117,38 @@ export const AuditLogView: React.FC<AuditLogViewProps> = ({ users }) => {
     };
   };
 
-  const filteredLogs = allLogs.filter((log) => {
-    const q = searchTerm.toLowerCase();
-    const performer = resolvePerformer(log);
-    const matchesSearch =
-      (log.documentId && log.documentId.toLowerCase().includes(q)) ||
-      performer.name.toLowerCase().includes(q) ||
-      performer.role.toLowerCase().includes(q) ||
-      (log.reason && log.reason.toLowerCase().includes(q)) ||
-      log.action.toLowerCase().includes(q);
+  const filteredLogs = useMemo(() => {
+    return allLogs.filter((log) => {
+      const q = searchTerm.toLowerCase();
+      const performer = resolvePerformer(log);
+      const matchesSearch =
+        (log.documentId && log.documentId.toLowerCase().includes(q)) ||
+        performer.name.toLowerCase().includes(q) ||
+        performer.role.toLowerCase().includes(q) ||
+        (log.reason && log.reason.toLowerCase().includes(q)) ||
+        log.action.toLowerCase().includes(q);
 
-    const matchesAction = selectedAction === 'ALL' || log.action === selectedAction;
-    return matchesSearch && matchesAction;
-  });
+      const matchesAction = selectedAction === 'ALL' || log.action === selectedAction;
+
+      const matchesDate = !selectedDate || (() => {
+        try {
+          const d = new Date(log.performedAt);
+          if (isNaN(d.getTime())) {
+            return log.performedAt.startsWith(selectedDate);
+          }
+          // Match against IST date (as rendered in the table), ISO date, or local calendar date
+          const istDate = d.toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
+          const isoDate = log.performedAt.split('T')[0];
+          const localDate = d.toLocaleDateString('en-CA');
+          return istDate === selectedDate || isoDate === selectedDate || localDate === selectedDate;
+        } catch {
+          return log.performedAt.startsWith(selectedDate);
+        }
+      })();
+
+      return matchesSearch && matchesAction && matchesDate;
+    });
+  }, [allLogs, searchTerm, selectedAction, selectedDate, userList]);
 
   const getActionBadgeColor = (action: AuditAction) => {
     switch (action) {
@@ -191,29 +219,6 @@ export const AuditLogView: React.FC<AuditLogViewProps> = ({ users }) => {
         </button>
       </div>
 
-      {/* IMMUTABILITY GUARANTEE BANNER */}
-      <div className="bg-slate-900 text-white rounded-2xl p-4 px-5 flex items-center justify-between border border-slate-800 shadow-xs">
-        <div className="flex items-center space-x-3">
-          <div className="w-8 h-8 rounded-xl bg-[#FA7014]/20 text-[#FA7014] flex items-center justify-center shrink-0">
-            <Lock className="w-4 h-4" />
-          </div>
-          <div>
-            <div className="text-xs font-bold text-white flex items-center space-x-2">
-              <span>Write-Once Immutable Audit Assurance</span>
-              <span className="text-[10px] bg-emerald-500/20 text-emerald-400 font-semibold px-2 py-0.2 rounded-full border border-emerald-500/30">
-                Permanent Retention Active
-              </span>
-            </div>
-            <p className="text-[11px] text-slate-400 mt-0.5">
-              All compliance events, approvals, rejections, revisions, and deletions are permanently recorded. Even when a document master is deleted, its complete historical audit trail remains intact and immutable.
-            </p>
-          </div>
-        </div>
-        <div className="hidden lg:flex items-center space-x-3 text-xs font-mono text-slate-400">
-          <span>Storage: <strong className="text-slate-200">Firestore Cloud + Local Ledger</strong></span>
-        </div>
-      </div>
-
       {/* FILTER & SEARCH */}
       <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3">
         <div className="relative flex-1">
@@ -227,7 +232,8 @@ export const AuditLogView: React.FC<AuditLogViewProps> = ({ users }) => {
           />
         </div>
 
-        <div className="flex items-center space-x-2">
+        <div className="flex flex-wrap items-center gap-2">
+          {/* Event Action Filter */}
           <div className="flex items-center space-x-1.5 bg-slate-50 border border-slate-200 rounded-xl px-3 py-1.5 text-xs text-slate-700">
             <Filter className="w-3.5 h-3.5 text-slate-400" />
             <span className="text-slate-500">Event Action:</span>
@@ -237,25 +243,82 @@ export const AuditLogView: React.FC<AuditLogViewProps> = ({ users }) => {
               className="bg-transparent font-semibold text-slate-900 focus:outline-hidden cursor-pointer"
             >
               <option value="ALL">All Actions ({allLogs.length})</option>
-              {Object.values(AuditAction).map((act) => (
-                <option key={act} value={act}>
-                  {act}
-                </option>
-              ))}
+              {Object.values(AuditAction)
+                .filter((act) => !EXCLUDED_AUDIT_ACTIONS.has(act))
+                .map((act) => (
+                  <option key={act} value={act}>
+                    {act}
+                  </option>
+                ))}
             </select>
           </div>
+
+          {/* Date Filter (beside event action) */}
+          <div className="flex items-center space-x-1.5 bg-slate-50 border border-slate-200 rounded-xl px-3 py-1.5 text-xs text-slate-700">
+            <Calendar className="w-3.5 h-3.5 text-[#FA7014]" />
+            <span className="text-slate-500">Event Date:</span>
+            <input
+              type="date"
+              value={selectedDate}
+              onChange={(e) => setSelectedDate(e.target.value)}
+              className="bg-transparent font-semibold text-slate-900 focus:outline-hidden cursor-pointer text-xs"
+              title="Filter audit logs by specific date"
+            />
+            {selectedDate && (
+              <button
+                type="button"
+                onClick={() => setSelectedDate('')}
+                className="ml-1 text-slate-400 hover:text-rose-600 p-0.5 rounded-md hover:bg-slate-200/60 transition-colors cursor-pointer"
+                title="Clear date filter"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            )}
+          </div>
+
+          {/* Clear Filters Button */}
+          {(searchTerm || selectedAction !== 'ALL' || selectedDate) && (
+            <button
+              type="button"
+              onClick={() => {
+                setSearchTerm('');
+                setSelectedAction('ALL');
+                setSelectedDate('');
+              }}
+              className="text-xs text-slate-500 hover:text-rose-600 font-medium px-2.5 py-1.5 rounded-xl hover:bg-slate-100 border border-transparent hover:border-slate-200 transition-colors cursor-pointer"
+              title="Reset all active filters"
+            >
+              Reset Filters
+            </button>
+          )}
         </div>
       </div>
 
       {/* AUDIT LOG TABLE */}
       <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-        <div className="px-6 py-4 border-b border-slate-200 flex items-center justify-between">
-          <div className="flex items-center space-x-2.5">
-            <History className="w-4 h-4 text-[#FA7014]" />
-            <h2 className="text-sm font-bold text-slate-900">Logged Security & Governance Events</h2>
+        <div className="px-6 py-4 border-b border-slate-200 flex flex-wrap items-center justify-between gap-3">
+          <div className="flex items-center space-x-2.5 flex-wrap gap-2">
+            <div className="flex items-center space-x-2">
+              <History className="w-4 h-4 text-[#FA7014]" />
+              <h2 className="text-sm font-bold text-slate-900">Logged Security & Governance Events</h2>
+            </div>
             <span className="bg-slate-100 text-slate-800 text-xs px-2.5 py-0.5 rounded-full font-mono font-semibold border border-slate-200">
               {filteredLogs.length} events
             </span>
+            {selectedDate && (
+              <span className="bg-orange-50 text-[#FA7014] text-xs px-2.5 py-0.5 rounded-full font-mono font-semibold border border-orange-200 flex items-center space-x-1">
+                <Calendar className="w-3 h-3" />
+                <span>Date: {selectedDate}</span>
+                <button
+                  type="button"
+                  onClick={() => setSelectedDate('')}
+                  className="hover:text-rose-600 ml-0.5 cursor-pointer"
+                  title="Remove date filter"
+                >
+                  <X className="w-3 h-3" />
+                </button>
+              </span>
+            )}
           </div>
         </div>
 
@@ -275,7 +338,25 @@ export const AuditLogView: React.FC<AuditLogViewProps> = ({ users }) => {
               {filteredLogs.length === 0 ? (
                 <tr>
                   <td colSpan={6} className="px-6 py-12 text-center text-slate-400">
-                    No audit records match your filter criteria.
+                    <p className="text-sm font-medium text-slate-600">No audit records match your filter criteria.</p>
+                    {selectedDate && (
+                      <p className="text-xs text-slate-400 mt-1">
+                        No events logged on date: <span className="font-semibold text-slate-700 font-mono">{selectedDate}</span>
+                      </p>
+                    )}
+                    {(searchTerm || selectedAction !== 'ALL' || selectedDate) && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSearchTerm('');
+                          setSelectedAction('ALL');
+                          setSelectedDate('');
+                        }}
+                        className="mt-3 inline-flex items-center space-x-1 text-xs text-[#FA7014] hover:underline font-semibold cursor-pointer"
+                      >
+                        <span>Clear all active filters</span>
+                      </button>
+                    )}
                   </td>
                 </tr>
               ) : (

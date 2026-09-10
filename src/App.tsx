@@ -195,6 +195,7 @@ export default function App() {
         allVers.push(v);
       }
     }
+    allVers.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
     setVersions([...allVers]);
     setNotificationCount(defaultEmailProvider.getNotifications().length);
     const acks = governanceEngine.getAcknowledgements();
@@ -446,6 +447,7 @@ export default function App() {
                 currentUser={currentUser}
                 documents={documents}
                 versions={versions}
+                users={allUsers}
                 onOpenReviewModal={(ver) => setReviewVersion(ver)}
                 onOpenDocumentDetail={(doc) => setDetailDocument(doc)}
                 onOpenComplianceTracker={() => setActiveTab('compliance')}
@@ -519,6 +521,7 @@ export default function App() {
         <ReviewDocumentModal
           version={reviewVersion}
           currentUser={currentUser}
+          users={allUsers}
           onClose={() => setReviewVersion(null)}
           onApproveSuccess={() => {
             setReviewVersion(null);

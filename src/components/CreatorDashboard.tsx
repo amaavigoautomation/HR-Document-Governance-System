@@ -96,18 +96,43 @@ export const CreatorDashboard: React.FC<CreatorDashboardProps> = ({
 
   const supersededVersions = versions.filter((v) => v.status === VersionStatus.SUPERSEDED);
 
-  // Filter Documents
-  const filteredDocs = documents.filter((doc) => {
-    const matchesSearch =
-      doc.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      doc.documentId.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      doc.departmentName.toLowerCase().includes(searchTerm.toLowerCase());
+  // Filter and Sort Documents:
+  // Newly created document entries or documents with newly created versions ALWAYS COME ABOVE (at the top of the directory)
+  const filteredDocs = useMemo(() => {
+    return documents
+      .filter((doc) => {
+        const matchesSearch =
+          doc.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
+          doc.documentId.toLowerCase().includes(searchTerm.toLowerCase()) ||
+          doc.departmentName.toLowerCase().includes(searchTerm.toLowerCase());
 
-    const matchesCategory = selectedCategory === 'ALL' || doc.category === selectedCategory;
-    const matchesStatus = selectedStatus === 'ALL' || doc.currentStatus === selectedStatus;
+        const matchesCategory = selectedCategory === 'ALL' || doc.category === selectedCategory;
+        const matchesStatus = selectedStatus === 'ALL' || doc.currentStatus === selectedStatus;
 
-    return matchesSearch && matchesCategory && matchesStatus;
-  });
+        return matchesSearch && matchesCategory && matchesStatus;
+      })
+      .sort((a, b) => {
+        // Calculate latest activity timestamp for document a
+        const aVersions = versions.filter(
+          (v) => v.documentMasterId === a.id || v.documentId === a.documentId
+        );
+        const aVersionTimes = aVersions.map((v) => new Date(v.createdAt).getTime()).filter((t) => !isNaN(t));
+        const aDocUpdate = new Date(a.updatedAt || a.createdAt).getTime();
+        const aDocCreate = new Date(a.createdAt).getTime();
+        const aLatest = Math.max(aDocUpdate || 0, aDocCreate || 0, ...aVersionTimes);
+
+        // Calculate latest activity timestamp for document b
+        const bVersions = versions.filter(
+          (v) => v.documentMasterId === b.id || v.documentId === b.documentId
+        );
+        const bVersionTimes = bVersions.map((v) => new Date(v.createdAt).getTime()).filter((t) => !isNaN(t));
+        const bDocUpdate = new Date(b.updatedAt || b.createdAt).getTime();
+        const bDocCreate = new Date(b.createdAt).getTime();
+        const bLatest = Math.max(bDocUpdate || 0, bDocCreate || 0, ...bVersionTimes);
+
+        return bLatest - aLatest;
+      });
+  }, [documents, versions, searchTerm, selectedCategory, selectedStatus]);
 
   return (
     <div className="space-y-6">
@@ -312,14 +337,13 @@ export const CreatorDashboard: React.FC<CreatorDashboardProps> = ({
 
       {/* PRIMARY DOCUMENT MASTERS TABLE */}
       <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-        <div className="px-6 py-4 border-b border-slate-200 flex items-center justify-between">
+        <div className="px-6 py-4 border-b border-slate-200 flex items-center justify-between flex-wrap gap-2">
           <div className="flex items-center space-x-2">
             <h2 className="text-base font-bold text-slate-900">Document Masters Directory</h2>
             <span className="bg-slate-100 text-slate-800 text-xs px-2.5 py-0.5 rounded-full font-mono font-semibold border border-slate-200">
               {filteredDocs.length} records
             </span>
           </div>
-          <span className="text-xs text-slate-500">Every revision creates a new version record</span>
         </div>
 
         <div className="overflow-x-auto">

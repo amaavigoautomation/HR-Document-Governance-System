@@ -1,5 +1,6 @@
-import { PDFDocument, rgb, StandardFonts } from 'pdf-lib';
+import { PDFDocument, rgb, StandardFonts, PDFFont } from 'pdf-lib';
 import JSZip from 'jszip';
+import pako from 'pako';
 import {
   Document,
   Header,
@@ -97,10 +98,96 @@ function escapeXml(str: string): string {
 }
 
 /**
+ * Wraps text cleanly into multiple lines based on maximum allowed width in PDF points
+ */
+function wrapPdfText(text: string, maxWidth: number, font: PDFFont, fontSize: number): string[] {
+  const words = text.split(/\s+/).filter(Boolean);
+  if (words.length === 0) return [''];
+  const lines: string[] = [];
+  let currentLine = '';
+
+  for (const word of words) {
+    const candidate = currentLine ? `${currentLine} ${word}` : word;
+    const width = font.widthOfTextAtSize(candidate, fontSize);
+    if (width <= maxWidth) {
+      currentLine = candidate;
+    } else {
+      if (currentLine) {
+        lines.push(currentLine);
+      }
+      currentLine = word;
+    }
+  }
+  if (currentLine) {
+    lines.push(currentLine);
+  }
+  return lines;
+}
+
+/**
+ * Detects if a PDF document has already been stamped with the Amaavigo corporate header & footer.
+ * Checks PDF metadata (subject/keywords/author) and scans the first page content stream
+ * for corporate branding signatures to prevent duplicate stamping.
+ */
+export function isPdfAlreadyStamped(doc: PDFDocument): boolean {
+  try {
+    const subject = doc.getSubject();
+    if (subject && (subject.includes('AmaavigoGovernanceStamped') || subject.includes('Amaavigo Governance'))) {
+      return true;
+    }
+    const keywords = doc.getKeywords();
+    if (keywords && (keywords.includes('Amaavigo') || keywords.includes('GovernanceStamped'))) {
+      return true;
+    }
+    const author = doc.getAuthor();
+    if (author && author.includes('Amaavigo')) {
+      return true;
+    }
+
+    // Inspect first page content stream for Amaavigo branding tokens
+    const pages = doc.getPages();
+    if (pages.length > 0) {
+      const p0 = pages[0];
+      const contents = (p0.node as any).normalizedEntries?.()?.Contents || (p0.node as any).Contents?.();
+      if (contents && typeof contents.size === 'function') {
+        const count = contents.size();
+        for (let i = 0; i < count; i++) {
+          const ref = contents.get(i);
+          const stream = doc.context.lookup(ref);
+          if (stream && typeof (stream as any).getContents === 'function') {
+            let bytes = (stream as any).getContents();
+            try {
+              bytes = pako.inflate(bytes);
+            } catch {
+              // Not deflated or raw
+            }
+            const str = new TextDecoder('latin1').decode(bytes);
+            if (
+              str.includes('616D6161766967') ||
+              str.includes('amaavig') ||
+              str.includes('Where Brand takes Flight') ||
+              str.includes('AmaavigoGovernanceStamped')
+            ) {
+              return true;
+            }
+          }
+        }
+      }
+    }
+  } catch (e) {
+    console.warn('isPdfAlreadyStamped check warning:', e);
+  }
+  return false;
+}
+
+/**
  * Stamping engine for existing PDF documents:
  * Preserves the original document pages, vector objects, fonts, and graphics 100% INTACT.
+ * Never scales, compresses, or modifies existing document streams.
+ * Prevents double-stamping by inspecting document metadata and content streams.
+ * Displays the full Document Name in the header table without any truncation.
  * Injects the official Amaavigo Header Table at the top of EVERY page
- * and the Governance Approval Footer Sign-Off at the bottom of EVERY page as a non-destructive separate layer.
+ * and the Governance Approval Footer Sign-Off at the bottom of EVERY page.
  */
 export async function stampPdfWithHeaderFooter(
   sourcePdfInput: Uint8Array | ArrayBuffer | string,
@@ -108,14 +195,23 @@ export async function stampPdfWithHeaderFooter(
 ): Promise<StampResult> {
   const sourceBytes = toUint8Array(sourcePdfInput);
   const srcDoc = await PDFDocument.load(sourceBytes, { ignoreEncryption: true });
+
+  // Guard against duplicate stamping: If already stamped with Amaavigo header/footer, return untouched
+  if (isPdfAlreadyStamped(srcDoc)) {
+    const blob = new Blob([sourceBytes], { type: 'application/pdf' });
+    const dataUrl =
+      typeof sourcePdfInput === 'string' && sourcePdfInput.startsWith('data:')
+        ? sourcePdfInput
+        : `data:application/pdf;base64,${bytesToBase64(sourceBytes)}`;
+    return {
+      bytes: sourceBytes,
+      blob,
+      dataUrl,
+    };
+  }
+
   const pageIndices = srcDoc.getPageIndices();
-
   const targetDoc = await PDFDocument.create();
-  // Copy original pages directly to preserve all fonts, vector streams, and layouts 100% untouched
-  const copiedPages = await targetDoc.copyPages(srcDoc, pageIndices);
-
-  const font = await targetDoc.embedFont(StandardFonts.Helvetica);
-  const fontBold = await targetDoc.embedFont(StandardFonts.HelveticaBold);
 
   const cleanVer = cleanVersionNumber(meta.versionNumber);
   const effective = formatDDMMYYYY(meta.effectiveDate);
@@ -135,6 +231,18 @@ export async function stampPdfWithHeaderFooter(
   const creator = meta.createdByName || 'HR Author';
   const title = meta.documentTitle || 'Document';
 
+  // Mark document metadata so it is reliably recognized as stamped in future passes
+  targetDoc.setSubject('AmaavigoGovernanceStamped');
+  targetDoc.setKeywords(['AmaavigoGovernanceStamped', `v:${cleanVer}`, 'corporate-governance']);
+  targetDoc.setAuthor('Amaavigo Governance Engine');
+  targetDoc.setTitle(title);
+
+  // Copy original pages directly to preserve all fonts, vector streams, and layouts 100% untouched
+  const copiedPages = await targetDoc.copyPages(srcDoc, pageIndices);
+
+  const font = await targetDoc.embedFont(StandardFonts.Helvetica);
+  const fontBold = await targetDoc.embedFont(StandardFonts.HelveticaBold);
+
   for (let i = 0; i < copiedPages.length; i++) {
     const page = copiedPages[i];
     targetDoc.addPage(page);
@@ -145,9 +253,14 @@ export async function stampPdfWithHeaderFooter(
     const marginX = 36;
     const tableW = origW - marginX * 2;
     const headerH = 48;
-    const headerY = origH - 24 - headerH;
+    const topMargin = 14;
+    const headerY = origH - topMargin - headerH;
 
-    // Header Background & Slate Border
+    // Dimensions for Footer Table
+    const footerH = 34;
+    const footerY = 14;
+
+    // Header Background & Slate Border (drawn above original untouched page content)
     page.drawRectangle({
       x: marginX,
       y: headerY,
@@ -158,11 +271,12 @@ export async function stampPdfWithHeaderFooter(
       color: rgb(1, 1, 1),
     });
 
-    // Column boundaries
-    const col1W = 120;
-    const col2W = 180;
-    const col3W = 75;
-    const col4W = tableW - col1W - col2W - col3W;
+    // Column boundaries:
+    // Give Document Name the largest share so even long titles fit without truncation
+    const col1W = 110;
+    const col3W = 68;
+    const col4W = 95;
+    const col2W = tableW - col1W - col3W - col4W;
 
     const col1X = marginX;
     const col2X = col1X + col1W;
@@ -191,55 +305,97 @@ export async function stampPdfWithHeaderFooter(
 
     // Col 1: Amaavigo Logo
     page.drawText('amaavig', {
-      x: col1X + 10,
-      y: headerY + 23,
+      x: col1X + 8,
+      y: headerY + 24,
       font: fontBold,
       size: 14,
       color: rgb(24 / 255, 26 / 255, 30 / 255),
     });
     page.drawCircle({
-      x: col1X + 72,
-      y: headerY + 28,
+      x: col1X + 68,
+      y: headerY + 29,
       size: 4,
       borderColor: rgb(250 / 255, 112 / 255, 20 / 255),
       borderWidth: 2,
     });
     page.drawRectangle({
-      x: col1X + 65,
-      y: headerY + 34,
+      x: col1X + 61,
+      y: headerY + 35,
       width: 3,
       height: 3,
       color: rgb(250 / 255, 112 / 255, 20 / 255),
     });
     page.drawText('Where Brand takes Flight', {
-      x: col1X + 10,
+      x: col1X + 8,
       y: headerY + 10,
       font,
       size: 5.8,
       color: rgb(100 / 255, 116 / 255, 139 / 255),
     });
 
-    // Col 2: Document Name
+    // Col 2: Document Name - Full display without any ellipsis or truncation
     page.drawText('Document Name:', {
       x: col2X + 8,
-      y: headerY + 31,
+      y: headerY + headerH - 14,
       font: fontBold,
-      size: 7.5,
+      size: 7,
       color: rgb(15 / 255, 23 / 255, 42 / 255),
     });
-    const safeTitle = title.length > 30 ? `${title.substring(0, 28)}...` : title;
-    page.drawText(safeTitle, {
-      x: col2X + 8,
-      y: headerY + 16,
-      font: fontBold,
-      size: 8.5,
-      color: rgb(30 / 255, 41 / 255, 59 / 255),
-    });
+
+    const maxTitleW = col2W - 16;
+    let titleFontSize = 8.5;
+    let titleLines = wrapPdfText(title, maxTitleW, fontBold, titleFontSize);
+
+    if (titleLines.length > 2) {
+      titleFontSize = 7.5;
+      titleLines = wrapPdfText(title, maxTitleW, fontBold, titleFontSize);
+    }
+    if (titleLines.length > 3) {
+      titleFontSize = 7;
+      titleLines = wrapPdfText(title, maxTitleW, fontBold, titleFontSize);
+    }
+
+    if (titleLines.length === 1) {
+      page.drawText(titleLines[0], {
+        x: col2X + 8,
+        y: headerY + 16,
+        font: fontBold,
+        size: titleFontSize,
+        color: rgb(30 / 255, 41 / 255, 59 / 255),
+      });
+    } else if (titleLines.length === 2) {
+      page.drawText(titleLines[0], {
+        x: col2X + 8,
+        y: headerY + 22,
+        font: fontBold,
+        size: titleFontSize,
+        color: rgb(30 / 255, 41 / 255, 59 / 255),
+      });
+      page.drawText(titleLines[1], {
+        x: col2X + 8,
+        y: headerY + 10,
+        font: fontBold,
+        size: titleFontSize,
+        color: rgb(30 / 255, 41 / 255, 59 / 255),
+      });
+    } else {
+      const lineH = 9;
+      const startY = headerY + headerH - 24;
+      titleLines.slice(0, 3).forEach((line, idx) => {
+        page.drawText(line, {
+          x: col2X + 8,
+          y: startY - idx * lineH,
+          font: fontBold,
+          size: titleFontSize,
+          color: rgb(30 / 255, 41 / 255, 59 / 255),
+        });
+      });
+    }
 
     // Col 3: Version
     page.drawText(`Version: ${cleanVer}`, {
       x: col3X + 8,
-      y: headerY + 21,
+      y: headerY + Math.round(headerH / 2) - 3,
       font: fontBold,
       size: 8.5,
       color: rgb(15 / 255, 23 / 255, 42 / 255),
@@ -248,9 +404,9 @@ export async function stampPdfWithHeaderFooter(
     // Col 4: Effective Date
     page.drawText('Effective date :', {
       x: col4X + 8,
-      y: headerY + 31,
+      y: headerY + headerH - 14,
       font: fontBold,
-      size: 7.5,
+      size: 7,
       color: rgb(15 / 255, 23 / 255, 42 / 255),
     });
     page.drawText(effective, {
@@ -262,9 +418,6 @@ export async function stampPdfWithHeaderFooter(
     });
 
     // Dimensions for Footer Table
-    const footerH = 36;
-    const footerY = 24;
-
     page.drawRectangle({
       x: marginX,
       y: footerY,

@@ -551,6 +551,7 @@ export const SEED_VERSIONS: DocumentVersion[] = [
     rawContent: LEAVE_V1_1_TEXT,
     createdById: 'usr-creator-01',
     createdByName: 'Sarah Jenkins',
+    createdByTitle: 'Lead HR Operations & Document Specialist',
     createdAt: '2026-08-25T11:00:00Z',
     effectiveFrom: '2026-09-01',
     reviewDueDate: '2027-09-01',

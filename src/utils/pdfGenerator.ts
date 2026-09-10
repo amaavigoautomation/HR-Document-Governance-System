@@ -43,10 +43,10 @@ export function drawCorporateHeaderTable(
   doc.rect(marginX, headerY, contentWidth, headerHeight, 'S');
 
   // Column Boundaries
-  const col1W = 125; // Logo
-  const col2W = 175; // Document Name
-  const col3W = 82;  // Version
-  const col4W = contentWidth - col1W - col2W - col3W; // ~133.28 pt Effective Date
+  const col1W = 110; // Logo
+  const col3W = 68;  // Version
+  const col4W = 95;  // Effective Date
+  const col2W = contentWidth - col1W - col3W - col4W; // ~242.28 pt Document Name
 
   const col1X = marginX;
   const col2X = col1X + col1W;
@@ -63,51 +63,70 @@ export function drawCorporateHeaderTable(
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(15);
   doc.setTextColor(24, 26, 30);
-  doc.text('amaavig', col1X + 10, headerY + 25);
+  doc.text('amaavig', col1X + 8, headerY + 25);
 
   // Brand Orange Mark: "o" ring and pip notch (#FA7014 -> 250, 112, 20)
   doc.setFillColor(250, 112, 20);
   doc.setDrawColor(250, 112, 20);
   // Pip notch
-  doc.rect(col1X + 70, headerY + 14, 3.2, 3.2, 'F');
+  doc.rect(col1X + 68, headerY + 14, 3.2, 3.2, 'F');
   // Ring
   doc.setLineWidth(2.2);
-  doc.circle(col1X + 77, headerY + 22, 4.2, 'S');
+  doc.circle(col1X + 75, headerY + 22, 4.2, 'S');
 
   // Brand Tagline
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(6.2);
   doc.setTextColor(100, 116, 139); // slate-500
-  doc.text('Where Brand takes Flight', col1X + 10, headerY + 39);
+  doc.text('Where Brand takes Flight', col1X + 8, headerY + 39);
 
-  // Column 2: Document Name
+  // Column 2: Document Name (displays full document name without truncation)
   doc.setFont('helvetica', 'bold');
-  doc.setFontSize(7.5);
+  doc.setFontSize(7);
   doc.setTextColor(15, 23, 42);
-  doc.text('Document Name:', col2X + 8, headerY + 16);
+  doc.text('Document Name:', col2X + 8, headerY + 15);
 
+  let titleFontSize = 8.5;
   doc.setFont('helvetica', 'bold');
-  doc.setFontSize(9);
+  doc.setFontSize(titleFontSize);
   doc.setTextColor(30, 41, 59); // slate-800
-  const titleLines = doc.splitTextToSize(meta.title, col2W - 16);
-  doc.text(titleLines.slice(0, 2), col2X + 8, headerY + 29);
+  let titleLines = doc.splitTextToSize(meta.title, col2W - 16);
+  if (titleLines.length > 2) {
+    titleFontSize = 7.5;
+    doc.setFontSize(titleFontSize);
+    titleLines = doc.splitTextToSize(meta.title, col2W - 16);
+  }
+  if (titleLines.length > 3) {
+    titleFontSize = 7;
+    doc.setFontSize(titleFontSize);
+    titleLines = doc.splitTextToSize(meta.title, col2W - 16);
+  }
+
+  if (titleLines.length === 1) {
+    doc.text(titleLines[0], col2X + 8, headerY + 29);
+  } else if (titleLines.length === 2) {
+    doc.text(titleLines[0], col2X + 8, headerY + 26);
+    doc.text(titleLines[1], col2X + 8, headerY + 37);
+  } else {
+    doc.text(titleLines.slice(0, 3), col2X + 8, headerY + 24);
+  }
 
   // Column 3: Version
   doc.setFont('helvetica', 'bold');
-  doc.setFontSize(9);
+  doc.setFontSize(8.5);
   doc.setTextColor(15, 23, 42);
   doc.text(`Version: ${meta.version}`, col3X + 8, headerY + 30);
 
   // Column 4: Effective Date
   doc.setFont('helvetica', 'bold');
-  doc.setFontSize(7.5);
+  doc.setFontSize(7);
   doc.setTextColor(15, 23, 42);
-  doc.text('Effective date :', col4X + 8, headerY + 16);
+  doc.text('Effective date :', col4X + 8, headerY + 15);
 
   doc.setFont('helvetica', 'normal');
-  doc.setFontSize(9);
+  doc.setFontSize(8.5);
   doc.setTextColor(30, 41, 59);
-  doc.text(meta.effectiveDate, col4X + 8, headerY + 30);
+  doc.text(meta.effectiveDate, col4X + 8, headerY + 29);
 }
 
 /**
@@ -198,7 +217,7 @@ export function generateCorporatePdfBlob(options: CorporatePdfOptions): Blob {
   const footerY = 760;
 
   // Content flow boundaries (zero overlap with header or footer)
-  const contentStartY = 100; // 16pt below header
+  const contentStartY = 118; // 34pt generous vertical clearance below header
   const contentEndY = 746;   // 14pt above footer
 
   const cleanVer = cleanVersionNumber(options.versionNumber);
@@ -221,6 +240,14 @@ export function generateCorporatePdfBlob(options: CorporatePdfOptions): Blob {
 
   const headerMeta = { title, version: cleanVer, effectiveDate: effective };
   const footerMeta = { creator, approver, approvedDate: approvedDt };
+
+  doc.setProperties({
+    title,
+    author: 'Amaavigo Governance Engine',
+    subject: 'AmaavigoGovernanceStamped',
+    keywords: 'AmaavigoGovernanceStamped, corporate-governance',
+    creator: creator,
+  });
 
   // Helper to decorate any active page with official Header & Footer
   const decoratePage = () => {

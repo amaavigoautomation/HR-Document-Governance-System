@@ -35,6 +35,7 @@ interface ReviewerDashboardProps {
   currentUser: User;
   documents: DocumentMaster[];
   versions: DocumentVersion[];
+  users?: User[];
   onOpenReviewModal: (version: DocumentVersion) => void;
   onOpenDocumentDetail: (doc: DocumentMaster) => void;
   onOpenComplianceTracker?: () => void;
@@ -44,6 +45,7 @@ export const ReviewerDashboard: React.FC<ReviewerDashboardProps> = ({
   currentUser,
   documents,
   versions,
+  users,
   onOpenReviewModal,
   onOpenDocumentDetail,
   onOpenComplianceTracker,
@@ -55,18 +57,58 @@ export const ReviewerDashboard: React.FC<ReviewerDashboardProps> = ({
   const [selectedStatus, setSelectedStatus] = useState<string>('ALL');
   const [downloadingVersionId, setDownloadingVersionId] = useState<string | null>(null);
 
+  // Helper to dynamically resolve creator name and job title from active users directory or metadata
+  const resolveCreator = (ver: DocumentVersion, parentMaster?: DocumentMaster) => {
+    const userList = users && users.length > 0 ? users : governanceEngine.getUsers();
+    const matched = userList.find((u) => {
+      if (
+        ver.createdById &&
+        (u.id === ver.createdById ||
+          u.loginId?.toUpperCase() === ver.createdById.toUpperCase() ||
+          u.empId?.toUpperCase() === ver.createdById.toUpperCase())
+      ) {
+        return true;
+      }
+      if (ver.createdByName && u.name.trim().toLowerCase() === ver.createdByName.trim().toLowerCase()) {
+        return true;
+      }
+      if (
+        parentMaster?.createdById &&
+        (u.id === parentMaster.createdById ||
+          u.loginId?.toUpperCase() === parentMaster.createdById.toUpperCase() ||
+          u.empId?.toUpperCase() === parentMaster.createdById.toUpperCase())
+      ) {
+        return true;
+      }
+      if (parentMaster?.createdByName && u.name.trim().toLowerCase() === parentMaster.createdByName.trim().toLowerCase()) {
+        return true;
+      }
+      return false;
+    });
+
+    const name = matched?.name || ver.createdByName || parentMaster?.createdByName || 'HR Author';
+    const title =
+      matched?.title ||
+      ver.createdByTitle ||
+      parentMaster?.createdByTitle ||
+      (matched?.departmentName ? `${matched.departmentName} Author` : (parentMaster?.departmentName ? `${parentMaster.departmentName} Author` : 'Lead HR Operations & Document Specialist'));
+
+    return { name, title, department: matched?.departmentName || parentMaster?.departmentName || 'Human Resources', user: matched };
+  };
+
   const handleDownloadVersion = async (ver: DocumentVersion) => {
     try {
       setDownloadingVersionId(ver.id);
       const parentMaster = documents.find(
         (d) => d.id === ver.documentMasterId || d.documentId === ver.documentId
       );
+      const creator = resolveCreator(ver, parentMaster);
       await downloadDocumentWithIntactFormat({
         fileName: ver.fileName || `${ver.documentId}_v${ver.versionNumber}.pdf`,
         documentTitle: ver.documentTitle || parentMaster?.title,
         versionNumber: ver.versionNumber,
         effectiveDate: formatDDMMYYYY(ver.effectiveFrom || ver.createdAt),
-        createdByName: ver.createdByName || 'Amee Shah',
+        createdByName: creator.name || ver.createdByName || 'Amee Shah',
         approvedByName:
           ver.status === VersionStatus.PUBLISHED
             ? (ver.reviewedByName || ver.publishedByName || 'Vishal Shah')
@@ -91,64 +133,98 @@ export const ReviewerDashboard: React.FC<ReviewerDashboardProps> = ({
   const totalAcks = acks.length;
   const compliantPercent = totalAcks > 0 ? Math.round(((totalAcks - pendingAcks) / totalAcks) * 100) : 100;
 
-  // Queue of pending reviews (only versions that are actively IN_REVIEW and pending decision)
+  // Queue of pending reviews (only versions that are actively IN_REVIEW and pending decision, sorted newest first)
   const reviewQueue = useMemo(() => {
-    return versions.filter((v) => {
-      if (v.status !== VersionStatus.IN_REVIEW) return false;
-      if (v.reviewedAt || v.reviewedById) return false;
-      const parentMaster = documents.find((d) => d.id === v.documentMasterId || d.documentId === v.documentId);
-      if (parentMaster && parentMaster.currentPublishedVersionId === v.id) return false;
-      return true;
-    });
+    return versions
+      .filter((v) => {
+        if (v.status !== VersionStatus.IN_REVIEW) return false;
+        if (v.reviewedAt || v.reviewedById) return false;
+        const parentMaster = documents.find((d) => d.id === v.documentMasterId || d.documentId === v.documentId);
+        if (parentMaster && parentMaster.currentPublishedVersionId === v.id) return false;
+        return true;
+      })
+      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
   }, [versions, documents]);
 
   const approvedVersions = useMemo(() => {
-    return versions.filter((v) => v.status === VersionStatus.PUBLISHED || v.status === VersionStatus.SUPERSEDED);
+    return versions
+      .filter((v) => v.status === VersionStatus.PUBLISHED || v.status === VersionStatus.SUPERSEDED)
+      .sort((a, b) => new Date(b.reviewedAt || b.createdAt).getTime() - new Date(a.reviewedAt || a.createdAt).getTime());
   }, [versions]);
 
   const rejectedVersions = useMemo(() => {
-    return versions.filter((v) => v.status === VersionStatus.REVISION_REQUIRED);
+    return versions
+      .filter((v) => v.status === VersionStatus.REVISION_REQUIRED)
+      .sort((a, b) => new Date(b.reviewedAt || b.createdAt).getTime() - new Date(a.reviewedAt || a.createdAt).getTime());
   }, [versions]);
 
-  // Review history (all versions where decision has been rendered)
+  // Review history (all versions where decision has been rendered, sorted newest decision first)
   const decidedHistory = useMemo(() => {
-    return versions.filter((v) => {
-      if (v.status !== VersionStatus.IN_REVIEW || !!v.reviewedAt || !!v.reviewedById) return true;
-      const parentMaster = documents.find((d) => d.id === v.documentMasterId || d.documentId === v.documentId);
-      if (parentMaster && parentMaster.currentPublishedVersionId === v.id) return true;
-      return false;
-    });
+    return versions
+      .filter((v) => {
+        if (v.status !== VersionStatus.IN_REVIEW || !!v.reviewedAt || !!v.reviewedById) return true;
+        const parentMaster = documents.find((d) => d.id === v.documentMasterId || d.documentId === v.documentId);
+        if (parentMaster && parentMaster.currentPublishedVersionId === v.id) return true;
+        return false;
+      })
+      .sort((a, b) => new Date(b.reviewedAt || b.createdAt).getTime() - new Date(a.reviewedAt || a.createdAt).getTime());
   }, [versions, documents]);
 
-  // Filtered Queue
+  // Filtered Queue (supports searching by title, document ID, creator name, or creator title)
   const filteredQueue = useMemo(() => {
     return reviewQueue.filter((v) => {
+      if (!searchTerm.trim()) return true;
       const q = searchTerm.toLowerCase();
+      const parentMaster = documents.find((d) => d.id === v.documentMasterId || d.documentId === v.documentId);
+      const creator = resolveCreator(v, parentMaster);
       return (
         v.documentTitle.toLowerCase().includes(q) ||
         v.documentId.toLowerCase().includes(q) ||
-        v.createdByName.toLowerCase().includes(q)
+        (v.createdByName && v.createdByName.toLowerCase().includes(q)) ||
+        creator.name.toLowerCase().includes(q) ||
+        creator.title.toLowerCase().includes(q) ||
+        (v.changeSummary && v.changeSummary.toLowerCase().includes(q))
       );
     });
-  }, [reviewQueue, searchTerm]);
+  }, [reviewQueue, searchTerm, documents, users]);
 
-  // Consolidated documents list filter
+  // Consolidated documents list filter (sorted with newest documents & revisions on top)
   const filteredConsolidatedDocs = useMemo(() => {
-    return documents.filter((doc) => {
-      const q = searchTerm.toLowerCase();
-      const matchesSearch =
-        doc.title.toLowerCase().includes(q) ||
-        doc.documentId.toLowerCase().includes(q) ||
-        doc.departmentName.toLowerCase().includes(q) ||
-        doc.category.toLowerCase().includes(q);
+    return documents
+      .filter((doc) => {
+        const q = searchTerm.toLowerCase();
+        const matchesSearch =
+          doc.title.toLowerCase().includes(q) ||
+          doc.documentId.toLowerCase().includes(q) ||
+          doc.departmentName.toLowerCase().includes(q) ||
+          doc.category.toLowerCase().includes(q);
 
-      const matchesCategory = selectedCategory === 'ALL' || doc.category === selectedCategory;
-      const matchesDept = selectedDept === 'ALL' || doc.departmentName === selectedDept;
-      const matchesStatus = selectedStatus === 'ALL' || doc.currentStatus === selectedStatus;
+        const matchesCategory = selectedCategory === 'ALL' || doc.category === selectedCategory;
+        const matchesDept = selectedDept === 'ALL' || doc.departmentName === selectedDept;
+        const matchesStatus = selectedStatus === 'ALL' || doc.currentStatus === selectedStatus;
 
-      return matchesSearch && matchesCategory && matchesDept && matchesStatus;
-    });
-  }, [documents, searchTerm, selectedCategory, selectedDept, selectedStatus]);
+        return matchesSearch && matchesCategory && matchesDept && matchesStatus;
+      })
+      .sort((a, b) => {
+        const aVersions = versions.filter(
+          (v) => v.documentMasterId === a.id || v.documentId === a.documentId
+        );
+        const aVersionTimes = aVersions.map((v) => new Date(v.createdAt).getTime()).filter((t) => !isNaN(t));
+        const aDocUpdate = new Date(a.updatedAt || a.createdAt).getTime();
+        const aDocCreate = new Date(a.createdAt).getTime();
+        const aLatest = Math.max(aDocUpdate || 0, aDocCreate || 0, ...aVersionTimes);
+
+        const bVersions = versions.filter(
+          (v) => v.documentMasterId === b.id || v.documentId === b.documentId
+        );
+        const bVersionTimes = bVersions.map((v) => new Date(v.createdAt).getTime()).filter((t) => !isNaN(t));
+        const bDocUpdate = new Date(b.updatedAt || b.createdAt).getTime();
+        const bDocCreate = new Date(b.createdAt).getTime();
+        const bLatest = Math.max(bDocUpdate || 0, bDocCreate || 0, ...bVersionTimes);
+
+        return bLatest - aLatest;
+      });
+  }, [documents, versions, searchTerm, selectedCategory, selectedDept, selectedStatus]);
 
   // Unique departments for filter
   const departments = useMemo(() => {
@@ -373,8 +449,9 @@ export const ReviewerDashboard: React.FC<ReviewerDashboardProps> = ({
                   </tr>
                 ) : (
                   filteredQueue.map((ver) => {
-                    const parentMaster = documents.find((d) => d.id === ver.documentMasterId);
+                    const parentMaster = documents.find((d) => d.id === ver.documentMasterId || d.documentId === ver.documentId);
                     const isDecided = ver.status !== VersionStatus.IN_REVIEW || !!ver.reviewedAt;
+                    const creator = resolveCreator(ver, parentMaster);
 
                     return (
                       <tr key={ver.id} className="hover:bg-slate-50/80 transition-colors">
@@ -422,8 +499,10 @@ export const ReviewerDashboard: React.FC<ReviewerDashboardProps> = ({
                         </td>
 
                         <td className="px-6 py-4 whitespace-nowrap">
-                          <div className="text-xs font-semibold text-slate-900">{ver.createdByName}</div>
-                          <div className="text-[11px] text-slate-500">HR Operations</div>
+                          <div className="text-xs font-semibold text-slate-900">{creator.name}</div>
+                          <div className="text-[11px] text-slate-500 font-medium truncate max-w-[220px]" title={creator.title}>
+                            {creator.title}
+                          </div>
                         </td>
 
                         <td className="px-6 py-4 max-w-xs">

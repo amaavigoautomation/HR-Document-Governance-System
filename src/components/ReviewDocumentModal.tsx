@@ -43,6 +43,7 @@ import { downloadDocumentWithIntactFormat } from '../utils/documentStamper';
 interface ReviewDocumentModalProps {
   version: DocumentVersion;
   currentUser: User;
+  users?: User[];
   onClose: () => void;
   onApproveSuccess: () => void;
   onRejectSuccess: () => void;
@@ -51,6 +52,7 @@ interface ReviewDocumentModalProps {
 export const ReviewDocumentModal: React.FC<ReviewDocumentModalProps> = ({
   version,
   currentUser,
+  users,
   onClose,
   onApproveSuccess,
   onRejectSuccess,
@@ -74,6 +76,43 @@ export const ReviewDocumentModal: React.FC<ReviewDocumentModalProps> = ({
 
   const master = governanceEngine.getDocumentMasterById(version.documentMasterId);
 
+  const creator = useMemo(() => {
+    const userList = users && users.length > 0 ? users : governanceEngine.getUsers();
+    const matched = userList.find((u) => {
+      if (
+        version.createdById &&
+        (u.id === version.createdById ||
+          u.loginId?.toUpperCase() === version.createdById.toUpperCase() ||
+          u.empId?.toUpperCase() === version.createdById.toUpperCase())
+      ) {
+        return true;
+      }
+      if (version.createdByName && u.name.trim().toLowerCase() === version.createdByName.trim().toLowerCase()) {
+        return true;
+      }
+      if (
+        master?.createdById &&
+        (u.id === master.createdById ||
+          u.loginId?.toUpperCase() === master.createdById.toUpperCase() ||
+          u.empId?.toUpperCase() === master.createdById.toUpperCase())
+      ) {
+        return true;
+      }
+      if (master?.createdByName && u.name.trim().toLowerCase() === master.createdByName.trim().toLowerCase()) {
+        return true;
+      }
+      return false;
+    });
+    return {
+      name: matched?.name || version.createdByName || master?.createdByName || 'HR Author',
+      title:
+        matched?.title ||
+        version.createdByTitle ||
+        master?.createdByTitle ||
+        (matched?.departmentName ? `${matched.departmentName} Author` : (master?.departmentName ? `${master.departmentName} Author` : 'Lead HR Operations & Document Specialist')),
+    };
+  }, [version, master, users]);
+
   const handleDownloadVersion = async () => {
     try {
       setIsDownloading(true);
@@ -82,7 +121,7 @@ export const ReviewDocumentModal: React.FC<ReviewDocumentModalProps> = ({
         documentTitle: version.documentTitle || master?.title,
         versionNumber: version.versionNumber,
         effectiveDate: formatDDMMYYYY(version.effectiveFrom || version.createdAt),
-        createdByName: version.createdByName || 'Amee Shah',
+        createdByName: creator.name || version.createdByName || 'Amee Shah',
         approvedByName:
           version.status === VersionStatus.PUBLISHED
             ? (version.reviewedByName || version.publishedByName || 'Authorized Approver')
@@ -239,7 +278,8 @@ export const ReviewDocumentModal: React.FC<ReviewDocumentModalProps> = ({
                 </span>
               </div>
               <p className="text-xs text-slate-400 mt-0.5">
-                Submitted by <span className="text-slate-200 font-semibold">{version.createdByName}</span> on{' '}
+                Submitted by <span className="text-slate-200 font-semibold">{creator.name}</span>
+                {creator.title && <span className="text-slate-400"> ({creator.title})</span>} on{' '}
                 {formatISTDate(version.createdAt)} • Comparison Baseline:{' '}
                 <span className="text-[#FA7014] font-semibold">
                   {activeBaseline

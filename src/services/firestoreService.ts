@@ -319,7 +319,12 @@ export const firestoreService = {
   async getDocuments(): Promise<DocumentMaster[]> {
     try {
       const snap = await getDocs(collection(db, DOCS_COLLECTION));
-      return snap.docs.map((d) => d.data() as DocumentMaster);
+      const docs = snap.docs.map((d) => d.data() as DocumentMaster);
+      return docs.sort((a, b) => {
+        const aTime = Math.max(new Date(a.updatedAt || 0).getTime(), new Date(a.createdAt || 0).getTime());
+        const bTime = Math.max(new Date(b.updatedAt || 0).getTime(), new Date(b.createdAt || 0).getTime());
+        return bTime - aTime;
+      });
     } catch (e) {
       console.warn('[Firestore] Error getting documents (using local cache):', e);
       return [];
@@ -338,7 +343,8 @@ export const firestoreService = {
   async getVersions(): Promise<DocumentVersion[]> {
     try {
       const snap = await getDocs(collection(db, VERSIONS_COLLECTION));
-      return snap.docs.map((d) => d.data() as DocumentVersion);
+      const vers = snap.docs.map((d) => d.data() as DocumentVersion);
+      return vers.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
     } catch (e) {
       console.warn('[Firestore] Error getting versions (using local cache):', e);
       return [];

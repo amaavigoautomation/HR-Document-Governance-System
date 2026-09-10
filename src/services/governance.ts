@@ -345,6 +345,7 @@ export class DocumentGovernanceEngine {
         );
         if (u) {
           doc.createdByName = u.name;
+          doc.createdByTitle = u.title;
         }
       }
     }
@@ -358,6 +359,7 @@ export class DocumentGovernanceEngine {
         );
         if (u) {
           ver.createdByName = u.name;
+          ver.createdByTitle = u.title;
         }
       }
       if (ver.reviewedById) {
@@ -545,7 +547,7 @@ export class DocumentGovernanceEngine {
     return this.users.find((u) => u.id === id);
   }
 
-  // Get all Document Masters
+  // Get all Document Masters (sorted so newly created entries or newly versioned documents come above older ones)
   public getDocumentMasters(filter?: { category?: DocumentCategory; companyId?: string; search?: string }): DocumentMaster[] {
     let result = [...this.documentMasters];
     if (filter?.category) {
@@ -564,20 +566,40 @@ export class DocumentGovernanceEngine {
           d.departmentName.toLowerCase().includes(q)
       );
     }
-    return result;
+    return result.sort((a, b) => {
+      const aVersions = this.documentVersions.filter(
+        (v) => v.documentMasterId === a.id || v.documentId === a.documentId
+      );
+      const aVersionTimes = aVersions.map((v) => new Date(v.createdAt).getTime()).filter((t) => !isNaN(t));
+      const aDocUpdate = new Date(a.updatedAt || a.createdAt).getTime();
+      const aDocCreate = new Date(a.createdAt).getTime();
+      const aLatest = Math.max(aDocUpdate || 0, aDocCreate || 0, ...aVersionTimes);
+
+      const bVersions = this.documentVersions.filter(
+        (v) => v.documentMasterId === b.id || v.documentId === b.documentId
+      );
+      const bVersionTimes = bVersions.map((v) => new Date(v.createdAt).getTime()).filter((t) => !isNaN(t));
+      const bDocUpdate = new Date(b.updatedAt || b.createdAt).getTime();
+      const bDocCreate = new Date(b.createdAt).getTime();
+      const bLatest = Math.max(bDocUpdate || 0, bDocCreate || 0, ...bVersionTimes);
+
+      return bLatest - aLatest;
+    });
   }
 
   public getDocumentMasterById(id: string): DocumentMaster | undefined {
     return this.documentMasters.find((d) => d.id === id || d.documentId === id);
   }
 
-  // Get all Versions for a Document Master, or all versions across system if omitted
+  // Get all Versions for a Document Master, or all versions across system if omitted (sorted newest first)
   public getDocumentVersions(documentMasterId?: string): DocumentVersion[] {
     if (!documentMasterId) {
-      return [...this.documentVersions];
+      return [...this.documentVersions].sort(
+        (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+      );
     }
     return this.documentVersions
-      .filter((v) => v.documentMasterId === documentMasterId)
+      .filter((v) => v.documentMasterId === documentMasterId || v.documentId === documentMasterId)
       .sort((a, b) => {
         // Sort newest first
         return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
@@ -703,6 +725,7 @@ export class DocumentGovernanceEngine {
       description: data.description || '',
       createdById: creator.id,
       createdByName: creator.name,
+      createdByTitle: creator.title,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
       active: true,
@@ -722,10 +745,12 @@ export class DocumentGovernanceEngine {
       storageKey: storageMeta.storageKey,
       storagePath: storageMeta.storagePath,
       fileUrl: sanitizedFileUrl || defaultStorageProvider.getFileUrl(storageMeta.storageKey),
+      originalFileUrl: (isPdfUpload || isDocxUpload) && data.fileDataUrl ? data.fileDataUrl : undefined,
       contentHash: storageMeta.contentHash,
       rawContent: sanitizedRawContent,
       createdById: creator.id,
       createdByName: creator.name,
+      createdByTitle: creator.title,
       createdAt: new Date().toISOString(),
       effectiveFrom: data.effectiveFrom || new Date().toISOString().split('T')[0],
       reviewDueDate: data.reviewDueDate || new Date(Date.now() + 365 * 86400000).toISOString().split('T')[0],
@@ -941,10 +966,12 @@ export class DocumentGovernanceEngine {
       storageKey: storageMeta.storageKey,
       storagePath: storageMeta.storagePath,
       fileUrl: sanitizedFileUrl || defaultStorageProvider.getFileUrl(storageMeta.storageKey),
+      originalFileUrl: (isPdf || isDocx) && data.fileDataUrl ? data.fileDataUrl : undefined,
       contentHash: storageMeta.contentHash,
       rawContent: sanitizedRawContent,
       createdById: creator.id,
       createdByName: creator.name,
+      createdByTitle: creator.title,
       createdAt: new Date().toISOString(),
       effectiveFrom: data.effectiveFrom || new Date().toISOString().split('T')[0],
       reviewDueDate: data.reviewDueDate || master.updatedAt.split('T')[0],
@@ -960,6 +987,9 @@ export class DocumentGovernanceEngine {
     // Update master status to indicate active version in review
     master.currentStatus = VersionStatus.IN_REVIEW;
     master.updatedAt = new Date().toISOString();
+
+    // Ensure master is placed at index 0 so it comes above previous entries
+    this.documentMasters = [master, ...this.documentMasters.filter((m) => m.id !== master.id)];
 
     // Mark any preceding REVISION_REQUIRED versions for this document master as SUPERSEDED now that next version is authored
     const prevRevisionRequired = this.documentVersions.filter(
@@ -1154,7 +1184,9 @@ export class DocumentGovernanceEngine {
     if (isPdf) {
       try {
         const sourcePdf =
-          version.fileUrl && (version.fileUrl.startsWith('data:application/pdf') || version.fileUrl.startsWith('blob:'))
+          version.originalFileUrl && (version.originalFileUrl.startsWith('data:application/pdf') || version.originalFileUrl.startsWith('blob:'))
+            ? version.originalFileUrl
+            : version.fileUrl && (version.fileUrl.startsWith('data:application/pdf') || version.fileUrl.startsWith('blob:'))
             ? version.fileUrl
             : version.rawContent && version.rawContent.startsWith('%PDF')
             ? version.rawContent
@@ -1169,7 +1201,9 @@ export class DocumentGovernanceEngine {
     } else if (isDocx) {
       try {
         const sourceDocx =
-          version.fileUrl && (version.fileUrl.startsWith('data:') || version.fileUrl.startsWith('blob:'))
+          version.originalFileUrl && (version.originalFileUrl.startsWith('data:') || version.originalFileUrl.startsWith('blob:'))
+            ? version.originalFileUrl
+            : version.fileUrl && (version.fileUrl.startsWith('data:') || version.fileUrl.startsWith('blob:'))
             ? version.fileUrl
             : null;
         if (sourceDocx) {
@@ -1244,6 +1278,7 @@ export class DocumentGovernanceEngine {
     master.currentPublishedVersionNumber = version.versionNumber;
     master.currentStatus = VersionStatus.PUBLISHED;
     master.updatedAt = nowIso;
+    this.documentMasters = [master, ...this.documentMasters.filter((m) => m.id !== master.id)];
 
     // Persist changes to Cloud Firestore
     try {
@@ -1329,20 +1364,30 @@ export class DocumentGovernanceEngine {
             acknowledgementRequired: true,
           });
 
-          // Create pending acknowledgement entry
+          // Create pending acknowledgement entry with deterministic ID
+          const cleanEmpId = (emp.empId || emp.id || emp.loginId || emp.email || 'emp').toLowerCase().replace(/[^a-z0-9_-]/g, '_');
+          const cleanDocId = master.documentId.toLowerCase().replace(/[^a-z0-9_-]/g, '_');
+          const cleanVer = (version.versionNumber || '1.0').replace(/\./g, '_');
+          const deterministicId = `ack_${cleanDocId}_v${cleanVer}_${cleanEmpId}`;
+
           const pendingAck: AcknowledgementRecord = {
-            id: `ack-${Date.now()}-${emp.id.replace(/[^a-zA-Z0-9]/g, '')}-${Math.random().toString(36).substr(2, 4)}`,
+            id: deterministicId,
             documentId: master.documentId,
             documentTitle: master.title,
             versionNumber: version.versionNumber,
             documentVersionId: version.id,
-            employeeId: emp.id,
+            employeeId: emp.empId || emp.id,
             employeeName: emp.name,
             employeeEmail: emp.email,
             departmentName: emp.departmentName,
             status: 'PENDING',
           };
-          this.acknowledgements.push(pendingAck);
+          const existingIdx = this.acknowledgements.findIndex((a) => a.id === deterministicId);
+          if (existingIdx >= 0) {
+            this.acknowledgements[existingIdx] = pendingAck;
+          } else {
+            this.acknowledgements.push(pendingAck);
+          }
 
           try {
             firestoreService.saveAcknowledgement(pendingAck).catch((e) => console.warn('Firestore ack save error:', e));
@@ -1350,6 +1395,9 @@ export class DocumentGovernanceEngine {
             console.warn('Firestore ack save note:', e);
           }
         }
+
+        // Ensure any active employees with various ID structures also have their pending records
+        this.ensurePendingAcknowledgementsForEmployees();
 
         auditService.logEvent(AuditAction.NOTIFICATION_SENT, reviewer, {
           documentMasterId: master.id,
@@ -1592,6 +1640,9 @@ export class DocumentGovernanceEngine {
   }
 
   public getAcknowledgements(employeeIdentifier?: string): AcknowledgementRecord[] {
+    // Ensure all active employees have pending acknowledgements for all active published public policies
+    this.ensurePendingAcknowledgementsForEmployees();
+
     const publishedPublicDocs = this.documentMasters.filter(
       (d) =>
         d.active &&
@@ -1604,7 +1655,7 @@ export class DocumentGovernanceEngine {
     // Filter stored acknowledgements to only include currently valid published public documents
     const validStoredAcks = this.acknowledgements.filter((a) => validDocIds.has(a.documentId));
 
-    // Deduplicate so ACKNOWLEDGED always takes precedence
+    // Deduplicate so ACKNOWLEDGED always takes precedence per document version & employee
     const canonicalMap = new Map<string, AcknowledgementRecord>();
     for (const item of validStoredAcks) {
       const emp = (item.employeeId || item.employeeEmail || '').toLowerCase().trim();
@@ -1630,6 +1681,7 @@ export class DocumentGovernanceEngine {
 
   // Get aggregated compliance stats per employee
   public getEmployeeComplianceStats(): any[] {
+    this.ensurePendingAcknowledgementsForEmployees();
     const employees = this.users.filter((u) => {
       const r = (u.role || '').toString().toUpperCase();
       return r === 'EMPLOYEE' && u.active !== false;
@@ -1646,9 +1698,14 @@ export class DocumentGovernanceEngine {
       const empIdentifiers = [emp.id, emp.empId, emp.loginId, emp.email].filter(Boolean).map((s) => s!.toLowerCase());
 
       const records = publishedPublicDocs.map((doc) => {
+        const activeVer = this.documentVersions.find((v) => v.id === doc.currentPublishedVersionId) ||
+          this.documentVersions.filter((v) => v.documentMasterId === doc.id && v.status === VersionStatus.PUBLISHED).pop();
+        const activeVerNum = activeVer?.versionNumber || doc.currentPublishedVersionNumber || '1.0';
+
         const existing = this.acknowledgements.find(
           (a) =>
             a.documentId === doc.documentId &&
+            (a.versionNumber === activeVerNum || (activeVer && a.documentVersionId === activeVer.id)) &&
             ((a.employeeId && empIdentifiers.includes(a.employeeId.toLowerCase())) ||
              (a.employeeEmail && empIdentifiers.includes(a.employeeEmail.toLowerCase())))
         );
@@ -1658,8 +1715,8 @@ export class DocumentGovernanceEngine {
           id: `ack-synth-${emp.id}-${doc.id}`,
           documentId: doc.documentId,
           documentTitle: doc.title,
-          versionNumber: doc.currentPublishedVersionNumber || '1.0',
-          documentVersionId: doc.currentPublishedVersionId || '',
+          versionNumber: activeVerNum,
+          documentVersionId: activeVer?.id || doc.currentPublishedVersionId || '',
           employeeId: emp.id,
           employeeName: emp.name,
           employeeEmail: emp.email,
@@ -1691,12 +1748,57 @@ export class DocumentGovernanceEngine {
   }
 
   // Send a targeted compliance reminder email to a single employee
-  public async sendComplianceReminder(ackId: string, sender: User): Promise<{ success: boolean; message: string }> {
-    const ack = this.acknowledgements.find((a) => a.id === ackId);
+  public async sendComplianceReminder(
+    ackOrId: string | AcknowledgementRecord,
+    sender: User
+  ): Promise<{ success: boolean; message: string }> {
+    let ack: AcknowledgementRecord | undefined;
+
+    if (typeof ackOrId === 'object' && ackOrId) {
+      const empTarget = (ackOrId.employeeId || ackOrId.employeeEmail || '').toLowerCase().trim();
+      ack = this.acknowledgements.find((a) => a.id === ackOrId.id) ||
+            this.acknowledgements.find((a) =>
+              a.documentId === ackOrId.documentId &&
+              a.versionNumber === ackOrId.versionNumber &&
+              ((a.employeeId && a.employeeId.toLowerCase() === empTarget) ||
+               (a.employeeEmail && a.employeeEmail.toLowerCase() === empTarget))
+            );
+
+      if (!ack) {
+        ack = {
+          id: ackOrId.id,
+          documentId: ackOrId.documentId,
+          documentTitle: ackOrId.documentTitle,
+          versionNumber: ackOrId.versionNumber,
+          documentVersionId: ackOrId.documentVersionId || '',
+          employeeId: ackOrId.employeeId,
+          employeeName: ackOrId.employeeName,
+          employeeEmail: ackOrId.employeeEmail,
+          departmentName: ackOrId.departmentName,
+          status: 'PENDING',
+        };
+        this.acknowledgements.push(ack);
+        try {
+          firestoreService.saveAcknowledgement(ack).catch((e) => console.warn('Firestore ack save error:', e));
+        } catch (e) {}
+      }
+    } else if (typeof ackOrId === 'string') {
+      const ackId = ackOrId;
+      ack = this.acknowledgements.find((a) => a.id === ackId);
+      if (!ack) {
+        // Try fallback match
+        ack = this.acknowledgements.find((a) =>
+          a.status === 'PENDING' &&
+          ((a.employeeId && ackId.toLowerCase().includes(a.employeeId.toLowerCase())) ||
+           (a.employeeEmail && ackId.toLowerCase().includes(a.employeeEmail.toLowerCase())))
+        );
+      }
+    }
+
     if (!ack) throw new Error('Acknowledgement record not found.');
 
     if (ack.status === 'ACKNOWLEDGED') {
-      return { success: false, message: 'Employee has already acknowledged this document.' };
+      return { success: false, message: 'Employee has already acknowledged this document version.' };
     }
 
     const master = this.documentMasters.find((d) => d.documentId === ack.documentId);
@@ -1738,8 +1840,31 @@ export class DocumentGovernanceEngine {
   }
 
   // Record a manual offline sign-off / attestation
-  public recordManualSignOff(ackId: string, notes: string, adminUser: User): AcknowledgementRecord {
-    const ack = this.acknowledgements.find((a) => a.id === ackId);
+  public recordManualSignOff(
+    ackOrId: string | AcknowledgementRecord,
+    notes: string,
+    adminUser: User
+  ): AcknowledgementRecord {
+    let ack: AcknowledgementRecord | undefined;
+
+    if (typeof ackOrId === 'object' && ackOrId) {
+      const empTarget = (ackOrId.employeeId || ackOrId.employeeEmail || '').toLowerCase().trim();
+      ack = this.acknowledgements.find((a) => a.id === ackOrId.id) ||
+            this.acknowledgements.find((a) =>
+              a.documentId === ackOrId.documentId &&
+              a.versionNumber === ackOrId.versionNumber &&
+              ((a.employeeId && a.employeeId.toLowerCase() === empTarget) ||
+               (a.employeeEmail && a.employeeEmail.toLowerCase() === empTarget))
+            );
+
+      if (!ack) {
+        ack = { ...ackOrId, status: 'PENDING' };
+        this.acknowledgements.push(ack);
+      }
+    } else {
+      ack = this.acknowledgements.find((a) => a.id === ackOrId);
+    }
+
     if (!ack) throw new Error('Acknowledgement record not found.');
 
     const nowIso = new Date().toISOString();
@@ -1765,13 +1890,15 @@ export class DocumentGovernanceEngine {
 
   // Send batch reminders for all pending acknowledgements or specific document
   public async sendBatchReminders(sender: User, documentId?: string): Promise<{ sentCount: number; message: string }> {
+    this.ensurePendingAcknowledgementsForEmployees();
+
     const pendingList = this.acknowledgements.filter(
       (a) => a.status === 'PENDING' && (!documentId || a.documentId === documentId)
     );
 
     let sent = 0;
     for (const ack of pendingList) {
-      await this.sendComplianceReminder(ack.id, sender);
+      await this.sendComplianceReminder(ack, sender);
       sent++;
     }
 

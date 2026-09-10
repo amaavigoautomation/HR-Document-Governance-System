@@ -12,6 +12,7 @@ import {
   ArrowRight,
   Sparkles,
   Calendar,
+  Copy,
 } from 'lucide-react';
 import { DocumentMaster, DocumentVersion, User, VersionStatus, VersionType } from '../types';
 import { governanceEngine } from '../services/governance';
@@ -93,50 +94,58 @@ export const CreateVersionModal: React.FC<CreateVersionModalProps> = ({
 
   const lastLoadedDocIdRef = useRef<string | null>(null);
 
-  // When selected document changes, populate rawContent with rejected draft (if exists) or baseline text
+  // When selected document changes, ensure Document Content / File Upload comes empty
   useEffect(() => {
     if (!selectedDocId) return;
 
-    // Only re-initialize content and effective date when switching to a different document master
+    // Only re-initialize when switching to a different document master
     if (lastLoadedDocIdRef.current === selectedDocId) {
       return;
     }
     lastLoadedDocIdRef.current = selectedDocId;
 
+    // Ensure the Document Content / Upload File section comes completely empty for the new version
+    setRawContent('');
+    setFileName('');
+    setFileDataUrl('');
+    setMimeType('');
+    setUploadStatus('');
+
+    // Default effective date for this new revision to today's date (or rejected draft's date if future)
+    const todayStr = new Date().toISOString().split('T')[0];
+    if (rejectedVersion?.effectiveFrom && rejectedVersion.effectiveFrom >= todayStr) {
+      setEffectiveFrom(rejectedVersion.effectiveFrom);
+    } else {
+      setEffectiveFrom(todayStr);
+    }
+
+    if (rejectedVersion?.reviewerComments) {
+      setChangeSummary(`Addressed reviewer feedback on v${rejectedVersion.versionNumber}: ${rejectedVersion.reviewerComments.slice(0, 100)}`);
+    } else {
+      setChangeSummary('');
+    }
+  }, [selectedDocId, rejectedVersion]);
+
+  // Optional helper for the user to explicitly copy previous baseline content if desired
+  const handleLoadBaselineContent = () => {
     const sourceVer = rejectedVersion || baselineVersion;
     if (sourceVer) {
       const cleanContent = isRawPdfStream(sourceVer.rawContent)
         ? extractTextFromRawPdfStream(sourceVer.rawContent)
         : sourceVer.rawContent;
-      // Strip any previous header/footer tags and redundant policy metadata lines
       setRawContent(cleanContent ? extractCleanBody(cleanContent) : '');
-      setFileName(`${selectedMaster?.documentId}_revised_v${calculatedNextVersion}.md`);
-      setFileDataUrl('');
-      setMimeType('text/markdown');
-      setUploadStatus('');
-
-      // Default effective date for this new revision to today's date (or rejected draft's date if future)
-      const todayStr = new Date().toISOString().split('T')[0];
-      if (rejectedVersion?.effectiveFrom && rejectedVersion.effectiveFrom >= todayStr) {
-        setEffectiveFrom(rejectedVersion.effectiveFrom);
-      } else {
-        setEffectiveFrom(todayStr);
-      }
-
-      if (rejectedVersion?.reviewerComments) {
-        setChangeSummary(`Addressed reviewer feedback on v${rejectedVersion.versionNumber}: ${rejectedVersion.reviewerComments.slice(0, 100)}`);
-      } else {
-        setChangeSummary('');
-      }
+      setUploadStatus(`Loaded baseline text from v${sourceVer.versionNumber}`);
+      setError('');
     }
-  }, [selectedDocId, rejectedVersion, baselineVersion, selectedMaster]);
+  };
 
-  // Keep default file name updated when revision magnitude changes without wiping user inputs
-  useEffect(() => {
-    if (!fileDataUrl && selectedMaster && calculatedNextVersion) {
-      setFileName(`${selectedMaster.documentId}_revised_v${calculatedNextVersion}.md`);
-    }
-  }, [calculatedNextVersion, selectedMaster, fileDataUrl]);
+  const handleClearContent = () => {
+    setRawContent('');
+    setFileName('');
+    setFileDataUrl('');
+    setMimeType('');
+    setUploadStatus('');
+  };
 
   // Quick Revision Mutator for demo testing
   const applyQuickRevisionExample = (kind: 'broadband' | 'parental' | 'remoteDays') => {
@@ -569,21 +578,48 @@ export const CreateVersionModal: React.FC<CreateVersionModalProps> = ({
 
           {/* REVISED CONTENT EDITOR / UPLOAD */}
           <div className="border border-slate-200 rounded-2xl p-4 bg-slate-50/50">
-            <div className="flex items-center justify-between mb-2">
-              <label className="block text-xs font-bold text-slate-900 uppercase tracking-wider">
-                Revised Document Content (Loaded from Baseline v{baselineVersionNumber}) <span className="text-[#FA7014]">*</span>
+            <div className="flex items-center justify-between mb-2 flex-wrap gap-2">
+              <label className="block text-xs font-bold text-slate-900 uppercase tracking-wider" htmlFor="textarea-revised-content">
+                Document Content / File (PDF, DOCX) <span className="text-[#FA7014]">*</span>
               </label>
 
-              <label className="cursor-pointer inline-flex items-center space-x-1.5 text-xs font-semibold text-slate-700 hover:text-slate-900 bg-white border border-slate-200 px-3 py-1.5 rounded-xl shadow-xs hover:bg-slate-50 transition-colors">
-                <UploadCloud className="w-3.5 h-3.5 text-[#FA7014]" />
-                <span>Upload Revised File</span>
-                <input
-                  type="file"
-                  accept=".pdf,.docx"
-                  onChange={handleFileUpload}
-                  className="hidden"
-                />
-              </label>
+              <div className="flex items-center space-x-2">
+                {baselineVersion && !rawContent && (
+                  <button
+                    type="button"
+                    onClick={handleLoadBaselineContent}
+                    className="inline-flex items-center space-x-1.5 text-xs font-medium text-slate-600 hover:text-slate-900 bg-white border border-slate-200 px-2.5 py-1.5 rounded-xl shadow-2xs hover:bg-slate-50 transition-colors cursor-pointer"
+                    title={`Load previous text from baseline v${baselineVersionNumber}`}
+                  >
+                    <Copy className="w-3.5 h-3.5 text-slate-400" />
+                    <span className="hidden sm:inline">Load v{baselineVersionNumber} Baseline Text</span>
+                    <span className="sm:hidden">Load v{baselineVersionNumber}</span>
+                  </button>
+                )}
+
+                {(rawContent || fileName) && (
+                  <button
+                    type="button"
+                    onClick={handleClearContent}
+                    className="inline-flex items-center space-x-1 text-xs font-medium text-slate-500 hover:text-rose-600 bg-white border border-slate-200 px-2.5 py-1.5 rounded-xl shadow-2xs hover:bg-rose-50 transition-colors cursor-pointer"
+                    title="Clear content and uploaded file"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                    <span>Clear</span>
+                  </button>
+                )}
+
+                <label className="cursor-pointer inline-flex items-center space-x-1.5 text-xs font-semibold text-slate-700 hover:text-slate-900 bg-white border border-slate-200 px-3 py-1.5 rounded-xl shadow-xs hover:bg-slate-50 transition-colors">
+                  <UploadCloud className="w-3.5 h-3.5 text-[#FA7014]" />
+                  <span>Upload File</span>
+                  <input
+                    type="file"
+                    accept=".pdf,.docx"
+                    onChange={handleFileUpload}
+                    className="hidden"
+                  />
+                </label>
+              </div>
             </div>
 
             {parsingFile && (
@@ -593,12 +629,12 @@ export const CreateVersionModal: React.FC<CreateVersionModalProps> = ({
               </div>
             )}
 
-            {fileName && !parsingFile && uploadStatus && (
+            {fileName && !parsingFile && (
               <div className="text-xs text-slate-800 mb-2 font-mono bg-white p-2.5 rounded-xl border border-slate-200 flex items-center justify-between">
                 <span className="truncate max-w-[70%]">Selected File: {fileName}</span>
                 <span className="text-[11px] text-[#FA7014] font-sans font-semibold flex items-center space-x-1">
                   <CheckCircle2 className="w-3.5 h-3.5" />
-                  <span>{uploadStatus}</span>
+                  <span>{uploadStatus || 'File Ready'}</span>
                 </span>
               </div>
             )}
@@ -608,7 +644,7 @@ export const CreateVersionModal: React.FC<CreateVersionModalProps> = ({
               value={rawContent}
               onChange={(e) => setRawContent(e.target.value)}
               rows={10}
-              placeholder="Edit or paste revised Markdown / text here..."
+              placeholder="Upload a PDF / DOCX file above, or type/paste new revision text here..."
               className="w-full text-xs font-mono p-3 bg-white border border-slate-200 text-slate-900 rounded-xl focus:outline-hidden focus:ring-2 focus:ring-[#FA7014] leading-relaxed placeholder:text-slate-400"
               required
             />

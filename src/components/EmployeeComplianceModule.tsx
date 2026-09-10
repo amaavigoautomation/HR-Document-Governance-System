@@ -125,12 +125,13 @@ export const EmployeeComplianceModule: React.FC<EmployeeComplianceModuleProps> =
           versions.filter((v) => v.documentMasterId === doc.id && v.status === VersionStatus.PUBLISHED).pop();
         const activeVerNum = activeVer ? activeVer.versionNumber : doc.currentPublishedVersionNumber || '1.0';
 
-        // Check if there is an existing acknowledged record for this specific document
+        // Check if there is an existing acknowledged record for this specific active version
         const existingAck = acknowledgements.find(
           (a) =>
             a.documentId === doc.documentId &&
             ((a.employeeId && empIdentifiers.includes(a.employeeId.toLowerCase())) ||
              (a.employeeEmail && empIdentifiers.includes(a.employeeEmail.toLowerCase()))) &&
+            (a.versionNumber === activeVerNum || (activeVer && a.documentVersionId === activeVer.id)) &&
             a.status === 'ACKNOWLEDGED'
         );
 
@@ -142,12 +143,14 @@ export const EmployeeComplianceModule: React.FC<EmployeeComplianceModuleProps> =
           };
         }
 
-        // Check if there is an existing pending record in database
+        // Check if there is an existing pending record in database for this specific active version
         const existingPending = acknowledgements.find(
           (a) =>
             a.documentId === doc.documentId &&
             ((a.employeeId && empIdentifiers.includes(a.employeeId.toLowerCase())) ||
-             (a.employeeEmail && empIdentifiers.includes(a.employeeEmail.toLowerCase())))
+             (a.employeeEmail && empIdentifiers.includes(a.employeeEmail.toLowerCase()))) &&
+            (a.versionNumber === activeVerNum || (activeVer && a.documentVersionId === activeVer.id)) &&
+            a.status === 'PENDING'
         );
 
         if (existingPending) {
@@ -159,13 +162,18 @@ export const EmployeeComplianceModule: React.FC<EmployeeComplianceModuleProps> =
           };
         }
 
+        const cleanEmpId = (emp.empId || emp.id || emp.loginId || emp.email || 'emp').toLowerCase().replace(/[^a-z0-9_-]/g, '_');
+        const cleanDocId = doc.documentId.toLowerCase().replace(/[^a-z0-9_-]/g, '_');
+        const cleanVer = activeVerNum.replace(/\./g, '_');
+        const deterministicId = `ack_${cleanDocId}_v${cleanVer}_${cleanEmpId}`;
+
         return {
-          id: `ack-synth-${emp.id}-${doc.id}`,
+          id: deterministicId,
           documentId: doc.documentId,
           documentTitle: doc.title,
           versionNumber: activeVerNum,
           documentVersionId: activeVer ? activeVer.id : '',
-          employeeId: emp.id,
+          employeeId: emp.empId || emp.id,
           employeeName: emp.name,
           employeeEmail: emp.email,
           departmentName: emp.departmentName,
@@ -205,6 +213,7 @@ export const EmployeeComplianceModule: React.FC<EmployeeComplianceModuleProps> =
             a.documentId === doc.documentId &&
             ((a.employeeId && empIdentifiers.includes(a.employeeId.toLowerCase())) ||
              (a.employeeEmail && empIdentifiers.includes(a.employeeEmail.toLowerCase()))) &&
+            (a.versionNumber === activeVerNum || (activeVer && a.documentVersionId === activeVer.id)) &&
             a.status === 'ACKNOWLEDGED'
         );
 
@@ -220,7 +229,9 @@ export const EmployeeComplianceModule: React.FC<EmployeeComplianceModuleProps> =
           (a) =>
             a.documentId === doc.documentId &&
             ((a.employeeId && empIdentifiers.includes(a.employeeId.toLowerCase())) ||
-             (a.employeeEmail && empIdentifiers.includes(a.employeeEmail.toLowerCase())))
+             (a.employeeEmail && empIdentifiers.includes(a.employeeEmail.toLowerCase()))) &&
+            (a.versionNumber === activeVerNum || (activeVer && a.documentVersionId === activeVer.id)) &&
+            a.status === 'PENDING'
         );
 
         if (existingPending) {
@@ -232,13 +243,18 @@ export const EmployeeComplianceModule: React.FC<EmployeeComplianceModuleProps> =
           };
         }
 
+        const cleanEmpId = (emp.empId || emp.id || emp.loginId || emp.email || 'emp').toLowerCase().replace(/[^a-z0-9_-]/g, '_');
+        const cleanDocId = doc.documentId.toLowerCase().replace(/[^a-z0-9_-]/g, '_');
+        const cleanVer = activeVerNum.replace(/\./g, '_');
+        const deterministicId = `ack_${cleanDocId}_v${cleanVer}_${cleanEmpId}`;
+
         return {
-          id: `ack-synth-doc-${emp.id}-${doc.id}`,
+          id: deterministicId,
           documentId: doc.documentId,
           documentTitle: doc.title,
           versionNumber: activeVerNum,
           documentVersionId: activeVer ? activeVer.id : '',
-          employeeId: emp.id,
+          employeeId: emp.empId || emp.id,
           employeeName: emp.name,
           employeeEmail: emp.email,
           departmentName: emp.departmentName,
@@ -331,7 +347,7 @@ export const EmployeeComplianceModule: React.FC<EmployeeComplianceModuleProps> =
     setActionLoadingId(ack.id);
     setFeedbackMessage(null);
     try {
-      const res = await governanceEngine.sendComplianceReminder(ack.id, currentUser);
+      const res = await governanceEngine.sendComplianceReminder(ack, currentUser);
       refreshAcks();
       setFeedbackMessage({
         type: res.success ? 'success' : 'error',
@@ -372,7 +388,7 @@ export const EmployeeComplianceModule: React.FC<EmployeeComplianceModuleProps> =
   const handleConfirmManualSignOff = () => {
     if (!manualSignOffAck) return;
     try {
-      governanceEngine.recordManualSignOff(manualSignOffAck.id, manualSignOffNotes, currentUser);
+      governanceEngine.recordManualSignOff(manualSignOffAck, manualSignOffNotes, currentUser);
       refreshAcks();
       setFeedbackMessage({
         type: 'success',
@@ -717,6 +733,14 @@ export const EmployeeComplianceModule: React.FC<EmployeeComplianceModuleProps> =
                           {records.map((ack) => {
                           const isAcked = ack.status === 'ACKNOWLEDGED';
                           const matchingVer = versions.find((v) => v.id === ack.documentVersionId);
+                          const prevAck = !isAcked ? acknowledgements.find(
+                            (a) =>
+                              a.documentId === ack.documentId &&
+                              ((a.employeeId && a.employeeId.toLowerCase() === (ack.employeeId || '').toLowerCase()) ||
+                               (a.employeeEmail && a.employeeEmail.toLowerCase() === (ack.employeeEmail || '').toLowerCase())) &&
+                              a.status === 'ACKNOWLEDGED' &&
+                              a.versionNumber !== ack.versionNumber
+                          ) : null;
 
                           return (
                             <div
@@ -725,12 +749,17 @@ export const EmployeeComplianceModule: React.FC<EmployeeComplianceModuleProps> =
                               className="p-4 flex flex-col md:flex-row md:items-center md:justify-between gap-3 hover:bg-slate-50/80 transition-colors"
                             >
                               <div className="space-y-1">
-                                <div className="flex items-center space-x-2 flex-wrap">
+                                <div className="flex items-center space-x-2 flex-wrap gap-y-1">
                                   <span className="font-mono text-xs text-slate-900 font-bold bg-slate-100 px-2 py-0.5 rounded border border-slate-200">
                                     {ack.documentId}
                                   </span>
                                   <span className="text-sm font-semibold text-slate-900">{ack.documentTitle}</span>
-                                  <span className="text-xs text-slate-500 font-mono">v{ack.versionNumber}</span>
+                                  <span className="text-xs text-slate-600 font-mono bg-slate-100 px-1.5 py-0.5 rounded">v{ack.versionNumber}</span>
+                                  {prevAck && (
+                                    <span className="text-[11px] font-semibold bg-amber-50 text-amber-800 border border-amber-200 px-2 py-0.5 rounded-full inline-flex items-center space-x-1">
+                                      <span>Revised Document (v{prevAck.versionNumber} signed on {formatISTDate(prevAck.acknowledgedAt || '')})</span>
+                                    </span>
+                                  )}
                                 </div>
                                 
                                 <div className="flex items-center space-x-3 text-xs text-slate-500">
@@ -744,7 +773,11 @@ export const EmployeeComplianceModule: React.FC<EmployeeComplianceModuleProps> =
                                   ) : (
                                     <span className="text-[#FA7014] flex items-center space-x-1 font-medium">
                                       <Clock className="w-3.5 h-3.5" />
-                                      <span>Action Required • Pending electronic acknowledgement</span>
+                                      <span>
+                                        {prevAck
+                                          ? `Action Required • Revision v${ack.versionNumber} pending re-acknowledgement`
+                                          : 'Action Required • Pending electronic acknowledgement'}
+                                      </span>
                                     </span>
                                   )}
 
@@ -921,6 +954,15 @@ export const EmployeeComplianceModule: React.FC<EmployeeComplianceModuleProps> =
                       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
                         {records.map((ack) => {
                           const isAcked = ack.status === 'ACKNOWLEDGED';
+                          const prevAck = !isAcked ? acknowledgements.find(
+                            (a) =>
+                              a.documentId === ack.documentId &&
+                              ((a.employeeId && a.employeeId.toLowerCase() === (ack.employeeId || '').toLowerCase()) ||
+                               (a.employeeEmail && a.employeeEmail.toLowerCase() === (ack.employeeEmail || '').toLowerCase())) &&
+                              a.status === 'ACKNOWLEDGED' &&
+                              a.versionNumber !== ack.versionNumber
+                          ) : null;
+
                           return (
                             <div
                               key={ack.id}
@@ -931,22 +973,25 @@ export const EmployeeComplianceModule: React.FC<EmployeeComplianceModuleProps> =
                                 <p className="text-[11px] text-slate-500 truncate">{ack.employeeEmail}</p>
                                 <p className="text-[10px] text-slate-400 mt-0.5">
                                   {isAcked
-                                    ? `Signed: ${formatISTDate(ack.acknowledgedAt || '')}`
-                                    : 'Awaiting Sign-off'}
+                                    ? `Signed v${ack.versionNumber}: ${formatISTDate(ack.acknowledgedAt || '')}`
+                                    : prevAck
+                                    ? `Signed v${prevAck.versionNumber} • Needs v${ack.versionNumber} Sign-off`
+                                    : `Awaiting v${ack.versionNumber} Sign-off`}
                                 </p>
                               </div>
 
                               <div className="shrink-0">
                                 {isAcked ? (
-                                  <span className="p-1 rounded-full bg-slate-100 text-[#FA7014] inline-block border border-slate-200">
+                                  <span className="p-1 rounded-full bg-slate-100 text-[#FA7014] inline-block border border-slate-200" title={`Signed v${ack.versionNumber}`}>
                                     <CheckCircle2 className="w-4 h-4" />
                                   </span>
                                 ) : (
                                   <button
+                                    id={`btn-remind-emp-${ack.id}`}
                                     onClick={() => handleSendReminder(ack)}
                                     disabled={actionLoadingId === ack.id}
                                     className="p-1.5 rounded-lg bg-[#FA7014]/10 hover:bg-[#FA7014]/20 text-[#FA7014] text-xs border border-[#FA7014]/30 transition-colors"
-                                    title="Send Email Reminder"
+                                    title={`Send Email Reminder for v${ack.versionNumber}`}
                                   >
                                     <Send className="w-3.5 h-3.5" />
                                   </button>

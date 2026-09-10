@@ -104,6 +104,7 @@ export interface DocumentMaster {
   description?: string;
   createdById: string;
   createdByName: string;
+  createdByTitle?: string;
   createdAt: string;
   updatedAt: string;
   active: boolean;
@@ -123,10 +124,12 @@ export interface DocumentVersion {
   storageKey: string;
   storagePath: string; // Deterministic path e.g. /HR Documents/Policies/AMA-HR-POL-001/v1.0/
   fileUrl: string;
+  originalFileUrl?: string;
   contentHash: string; // SHA-256
   rawContent: string; // Normalized plain text / markdown
   createdById: string;
   createdByName: string;
+  createdByTitle?: string;
   createdAt: string;
   reviewedById?: string;
   reviewedByName?: string;

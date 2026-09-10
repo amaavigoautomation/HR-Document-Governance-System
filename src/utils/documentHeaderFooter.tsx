@@ -394,7 +394,7 @@ export const DocumentHeaderTable: React.FC<{
 
   return (
     <div
-      className={`w-full border-2 border-slate-900 bg-white text-slate-900 overflow-hidden font-sans my-4 shadow-2xs ${className}`}
+      className={`w-full border-2 border-slate-900 bg-white text-slate-900 overflow-hidden font-sans mt-2 mb-6 sm:mb-8 shadow-2xs ${className}`}
     >
       <div className="grid grid-cols-12 text-xs divide-x divide-slate-900 items-stretch">
         {/* Col 1: Brand Logo */}
@@ -402,8 +402,8 @@ export const DocumentHeaderTable: React.FC<{
           <AmaavigoLogo size="sm" variant="full" height={36} showTagline={true} align="center" />
         </div>
 
-        {/* Col 2: Document Name */}
-        <div className="col-span-4 sm:col-span-4 p-3 sm:p-4 flex flex-col justify-center bg-white">
+        {/* Col 2: Document Name - Full display with generous column width */}
+        <div className="col-span-5 sm:col-span-5 p-3 sm:p-4 flex flex-col justify-center bg-white">
           <span className="text-[11px] sm:text-xs font-bold text-slate-900 block uppercase tracking-wide">
             Document Name:
           </span>
@@ -414,17 +414,17 @@ export const DocumentHeaderTable: React.FC<{
 
         {/* Col 3: Version */}
         <div className="col-span-2 sm:col-span-2 p-3 sm:p-4 flex items-center justify-center text-center bg-white">
-          <span className="text-xs sm:text-sm font-bold text-slate-900">
+          <span className="text-xs sm:text-sm font-bold text-slate-900 whitespace-nowrap">
             Version: {ver}
           </span>
         </div>
 
         {/* Col 4: Effective Date */}
-        <div className="col-span-3 sm:col-span-3 p-3 sm:p-4 flex flex-col justify-center bg-white">
-          <span className="text-[11px] sm:text-xs font-bold text-slate-900 block uppercase tracking-wide">
+        <div className="col-span-2 sm:col-span-2 p-3 sm:p-4 flex flex-col justify-center bg-white">
+          <span className="text-[11px] sm:text-xs font-bold text-slate-900 block uppercase tracking-wide whitespace-nowrap">
             Effective date :
           </span>
-          <span className="text-xs sm:text-sm font-semibold text-slate-800 mt-1 font-mono">
+          <span className="text-xs sm:text-sm font-semibold text-slate-800 mt-1 font-mono whitespace-nowrap">
             {effective}
           </span>
         </div>
