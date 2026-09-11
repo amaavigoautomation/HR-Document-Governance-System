@@ -39,6 +39,7 @@ export enum VersionType {
 export enum ConfidentialityLevel {
   PUBLIC = 'Public (All Employees)',
   INTERNAL = 'Internal Company',
+  SPECIFIC_DEPARTMENT = 'Specific Department',
 }
 
 export enum AuditAction {

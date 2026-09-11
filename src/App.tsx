@@ -1,13 +1,14 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   AcknowledgementRecord,
+  ConfidentialityLevel,
   DocumentMaster,
   DocumentVersion,
   User,
   UserRole,
   VersionStatus,
 } from './types';
-import { governanceEngine } from './services/governance';
+import { governanceEngine, isEmployeeInDepartment } from './services/governance';
 import { auditService } from './services/audit';
 import { defaultEmailProvider } from './services/email';
 import { firestoreService } from './services/firestoreService';
@@ -121,6 +122,66 @@ export default function App() {
   const [detailDocument, setDetailDocument] = useState<DocumentMaster | null>(null);
   const [isNotifDrawerOpen, setIsNotifDrawerOpen] = useState(false);
   const [readerVersion, setReaderVersion] = useState<DocumentVersion | null>(null);
+  const [employeeTab, setEmployeeTab] = useState<'acknowledgements' | 'all-documents'>('acknowledgements');
+
+  // Pending compliance documents count for logged in Employee
+  const employeePendingCount = useMemo(() => {
+    if (!currentUser || currentUser.role !== UserRole.EMPLOYEE) return 0;
+    const userIdentifiers = [currentUser.id, currentUser.empId, currentUser.loginId, currentUser.email]
+      .filter(Boolean)
+      .map((s) => s!.toLowerCase());
+
+    const matchedUser =
+      governanceEngine.findUserByIdentifiers(currentUser.id) ||
+      governanceEngine.findUserByIdentifiers(currentUser.empId) ||
+      governanceEngine.findUserByIdentifiers(currentUser.email);
+    if (matchedUser) {
+      [matchedUser.id, matchedUser.empId, matchedUser.loginId, matchedUser.email].forEach((id) => {
+        if (id && !userIdentifiers.includes(id.toLowerCase())) {
+          userIdentifiers.push(id.toLowerCase());
+        }
+      });
+    }
+
+    const effectiveAcks = acknowledgements.length > 0 ? acknowledgements : governanceEngine.getAcknowledgements();
+    const userAcks = effectiveAcks.filter(
+      (a) =>
+        (a.employeeId && userIdentifiers.includes(a.employeeId.toLowerCase())) ||
+        (a.employeeEmail && userIdentifiers.includes(a.employeeEmail.toLowerCase()))
+    );
+
+    const publishedDocs = documents.filter((d) => {
+      if (!d.active || d.currentStatus !== VersionStatus.PUBLISHED || !d.acknowledgementRequired) return false;
+      if (d.confidentiality === ConfidentialityLevel.PUBLIC) return true;
+      if (d.confidentiality === ConfidentialityLevel.SPECIFIC_DEPARTMENT) {
+        return isEmployeeInDepartment(currentUser, d.departmentName, d.departmentId);
+      }
+      return false;
+    });
+
+    return publishedDocs.filter((doc) => {
+      const verNumber = doc.currentPublishedVersionNumber || '1.0';
+      const ack = userAcks.find(
+        (a) =>
+          a.documentId.toLowerCase() === doc.documentId.toLowerCase() &&
+          a.versionNumber === verNumber &&
+          a.status === 'ACKNOWLEDGED'
+      );
+      return !ack;
+    }).length;
+  }, [currentUser, documents, acknowledgements]);
+
+  const employeeTotalDocsCount = useMemo(() => {
+    if (!currentUser || currentUser.role !== UserRole.EMPLOYEE) return 0;
+    return documents.filter((d) => {
+      if (!d.active || d.currentStatus !== VersionStatus.PUBLISHED) return false;
+      if (d.confidentiality === ConfidentialityLevel.PUBLIC) return true;
+      if (d.confidentiality === ConfidentialityLevel.SPECIFIC_DEPARTMENT) {
+        return isEmployeeInDepartment(currentUser, d.departmentName, d.departmentId);
+      }
+      return false;
+    }).length;
+  }, [currentUser, documents]);
 
   // Sync data from governance engine
   const refreshData = () => {
@@ -402,6 +463,10 @@ export default function App() {
         <EmployeeHeader
           currentUser={currentUser}
           onLogout={handleLogout}
+          activeTab={employeeTab}
+          onTabChange={setEmployeeTab}
+          pendingCount={employeePendingCount}
+          totalDocsCount={employeeTotalDocsCount}
         />
       )}
 
@@ -475,6 +540,8 @@ export default function App() {
             versions={versions}
             acknowledgements={acknowledgements}
             onOpenDocumentView={(ver) => setReaderVersion(ver)}
+            activeTab={employeeTab}
+            onTabChange={setEmployeeTab}
           />
         )}
       </main>

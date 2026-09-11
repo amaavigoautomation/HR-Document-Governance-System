@@ -14,7 +14,7 @@ export class AuditService {
 
   private initFromStorage(): void {
     try {
-      if (typeof window !== 'undefined') {
+      if (typeof window !== 'undefined' && typeof localStorage !== 'undefined') {
         const saved = localStorage.getItem(AUDIT_STORAGE_KEY);
         if (saved) {
           const parsed = JSON.parse(saved);
@@ -35,7 +35,7 @@ export class AuditService {
 
   private persistToLocalStorage(): void {
     try {
-      if (typeof window !== 'undefined') {
+      if (typeof window !== 'undefined' && typeof localStorage !== 'undefined') {
         localStorage.setItem(AUDIT_STORAGE_KEY, JSON.stringify(this.logs));
       }
     } catch (e) {

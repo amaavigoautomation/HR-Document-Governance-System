@@ -9,6 +9,8 @@ import {
   Clock,
   Layers,
   AlertCircle,
+  Lock,
+  Users,
 } from 'lucide-react';
 import { ConfidentialityLevel, DocumentCategory, User } from '../types';
 import { governanceEngine } from '../services/governance';
@@ -28,8 +30,8 @@ export const CreateDocumentModal: React.FC<CreateDocumentModalProps> = ({
 }) => {
   const [title, setTitle] = useState('');
   const [category, setCategory] = useState<DocumentCategory>(DocumentCategory.POLICY);
-  const [department, setDepartment] = useState('Human Resources');
-  const [confidentiality, setConfidentiality] = useState<ConfidentialityLevel | ''>('');
+  const [department, setDepartment] = useState('All Department');
+  const [confidentiality, setConfidentiality] = useState<ConfidentialityLevel | ''>(ConfidentialityLevel.PUBLIC);
   const [acknowledgementRequired, setAcknowledgementRequired] = useState(true);
   const [effectiveFrom, setEffectiveFrom] = useState('');
   const [reviewDueDate, setReviewDueDate] = useState(
@@ -48,12 +50,50 @@ export const CreateDocumentModal: React.FC<CreateDocumentModalProps> = ({
   // Live preview of generated ID
   const previewDocId = governanceEngine.generateNextDocumentId(category);
 
+  // Synchronized Confidentiality and Department Handler
+  const handleConfidentialityChange = (lvl: ConfidentialityLevel) => {
+    setConfidentiality(lvl);
+    if (lvl === ConfidentialityLevel.PUBLIC) {
+      setDepartment('All Department');
+      setAcknowledgementRequired(true);
+    } else if (lvl === ConfidentialityLevel.SPECIFIC_DEPARTMENT) {
+      if (department === 'All Department') {
+        setDepartment('Content');
+      }
+      setAcknowledgementRequired(true);
+    } else if (lvl === ConfidentialityLevel.INTERNAL) {
+      setDepartment('All Department');
+      setAcknowledgementRequired(false);
+    }
+  };
+
+  const handleDepartmentChange = (dept: string) => {
+    setDepartment(dept);
+    if (dept === 'All Department') {
+      setConfidentiality(ConfidentialityLevel.PUBLIC);
+      setAcknowledgementRequired(true);
+    } else {
+      if (
+        confidentiality === ConfidentialityLevel.PUBLIC ||
+        confidentiality === ConfidentialityLevel.INTERNAL ||
+        !confidentiality
+      ) {
+        setConfidentiality(ConfidentialityLevel.SPECIFIC_DEPARTMENT);
+      }
+    }
+  };
+
+  const isDepartmentLocked =
+    confidentiality === ConfidentialityLevel.PUBLIC ||
+    confidentiality === ConfidentialityLevel.INTERNAL;
+
   // Quick Template Injector for demo & testing
   const loadTemplate = (type: 'remote' | 'conduct' | 'wellness') => {
     setFileDataUrl('');
     setMimeType('text/markdown');
     setUploadStatus('');
     setConfidentiality(ConfidentialityLevel.PUBLIC);
+    setDepartment('All Department');
     setEffectiveFrom(new Date().toISOString().split('T')[0]);
     if (type === 'remote') {
       setTitle('Hybrid Workplace & Remote Work Agreement');
@@ -147,6 +187,10 @@ Employees should notify their immediate manager via the HR self-service portal a
     }
     if (!confidentiality) {
       setError('Confidentiality level is mandatory. Please select a confidentiality level.');
+      return;
+    }
+    if (confidentiality === ConfidentialityLevel.SPECIFIC_DEPARTMENT && department === 'All Department') {
+      setError('Please select a specific department (e.g., Content, Human Resources, Operations) when Confidentiality is set to "Specific Department".');
       return;
     }
     if (!effectiveFrom || !effectiveFrom.trim()) {
@@ -276,21 +320,65 @@ Employees should notify their immediate manager via the HR self-service portal a
             </div>
 
             <div>
-              <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5" htmlFor="select-document-department">
-                Department <span className="text-[#FA7014]">*</span>
-              </label>
+              <div className="flex items-center justify-between mb-1.5">
+                <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider" htmlFor="select-document-department">
+                  Department <span className="text-[#FA7014]">*</span>
+                </label>
+                {isDepartmentLocked && (
+                  <span className="inline-flex items-center text-[10px] font-semibold text-slate-500 bg-slate-200/80 px-2 py-0.5 rounded-full">
+                    <Lock className="w-2.5 h-2.5 mr-1 text-slate-500" />
+                    Auto-selected & Locked
+                  </span>
+                )}
+              </div>
               <select
                 id="select-document-department"
                 value={department}
-                onChange={(e) => setDepartment(e.target.value)}
-                className="w-full text-sm p-2.5 bg-slate-50 border border-slate-200 text-slate-900 rounded-xl focus:outline-hidden focus:ring-2 focus:ring-[#FA7014] focus:bg-white cursor-pointer"
+                disabled={isDepartmentLocked}
+                onChange={(e) => handleDepartmentChange(e.target.value)}
+                className={`w-full text-sm p-2.5 border rounded-xl focus:outline-hidden focus:ring-2 focus:ring-[#FA7014] transition-all ${
+                  isDepartmentLocked
+                    ? 'bg-slate-100/90 border-slate-200 text-slate-600 cursor-not-allowed font-medium'
+                    : 'bg-slate-50 border-slate-200 text-slate-900 focus:bg-white cursor-pointer'
+                }`}
               >
-                <option value="Human Resources">Human Resources</option>
-                <option value="Operations">Operations</option>
-                <option value="Compliance & Legal">Compliance & Legal</option>
-                <option value="Engineering & IT">Engineering & IT</option>
-                <option value="Finance">Finance</option>
+                <option value="All Department" className="bg-white text-slate-900 py-1 font-semibold">
+                  All Department
+                </option>
+                <option value="Content" className="bg-white text-slate-900 py-1 font-semibold">
+                  Content
+                </option>
+                <option value="Human Resources" className="bg-white text-slate-900 py-1">
+                  Human Resources
+                </option>
+                <option value="Operations" className="bg-white text-slate-900 py-1">
+                  Operations
+                </option>
+                <option value="Compliance & Legal" className="bg-white text-slate-900 py-1">
+                  Compliance & Legal
+                </option>
+                <option value="Engineering & IT" className="bg-white text-slate-900 py-1">
+                  Engineering & IT
+                </option>
+                <option value="Finance" className="bg-white text-slate-900 py-1">
+                  Finance
+                </option>
               </select>
+              {isDepartmentLocked ? (
+                <p className="text-[11px] text-slate-500 mt-1 flex items-center">
+                  <Lock className="w-3 h-3 mr-1 text-slate-400 shrink-0" />
+                  {confidentiality === ConfidentialityLevel.INTERNAL ? (
+                    <span>Fixed to <strong>&nbsp;All Department&nbsp;</strong> for Internal Company documents. To assign a specific department, switch Confidentiality to "Specific Department".</span>
+                  ) : (
+                    <span>Fixed to <strong>&nbsp;All Department&nbsp;</strong> for Public policies. To assign a specific department, switch Confidentiality to "Specific Department".</span>
+                  )}
+                </p>
+              ) : confidentiality === ConfidentialityLevel.SPECIFIC_DEPARTMENT ? (
+                <p className="text-[11px] text-amber-700 mt-1 flex items-center bg-amber-50/80 p-1.5 rounded-lg border border-amber-200/60">
+                  <Users className="w-3.5 h-3.5 mr-1.5 text-amber-600 shrink-0" />
+                  <span>Only employees in <strong>{department}</strong> will be able to see this document and receive publication/revision emails.</span>
+                </p>
+              ) : null}
             </div>
           </div>
 
@@ -303,15 +391,7 @@ Employees should notify their immediate manager via the HR self-service portal a
               <select
                 id="select-document-confidentiality"
                 value={confidentiality}
-                onChange={(e) => {
-                  const newLvl = e.target.value as ConfidentialityLevel;
-                  setConfidentiality(newLvl);
-                  if (newLvl === ConfidentialityLevel.INTERNAL) {
-                    setAcknowledgementRequired(false);
-                  } else {
-                    setAcknowledgementRequired(true);
-                  }
-                }}
+                onChange={(e) => handleConfidentialityChange(e.target.value as ConfidentialityLevel)}
                 className={`w-full text-sm p-2.5 bg-slate-50 border rounded-xl focus:outline-hidden focus:ring-2 focus:ring-[#FA7014] focus:bg-white cursor-pointer ${
                   !confidentiality ? 'border-slate-300 text-slate-500' : 'border-slate-200 text-slate-900'
                 }`}
@@ -320,6 +400,9 @@ Employees should notify their immediate manager via the HR self-service portal a
                 <option value="" disabled>-- Select Confidentiality Level (Mandatory) --</option>
                 <option value={ConfidentialityLevel.PUBLIC} className="bg-white text-slate-900 py-1">
                   Public (All Employees)
+                </option>
+                <option value={ConfidentialityLevel.SPECIFIC_DEPARTMENT} className="bg-white text-slate-900 py-1 font-semibold text-amber-700">
+                  Specific Department
                 </option>
                 <option value={ConfidentialityLevel.INTERNAL} className="bg-white text-slate-900 py-1">
                   Internal Company
@@ -350,7 +433,9 @@ Employees should notify their immediate manager via the HR self-service portal a
                   <p className="text-[11px] text-slate-500">
                     {confidentiality === ConfidentialityLevel.INTERNAL
                       ? 'Disabled (Internal documents do not require employee sign-off)'
-                      : 'Requires employees to sign/acknowledge upon publication'}
+                      : confidentiality === ConfidentialityLevel.SPECIFIC_DEPARTMENT
+                      ? `Requires ${department} employees to sign/acknowledge upon publication`
+                      : 'Requires all employees across the company to sign/acknowledge upon publication'}
                   </p>
                 </div>
               </label>

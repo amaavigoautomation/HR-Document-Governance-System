@@ -1,6 +1,7 @@
 import React from 'react';
 import {
   BookOpen,
+  FileText,
   LogOut,
   ShieldAlert,
 } from 'lucide-react';
@@ -10,11 +11,19 @@ import { AmaavigoLogo } from './AmaavigoLogo';
 interface EmployeeHeaderProps {
   currentUser: User;
   onLogout: () => void;
+  activeTab?: 'acknowledgements' | 'all-documents';
+  onTabChange?: (tab: 'acknowledgements' | 'all-documents') => void;
+  pendingCount?: number;
+  totalDocsCount?: number;
 }
 
 export const EmployeeHeader: React.FC<EmployeeHeaderProps> = ({
   currentUser,
   onLogout,
+  activeTab = 'acknowledgements',
+  onTabChange,
+  pendingCount = 0,
+  totalDocsCount = 0,
 }) => {
   const displayId = currentUser.empId || currentUser.loginId || currentUser.id || '';
   const displayDept = currentUser.departmentName || 'Operations';
@@ -42,15 +51,52 @@ export const EmployeeHeader: React.FC<EmployeeHeaderProps> = ({
             </div>
           </div>
 
-          {/* Employee-Specific Navigation Pill */}
+          {/* Employee Navigation Tabs: Policy & SOP Acknowledgements + All Documents */}
           <nav
             id="employee-navigation-bar"
-            className="hidden md:flex items-center space-x-1 bg-slate-100/90 p-1 rounded-xl border border-slate-200"
+            className="flex items-center space-x-1 bg-slate-100/90 p-1 rounded-xl border border-slate-200"
           >
-            <div className="px-3.5 py-1.5 rounded-lg text-xs font-bold bg-slate-900 text-white shadow-sm flex items-center space-x-1.5">
-              <BookOpen className="w-3.5 h-3.5 text-amber-400" />
-              <span>Policy & SOP Acknowledgements</span>
-            </div>
+            <button
+              id="header-nav-acknowledgements"
+              type="button"
+              onClick={() => onTabChange?.('acknowledgements')}
+              className={`px-2.5 sm:px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center space-x-1.5 cursor-pointer ${
+                activeTab === 'acknowledgements'
+                  ? 'bg-slate-900 text-white shadow-sm'
+                  : 'text-slate-600 hover:text-slate-900 hover:bg-white'
+              }`}
+            >
+              <BookOpen className={`w-3.5 h-3.5 ${activeTab === 'acknowledgements' ? 'text-amber-400' : 'text-slate-400'}`} />
+              <span><span className="hidden sm:inline">Policy & SOP </span>Acknowledgements</span>
+              {pendingCount > 0 ? (
+                <span className="ml-1 bg-amber-500 text-slate-950 text-[10px] px-1.5 py-0.5 rounded-full font-extrabold leading-none">
+                  {pendingCount}
+                </span>
+              ) : (
+                <span className="ml-1 bg-emerald-500/20 text-emerald-700 text-[10px] px-1.5 py-0.5 rounded-full font-bold leading-none">
+                  ✓
+                </span>
+              )}
+            </button>
+
+            <button
+              id="header-nav-all-documents"
+              type="button"
+              onClick={() => onTabChange?.('all-documents')}
+              className={`px-2.5 sm:px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center space-x-1.5 cursor-pointer ${
+                activeTab === 'all-documents'
+                  ? 'bg-slate-900 text-white shadow-sm'
+                  : 'text-slate-600 hover:text-slate-900 hover:bg-white'
+              }`}
+            >
+              <FileText className={`w-3.5 h-3.5 ${activeTab === 'all-documents' ? 'text-amber-400' : 'text-slate-400'}`} />
+              <span>All Documents</span>
+              <span className={`ml-1 text-[10px] px-1.5 py-0.5 rounded-full font-bold leading-none ${
+                activeTab === 'all-documents' ? 'bg-slate-800 text-slate-200' : 'bg-slate-200 text-slate-700'
+              }`}>
+                {totalDocsCount}
+              </span>
+            </button>
           </nav>
 
           {/* Right actions: Employee Profile & Logout */}

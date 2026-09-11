@@ -200,6 +200,23 @@ export const SEED_USERS: User[] = [
     createdAt: '2026-08-01T09:00:00Z',
     updatedAt: '2026-08-01T09:00:00Z',
   },
+  {
+    id: 'AM008',
+    loginId: 'AM008',
+    empId: 'AM008',
+    password: 'Content!123',
+    name: 'Chloe Zhang',
+    email: 'chloe.zhang@amaavigo.com',
+    role: UserRole.EMPLOYEE,
+    companyId: 'comp-01',
+    companyName: 'Amaavigo Global Inc.',
+    departmentId: 'dept-content',
+    departmentName: 'Content',
+    title: 'Content Lead & Editor',
+    active: true,
+    createdAt: '2026-08-01T09:00:00Z',
+    updatedAt: '2026-08-01T09:00:00Z',
+  },
 ];
 
 // Content for WFH Policy v1.0

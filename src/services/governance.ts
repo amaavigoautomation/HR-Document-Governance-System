@@ -21,6 +21,36 @@ import { firestoreService } from './firestoreService';
 import { appendApprovedHeaderAndFooter, formatDDMMYYYY, stripPolicyMetadataHeader, extractCleanBody } from '../utils/documentHeaderFooter';
 import { stampPdfWithHeaderFooter, stampDocxWithHeaderFooter, cleanDocxDataUrl, HeaderFooterMetadata } from '../utils/documentStamper';
 
+// Helper to verify if an employee belongs to a specific department or audience
+export function isEmployeeInDepartment(
+  employee: User | { departmentName?: string; departmentId?: string },
+  docDeptName?: string,
+  docDeptId?: string
+): boolean {
+  if (!docDeptName) return false;
+  const dNorm = docDeptName.trim().toLowerCase();
+  if (dNorm === 'all department' || dNorm === 'all departments') return true;
+
+  const empDeptName = (employee.departmentName || '').trim().toLowerCase();
+  const empDeptId = (employee.departmentId || '').trim().toLowerCase();
+  const dIdNorm = (docDeptId || '').trim().toLowerCase();
+
+  if (dNorm === empDeptName) return true;
+  if (dIdNorm && empDeptId && dIdNorm === empDeptId) return true;
+
+  // Department name keywords and partial matches
+  if (dNorm === 'content' && empDeptName.includes('content')) return true;
+  if (dNorm.includes('human resources') && (empDeptName.includes('human resources') || empDeptName.includes('hr'))) return true;
+  if (dNorm.includes('engineering') && empDeptName.includes('engineering')) return true;
+  if (dNorm.includes('finance') && empDeptName.includes('finance')) return true;
+  if (dNorm.includes('operations') && empDeptName.includes('operations')) return true;
+  if (dNorm.includes('compliance') && (empDeptName.includes('compliance') || empDeptName.includes('legal') || empDeptName.includes('governance'))) return true;
+  if (dNorm.includes('product') && empDeptName.includes('product')) return true;
+  if (dNorm.includes('sales') && empDeptName.includes('sales')) return true;
+
+  return false;
+}
+
 export class DocumentGovernanceEngine {
   private users: User[] = [];
   private documentMasters: DocumentMaster[] = [];
@@ -36,11 +66,13 @@ export class DocumentGovernanceEngine {
 
   private loadAcknowledgementsFromStorage(): void {
     try {
-      const stored = localStorage.getItem('ama_governance_acks');
-      if (stored) {
-        const parsed = JSON.parse(stored);
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          this.setAcknowledgements(parsed);
+      if (typeof window !== 'undefined' && typeof localStorage !== 'undefined') {
+        const stored = localStorage.getItem('ama_governance_acks');
+        if (stored) {
+          const parsed = JSON.parse(stored);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            this.setAcknowledgements(parsed);
+          }
         }
       }
     } catch (e) {
@@ -50,7 +82,9 @@ export class DocumentGovernanceEngine {
 
   public saveAcknowledgementsToStorage(): void {
     try {
-      localStorage.setItem('ama_governance_acks', JSON.stringify(this.acknowledgements));
+      if (typeof window !== 'undefined' && typeof localStorage !== 'undefined') {
+        localStorage.setItem('ama_governance_acks', JSON.stringify(this.acknowledgements));
+      }
     } catch (e) {
       console.warn('Could not save acks to storage', e);
     }
@@ -468,11 +502,15 @@ export class DocumentGovernanceEngine {
     };
   }
 
-  // Ensure every active employee has a pending acknowledgement for all active published public policies
+  // Ensure every active employee has a pending acknowledgement for all active published public & specific-department policies
   public ensurePendingAcknowledgementsForEmployees(): void {
     const activeEmployees = this.getEmployees();
-    const publishedPublicDocs = this.documentMasters.filter(
-      (d) => d.active && d.currentStatus === VersionStatus.PUBLISHED && d.confidentiality === ConfidentialityLevel.PUBLIC && d.acknowledgementRequired
+    const publishedDocs = this.documentMasters.filter(
+      (d) =>
+        d.active &&
+        d.currentStatus === VersionStatus.PUBLISHED &&
+        d.acknowledgementRequired &&
+        (d.confidentiality === ConfidentialityLevel.PUBLIC || d.confidentiality === ConfidentialityLevel.SPECIFIC_DEPARTMENT)
     );
 
     let createdCount = 0;
@@ -484,7 +522,14 @@ export class DocumentGovernanceEngine {
         .filter(Boolean)
         .map((s) => s!.toLowerCase());
 
-      for (const doc of publishedPublicDocs) {
+      for (const doc of publishedDocs) {
+        // If Specific Department, verify employee belongs to this department
+        if (doc.confidentiality === ConfidentialityLevel.SPECIFIC_DEPARTMENT) {
+          if (!isEmployeeInDepartment(emp, doc.departmentName, doc.departmentId)) {
+            continue;
+          }
+        }
+
         const activeVer = this.documentVersions.find((v) => v.id === doc.currentPublishedVersionId) ||
           this.documentVersions.filter((v) => v.documentMasterId === doc.id && v.status === VersionStatus.PUBLISHED).pop();
         const verNumber = activeVer?.versionNumber || doc.currentPublishedVersionNumber || '1.0';
@@ -524,6 +569,21 @@ export class DocumentGovernanceEngine {
         }
       }
     }
+
+    // Prune any pending (unacknowledged) records for employees that are not in the document's specific department
+    this.acknowledgements = this.acknowledgements.filter((ack) => {
+      if (ack.status === 'ACKNOWLEDGED') return true;
+      const doc = this.documentMasters.find((d) => d.documentId === ack.documentId);
+      if (!doc) return true;
+      if (doc.confidentiality === ConfidentialityLevel.SPECIFIC_DEPARTMENT) {
+        const emp = this.findUserByIdentifiers(ack.employeeId) || this.findUserByIdentifiers(ack.employeeEmail);
+        if (emp && !isEmployeeInDepartment(emp, doc.departmentName, doc.departmentId)) {
+          return false;
+        }
+      }
+      return true;
+    });
+
     if (createdCount > 0) {
       console.log(`[Governance] Initialized ${createdCount} pending compliance acknowledgements for active employees.`);
     }
@@ -1366,16 +1426,29 @@ export class DocumentGovernanceEngine {
       reason: `Version ${version.versionNumber} is now the operational live version for ${master.title}`,
     });
 
-    // 6. Automatically dispatch Employee Notifications for PUBLIC policies
-    if (master.confidentiality === ConfidentialityLevel.PUBLIC) {
+    // 6. Automatically dispatch Employee Notifications based on Confidentiality Level
+    if (master.confidentiality === ConfidentialityLevel.PUBLIC || master.confidentiality === ConfidentialityLevel.SPECIFIC_DEPARTMENT) {
+      const isSpecificDept = master.confidentiality === ConfidentialityLevel.SPECIFIC_DEPARTMENT;
+      const employeeAudience = isSpecificDept
+        ? this.getEmployees().filter((emp) => isEmployeeInDepartment(emp, master.departmentName, master.departmentId))
+        : this.getEmployees();
+
+      const deptPrefix = isSpecificDept ? `[${master.departmentName}] ` : '';
+
       if (master.acknowledgementRequired) {
         // MANDATORY ACKNOWLEDGEMENT BROADCAST
-        const emailSubject = `[Action Required] New HR Document Published — ${master.title}`;
-        const emailBody = `Dear Employee,\n\nAn official company document has been approved and published in the Amaavigo HR Governance system, and requires your mandatory compliance review and electronic sign-off:\n\n` +
+        const emailSubject = `[Action Required] ${deptPrefix}New Document Published — ${master.title}`;
+        const recipientSalutation = isSpecificDept ? `Dear ${master.departmentName} Team Member` : `Dear Employee`;
+        const scopeDesc = isSpecificDept
+          ? `An official company document specific to the ${master.departmentName} department has been approved and published in the Amaavigo HR Governance system, and requires your mandatory compliance review and electronic sign-off:`
+          : `An official company document has been approved and published in the Amaavigo HR Governance system, and requires your mandatory compliance review and electronic sign-off:`;
+
+        const emailBody = `${recipientSalutation},\n\n${scopeDesc}\n\n` +
           `• Document Title: ${master.title}\n` +
           `• Document ID: ${master.documentId}\n` +
           `• Category: ${master.category}\n` +
           `• Department: ${master.departmentName}\n` +
+          `• Confidentiality: ${master.confidentiality}\n` +
           `• Version: ${version.versionNumber}\n` +
           `• Effective Date: ${formatDDMMYYYY(version.effectiveFrom || nowIso)}\n` +
           `• Created By: ${version.createdByName || master.createdByName || 'HR Creator'}\n` +
@@ -1389,7 +1462,6 @@ export class DocumentGovernanceEngine {
           `Note: To ensure document security, confidentiality, and tamper-proof version control, documents are securely accessed directly inside the authenticated Employee Portal.\n\n` +
           `Sincerely,\nHuman Resources Governance & Compliance Team\n${master.companyName}`;
 
-        const employeeAudience = this.getEmployees();
         for (const emp of employeeAudience) {
           await defaultEmailProvider.sendEmail(emp.email, emp.name, emailSubject, emailBody, {
             documentId: master.documentId,
@@ -1439,16 +1511,24 @@ export class DocumentGovernanceEngine {
           documentId: master.documentId,
           documentVersionId: version.id,
           versionNumber: version.versionNumber,
-          reason: `Dispatched mandatory acknowledgement email notification for Public Document to all active employees.`,
+          reason: isSpecificDept
+            ? `Dispatched mandatory acknowledgement email notification for Specific Department (${master.departmentName}) to ${employeeAudience.length} active department employees.`
+            : `Dispatched mandatory acknowledgement email notification for Public Document to all ${employeeAudience.length} active employees.`,
         });
       } else {
         // INFORMATIONAL NOTIFICATION BROADCAST (No acknowledgement required)
-        const emailSubject = `[Notice] New HR Document Published — ${master.title}`;
-        const emailBody = `Dear Employee,\n\nAn official company document has been published in the Amaavigo HR Governance system for your information and reference:\n\n` +
+        const emailSubject = `[Notice] ${deptPrefix}New Document Published — ${master.title}`;
+        const recipientSalutation = isSpecificDept ? `Dear ${master.departmentName} Team Member` : `Dear Employee`;
+        const scopeDesc = isSpecificDept
+          ? `An official company document specific to the ${master.departmentName} department has been published in the Amaavigo HR Governance system for your information and reference:`
+          : `An official company document has been published in the Amaavigo HR Governance system for your information and reference:`;
+
+        const emailBody = `${recipientSalutation},\n\n${scopeDesc}\n\n` +
           `• Document Title: ${master.title}\n` +
           `• Document ID: ${master.documentId}\n` +
           `• Category: ${master.category}\n` +
           `• Department: ${master.departmentName}\n` +
+          `• Confidentiality: ${master.confidentiality}\n` +
           `• Version: ${version.versionNumber}\n` +
           `• Effective Date: ${formatDDMMYYYY(version.effectiveFrom || nowIso)}\n` +
           `• Created By: ${version.createdByName || master.createdByName || 'HR Creator'}\n` +
@@ -1458,7 +1538,6 @@ export class DocumentGovernanceEngine {
           `You can view and read the complete document with official corporate Header & Footer anytime by logging into the Amaavigo Employee Portal.\n\n` +
           `Sincerely,\nHuman Resources Governance & Compliance Team\n${master.companyName}`;
 
-        const employeeAudience = this.getEmployees();
         for (const emp of employeeAudience) {
           await defaultEmailProvider.sendEmail(emp.email, emp.name, emailSubject, emailBody, {
             documentId: master.documentId,
@@ -1474,7 +1553,9 @@ export class DocumentGovernanceEngine {
           documentId: master.documentId,
           documentVersionId: version.id,
           versionNumber: version.versionNumber,
-          reason: `Dispatched informational notification email for Public Document to all active employees (No acknowledgement required).`,
+          reason: isSpecificDept
+            ? `Dispatched informational notification email for Specific Department (${master.departmentName}) to ${employeeAudience.length} active department employees (No acknowledgement required).`
+            : `Dispatched informational notification email for Public Document to all ${employeeAudience.length} active employees (No acknowledgement required).`,
         });
       }
     } else {
@@ -1677,19 +1758,19 @@ export class DocumentGovernanceEngine {
   }
 
   public getAcknowledgements(employeeIdentifier?: string): AcknowledgementRecord[] {
-    // Ensure all active employees have pending acknowledgements for all active published public policies
+    // Ensure all active employees have pending acknowledgements for active published policies
     this.ensurePendingAcknowledgementsForEmployees();
 
-    const publishedPublicDocs = this.documentMasters.filter(
+    const publishedDocs = this.documentMasters.filter(
       (d) =>
         d.active &&
         d.currentStatus === VersionStatus.PUBLISHED &&
         d.acknowledgementRequired &&
-        d.confidentiality === ConfidentialityLevel.PUBLIC
+        (d.confidentiality === ConfidentialityLevel.PUBLIC || d.confidentiality === ConfidentialityLevel.SPECIFIC_DEPARTMENT)
     );
-    const validDocIds = new Set(publishedPublicDocs.map((d) => d.documentId));
+    const validDocIds = new Set(publishedDocs.map((d) => d.documentId));
 
-    // Filter stored acknowledgements to only include currently valid published public documents
+    // Filter stored acknowledgements to only include currently valid published documents
     const validStoredAcks = this.acknowledgements.filter((a) => validDocIds.has(a.documentId));
 
     // Deduplicate so ACKNOWLEDGED always takes precedence per document version & employee
@@ -1708,11 +1789,20 @@ export class DocumentGovernanceEngine {
 
     if (employeeIdentifier) {
       const target = employeeIdentifier.toLowerCase();
-      return deduplicated.filter(
-        (a) =>
+      const targetUser = this.findUserByIdentifiers(employeeIdentifier);
+
+      return deduplicated.filter((a) => {
+        const matchesEmployee =
           a.employeeId?.toLowerCase() === target ||
-          a.employeeEmail?.toLowerCase() === target
-      );
+          a.employeeEmail?.toLowerCase() === target;
+        if (!matchesEmployee) return false;
+
+        const doc = publishedDocs.find((d) => d.documentId === a.documentId);
+        if (doc && doc.confidentiality === ConfidentialityLevel.SPECIFIC_DEPARTMENT && targetUser) {
+          return isEmployeeInDepartment(targetUser, doc.departmentName, doc.departmentId);
+        }
+        return true;
+      });
     }
     return deduplicated;
   }
@@ -1724,18 +1814,27 @@ export class DocumentGovernanceEngine {
       const r = (u.role || '').toString().toUpperCase();
       return r === 'EMPLOYEE' && u.active !== false;
     });
-    const publishedPublicDocs = this.documentMasters.filter(
+    const publishedDocs = this.documentMasters.filter(
       (d) =>
         d.active &&
         d.currentStatus === VersionStatus.PUBLISHED &&
         d.acknowledgementRequired &&
-        d.confidentiality === ConfidentialityLevel.PUBLIC
+        (d.confidentiality === ConfidentialityLevel.PUBLIC || d.confidentiality === ConfidentialityLevel.SPECIFIC_DEPARTMENT)
     );
 
     return employees.map((emp) => {
       const empIdentifiers = [emp.id, emp.empId, emp.loginId, emp.email].filter(Boolean).map((s) => s!.toLowerCase());
 
-      const records = publishedPublicDocs.map((doc) => {
+      // Only assign documents that are Public OR belong specifically to this employee's department
+      const relevantDocs = publishedDocs.filter((doc) => {
+        if (doc.confidentiality === ConfidentialityLevel.PUBLIC) return true;
+        if (doc.confidentiality === ConfidentialityLevel.SPECIFIC_DEPARTMENT) {
+          return isEmployeeInDepartment(emp, doc.departmentName, doc.departmentId);
+        }
+        return false;
+      });
+
+      const records = relevantDocs.map((doc) => {
         const activeVer = this.documentVersions.find((v) => v.id === doc.currentPublishedVersionId) ||
           this.documentVersions.filter((v) => v.documentMasterId === doc.id && v.status === VersionStatus.PUBLISHED).pop();
         const activeVerNum = activeVer?.versionNumber || doc.currentPublishedVersionNumber || '1.0';
@@ -2077,7 +2176,9 @@ export class DocumentGovernanceEngine {
 
     // Mark cleared in localStorage so it does not re-seed automatically on refresh
     try {
-      localStorage.setItem('ama_docs_cleared', 'true');
+      if (typeof window !== 'undefined' && typeof localStorage !== 'undefined') {
+        localStorage.setItem('ama_docs_cleared', 'true');
+      }
     } catch (e) {
       console.warn('Storage note:', e);
     }
@@ -2115,7 +2216,9 @@ export class DocumentGovernanceEngine {
   // Reload data from Firestore
   public async restoreDefaultSeed(): Promise<void> {
     try {
-      localStorage.removeItem('ama_docs_cleared');
+      if (typeof window !== 'undefined' && typeof localStorage !== 'undefined') {
+        localStorage.removeItem('ama_docs_cleared');
+      }
     } catch (e) {
       console.warn('Storage note:', e);
     }

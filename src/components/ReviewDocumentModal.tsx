@@ -824,6 +824,10 @@ export const ReviewDocumentModal: React.FC<ReviewDocumentModalProps> = ({
                 <span>
                   {master?.confidentiality === ConfidentialityLevel.INTERNAL
                     ? '🔒 Internal Company Document: Access restricted to HR & Approvers. No employee emails will be sent and document is hidden from Employee Portal.'
+                    : master?.confidentiality === ConfidentialityLevel.SPECIFIC_DEPARTMENT
+                    ? master?.acknowledgementRequired
+                      ? `📢 Department Policy (${master?.departmentName}): Broadcast mandatory compliance email to active ${master?.departmentName} employees and require portal sign-off.`
+                      : `📢 Department Policy (${master?.departmentName}): Broadcast informational notice email to active ${master?.departmentName} employees (view/read only).`
                     : master?.acknowledgementRequired
                     ? '📢 Public Policy: Broadcast mandatory compliance email to active employees and require portal sign-off.'
                     : '📢 Public Policy: Broadcast informational notice email to active employees (view/read only, no acknowledgement required).'}

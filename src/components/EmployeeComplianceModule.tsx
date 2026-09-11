@@ -32,7 +32,7 @@ import {
   UserRole,
   VersionStatus,
 } from '../types';
-import { governanceEngine } from '../services/governance';
+import { governanceEngine, isEmployeeInDepartment } from '../services/governance';
 import { formatIST, formatISTDate } from '../utils/dateFormat';
 
 interface EmployeeComplianceModuleProps {
@@ -113,7 +113,13 @@ export const EmployeeComplianceModule: React.FC<EmployeeComplianceModuleProps> =
   }, [users]);
 
   const publishedDocs = useMemo(() => {
-    return documents.filter((d) => d.active && d.currentStatus === VersionStatus.PUBLISHED && d.acknowledgementRequired && d.confidentiality === ConfidentialityLevel.PUBLIC);
+    return documents.filter(
+      (d) =>
+        d.active &&
+        d.currentStatus === VersionStatus.PUBLISHED &&
+        d.acknowledgementRequired &&
+        (d.confidentiality === ConfidentialityLevel.PUBLIC || d.confidentiality === ConfidentialityLevel.SPECIFIC_DEPARTMENT)
+    );
   }, [documents]);
 
   const departments = useMemo(() => {
@@ -124,12 +130,20 @@ export const EmployeeComplianceModule: React.FC<EmployeeComplianceModuleProps> =
     return Array.from(set);
   }, [allEmployees]);
 
-  // Aggregate stats per employee strictly derived from active published public policies
+  // Aggregate stats per employee strictly derived from active published policies applicable to them
   const employeeStats = useMemo(() => {
     return allEmployees.map((emp) => {
       const empIdentifiers = [emp.id, emp.empId, emp.loginId, emp.email].filter(Boolean).map((s) => s!.toLowerCase());
 
-      const records: AcknowledgementRecord[] = publishedDocs.map((doc) => {
+      const relevantDocs = publishedDocs.filter((doc) => {
+        if (doc.confidentiality === ConfidentialityLevel.PUBLIC) return true;
+        if (doc.confidentiality === ConfidentialityLevel.SPECIFIC_DEPARTMENT) {
+          return isEmployeeInDepartment(emp, doc.departmentName, doc.departmentId);
+        }
+        return false;
+      });
+
+      const records: AcknowledgementRecord[] = relevantDocs.map((doc) => {
         const activeVer =
           versions.find((v) => v.id === doc.currentPublishedVersionId) ||
           versions.filter((v) => v.documentMasterId === doc.id && v.status === VersionStatus.PUBLISHED).pop();
@@ -207,7 +221,7 @@ export const EmployeeComplianceModule: React.FC<EmployeeComplianceModuleProps> =
     });
   }, [allEmployees, acknowledgements, publishedDocs, versions]);
 
-  // Aggregate stats per document (synthesized across all active employees)
+  // Aggregate stats per document (synthesized across employees in scope)
   const documentStats = useMemo(() => {
     return publishedDocs.map((doc) => {
       const activeVer =
@@ -215,7 +229,15 @@ export const EmployeeComplianceModule: React.FC<EmployeeComplianceModuleProps> =
         versions.filter((v) => v.documentMasterId === doc.id && v.status === VersionStatus.PUBLISHED).pop();
       const activeVerNum = activeVer ? activeVer.versionNumber : doc.currentPublishedVersionNumber || '1.0';
 
-      const completeDocRecords: AcknowledgementRecord[] = allEmployees.map((emp) => {
+      const targetEmployees = allEmployees.filter((emp) => {
+        if (doc.confidentiality === ConfidentialityLevel.PUBLIC) return true;
+        if (doc.confidentiality === ConfidentialityLevel.SPECIFIC_DEPARTMENT) {
+          return isEmployeeInDepartment(emp, doc.departmentName, doc.departmentId);
+        }
+        return false;
+      });
+
+      const completeDocRecords: AcknowledgementRecord[] = targetEmployees.map((emp) => {
         const empIdentifiers = [emp.id, emp.empId, emp.loginId, emp.email].filter(Boolean).map((s) => s!.toLowerCase());
 
         const existingAck = acknowledgements.find(
