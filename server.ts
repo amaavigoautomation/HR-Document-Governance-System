@@ -7,7 +7,6 @@ import { defaultStorageProvider } from './src/services/storage';
 import { defaultEmailProvider } from './src/services/email';
 import { dispatchLiveEmail, getEmailConfigStatus } from './src/services/serverEmail';
 import { UserRole } from './src/types';
-import { SEED_VERSIONS } from './src/data/seedData';
 import { generateCorporatePdfBlob } from './src/utils/pdfGenerator';
 import { generateCorporateDocxBlob } from './src/utils/documentStamper';
 
@@ -18,8 +17,8 @@ async function startServer() {
   app.use(express.json({ limit: '10mb' }));
   app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
-  // Seed storage files from governance versions
-  governanceEngine.syncVersionsToStorage(SEED_VERSIONS);
+  // Sync versions to storage if available dynamically from database
+  governanceEngine.syncVersionsToStorage();
 
   // API Health Check
   app.get('/api/health', (req, res) => {
@@ -340,8 +339,8 @@ async function startServer() {
       try {
         file = await defaultStorageProvider.downloadFile(key);
       } catch {
-        // Fallback: search version from governanceEngine or SEED_VERSIONS
-        const allVersions = [...governanceEngine.getDocumentVersions(), ...SEED_VERSIONS];
+        // Fallback: search version dynamically from governanceEngine
+        const allVersions = governanceEngine.getDocumentVersions();
         const ver = allVersions.find(
           v => v.storageKey === key || v.fileName === key || (v.storageKey && key.endsWith(v.storageKey))
         );

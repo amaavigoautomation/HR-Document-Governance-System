@@ -1,5 +1,4 @@
 import { AuditAction, AuditLogEntry, UserRole } from '../types';
-import { SEED_AUDIT_LOGS } from '../data/seedData';
 import { firestoreService } from './firestoreService';
 
 const AUDIT_STORAGE_KEY = 'ama_audit_logs_v1';
@@ -28,8 +27,8 @@ export class AuditService {
       console.warn('[AuditService] LocalStorage read note:', e);
     }
 
-    // Default fallback to baseline seed logs if storage is empty
-    this.logs = [...SEED_AUDIT_LOGS];
+    // Default initialization: purely dynamic to database
+    this.logs = [];
     this.persistToLocalStorage();
   }
 

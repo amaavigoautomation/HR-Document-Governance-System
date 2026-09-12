@@ -356,7 +356,7 @@ export class DocumentGovernanceEngine {
           emp.departmentName ||
           (role === UserRole.CREATOR || role === UserRole.REVIEWER ? 'Human Resources' : 'Operations'),
         companyName: emp.companyName || 'Amaavigo Group',
-        password: String(emp.password ?? '1'),
+        password: emp.password !== undefined && emp.password !== null ? String(emp.password) : '',
         active: isActive,
         avatar: emp.avatar || (emp as any).avatarUrl,
       };

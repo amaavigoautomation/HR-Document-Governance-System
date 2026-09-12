@@ -49,72 +49,7 @@ function cleanFirestoreData<T>(obj: T): T {
 }
 
 export const firestoreService = {
-  // Sync initial employee users only if collection is empty
-  async seedFirestoreIfEmpty(
-    _seedDocs: DocumentMaster[],
-    _seedVersions: DocumentVersion[],
-    _seedAuditLogs: AuditLogEntry[],
-    _seedAcks: AcknowledgementRecord[],
-    seedEmployees?: User[]
-  ) {
-    try {
-      // ONLY check and seed Employees collection if empty so default login accounts exist
-      if (seedEmployees && seedEmployees.length > 0) {
-        const empSnap = await getDocs(collection(db, EMPLOYEES_COLLECTION));
-        if (empSnap.empty) {
-          console.log('[Firestore] Initializing employees directory...');
-          for (const emp of seedEmployees) {
-            await setDoc(doc(db, EMPLOYEES_COLLECTION, emp.id), cleanFirestoreData(emp));
-          }
-          console.log('[Firestore] Employees directory initialized.');
-        }
-      }
-      // Check and seed auditLogs collection if empty to ensure immutable baseline exists
-      if (_seedAuditLogs && _seedAuditLogs.length > 0) {
-        const auditSnap = await getDocs(collection(db, AUDIT_COLLECTION));
-        if (auditSnap.empty) {
-          console.log('[Firestore] Initializing immutable audit trail collection...');
-          for (const log of _seedAuditLogs) {
-            await setDoc(doc(db, AUDIT_COLLECTION, log.id), cleanFirestoreData(log));
-          }
-          console.log('[Firestore] Immutable audit trail initialized.');
-        }
-      }
-      // Note: Documents, versions, and acknowledgments are NEVER auto-seeded automatically.
-      // If a user deletes them, the database remains completely clean and empty across page refreshes.
-      // Audit logs are strictly immutable and permanent: they are never deleted on document deletion.
-    } catch (e) {
-      console.warn('[Firestore] Employee seed note:', e);
-    }
-  },
-
-  // Explicitly write sample documents & versions to Firestore (only when requested by user action)
-  async saveAllDocumentsAndVersions(
-    seedDocs: DocumentMaster[],
-    seedVersions: DocumentVersion[],
-    seedAuditLogs: AuditLogEntry[],
-    seedAcks: AcknowledgementRecord[]
-  ) {
-    try {
-      console.log('[Firestore] Writing seed documents and versions to Firestore...');
-      for (const docMaster of seedDocs) {
-        await setDoc(doc(db, DOCS_COLLECTION, docMaster.id), cleanFirestoreData(docMaster));
-      }
-      for (const ver of seedVersions) {
-        await setDoc(doc(db, VERSIONS_COLLECTION, ver.id), cleanFirestoreData(ver));
-      }
-      for (const log of seedAuditLogs) {
-        await setDoc(doc(db, AUDIT_COLLECTION, log.id), cleanFirestoreData(log));
-      }
-      for (const ack of seedAcks) {
-        await setDoc(doc(db, ACKS_COLLECTION, ack.id), cleanFirestoreData(ack));
-      }
-      console.log('[Firestore] Seed write complete.');
-    } catch (e) {
-      console.error('[Firestore] Error writing seed data:', e);
-      throw e;
-    }
-  },
+  // Parse raw Firestore document into typed User profile
 
   // Parse any Firestore employee document safely and robustly
   parseEmployeeDoc(d: any): User {
@@ -198,7 +133,7 @@ export const firestoreService = {
           ? 'Human Resources'
           : 'Operations'),
       companyName: data.companyName || 'Amaavigo Group',
-      password: String(data.password ?? '1'),
+      password: data.password !== undefined && data.password !== null ? String(data.password) : '',
       active: isActive,
       avatar: data.avatar || data.avatarUrl,
     } as User;
@@ -590,7 +525,7 @@ export const firestoreService = {
                 ? 'Human Resources'
                 : 'Operations'),
             companyName: data.companyName || 'Amaavigo Group',
-            password: data.password || '1',
+            password: data.password !== undefined && data.password !== null ? String(data.password) : '',
             active: data.active !== false && data.status !== 'INACTIVE',
             avatar: data.avatar || data.avatarUrl,
             ...data,

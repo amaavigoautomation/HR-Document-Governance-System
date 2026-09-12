@@ -1,5 +1,5 @@
 import { initializeApp, getApps, getApp } from 'firebase/app';
-import { initializeFirestore, getFirestore, Firestore } from 'firebase/firestore';
+import { initializeFirestore, getFirestore, Firestore, doc, getDocFromServer } from 'firebase/firestore';
 import firebaseConfig from '../../firebase-applet-config.json';
 
 // Initialize Firebase client
@@ -23,3 +23,15 @@ try {
 }
 
 export const db: Firestore = firestoreInstance;
+
+// Test Firestore connection on boot
+export async function testConnection() {
+  try {
+    await getDocFromServer(doc(db, 'employees', 'AM007'));
+  } catch (error) {
+    if (error instanceof Error && error.message.includes('the client is offline')) {
+      console.error('Please check your Firebase configuration.');
+    }
+  }
+}
+testConnection();

@@ -5,19 +5,19 @@
       "description": "Records for organizational employees, logins, credentials, and departmental profiles.",
       "type": "object",
       "properties": {
-        "id": { "type": "string" },
-        "empId": { "type": "string" },
-        "loginId": { "type": "string" },
-        "name": { "type": "string" },
-        "email": { "type": "string" },
-        "role": { "type": "string" },
-        "companyId": { "type": "string" },
-        "companyName": { "type": "string" },
-        "departmentId": { "type": "string" },
-        "departmentName": { "type": "string" },
-        "title": { "type": "string" },
-        "avatar": { "type": "string" },
-        "password": { "type": "string" },
+        "id": { "type": "string", "maxLength": 128 },
+        "empId": { "type": "string", "maxLength": 64 },
+        "loginId": { "type": "string", "maxLength": 64 },
+        "name": { "type": "string", "maxLength": 128 },
+        "email": { "type": "string", "maxLength": 128 },
+        "role": { "type": "string", "enum": ["EMPLOYEE", "CREATOR", "REVIEWER"] },
+        "companyId": { "type": "string", "maxLength": 64 },
+        "companyName": { "type": "string", "maxLength": 128 },
+        "departmentId": { "type": "string", "maxLength": 64 },
+        "departmentName": { "type": "string", "maxLength": 128 },
+        "title": { "type": "string", "maxLength": 128 },
+        "avatar": { "type": "string", "maxLength": 1000 },
+        "password": { "type": "string", "maxLength": 128 },
         "active": { "type": "boolean" },
         "createdAt": { "type": "string" },
         "updatedAt": { "type": "string" }
@@ -29,111 +29,140 @@
       "description": "Top-level metadata for HR policies, handbooks, benefit guides, and compliance documents.",
       "type": "object",
       "properties": {
-        "id": { "type": "string" },
-        "docNumber": { "type": "string" },
-        "title": { "type": "string" },
-        "category": { "type": "string" },
-        "department": { "type": "string" },
-        "confidentiality": { "type": "string" },
-        "ownerName": { "type": "string" },
-        "ownerEmail": { "type": "string" },
-        "effectiveVersionId": { "type": "string" },
-        "effectiveVersionNumber": { "type": "string" },
-        "latestVersionId": { "type": "string" },
-        "latestVersionNumber": { "type": "string" },
-        "status": { "type": "string" },
+        "id": { "type": "string", "maxLength": 128 },
+        "documentId": { "type": "string", "maxLength": 128 },
+        "docNumber": { "type": "string", "maxLength": 64 },
+        "title": { "type": "string", "maxLength": 500 },
+        "category": { "type": "string", "maxLength": 64 },
+        "department": { "type": "string", "maxLength": 128 },
+        "confidentiality": { "type": "string", "maxLength": 64 },
+        "ownerName": { "type": "string", "maxLength": 128 },
+        "ownerEmail": { "type": "string", "maxLength": 128 },
+        "effectiveVersionId": { "type": "string", "maxLength": 128 },
+        "effectiveVersionNumber": { "type": "string", "maxLength": 32 },
+        "latestVersionId": { "type": "string", "maxLength": 128 },
+        "latestVersionNumber": { "type": "string", "maxLength": 32 },
+        "status": { "type": "string", "enum": ["DRAFT", "ACTIVE", "ARCHIVED", "UNDER_REVIEW"] },
         "tags": { "type": "array" },
         "requiresAcknowledgment": { "type": "boolean" },
         "acknowledgmentDeadlineDays": { "type": "number" },
         "createdAt": { "type": "string" },
         "updatedAt": { "type": "string" }
       },
-      "required": ["id", "docNumber", "title", "category", "status"]
+      "required": ["id", "title", "category", "status"]
     },
     "versions": {
       "title": "Document Revisions & Versions",
       "description": "Specific semantic versions with approvals, content, changelog, and validity dates.",
       "type": "object",
       "properties": {
-        "id": { "type": "string" },
-        "documentId": { "type": "string" },
-        "versionNumber": { "type": "string" },
-        "versionType": { "type": "string" },
-        "authorName": { "type": "string" },
-        "authorEmail": { "type": "string" },
-        "authorRole": { "type": "string" },
-        "changeSummary": { "type": "string" },
-        "approvalStatus": { "type": "string" },
+        "id": { "type": "string", "maxLength": 128 },
+        "documentMasterId": { "type": "string", "maxLength": 128 },
+        "documentId": { "type": "string", "maxLength": 128 },
+        "versionNumber": { "type": "string", "maxLength": 32 },
+        "versionType": { "type": "string", "maxLength": 32 },
+        "authorName": { "type": "string", "maxLength": 128 },
+        "authorEmail": { "type": "string", "maxLength": 128 },
+        "authorRole": { "type": "string", "maxLength": 64 },
+        "changeSummary": { "type": "string", "maxLength": 2000 },
+        "approvalStatus": { "type": "string", "enum": ["DRAFT", "IN_REVIEW", "APPROVED", "REJECTED", "PUBLISHED", "ARCHIVED"] },
         "effectiveDate": { "type": "string" },
         "expiryDate": { "type": "string" },
         "rawContent": { "type": "string" },
-        "fileName": { "type": "string" },
+        "fileName": { "type": "string", "maxLength": 256 },
         "fileSize": { "type": "number" },
         "fileDataUrl": { "type": "string" },
         "isPdf": { "type": "boolean" },
         "approvalChain": { "type": "array" },
-        "sha256Hash": { "type": "string" },
-        "previousVersionHash": { "type": "string" },
+        "sha256Hash": { "type": "string", "maxLength": 128 },
+        "previousVersionHash": { "type": "string", "maxLength": 128 },
         "createdAt": { "type": "string" },
         "updatedAt": { "type": "string" }
       },
-      "required": ["id", "documentId", "versionNumber", "approvalStatus"]
+      "required": ["id", "documentMasterId", "versionNumber", "approvalStatus"]
     },
     "auditLogs": {
       "title": "Chained Immutable Audit Trail",
       "description": "Cryptographically chained compliance audit events.",
       "type": "object",
       "properties": {
-        "id": { "type": "string" },
-        "documentId": { "type": "string" },
-        "versionId": { "type": "string" },
-        "versionNumber": { "type": "string" },
-        "action": { "type": "string" },
-        "actorName": { "type": "string" },
-        "actorEmail": { "type": "string" },
-        "actorRole": { "type": "string" },
+        "id": { "type": "string", "maxLength": 128 },
+        "documentId": { "type": "string", "maxLength": 128 },
+        "versionId": { "type": "string", "maxLength": 128 },
+        "versionNumber": { "type": "string", "maxLength": 32 },
+        "action": { "type": "string", "maxLength": 64 },
+        "actorName": { "type": "string", "maxLength": 128 },
+        "actorEmail": { "type": "string", "maxLength": 128 },
+        "actorRole": { "type": "string", "maxLength": 64 },
         "timestamp": { "type": "string" },
-        "details": { "type": "string" },
-        "previousHash": { "type": "string" },
-        "sha256Hash": { "type": "string" }
+        "performedAt": { "type": "string" },
+        "details": { "type": "string", "maxLength": 2000 },
+        "previousHash": { "type": "string", "maxLength": 128 },
+        "sha256Hash": { "type": "string", "maxLength": 128 }
       },
-      "required": ["id", "action", "timestamp", "sha256Hash"]
+      "required": ["id", "action"]
     },
     "acknowledgments": {
       "title": "Employee Policy Sign-offs",
       "description": "Records of employee policy reading and electronic signatures.",
       "type": "object",
       "properties": {
-        "id": { "type": "string" },
-        "documentId": { "type": "string" },
-        "versionId": { "type": "string" },
-        "versionNumber": { "type": "string" },
-        "employeeName": { "type": "string" },
-        "employeeEmail": { "type": "string" },
-        "employeeDepartment": { "type": "string" },
+        "id": { "type": "string", "maxLength": 128 },
+        "documentId": { "type": "string", "maxLength": 128 },
+        "versionNumber": { "type": "string", "maxLength": 32 },
+        "employeeId": { "type": "string", "maxLength": 128 },
+        "employeeName": { "type": "string", "maxLength": 128 },
+        "employeeEmail": { "type": "string", "maxLength": 128 },
+        "employeeDepartment": { "type": "string", "maxLength": 128 },
+        "status": { "type": "string", "enum": ["PENDING", "ACKNOWLEDGED"] },
         "acknowledgedAt": { "type": "string" },
-        "ipAddress": { "type": "string" },
-        "signatureHash": { "type": "string" }
+        "signatureReference": { "type": "string", "maxLength": 256 }
       },
-      "required": ["id", "documentId", "versionId", "employeeEmail", "acknowledgedAt"]
+      "required": ["id", "documentId", "versionNumber", "status"]
     },
     "notifications": {
       "title": "Governance Alerts & Action Items",
       "description": "Pending reviews and system alerts for role-based governance.",
       "type": "object",
       "properties": {
-        "id": { "type": "string" },
-        "targetUserEmail": { "type": "string" },
-        "targetRole": { "type": "string" },
-        "title": { "type": "string" },
-        "message": { "type": "string" },
-        "type": { "type": "string" },
+        "id": { "type": "string", "maxLength": 128 },
+        "targetUserEmail": { "type": "string", "maxLength": 128 },
+        "targetRole": { "type": "string", "maxLength": 64 },
+        "title": { "type": "string", "maxLength": 256 },
+        "message": { "type": "string", "maxLength": 5000 },
+        "type": { "type": "string", "maxLength": 64 },
         "read": { "type": "boolean" },
-        "documentId": { "type": "string" },
-        "versionId": { "type": "string" },
+        "documentId": { "type": "string", "maxLength": 128 },
+        "versionId": { "type": "string", "maxLength": 128 },
         "createdAt": { "type": "string" }
       },
-      "required": ["id", "title", "message", "read", "createdAt"]
+      "required": ["id", "title", "message", "read"]
+    }
+  },
+  "firestore": {
+    "/employees/{employeeId}": {
+      "schema": "employees",
+      "description": "Workforce profiles and role metadata."
+    },
+    "/documents/{docId}": {
+      "schema": "documents",
+      "description": "Top-level HR policy and SOP records."
+    },
+    "/versions/{versionId}": {
+      "schema": "versions",
+      "description": "Versioned document revisions, content, and approval states."
+    },
+    "/auditLogs/{logId}": {
+      "schema": "auditLogs",
+      "description": "Permanent immutable compliance audit log records."
+    },
+    "/acknowledgments/{ackId}": {
+      "schema": "acknowledgments",
+      "description": "Mandatory and optional policy compliance acknowledgment sign-offs."
+    },
+    "/notifications/{notifId}": {
+      "schema": "notifications",
+      "description": "System reminders, compliance triggers, and reviewer alerts."
     }
   }
 }

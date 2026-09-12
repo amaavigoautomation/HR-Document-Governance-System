@@ -174,13 +174,16 @@ export const LoginView: React.FC<LoginViewProps> = ({ users, onSelectUser }) => 
         return;
       }
 
-      // 5. Verify Password
-      const storedPassword = String(matchedUser.password ?? '1').trim();
-      const enteredPassword = String(trimmedPass).trim();
-      const isPasswordValid =
-        storedPassword === enteredPassword ||
-        enteredPassword === String(matchedUser.empId || matchedUser.loginId || '').trim() ||
-        (!matchedUser.password && (enteredPassword === '1' || enteredPassword === trimmedId));
+      // 5. Verify Password strictly against the database record
+      // Users can ONLY log in with the exact password stored in the database.
+      // No fallback to employee ID, no fallback to '1', and no secondary bypasses.
+      const storedPassword =
+        matchedUser.password !== undefined && matchedUser.password !== null
+          ? String(matchedUser.password)
+          : '';
+      const enteredPassword = String(trimmedPass);
+
+      const isPasswordValid = storedPassword.length > 0 && enteredPassword === storedPassword;
 
       if (!isPasswordValid) {
         setErrorMessage('Incorrect password. Please verify the credentials configured in the database.');

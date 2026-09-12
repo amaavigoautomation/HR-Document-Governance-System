@@ -1,35 +1,128 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    // Employee Directory & Profiles
-    match /employees/{employeeId} {
-      allow read, write: if true;
+
+    // Global Safety Net: Default deny for any undeclared path
+    match /{document=**} {
+      allow read, write: if false;
     }
 
-    // Document masters
+    // Helper functions for validation
+    function isValidId(id) {
+      return id is string && id.size() > 0 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function isValidEmployee(data) {
+      return data.id is string && data.id.size() <= 128 &&
+             data.name is string && data.name.size() > 0 && data.name.size() <= 128 &&
+             data.email is string && data.email.size() <= 128 &&
+             data.role is string && (data.role == 'EMPLOYEE' || data.role == 'CREATOR' || data.role == 'REVIEWER' || data.role == 'HR' || data.role == 'APPROVER') &&
+             (!('empId' in data) || (data.empId is string && data.empId.size() <= 64)) &&
+             (!('title' in data) || (data.title is string && data.title.size() <= 128)) &&
+             (!('departmentName' in data) || (data.departmentName is string && data.departmentName.size() <= 128)) &&
+             (!('companyName' in data) || (data.companyName is string && data.companyName.size() <= 128)) &&
+             (!('password' in data) || (data.password is string && data.password.size() <= 128));
+    }
+
+    function isValidDocument(data) {
+      return data.id is string && data.id.size() <= 128 &&
+             data.title is string && data.title.size() > 0 && data.title.size() <= 500 &&
+             data.category is string && data.category.size() <= 64 &&
+             (!('department' in data) || (data.department is string && data.department.size() <= 128)) &&
+             (!('confidentiality' in data) || (data.confidentiality is string && data.confidentiality.size() <= 64)) &&
+             (!('status' in data) || (data.status is string && data.status.size() <= 64));
+    }
+
+    function isValidVersion(data) {
+      return data.id is string && data.id.size() <= 128 &&
+             data.versionNumber is string && data.versionNumber.size() <= 32 &&
+             (!('documentMasterId' in data) || (data.documentMasterId is string && data.documentMasterId.size() <= 128)) &&
+             (!('approvalStatus' in data) || (data.approvalStatus is string && (
+               data.approvalStatus == 'DRAFT' ||
+               data.approvalStatus == 'IN_REVIEW' ||
+               data.approvalStatus == 'APPROVED' ||
+               data.approvalStatus == 'REJECTED' ||
+               data.approvalStatus == 'PUBLISHED' ||
+               data.approvalStatus == 'ARCHIVED'
+             ))) &&
+             (!('changeSummary' in data) || (data.changeSummary is string && data.changeSummary.size() <= 4000)) &&
+             (!('authorName' in data) || (data.authorName is string && data.authorName.size() <= 128));
+    }
+
+    function isValidAuditLog(data) {
+      return data.id is string && data.id.size() <= 128 &&
+             data.action is string && data.action.size() <= 64 &&
+             (!('documentId' in data) || (data.documentId is string && data.documentId.size() <= 128)) &&
+             (!('performedAt' in data) || (data.performedAt is string && data.performedAt.size() <= 64)) &&
+             (!('timestamp' in data) || (data.timestamp is string && data.timestamp.size() <= 64)) &&
+             (!('details' in data) || (data.details is string && data.details.size() <= 4000));
+    }
+
+    function isValidAcknowledgment(data) {
+      return data.id is string && data.id.size() <= 128 &&
+             data.documentId is string && data.documentId.size() > 0 && data.documentId.size() <= 128 &&
+             data.versionNumber is string && data.versionNumber.size() <= 32 &&
+             data.status is string && (data.status == 'PENDING' || data.status == 'ACKNOWLEDGED') &&
+             (!('employeeId' in data) || (data.employeeId is string && data.employeeId.size() <= 128)) &&
+             (!('employeeEmail' in data) || (data.employeeEmail is string && data.employeeEmail.size() <= 128));
+    }
+
+    function isValidNotification(data) {
+      return data.id is string && data.id.size() <= 128 &&
+             data.title is string && data.title.size() <= 256 &&
+             data.message is string && data.message.size() <= 5000;
+    }
+
+    // 1. Employee Directory & Profiles
+    match /employees/{employeeId} {
+      allow read: if true;
+      allow create: if isValidId(employeeId) && isValidEmployee(request.resource.data);
+      allow update: if isValidId(employeeId) && isValidEmployee(request.resource.data) &&
+                      request.resource.data.id == resource.data.id;
+      allow delete: if isValidId(employeeId);
+    }
+
+    // 2. Document Master Records
     match /documents/{docId} {
-      allow read, write: if true;
+      allow read: if true;
+      allow create: if isValidId(docId) && isValidDocument(request.resource.data);
+      allow update: if isValidId(docId) && isValidDocument(request.resource.data) &&
+                      request.resource.data.id == resource.data.id;
+      allow delete: if isValidId(docId);
     }
-    
-    // Versions
+
+    // 3. Document Versions
     match /versions/{versionId} {
-      allow read, write: if true;
+      allow read: if true;
+      allow create: if isValidId(versionId) && isValidVersion(request.resource.data);
+      allow update: if isValidId(versionId) && isValidVersion(request.resource.data) &&
+                      request.resource.data.id == resource.data.id;
+      allow delete: if isValidId(versionId);
     }
-    
-    // Immutable Audit Logs - write-once, permanent audit trail (no modifications or deletions permitted)
+
+    // 4. Immutable Audit Logs (CHOP-PROOF: Write-once, no updates, no deletes)
     match /auditLogs/{logId} {
-      allow read, create: if true;
-      allow update, delete: if false;
+      allow read: if true;
+      allow create: if isValidId(logId) && isValidAuditLog(request.resource.data);
+      allow update: if false;
+      allow delete: if false;
     }
-    
-    // Policy Acknowledgments
+
+    // 5. Policy Acknowledgments (Anti-Downgrade Protection)
     match /acknowledgments/{ackId} {
-      allow read, write: if true;
+      allow read: if true;
+      allow create: if isValidId(ackId) && isValidAcknowledgment(request.resource.data);
+      allow update: if isValidId(ackId) && isValidAcknowledgment(request.resource.data) &&
+                      !(resource.data.status == 'ACKNOWLEDGED' && request.resource.data.status == 'PENDING');
+      allow delete: if isValidId(ackId);
     }
-    
-    // System notifications
+
+    // 6. System Notifications
     match /notifications/{notifId} {
-      allow read, write: if true;
+      allow read: if true;
+      allow create: if isValidId(notifId) && isValidNotification(request.resource.data);
+      allow update: if isValidId(notifId) && isValidNotification(request.resource.data);
+      allow delete: if isValidId(notifId);
     }
   }
 }
