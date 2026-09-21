@@ -1,4 +1,4 @@
-import { getGoogleSheetsConfigStatus } from '../../src/services/serverSheets.js';
+import { getGoogleSheetsConfigStatus } from '../_lib/serverSheets.js';
 
 export default async function handler(req: any, res: any) {
   res.setHeader('Access-Control-Allow-Credentials', 'true');

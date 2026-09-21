@@ -1,5 +1,10 @@
-import { fetchSheetData } from '../../src/services/serverSheets.js';
-import { UserRole } from '../../src/types';
+import { fetchSheetData } from '../_lib/serverSheets.js';
+
+enum UserRole {
+  CREATOR = 'CREATOR',
+  REVIEWER = 'REVIEWER',
+  EMPLOYEE = 'EMPLOYEE',
+}
 
 export default async function handler(req: any, res: any) {
   res.setHeader('Access-Control-Allow-Credentials', 'true');

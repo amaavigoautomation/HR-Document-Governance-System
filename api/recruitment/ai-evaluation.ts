@@ -1,5 +1,10 @@
-import { runCandidateEvaluation, clearEvaluationCache } from '../../src/services/aiEvaluationService.js';
-import { UserRole } from '../../src/types';
+import { runCandidateEvaluation, clearEvaluationCache } from '../_lib/serverAiEvaluation.js';
+
+enum UserRole {
+  CREATOR = 'CREATOR',
+  REVIEWER = 'REVIEWER',
+  EMPLOYEE = 'EMPLOYEE',
+}
 
 export default async function handler(req: any, res: any) {
   res.setHeader('Access-Control-Allow-Credentials', 'true');
