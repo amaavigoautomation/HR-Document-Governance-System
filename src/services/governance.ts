@@ -764,6 +764,10 @@ export class DocumentGovernanceEngine {
     const isPdfUpload =
       Boolean(sanitizedFileUrl) &&
       (sanitizedFileUrl.startsWith('data:application/pdf') || data.fileName?.toLowerCase().endsWith('.pdf'));
+    const isVideoUpload =
+      Boolean(sanitizedFileUrl && sanitizedFileUrl.startsWith('data:video/')) ||
+      Boolean(data.mimeType?.startsWith('video/')) ||
+      Boolean(data.fileName?.toLowerCase().match(/\.(mp4|webm|mov|m4v|mkv|avi|ogv)$/));
 
     const initialHeaderFooter: HeaderFooterMetadata = {
       documentTitle: data.title.trim(),
@@ -790,15 +794,16 @@ export class DocumentGovernanceEngine {
         console.warn('Could not stamp initial PDF on createDocument:', pdfErr);
       }
     }
+    // Note: Video files do NOT append header and footer, keeping video bytes intact
 
     // Store file in Storage Provider
     const storageMeta = await defaultStorageProvider.uploadFile(
       documentId,
       data.category,
       versionNumber,
-      data.fileName || `${data.title.replace(/[^a-zA-Z0-9]/g, '_')}_v1.0.txt`,
+      data.fileName || `${data.title.replace(/[^a-zA-Z0-9]/g, '_')}_v1.0.${isVideoUpload ? 'mp4' : 'txt'}`,
       sanitizedRawContent,
-      data.mimeType || 'text/markdown'
+      data.mimeType || (isVideoUpload ? 'video/mp4' : 'text/markdown')
     );
 
     const newMaster: DocumentMaster = {
@@ -840,7 +845,7 @@ export class DocumentGovernanceEngine {
       storageKey: storageMeta.storageKey,
       storagePath: storageMeta.storagePath,
       fileUrl: sanitizedFileUrl || defaultStorageProvider.getFileUrl(storageMeta.storageKey),
-      originalFileUrl: (isPdfUpload || isDocxUpload) && data.fileDataUrl ? data.fileDataUrl : undefined,
+      originalFileUrl: (isPdfUpload || isDocxUpload || isVideoUpload) && data.fileDataUrl ? data.fileDataUrl : undefined,
       contentHash: storageMeta.contentHash,
       rawContent: sanitizedRawContent,
       createdById: creator.id,
@@ -1010,6 +1015,11 @@ export class DocumentGovernanceEngine {
       data.mimeType?.includes('wordprocessingml') ||
       (data.fileDataUrl && data.fileDataUrl.includes('wordprocessingml'));
 
+    const isVideo =
+      Boolean(data.fileName?.toLowerCase().match(/\.(mp4|webm|mov|m4v|mkv|avi|ogv)$/)) ||
+      Boolean(data.mimeType?.startsWith('video/')) ||
+      Boolean(data.fileDataUrl && data.fileDataUrl.startsWith('data:video/'));
+
     // 2. Clean previous header/footer and duplicate metadata from body
     let sanitizedRawContent = extractCleanBody(data.rawContent || '');
 
@@ -1031,9 +1041,10 @@ export class DocumentGovernanceEngine {
         console.warn('Could not stamp PDF on createNewVersion:', pdfErr);
       }
     }
+    // Video revisions keep original file data intact without appending header or footer
 
     // If text/markdown, embed the newly updated header and footer
-    if (!isPdf && !isDocx && sanitizedRawContent) {
+    if (!isPdf && !isDocx && !isVideo && sanitizedRawContent) {
       sanitizedRawContent = appendApprovedHeaderAndFooter(sanitizedRawContent, revisionHeaderFooterData);
     }
 
@@ -1042,9 +1053,9 @@ export class DocumentGovernanceEngine {
       master.documentId,
       master.category,
       nextVersionNumber,
-      data.fileName || `${master.title.replace(/[^a-zA-Z0-9]/g, '_')}_v${nextVersionNumber}.txt`,
+      data.fileName || `${master.title.replace(/[^a-zA-Z0-9]/g, '_')}_v${nextVersionNumber}.${isVideo ? 'mp4' : 'txt'}`,
       sanitizedRawContent,
-      data.mimeType || 'text/markdown'
+      data.mimeType || (isVideo ? 'video/mp4' : 'text/markdown')
     );
 
     const newVersion: DocumentVersion = {
@@ -1061,7 +1072,7 @@ export class DocumentGovernanceEngine {
       storageKey: storageMeta.storageKey,
       storagePath: storageMeta.storagePath,
       fileUrl: sanitizedFileUrl || defaultStorageProvider.getFileUrl(storageMeta.storageKey),
-      originalFileUrl: (isPdf || isDocx) && data.fileDataUrl ? data.fileDataUrl : undefined,
+      originalFileUrl: (isPdf || isDocx || isVideo) && data.fileDataUrl ? data.fileDataUrl : undefined,
       contentHash: storageMeta.contentHash,
       rawContent: sanitizedRawContent,
       createdById: creator.id,
@@ -1271,6 +1282,11 @@ export class DocumentGovernanceEngine {
       version.mimeType?.includes('wordprocessingml') ||
       (version.fileUrl && version.fileUrl.includes('wordprocessingml'));
 
+    const isVideo =
+      Boolean(version.fileName?.toLowerCase().match(/\.(mp4|webm|mov|m4v|mkv|avi|ogv)$/)) ||
+      Boolean(version.mimeType?.startsWith('video/')) ||
+      Boolean(version.fileUrl && version.fileUrl.startsWith('data:video/'));
+
     // Clean redundant policy metadata lines from rawContent before stamping/approving
     if (version.rawContent) {
       version.rawContent = stripPolicyMetadataHeader(version.rawContent);
@@ -1308,6 +1324,9 @@ export class DocumentGovernanceEngine {
       } catch (e) {
         console.warn('Could not stamp DOCX binary on approval:', e);
       }
+    } else if (isVideo) {
+      // For video files, we do NOT append header and footer.
+      // The video binary, preview, and content remain completely intact without stamping.
     } else {
       // Inject official dynamic Header & Footer into rawContent for text/markdown
       version.rawContent = appendApprovedHeaderAndFooter(version.rawContent || '', headerFooterData);
@@ -1326,9 +1345,9 @@ export class DocumentGovernanceEngine {
         master.documentId,
         master.category,
         version.versionNumber,
-        version.fileName || `${master.title.replace(/[^a-zA-Z0-9]/g, '_')}_v${version.versionNumber}.txt`,
+        version.fileName || `${master.title.replace(/[^a-zA-Z0-9]/g, '_')}_v${version.versionNumber}.${isVideo ? 'mp4' : 'txt'}`,
         version.rawContent || '',
-        version.mimeType || 'text/markdown'
+        version.mimeType || (isVideo ? 'video/mp4' : 'text/markdown')
       );
       if (!version.fileUrl || !version.fileUrl.startsWith('data:')) {
         version.fileUrl = defaultStorageProvider.getFileUrl(version.storageKey);

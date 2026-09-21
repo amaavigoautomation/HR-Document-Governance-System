@@ -9,6 +9,7 @@ export interface ParsedFileResult {
   extractedText: string;
   fileDataUrl?: string;
   isPdf: boolean;
+  isVideo?: boolean;
   pageCount?: number;
 }
 
@@ -192,8 +193,8 @@ export function extractTextFromRawPdfStream(rawPdf: string): string {
 }
 
 /**
- * Parse any uploaded file (Strictly supports PDF and DOCX)
- * Automatically unpacks .docx XML containers and extracts clean plain text / Markdown.
+ * Parse any uploaded file (Supports PDF, DOCX, and Video formats: MP4, WebM, MOV, etc.)
+ * Automatically unpacks .docx XML containers, extracts text, or wraps video assets for governance workflows.
  */
 export async function parseUploadedFile(file: File): Promise<ParsedFileResult> {
   const fileNameLower = file.name.toLowerCase();
@@ -201,8 +202,19 @@ export async function parseUploadedFile(file: File): Promise<ParsedFileResult> {
   const isDocx =
     file.type === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' ||
     fileNameLower.endsWith('.docx');
+  const isVideo =
+    file.type.startsWith('video/') ||
+    /\.(mp4|webm|mov|m4v|mkv|avi|ogv)$/i.test(fileNameLower);
 
-  const mimeType = file.type || (isPdf ? 'application/pdf' : isDocx ? 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' : 'text/plain');
+  const mimeType =
+    file.type ||
+    (isPdf
+      ? 'application/pdf'
+      : isDocx
+      ? 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+      : isVideo
+      ? (fileNameLower.endsWith('.webm') ? 'video/webm' : fileNameLower.endsWith('.mov') ? 'video/quicktime' : 'video/mp4')
+      : 'text/plain');
 
   // Generate Data URL for direct iframe / object embedding / downloads
   const fileDataUrl = await new Promise<string>((resolve) => {
@@ -211,6 +223,22 @@ export async function parseUploadedFile(file: File): Promise<ParsedFileResult> {
     reader.onerror = () => resolve('');
     reader.readAsDataURL(file);
   });
+
+  // Handle Video files (MP4, WebM, MOV, etc.)
+  // Video enters identical approval governance without header/footer stamping
+  if (isVideo) {
+    const sizeMb = (file.size / (1024 * 1024)).toFixed(2);
+    const cleanTitle = file.name.replace(/\.[^/.]+$/, '').replace(/[_-]/g, ' ');
+    return {
+      fileName: file.name,
+      mimeType,
+      fileSize: file.size,
+      extractedText: `# Video Master Asset: ${cleanTitle}\n\n- **File Name:** ${file.name}\n- **Format:** ${mimeType}\n- **File Size:** ${sizeMb} MB\n- **Governance Policy:** Video asset submitted for version control approval. Standard header and footer stamping is omitted for video media while maintaining complete approval workflow integrity.\n\n*Uploaded video is preserved intact and available for playback in the document viewer.*`,
+      fileDataUrl,
+      isPdf: false,
+      isVideo: true,
+    };
+  }
 
   // Handle .docx files with JSZip XML parser
   if (isDocx) {

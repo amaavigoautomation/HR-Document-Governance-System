@@ -1323,6 +1323,27 @@ export async function downloadDocumentWithIntactFormat(params: {
   forcedFormat?: 'pdf' | 'docx';
 }): Promise<void> {
   const originalName = params.fileName || 'Amaavigo_Policy.pdf';
+
+  // Case 0: Video Asset (MP4, WebM, MOV, etc.) - No header & footer appended, download original video intact
+  const isVideoTarget =
+    Boolean(originalName.toLowerCase().match(/\.(mp4|webm|mov|m4v|mkv|avi|ogv)$/)) ||
+    Boolean(params.fileUrl && params.fileUrl.startsWith('data:video/'));
+
+  if (isVideoTarget) {
+    const downloadName = originalName;
+    if (params.fileUrl) {
+      if (params.fileUrl.startsWith('data:') || params.fileUrl.startsWith('blob:')) {
+        const resp = await fetch(params.fileUrl);
+        const blob = await resp.blob();
+        triggerDownload(blob, downloadName);
+        return;
+      }
+    }
+    const blob = new Blob([params.rawContent || ''], { type: 'video/mp4' });
+    triggerDownload(blob, downloadName);
+    return;
+  }
+
   const isDocxTarget =
     params.forcedFormat === 'docx' ||
     originalName.toLowerCase().endsWith('.docx') ||

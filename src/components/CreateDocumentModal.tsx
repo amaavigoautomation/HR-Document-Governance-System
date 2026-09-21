@@ -148,9 +148,13 @@ Employees should notify their immediate manager via the HR self-service portal a
     if (!file) return;
 
     const lowerName = file.name.toLowerCase();
-    const isAllowed = lowerName.endsWith(".pdf") || lowerName.endsWith(".docx");
+    const isAllowed =
+      lowerName.endsWith(".pdf") ||
+      lowerName.endsWith(".docx") ||
+      file.type.startsWith("video/") ||
+      Boolean(lowerName.match(/\.(mp4|webm|mov|m4v|mkv|avi|ogv)$/));
     if (!isAllowed) {
-      setError("Invalid file format. Only .pdf and .docx documents are supported.");
+      setError("Invalid file format. Supported formats: .pdf, .docx, and video (.mp4, .webm, .mov, etc.).");
       return;
     }
 
@@ -166,7 +170,9 @@ Employees should notify their immediate manager via the HR self-service portal a
       setRawContent(parsed.extractedText || '');
       setFileDataUrl(parsed.fileDataUrl || '');
       setMimeType(parsed.mimeType || 'text/plain');
-      if (parsed.isPdf) {
+      if (parsed.isVideo) {
+        setUploadStatus(`Video media loaded (${(file.size / (1024 * 1024)).toFixed(1)} MB) • Ready for approval`);
+      } else if (parsed.isPdf) {
         setUploadStatus(`PDF document loaded (${(file.size / 1024).toFixed(1)} KB) • Text extracted successfully`);
       } else {
         setUploadStatus(`Document loaded (${(file.size / 1024).toFixed(1)} KB)`);
@@ -223,7 +229,13 @@ Employees should notify their immediate manager via the HR self-service portal a
         fileName: fileName || `${title.replace(/[^a-zA-Z0-9]/g, '_')}_v1.0.txt`,
         rawContent: stripPolicyMetadataHeader(rawContent),
         fileDataUrl,
-        mimeType: mimeType || (fileName.endsWith('.pdf') ? 'application/pdf' : 'text/markdown'),
+        mimeType:
+          mimeType ||
+          (fileName?.toLowerCase().match(/\.(mp4|webm|mov|m4v|mkv|avi|ogv)$/)
+            ? 'video/mp4'
+            : fileName?.endsWith('.pdf')
+            ? 'application/pdf'
+            : 'text/markdown'),
       });
 
       onSuccess();
@@ -475,7 +487,7 @@ Employees should notify their immediate manager via the HR self-service portal a
           <div className="border border-slate-200 rounded-2xl p-4 bg-slate-50/50">
             <div className="flex items-center justify-between mb-2">
               <label className="block text-xs font-bold text-slate-900 uppercase tracking-wider">
-                Document Content / File (PDF, DOCX) <span className="text-[#FA7014]">*</span>
+                Document Content / File (PDF, DOCX, Video) <span className="text-[#FA7014]">*</span>
               </label>
 
               <label className="cursor-pointer inline-flex items-center space-x-1.5 text-xs font-semibold text-slate-700 hover:text-slate-900 bg-white border border-slate-200 px-3 py-1.5 rounded-xl shadow-xs hover:bg-slate-50 transition-colors">
@@ -483,7 +495,7 @@ Employees should notify their immediate manager via the HR self-service portal a
                 <span>Upload File</span>
                 <input
                   type="file"
-                  accept=".pdf,.docx"
+                  accept=".pdf,.docx,video/*,.mp4,.webm,.mov,.m4v,.mkv,.avi"
                   onChange={handleFileUpload}
                   className="hidden"
                 />

@@ -175,9 +175,13 @@ export const CreateVersionModal: React.FC<CreateVersionModalProps> = ({
     if (!file) return;
 
     const lowerName = file.name.toLowerCase();
-    const isAllowed = lowerName.endsWith(".pdf") || lowerName.endsWith(".docx");
+    const isAllowed =
+      lowerName.endsWith(".pdf") ||
+      lowerName.endsWith(".docx") ||
+      file.type.startsWith("video/") ||
+      Boolean(lowerName.match(/\.(mp4|webm|mov|m4v|mkv|avi|ogv)$/));
     if (!isAllowed) {
-      setError("Invalid file format. Only .pdf and .docx documents are supported.");
+      setError("Invalid file format. Supported formats: .pdf, .docx, and video (.mp4, .webm, .mov, etc.).");
       return;
     }
 
@@ -190,7 +194,9 @@ export const CreateVersionModal: React.FC<CreateVersionModalProps> = ({
       setRawContent(parsed.extractedText || '');
       setFileDataUrl(parsed.fileDataUrl || '');
       setMimeType(parsed.mimeType || 'text/plain');
-      if (parsed.isPdf) {
+      if (parsed.isVideo) {
+        setUploadStatus(`Video media loaded (${(file.size / (1024 * 1024)).toFixed(1)} MB) • Ready for approval`);
+      } else if (parsed.isPdf) {
         setUploadStatus(`PDF document loaded (${(file.size / 1024).toFixed(1)} KB) • Text extracted`);
       } else {
         setUploadStatus(`Document loaded (${(file.size / 1024).toFixed(1)} KB)`);
@@ -230,11 +236,23 @@ export const CreateVersionModal: React.FC<CreateVersionModalProps> = ({
         documentMasterId: selectedDocId,
         revisionType,
         rawContent: extractCleanBody(rawContent),
-        fileName: fileName || `${selectedMaster?.documentId}_v${calculatedNextVersion}.txt`,
+        fileName:
+          fileName ||
+          `${selectedMaster?.documentId}_v${calculatedNextVersion}.${
+            mimeType?.startsWith('video/') || fileName?.toLowerCase().match(/\.(mp4|webm|mov|m4v|mkv|avi|ogv)$/)
+              ? 'mp4'
+              : 'txt'
+          }`,
         changeSummary: changeSummary.trim(),
         effectiveFrom: effectiveFrom || new Date().toISOString().split('T')[0],
         fileDataUrl,
-        mimeType: mimeType || (fileName.endsWith('.pdf') ? 'application/pdf' : 'text/markdown'),
+        mimeType:
+          mimeType ||
+          (fileName?.toLowerCase().match(/\.(mp4|webm|mov|m4v|mkv|avi|ogv)$/)
+            ? 'video/mp4'
+            : fileName?.endsWith('.pdf')
+            ? 'application/pdf'
+            : 'text/markdown'),
         previousVersionId: rejectedVersion?.id || selectedMaster?.currentPublishedVersionId || docVersions[0]?.id,
       });
 
@@ -552,25 +570,37 @@ export const CreateVersionModal: React.FC<CreateVersionModalProps> = ({
               </div>
 
               {/* Dynamic Header Table */}
-              <DocumentHeaderTable
-                data={{
-                  companyName: selectedMaster.companyName || 'Amaavigo',
-                  documentTitle: selectedMaster.title,
-                  versionNumber: calculatedNextVersion,
-                  effectiveDate: formatDDMMYYYY(effectiveFrom),
-                  createdByName: currentUser.name,
-                  approvedByName: 'Pending Review',
-                  approvedDate: 'Pending Approval',
-                }}
-                className="!my-0 scale-95 sm:scale-100 origin-top"
-              />
+              {mimeType?.startsWith('video/') || fileName?.toLowerCase().match(/\.(mp4|webm|mov|m4v|mkv|avi|ogv)$/) ? (
+                <div className="bg-amber-50/80 border border-amber-200 rounded-xl p-3 text-xs text-amber-900 flex items-start space-x-2.5">
+                  <Sparkles className="w-4 h-4 text-[#FA7014] shrink-0 mt-0.5" />
+                  <div>
+                    <span className="font-bold block text-slate-900">Video Asset Version Governance</span>
+                    <p className="text-slate-600 text-[11px] mt-0.5">
+                      This video revision will progress through the standard multi-level review and approval workflow. In accordance with media governance rules, headers and footers are omitted from video files.
+                    </p>
+                  </div>
+                </div>
+              ) : (
+                <DocumentHeaderTable
+                  data={{
+                    companyName: selectedMaster.companyName || 'Amaavigo',
+                    documentTitle: selectedMaster.title,
+                    versionNumber: calculatedNextVersion,
+                    effectiveDate: formatDDMMYYYY(effectiveFrom),
+                    createdByName: currentUser.name,
+                    approvedByName: 'Pending Review',
+                    approvedDate: 'Pending Approval',
+                  }}
+                  className="!my-0 scale-95 sm:scale-100 origin-top"
+                />
+              )}
 
               <div className="flex items-center justify-between text-[11px] text-slate-500 pt-1">
                 <span>
-                  Header will be stamped with Effective Date: <strong className="text-slate-800 font-mono">{formatDDMMYYYY(effectiveFrom)}</strong>
+                  Effective Date: <strong className="text-slate-800 font-mono">{formatDDMMYYYY(effectiveFrom)}</strong>
                 </span>
                 <span className="text-[10px] font-medium text-slate-400">
-                  Footer stamps Created by: {currentUser.name}
+                  Version Creator: {currentUser.name}
                 </span>
               </div>
             </div>
@@ -580,7 +610,7 @@ export const CreateVersionModal: React.FC<CreateVersionModalProps> = ({
           <div className="border border-slate-200 rounded-2xl p-4 bg-slate-50/50">
             <div className="flex items-center justify-between mb-2 flex-wrap gap-2">
               <label className="block text-xs font-bold text-slate-900 uppercase tracking-wider" htmlFor="textarea-revised-content">
-                Document Content / File (PDF, DOCX) <span className="text-[#FA7014]">*</span>
+                Document Content / File (PDF, DOCX, Video) <span className="text-[#FA7014]">*</span>
               </label>
 
               <div className="flex items-center space-x-2">
@@ -614,7 +644,7 @@ export const CreateVersionModal: React.FC<CreateVersionModalProps> = ({
                   <span>Upload File</span>
                   <input
                     type="file"
-                    accept=".pdf,.docx"
+                    accept=".pdf,.docx,video/*,.mp4,.webm,.mov,.m4v,.mkv,.avi"
                     onChange={handleFileUpload}
                     className="hidden"
                   />

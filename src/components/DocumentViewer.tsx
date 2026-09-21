@@ -15,6 +15,7 @@ import {
   Printer,
   ShieldCheck,
   Clock,
+  Video,
 } from 'lucide-react';
 import { extractTextFromRawPdfStream, isRawPdfStream, getBrowserPdfjs } from '../utils/fileParser';
 import {
@@ -57,8 +58,13 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({
     isRawPdfStream(rawContent) ||
     fileUrl?.startsWith('data:application/pdf');
 
-  const [viewMode, setViewMode] = useState<'docx' | 'pdf' | 'formatted' | 'raw'>(
-    isPdf ? 'pdf' : isDocx ? 'docx' : 'formatted'
+  const isVideo =
+    Boolean(fileName?.toLowerCase().match(/\.(mp4|webm|mov|m4v|mkv|avi|ogv)$/)) ||
+    Boolean(mimeType?.startsWith('video/')) ||
+    Boolean(fileUrl && fileUrl.startsWith('data:video/'));
+
+  const [viewMode, setViewMode] = useState<'video' | 'docx' | 'pdf' | 'formatted' | 'raw'>(
+    isVideo ? 'video' : isPdf ? 'pdf' : isDocx ? 'docx' : 'formatted'
   );
   const [numPages, setNumPages] = useState<number>(0);
   const [pageNumber, setPageNumber] = useState<number>(1);
@@ -79,14 +85,16 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({
 
   // Keep viewMode synchronized with document type if props change
   useEffect(() => {
-    if (isPdf) {
+    if (isVideo) {
+      setViewMode('video');
+    } else if (isPdf) {
       setViewMode('pdf');
     } else if (isDocx) {
       setViewMode('docx');
     } else {
       setViewMode('formatted');
     }
-  }, [isPdf, isDocx]);
+  }, [isVideo, isPdf, isDocx]);
 
   const effectiveHeaderFooterData = React.useMemo(() => {
     if (headerFooterData) return headerFooterData;
@@ -397,6 +405,21 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({
       <div className="bg-slate-50 px-4 py-3 border-b border-slate-200 flex flex-wrap items-center justify-between gap-3">
         {/* VIEW MODE SELECTOR */}
         <div className="flex items-center space-x-1.5 bg-white p-1 rounded-xl border border-slate-200">
+          {isVideo && (
+            <button
+              type="button"
+              onClick={() => setViewMode('video')}
+              className={`px-3 py-1.5 text-xs rounded-lg font-bold flex items-center space-x-1.5 transition-all ${
+                viewMode === 'video'
+                  ? 'bg-slate-900 text-white shadow-xs'
+                  : 'text-slate-500 hover:text-slate-900'
+              }`}
+            >
+              <Video className="w-3.5 h-3.5 text-[#FA7014]" />
+              <span>Video Player</span>
+            </button>
+          )}
+
           {isDocx && (
             <button
               type="button"
@@ -453,6 +476,17 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({
             <span>Raw Text</span>
           </button>
         </div>
+
+        {/* VIDEO ASSET BADGE */}
+        {viewMode === 'video' && (
+          <div className="flex items-center space-x-2 text-xs text-slate-500">
+            <span className="inline-flex items-center space-x-1 px-2.5 py-1 rounded-lg bg-[#FA7014]/10 text-[#FA7014] font-semibold">
+              <Video className="w-3.5 h-3.5" />
+              <span>Video Master Asset</span>
+            </span>
+            <span className="hidden sm:inline text-[11px] text-slate-400">Header & footer skipped</span>
+          </div>
+        )}
 
         {/* PDF PAGE & ZOOM CONTROLS */}
         {viewMode === 'pdf' && numPages > 0 && (
@@ -512,6 +546,40 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({
 
       {/* VIEWER BODY */}
       <div className="flex-1 bg-slate-100/70 p-4 overflow-y-auto max-h-[62vh] flex justify-center items-start min-h-[300px]">
+        {/* 0. INTERACTIVE VIDEO PLAYER */}
+        {viewMode === 'video' && (
+          <div className="flex flex-col items-center justify-center w-full max-w-4xl mx-auto py-2">
+            <div className="w-full bg-slate-950 rounded-2xl overflow-hidden shadow-lg border border-slate-800 flex flex-col items-center">
+              {fileUrl ? (
+                <video
+                  controls
+                  className="w-full max-h-[55vh] bg-black rounded-t-2xl object-contain"
+                  src={fileUrl}
+                >
+                  Your browser does not support HTML5 video playback.
+                </video>
+              ) : (
+                <div className="py-20 text-center text-slate-400">
+                  <Video className="w-12 h-12 mx-auto text-slate-500 mb-2 opacity-50" />
+                  <p className="text-sm font-medium">Video file preview not available</p>
+                </div>
+              )}
+              <div className="w-full px-5 py-3.5 bg-slate-900 flex flex-wrap items-center justify-between gap-2 border-t border-slate-800 text-xs text-slate-300">
+                <div className="flex items-center space-x-2">
+                  <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-[#FA7014]/20 text-[#FA7014] border border-[#FA7014]/30">
+                    VIDEO ASSET
+                  </span>
+                  <span className="font-mono text-slate-200 truncate max-w-xs">{fileName}</span>
+                </div>
+                <div className="text-[11px] text-slate-400 flex items-center space-x-1.5">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+                  <span>Header & footer stamping omitted for video media</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* 1. INTERACTIVE WORD (DOCX) DOCUMENT VIEWER */}
         {viewMode === 'docx' && (
           <div className="flex flex-col items-center justify-center w-full">
@@ -618,8 +686,8 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({
               </div>
             </div>
 
-            {/* DYNAMIC CORPORATE HEADER TABLE */}
-            {effectiveHeaderFooterData && (
+            {/* DYNAMIC CORPORATE HEADER TABLE (Omitted for Video Files) */}
+            {effectiveHeaderFooterData && !isVideo && (
               <div className="mb-6">
                 <DocumentHeaderTable data={effectiveHeaderFooterData} />
               </div>
@@ -673,8 +741,8 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({
               })}
             </div>
 
-            {/* DYNAMIC CORPORATE FOOTER TABLE */}
-            {effectiveHeaderFooterData && (
+            {/* DYNAMIC CORPORATE FOOTER TABLE (Omitted for Video Files) */}
+            {effectiveHeaderFooterData && !isVideo && (
               <div className="mt-8 pt-4 border-t border-slate-100">
                 <DocumentFooterTable data={effectiveHeaderFooterData} />
               </div>
