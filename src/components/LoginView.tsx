@@ -12,6 +12,8 @@ import {
   EyeOff,
   User as UserIcon,
   Loader2,
+  Bot,
+  Sparkles,
 } from 'lucide-react';
 import { User, UserRole } from '../types';
 import { AmaavigoLogo } from './AmaavigoLogo';
@@ -142,12 +144,12 @@ export const LoginView: React.FC<LoginViewProps> = ({ users, onSelectUser }) => 
       if (userRole !== targetRole) {
         const portalNames: Record<UserRole, string> = {
           [UserRole.EMPLOYEE]: 'Employee Portal',
-          [UserRole.CREATOR]: 'HR Creator Portal',
+          [UserRole.CREATOR]: 'HR Agent Portal',
           [UserRole.REVIEWER]: 'Approver Portal',
         };
         const roleLabels: Record<UserRole, string> = {
           [UserRole.EMPLOYEE]: 'Employee',
-          [UserRole.CREATOR]: 'HR Creator',
+          [UserRole.CREATOR]: 'HR Agent',
           [UserRole.REVIEWER]: 'Approver',
         };
 
@@ -208,7 +210,7 @@ export const LoginView: React.FC<LoginViewProps> = ({ users, onSelectUser }) => 
 
   const handleHrLogin = (e: React.FormEvent) => {
     e.preventDefault();
-    authenticateWithDatabase(UserRole.CREATOR, hrId, hrPass, 'HR');
+    authenticateWithDatabase(UserRole.CREATOR, hrId, hrPass, 'HR Agent');
   };
 
   const handleApproverLogin = (e: React.FormEvent) => {
@@ -222,27 +224,27 @@ export const LoginView: React.FC<LoginViewProps> = ({ users, onSelectUser }) => 
   };
 
   return (
-    <div className="w-full min-h-screen flex flex-col lg:flex-row bg-[#F8FAFC] overflow-y-auto">
-      {/* LEFT COLUMN: Expanded, Prominent Login Console with Smooth Vertical Scroll */}
-      <div className="w-full lg:w-[58%] xl:w-[60%] flex flex-col justify-start lg:justify-center items-center py-8 sm:py-12 px-4 sm:px-10 xl:px-16 relative overflow-y-auto min-h-screen">
-        {/* Subtle Background Glows */}
+    <div className="w-full min-h-screen lg:h-screen flex flex-col lg:flex-row bg-[#F8FAFC] overflow-y-auto lg:overflow-hidden">
+      {/* LEFT COLUMN: Prominently Centered Login Console Fitting Entirely Without Scrolling */}
+      <div className="w-full lg:w-[58%] xl:w-[60%] lg:h-full flex flex-col justify-center items-center py-4 sm:py-5 lg:py-3 px-4 sm:px-8 xl:px-12 relative overflow-y-auto lg:overflow-hidden">
+        {/* Subtle Background Glow */}
         <div className="absolute top-1/4 left-1/2 -translate-x-1/2 w-96 h-96 bg-[#FA7014]/5 rounded-full blur-3xl pointer-events-none" />
 
-        <div className="w-full max-w-[560px] sm:max-w-[590px] flex flex-col items-center relative z-10 my-auto">
+        <div className="w-full max-w-[480px] xl:max-w-[500px] flex flex-col items-center relative z-10">
           {/* Header & Branding */}
-          <div className="w-full text-center mb-5">
-            <div className="flex justify-center items-center mb-2">
-              <AmaavigoLogo size="md" variant="full" theme="light" height={52} align="center" className="mx-auto shrink-0" />
+          <div className="w-full text-center mb-2 sm:mb-2.5">
+            <div className="flex justify-center items-center mb-1">
+              <AmaavigoLogo size="md" variant="full" theme="light" height={36} align="center" className="mx-auto shrink-0" />
             </div>
-            <h1 className="text-2xl sm:text-[28px] font-extrabold text-slate-900 tracking-tight leading-snug">
-              HR Document Governance
+            <h1 className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight leading-snug">
+              HR AI Agent
             </h1>
-            <p className="mt-1 text-xs sm:text-sm text-slate-500 max-w-md mx-auto">
-              Centralized Policy Lifecycle Control, Approvals & Compliance
+            <p className="text-[11px] sm:text-xs text-slate-500 max-w-sm sm:max-w-md mx-auto mt-0.5 leading-normal">
+              Intelligent Workforce Automation, Talent Acquisition &amp; Policy Governance
             </p>
 
-            {/* 3 Roles Selector Tabs (Bigger & Clearer) */}
-            <div className="mt-4 inline-flex p-1.5 rounded-xl bg-white border border-slate-200 shadow-xs">
+            {/* 3 Roles Selector Tabs */}
+            <div className="mt-2 inline-flex p-1 rounded-xl bg-white border border-slate-200 shadow-2xs">
               <button
                 id="tab-select-employee"
                 type="button"
@@ -250,13 +252,13 @@ export const LoginView: React.FC<LoginViewProps> = ({ users, onSelectUser }) => 
                   setActiveRole('employee');
                   setErrorMessage('');
                 }}
-                className={`flex items-center space-x-2 px-4 sm:px-5 py-2.5 rounded-lg text-xs sm:text-sm font-bold transition-all cursor-pointer ${
+                className={`flex items-center space-x-1.5 px-3 sm:px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
                   activeRole === 'employee'
                     ? 'bg-[#FA7014] text-white shadow-xs'
                     : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
                 }`}
               >
-                <UserIcon className="w-4 h-4" />
+                <UserIcon className="w-3.5 h-3.5" />
                 <span>Employee</span>
               </button>
 
@@ -267,14 +269,14 @@ export const LoginView: React.FC<LoginViewProps> = ({ users, onSelectUser }) => 
                   setActiveRole('creator');
                   setErrorMessage('');
                 }}
-                className={`flex items-center space-x-2 px-4 sm:px-5 py-2.5 rounded-lg text-xs sm:text-sm font-bold transition-all cursor-pointer ${
+                className={`flex items-center space-x-1.5 px-3 sm:px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
                   activeRole === 'creator'
                     ? 'bg-slate-900 text-white shadow-xs'
                     : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
                 }`}
               >
-                <FileEdit className="w-4 h-4" />
-                <span>HR Creator</span>
+                <Bot className="w-3.5 h-3.5" />
+                <span>HR Agent</span>
               </button>
 
               <button
@@ -284,49 +286,49 @@ export const LoginView: React.FC<LoginViewProps> = ({ users, onSelectUser }) => 
                   setActiveRole('approver');
                   setErrorMessage('');
                 }}
-                className={`flex items-center space-x-2 px-4 sm:px-5 py-2.5 rounded-lg text-xs sm:text-sm font-bold transition-all cursor-pointer ${
+                className={`flex items-center space-x-1.5 px-3 sm:px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
                   activeRole === 'approver'
                     ? 'bg-slate-900 text-white shadow-xs'
                     : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
                 }`}
               >
-                <Shield className="w-4 h-4" />
+                <Shield className="w-3.5 h-3.5" />
                 <span>Approver</span>
               </button>
             </div>
           </div>
 
-          {/* Main Authentication Card (Enlarged & Prominent) */}
-          <div className="w-full bg-white rounded-2xl border border-slate-200 p-6 sm:p-8 shadow-xl shadow-slate-200/60">
+          {/* Main Authentication Card (Compact, High-Precision Spacing) */}
+          <div className="w-full bg-white rounded-2xl border border-slate-200/90 p-4 sm:p-5 shadow-lg shadow-slate-200/50">
             {/* Error Banner */}
             {errorMessage && (
-              <div className="mb-3 p-3 rounded-xl bg-rose-50 border border-rose-200 flex items-start space-x-2.5 text-xs sm:text-sm text-rose-700 animate-in fade-in">
-                <AlertCircle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
+              <div className="mb-2 p-2 rounded-xl bg-rose-50 border border-rose-200 flex items-start space-x-2 text-xs text-rose-700 animate-in fade-in">
+                <AlertCircle className="w-3.5 h-3.5 text-rose-600 shrink-0 mt-0.5" />
                 <div className="leading-relaxed font-medium">{errorMessage}</div>
               </div>
             )}
 
-            {/* FORM 1: EMPLOYEE LOGIN (Default) */}
+            {/* FORM 1: EMPLOYEE LOGIN */}
             {activeRole === 'employee' && (
-              <form onSubmit={handleEmployeeLogin} className="space-y-3.5">
-                <div className="flex items-center justify-between border-b border-slate-100 pb-2.5">
-                  <div className="flex items-center space-x-3">
-                    <div className="w-9 h-9 rounded-xl bg-[#FA7014]/10 border border-[#FA7014]/30 flex items-center justify-center text-[#FA7014]">
-                      <UserIcon className="w-5 h-5" />
+              <form onSubmit={handleEmployeeLogin} className="space-y-2.5">
+                <div className="flex items-center justify-between border-b border-slate-100 pb-1.5">
+                  <div className="flex items-center space-x-2.5">
+                    <div className="w-7 h-7 rounded-lg bg-[#FA7014]/10 border border-[#FA7014]/30 flex items-center justify-center text-[#FA7014]">
+                      <UserIcon className="w-4 h-4" />
                     </div>
                     <div>
-                      <h2 className="text-base font-bold text-slate-900 leading-tight">Login as Employee</h2>
-                      <p className="text-xs text-slate-500">Access Policies & Mandatory Sign-Offs</p>
+                      <h2 className="text-sm font-bold text-slate-900 leading-tight">Login as Employee</h2>
+                      <p className="text-[11px] text-slate-500 leading-tight">Access Policies, Sign-Offs &amp; AI Self-Service</p>
                     </div>
                   </div>
                 </div>
 
-                <div className="space-y-1.5">
-                  <label className="block text-xs sm:text-[13px] font-bold text-slate-700" htmlFor="input-emp-id">
+                <div className="space-y-1">
+                  <label className="block text-[11px] sm:text-xs font-bold text-slate-700" htmlFor="input-emp-id">
                     Employee ID or Email
                   </label>
                   <div className="relative">
-                    <UserIcon className="w-4 h-4 sm:w-5 sm:h-5 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+                    <UserIcon className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
                     <input
                       id="input-emp-id"
                       type="text"
@@ -334,17 +336,17 @@ export const LoginView: React.FC<LoginViewProps> = ({ users, onSelectUser }) => 
                       placeholder="e.g. AM011 or email"
                       value={empId}
                       onChange={(e) => setEmpId(e.target.value)}
-                      className="w-full pl-10 sm:pl-11 pr-4 py-2.5 sm:py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm sm:text-base text-slate-900 placeholder:text-slate-400 focus:bg-white focus:outline-hidden focus:ring-2 focus:ring-[#FA7014] focus:border-[#FA7014] transition-all font-mono"
+                      className="w-full pl-9 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-lg sm:rounded-xl text-xs sm:text-sm text-slate-900 placeholder:text-slate-400 focus:bg-white focus:outline-hidden focus:ring-2 focus:ring-[#FA7014] focus:border-[#FA7014] transition-all font-mono"
                     />
                   </div>
                 </div>
 
-                <div className="space-y-1.5">
-                  <label className="block text-xs sm:text-[13px] font-bold text-slate-700" htmlFor="input-emp-pass">
+                <div className="space-y-1">
+                  <label className="block text-[11px] sm:text-xs font-bold text-slate-700" htmlFor="input-emp-pass">
                     Password
                   </label>
                   <div className="relative">
-                    <Lock className="w-4 h-4 sm:w-5 sm:h-5 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+                    <Lock className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
                     <input
                       id="input-emp-pass"
                       type={showEmpPass ? 'text' : 'password'}
@@ -352,14 +354,14 @@ export const LoginView: React.FC<LoginViewProps> = ({ users, onSelectUser }) => 
                       placeholder="Enter Password"
                       value={empPass}
                       onChange={(e) => setEmpPass(e.target.value)}
-                      className="w-full pl-10 sm:pl-11 pr-11 py-2.5 sm:py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm sm:text-base text-slate-900 placeholder:text-slate-400 focus:bg-white focus:outline-hidden focus:ring-2 focus:ring-[#FA7014] focus:border-[#FA7014] transition-all"
+                      className="w-full pl-9 pr-10 py-2 bg-slate-50 border border-slate-200 rounded-lg sm:rounded-xl text-xs sm:text-sm text-slate-900 placeholder:text-slate-400 focus:bg-white focus:outline-hidden focus:ring-2 focus:ring-[#FA7014] focus:border-[#FA7014] transition-all"
                     />
                     <button
                       type="button"
                       onClick={() => setShowEmpPass(!showEmpPass)}
-                      className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-1 cursor-pointer"
+                      className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-1 cursor-pointer"
                     >
-                      {showEmpPass ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                      {showEmpPass ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
                     </button>
                   </div>
                 </div>
@@ -368,44 +370,44 @@ export const LoginView: React.FC<LoginViewProps> = ({ users, onSelectUser }) => 
                   id="btn-submit-employee-login"
                   type="submit"
                   disabled={isAuthenticating}
-                  className="w-full bg-[#FA7014] hover:bg-[#E65A05] disabled:opacity-75 text-white font-bold py-3 sm:py-3.5 px-5 rounded-xl shadow-md shadow-[#FA7014]/20 flex items-center justify-center space-x-2 transition-all text-sm sm:text-base cursor-pointer mt-1"
+                  className="w-full bg-[#FA7014] hover:bg-[#E65A05] disabled:opacity-75 text-white font-bold py-2.5 px-4 rounded-xl shadow-md shadow-[#FA7014]/20 flex items-center justify-center space-x-1.5 transition-all text-xs sm:text-sm cursor-pointer mt-0.5"
                 >
                   {isAuthenticating ? (
                     <>
-                      <Loader2 className="w-4 h-4 sm:w-5 sm:h-5 animate-spin" />
+                      <Loader2 className="w-4 h-4 animate-spin" />
                       <span>Verifying with Database...</span>
                     </>
                   ) : (
                     <>
                       <span>Login to Employee Portal</span>
-                      <ArrowRight className="w-4 h-4 sm:w-5 sm:h-5" />
+                      <ArrowRight className="w-4 h-4" />
                     </>
                   )}
                 </button>
               </form>
             )}
 
-            {/* FORM 2: HR CREATOR LOGIN */}
+            {/* FORM 2: HR AGENT LOGIN */}
             {activeRole === 'creator' && (
-              <form onSubmit={handleHrLogin} className="space-y-3.5">
-                <div className="flex items-center justify-between border-b border-slate-100 pb-2.5">
-                  <div className="flex items-center space-x-3">
-                    <div className="w-9 h-9 rounded-xl bg-slate-900 text-white flex items-center justify-center">
-                      <FileEdit className="w-5 h-5" />
+              <form onSubmit={handleHrLogin} className="space-y-2.5">
+                <div className="flex items-center justify-between border-b border-slate-100 pb-1.5">
+                  <div className="flex items-center space-x-2.5">
+                    <div className="w-7 h-7 rounded-lg bg-slate-900 text-[#FA7014] flex items-center justify-center">
+                      <Bot className="w-4 h-4" />
                     </div>
                     <div>
-                      <h2 className="text-base font-bold text-slate-900 leading-tight">Login as HR Creator</h2>
-                      <p className="text-xs text-slate-500">Author & Manage HR Documents</p>
+                      <h2 className="text-sm font-bold text-slate-900 leading-tight">Login to HR AI Agent</h2>
+                      <p className="text-[11px] text-slate-500 leading-tight">Autonomous Recruitment, Policy Studio &amp; Workforce Ops</p>
                     </div>
                   </div>
                 </div>
 
-                <div className="space-y-1.5">
-                  <label className="block text-xs sm:text-[13px] font-bold text-slate-700" htmlFor="input-hr-id">
+                <div className="space-y-1">
+                  <label className="block text-[11px] sm:text-xs font-bold text-slate-700" htmlFor="input-hr-id">
                     HR ID or Email
                   </label>
                   <div className="relative">
-                    <UserIcon className="w-4 h-4 sm:w-5 sm:h-5 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+                    <UserIcon className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
                     <input
                       id="input-hr-id"
                       type="text"
@@ -413,17 +415,17 @@ export const LoginView: React.FC<LoginViewProps> = ({ users, onSelectUser }) => 
                       placeholder="e.g. HR001"
                       value={hrId}
                       onChange={(e) => setHrId(e.target.value)}
-                      className="w-full pl-10 sm:pl-11 pr-4 py-2.5 sm:py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm sm:text-base text-slate-900 placeholder:text-slate-400 focus:bg-white focus:outline-hidden focus:ring-2 focus:ring-slate-900 focus:border-slate-900 transition-all font-mono"
+                      className="w-full pl-9 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-lg sm:rounded-xl text-xs sm:text-sm text-slate-900 placeholder:text-slate-400 focus:bg-white focus:outline-hidden focus:ring-2 focus:ring-slate-900 focus:border-slate-900 transition-all font-mono"
                     />
                   </div>
                 </div>
 
-                <div className="space-y-1.5">
-                  <label className="block text-xs sm:text-[13px] font-bold text-slate-700" htmlFor="input-hr-pass">
+                <div className="space-y-1">
+                  <label className="block text-[11px] sm:text-xs font-bold text-slate-700" htmlFor="input-hr-pass">
                     Password
                   </label>
                   <div className="relative">
-                    <Lock className="w-4 h-4 sm:w-5 sm:h-5 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+                    <Lock className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
                     <input
                       id="input-hr-pass"
                       type={showHrPass ? 'text' : 'password'}
@@ -431,14 +433,14 @@ export const LoginView: React.FC<LoginViewProps> = ({ users, onSelectUser }) => 
                       placeholder="Enter Password"
                       value={hrPass}
                       onChange={(e) => setHrPass(e.target.value)}
-                      className="w-full pl-10 sm:pl-11 pr-11 py-2.5 sm:py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm sm:text-base text-slate-900 placeholder:text-slate-400 focus:bg-white focus:outline-hidden focus:ring-2 focus:ring-slate-900 focus:border-slate-900 transition-all"
+                      className="w-full pl-9 pr-10 py-2 bg-slate-50 border border-slate-200 rounded-lg sm:rounded-xl text-xs sm:text-sm text-slate-900 placeholder:text-slate-400 focus:bg-white focus:outline-hidden focus:ring-2 focus:ring-slate-900 focus:border-slate-900 transition-all"
                     />
                     <button
                       type="button"
                       onClick={() => setShowHrPass(!showHrPass)}
-                      className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-1 cursor-pointer"
+                      className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-1 cursor-pointer"
                     >
-                      {showHrPass ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                      {showHrPass ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
                     </button>
                   </div>
                 </div>
@@ -447,17 +449,17 @@ export const LoginView: React.FC<LoginViewProps> = ({ users, onSelectUser }) => 
                   id="btn-submit-hr-login"
                   type="submit"
                   disabled={isAuthenticating}
-                  className="w-full bg-slate-900 hover:bg-slate-800 disabled:opacity-75 text-white font-bold py-3 sm:py-3.5 px-5 rounded-xl shadow-md flex items-center justify-center space-x-2 transition-all text-sm sm:text-base cursor-pointer mt-1"
+                  className="w-full bg-slate-900 hover:bg-slate-800 disabled:opacity-75 text-white font-bold py-2.5 px-4 rounded-xl shadow-md flex items-center justify-center space-x-1.5 transition-all text-xs sm:text-sm cursor-pointer mt-0.5"
                 >
                   {isAuthenticating ? (
                     <>
-                      <Loader2 className="w-4 h-4 sm:w-5 sm:h-5 animate-spin" />
+                      <Loader2 className="w-4 h-4 animate-spin" />
                       <span>Verifying with Database...</span>
                     </>
                   ) : (
                     <>
-                      <span>Login to HR Portal</span>
-                      <ArrowRight className="w-4 h-4 sm:w-5 sm:h-5" />
+                      <span>Login to HR Agent Portal</span>
+                      <ArrowRight className="w-4 h-4" />
                     </>
                   )}
                 </button>
@@ -466,25 +468,25 @@ export const LoginView: React.FC<LoginViewProps> = ({ users, onSelectUser }) => 
 
             {/* FORM 3: APPROVER LOGIN */}
             {activeRole === 'approver' && (
-              <form onSubmit={handleApproverLogin} className="space-y-3.5">
-                <div className="flex items-center justify-between border-b border-slate-100 pb-2.5">
-                  <div className="flex items-center space-x-3">
-                    <div className="w-9 h-9 rounded-xl bg-slate-900 text-[#FA7014] flex items-center justify-center">
-                      <Shield className="w-5 h-5" />
+              <form onSubmit={handleApproverLogin} className="space-y-2.5">
+                <div className="flex items-center justify-between border-b border-slate-100 pb-1.5">
+                  <div className="flex items-center space-x-2.5">
+                    <div className="w-7 h-7 rounded-lg bg-slate-900 text-[#FA7014] flex items-center justify-center">
+                      <Shield className="w-4 h-4" />
                     </div>
                     <div>
-                      <h2 className="text-base font-bold text-slate-900 leading-tight">Login as Approver</h2>
-                      <p className="text-xs text-slate-500">Review & Authorize Policy Publications</p>
+                      <h2 className="text-sm font-bold text-slate-900 leading-tight">Login as Approver</h2>
+                      <p className="text-[11px] text-slate-500 leading-tight">Review &amp; Authorize Policy Publications &amp; Agent Actions</p>
                     </div>
                   </div>
                 </div>
 
-                <div className="space-y-1.5">
-                  <label className="block text-xs sm:text-[13px] font-bold text-slate-700" htmlFor="input-approver-id">
+                <div className="space-y-1">
+                  <label className="block text-[11px] sm:text-xs font-bold text-slate-700" htmlFor="input-approver-id">
                     Approver ID or Email
                   </label>
                   <div className="relative">
-                    <UserIcon className="w-4 h-4 sm:w-5 sm:h-5 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+                    <UserIcon className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
                     <input
                       id="input-approver-id"
                       type="text"
@@ -492,17 +494,17 @@ export const LoginView: React.FC<LoginViewProps> = ({ users, onSelectUser }) => 
                       placeholder="e.g. AMA001"
                       value={approverId}
                       onChange={(e) => setApproverId(e.target.value)}
-                      className="w-full pl-10 sm:pl-11 pr-4 py-2.5 sm:py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm sm:text-base text-slate-900 placeholder:text-slate-400 focus:bg-white focus:outline-hidden focus:ring-2 focus:ring-slate-900 focus:border-slate-900 transition-all font-mono"
+                      className="w-full pl-9 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-lg sm:rounded-xl text-xs sm:text-sm text-slate-900 placeholder:text-slate-400 focus:bg-white focus:outline-hidden focus:ring-2 focus:ring-slate-900 focus:border-slate-900 transition-all font-mono"
                     />
                   </div>
                 </div>
 
-                <div className="space-y-1.5">
-                  <label className="block text-xs sm:text-[13px] font-bold text-slate-700" htmlFor="input-approver-pass">
+                <div className="space-y-1">
+                  <label className="block text-[11px] sm:text-xs font-bold text-slate-700" htmlFor="input-approver-pass">
                     Password
                   </label>
                   <div className="relative">
-                    <Lock className="w-4 h-4 sm:w-5 sm:h-5 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+                    <Lock className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
                     <input
                       id="input-approver-pass"
                       type={showApproverPass ? 'text' : 'password'}
@@ -510,14 +512,14 @@ export const LoginView: React.FC<LoginViewProps> = ({ users, onSelectUser }) => 
                       placeholder="Enter Password"
                       value={approverPass}
                       onChange={(e) => setApproverPass(e.target.value)}
-                      className="w-full pl-10 sm:pl-11 pr-11 py-2.5 sm:py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm sm:text-base text-slate-900 placeholder:text-slate-400 focus:bg-white focus:outline-hidden focus:ring-2 focus:ring-slate-900 focus:border-slate-900 transition-all"
+                      className="w-full pl-9 pr-10 py-2 bg-slate-50 border border-slate-200 rounded-lg sm:rounded-xl text-xs sm:text-sm text-slate-900 placeholder:text-slate-400 focus:bg-white focus:outline-hidden focus:ring-2 focus:ring-slate-900 focus:border-slate-900 transition-all"
                     />
                     <button
                       type="button"
                       onClick={() => setShowApproverPass(!showApproverPass)}
-                      className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-1 cursor-pointer"
+                      className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-1 cursor-pointer"
                     >
-                      {showApproverPass ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                      {showApproverPass ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
                     </button>
                   </div>
                 </div>
@@ -526,17 +528,17 @@ export const LoginView: React.FC<LoginViewProps> = ({ users, onSelectUser }) => 
                   id="btn-submit-approver-login"
                   type="submit"
                   disabled={isAuthenticating}
-                  className="w-full bg-slate-900 hover:bg-slate-800 disabled:opacity-75 text-white font-bold py-3 sm:py-3.5 px-5 rounded-xl shadow-md flex items-center justify-center space-x-2 transition-all text-sm sm:text-base cursor-pointer mt-1"
+                  className="w-full bg-slate-900 hover:bg-slate-800 disabled:opacity-75 text-white font-bold py-2.5 px-4 rounded-xl shadow-md flex items-center justify-center space-x-1.5 transition-all text-xs sm:text-sm cursor-pointer mt-0.5"
                 >
                   {isAuthenticating ? (
                     <>
-                      <Loader2 className="w-4 h-4 sm:w-5 sm:h-5 animate-spin" />
+                      <Loader2 className="w-4 h-4 animate-spin" />
                       <span>Verifying with Database...</span>
                     </>
                   ) : (
                     <>
                       <span>Login to Approver Portal</span>
-                      <ArrowRight className="w-4 h-4 sm:w-5 sm:h-5" />
+                      <ArrowRight className="w-4 h-4" />
                     </>
                   )}
                 </button>
@@ -544,26 +546,26 @@ export const LoginView: React.FC<LoginViewProps> = ({ users, onSelectUser }) => 
             )}
           </div>
 
-          {/* Governance Architecture Note */}
-          <div className="mt-2.5 sm:mt-3 text-center text-slate-400 max-w-sm mx-auto relative z-10">
-            <div className="flex items-center justify-center space-x-2.5 text-slate-500 text-[10px] sm:text-[11px]">
+          {/* Platform Architecture Note */}
+          <div className="mt-2 text-center text-slate-400 max-w-sm mx-auto relative z-10">
+            <div className="flex items-center justify-center space-x-2 text-slate-500 text-[10px]">
               <span className="flex items-center space-x-1">
-                <ShieldCheck className="w-3.5 h-3.5 text-[#FA7014]" />
-                <span>SHA-256 Hashed</span>
+                <Bot className="w-3 h-3 text-[#FA7014]" />
+                <span>HR AI Agent Active</span>
               </span>
               <span>•</span>
               <span className="flex items-center space-x-1">
-                <Layers className="w-3.5 h-3.5 text-emerald-600" />
-                <span>Immutable Versioning</span>
+                <Layers className="w-3 h-3 text-emerald-600" />
+                <span>Autonomous Workflows</span>
               </span>
               <span>•</span>
               <span className="flex items-center space-x-1">
-                <FileText className="w-3.5 h-3.5 text-slate-700" />
-                <span>Live Database Sync</span>
+                <ShieldCheck className="w-3 h-3 text-slate-700" />
+                <span>Live Cloud Sync</span>
               </span>
             </div>
-            <p className="text-[10px] sm:text-[11px] text-slate-400 mt-1">
-              Amaavigo Global HR Document Governance • Where Brand takes Flight
+            <p className="text-[10px] text-slate-400 mt-0.5">
+              Amaavigo Global HR AI Agent • Where Brand takes Flight
             </p>
           </div>
         </div>

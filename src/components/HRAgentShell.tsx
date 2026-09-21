@@ -1,0 +1,447 @@
+import React, { useState } from 'react';
+import {
+  Layers,
+  Users,
+  LayoutDashboard,
+  FileSpreadsheet,
+  UserCheck,
+  ChevronDown,
+  ChevronRight,
+  ExternalLink,
+  Bot,
+  Menu,
+  X,
+  Check,
+  PanelLeftClose,
+  PanelLeftOpen,
+  LogOut,
+} from 'lucide-react';
+import { User, UserRole } from '../types';
+import { AmaavigoLogo } from './AmaavigoLogo';
+
+export type HRAgentModule =
+  | 'document-version-control'
+  | 'talent-acquisition'
+  | 'talent-acquisition-overview';
+
+interface HRAgentShellProps {
+  currentUser: User;
+  activeModule: HRAgentModule;
+  onSelectModule: (module: HRAgentModule) => void;
+  isSidebarOpen: boolean;
+  onToggleSidebar: () => void;
+  onLogout?: () => void;
+  children: React.ReactNode;
+}
+
+const REQUISITION_FORM_URL =
+  'https://puratechautomation.app.n8n.cloud/form/fabf856b-f678-4102-8358-172f40dac767';
+const CANDIDATE_ONBOARDING_FORM_URL =
+  'https://puratechautomation.app.n8n.cloud/form/f8ac3400-cd85-46c5-bfca-c3286c01b17f';
+
+export const HRAgentShell: React.FC<HRAgentShellProps> = ({
+  currentUser,
+  activeModule,
+  onSelectModule,
+  isSidebarOpen,
+  onToggleSidebar,
+  onLogout,
+  children,
+}) => {
+  const isHR = currentUser.role === UserRole.CREATOR;
+
+  // Talent Acquisition expanded state in left navigation
+  const [isTalentAcquisitionExpanded, setIsTalentAcquisitionExpanded] = useState<boolean>(true);
+
+  // Mobile sidebar drawer state
+  const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState<boolean>(false);
+
+  const displayId = currentUser.empId || currentUser.loginId || currentUser.id || '';
+
+  return (
+    <div className="h-screen w-full bg-[#F8FAFC] flex flex-col font-sans text-slate-900 overflow-hidden">
+      {/* MOBILE TOP BAR (Only visible on small screens to toggle sidebar) */}
+      <div className="lg:hidden bg-white border-b border-slate-200 px-4 py-3 flex items-center justify-between sticky top-0 z-30 shadow-2xs shrink-0">
+        <div className="flex items-center space-x-3">
+          <button
+            type="button"
+            onClick={() => setIsMobileSidebarOpen(!isMobileSidebarOpen)}
+            className="p-2 rounded-lg text-slate-600 hover:text-slate-900 hover:bg-slate-100 transition-colors cursor-pointer"
+            aria-label="Toggle Navigation Sidebar"
+          >
+            {isMobileSidebarOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
+          </button>
+          <div className="flex items-center space-x-2">
+            <AmaavigoLogo size="sm" variant="mark" theme="light" height={28} />
+            <div className="flex flex-col">
+              <span className="font-extrabold text-sm text-slate-900 tracking-tight flex items-center gap-1.5">
+                HR AI Agent
+                <span className="bg-[#FA7014]/10 text-[#FA7014] text-[9px] px-1.5 py-0.2 rounded font-bold border border-[#FA7014]/20">
+                  Platform
+                </span>
+              </span>
+            </div>
+          </div>
+        </div>
+
+        <div className="flex items-center space-x-2">
+          <span className="text-xs font-semibold text-slate-600 font-mono bg-slate-100 px-2.5 py-1 rounded-md border border-slate-200">
+            {displayId}
+          </span>
+        </div>
+      </div>
+
+      <div className="flex-1 flex min-h-0 overflow-hidden relative">
+        {/* MOBILE BACKDROP */}
+        {isMobileSidebarOpen && (
+          <div
+            className="fixed inset-0 bg-slate-950/40 backdrop-blur-xs z-40 lg:hidden"
+            onClick={() => setIsMobileSidebarOpen(false)}
+          />
+        )}
+
+        {/* DOCKED OPEN BUTTON (When sidebar is collapsed on desktop) */}
+        {!isSidebarOpen && (
+          <button
+            id="btn-open-sidebar-docked"
+            type="button"
+            onClick={onToggleSidebar}
+            className="hidden lg:flex fixed top-20 left-0 z-40 bg-white/95 backdrop-blur-xs border border-l-0 border-slate-200 shadow-md py-2 px-3 rounded-r-xl hover:bg-orange-50 hover:text-[#FA7014] hover:border-orange-300 items-center gap-2 text-xs font-bold text-slate-700 transition-all cursor-pointer group"
+            title="Open HR AI Agent side panel"
+            aria-label="Open HR AI Agent side panel"
+          >
+            <PanelLeftOpen className="w-4 h-4 text-slate-500 group-hover:text-[#FA7014] transition-colors" />
+            <span className="text-[11px] font-bold tracking-tight">HR AI Agent</span>
+          </button>
+        )}
+
+        {/* ============================================================ */}
+        {/* LEFT SIDEBAR: HR AI AGENT MAIN NAVIGATION                   */}
+        {/* ============================================================ */}
+        <aside
+          id="hr-agent-sidebar"
+          className={`
+            fixed lg:static inset-y-0 left-0 z-50 lg:z-30
+            h-full shrink-0
+            bg-white border-r border-slate-200 shadow-sm
+            flex flex-col
+            transition-all duration-200 ease-in-out
+            ${
+              isMobileSidebarOpen
+                ? 'translate-x-0 w-72 sm:w-76'
+                : '-translate-x-full lg:translate-x-0'
+            }
+            ${
+              isSidebarOpen
+                ? 'lg:w-72 lg:sm:w-76 lg:border-r lg:opacity-100'
+                : 'lg:w-0 lg:border-r-0 lg:overflow-hidden lg:pointer-events-none lg:opacity-0'
+            }
+          `}
+        >
+          {/* Top Section: Branding & Navigation Tree */}
+          <div className="flex flex-col flex-1 min-h-0 overflow-y-auto min-w-[18rem] sm:min-w-[19rem]">
+            {/* Platform Brand Header */}
+            <div className="p-4 sm:p-5 border-b border-slate-100 flex flex-col gap-3 shrink-0">
+              <div className="flex items-center justify-between">
+                <AmaavigoLogo size="md" variant="full" theme="light" height={40} className="shrink-0" />
+                
+                <div className="flex items-center space-x-1">
+                  {/* Desktop close button to collapse left side panel */}
+                  <button
+                    id="btn-close-sidebar-desktop"
+                    type="button"
+                    onClick={onToggleSidebar}
+                    className="hidden lg:flex p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors cursor-pointer"
+                    title="Close left side panel"
+                    aria-label="Close left side panel"
+                  >
+                    <PanelLeftClose className="w-5 h-5" />
+                  </button>
+
+                  {/* Mobile close button */}
+                  <button
+                    type="button"
+                    onClick={() => setIsMobileSidebarOpen(false)}
+                    className="lg:hidden p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 cursor-pointer"
+                    title="Close navigation"
+                  >
+                    <X className="w-5 h-5" />
+                  </button>
+                </div>
+              </div>
+
+              {/* HR AI AGENT Platform Banner (Version tag removed as requested) */}
+              <div className="rounded-xl bg-gradient-to-r from-slate-900 to-slate-800 p-3 text-white shadow-xs">
+                <div className="flex items-center space-x-2">
+                  <div className="w-6 h-6 rounded-md bg-[#FA7014] flex items-center justify-center text-white shadow-xs">
+                    <Bot className="w-3.5 h-3.5" />
+                  </div>
+                  <div>
+                    <h2 className="text-xs font-black tracking-wide uppercase text-white leading-tight flex items-center gap-1.5">
+                      HR AI Agent
+                    </h2>
+                    <p className="text-[10px] text-slate-300 font-medium leading-none mt-0.5">
+                      Autonomous People Ops
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Navigation Category Tree */}
+            <div className="px-3 sm:px-4 py-4 flex-1 flex flex-col min-h-0 space-y-4">
+              {/* Category Group Header */}
+              <div className="px-2 flex items-center justify-between shrink-0">
+                <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">
+                  Platform Modules
+                </span>
+                <span className="text-[10px] font-semibold text-slate-400 font-mono">
+                  2 Modules
+                </span>
+              </div>
+
+              <nav className="space-y-1.5 flex-1">
+                {/* ---------------------------------------------------- */}
+                {/* 1. TALENT ACQUISITION (HR & Approver)                */}
+                {/* ---------------------------------------------------- */}
+                <div className="rounded-xl border border-slate-200/80 bg-slate-50/50 overflow-hidden transition-all">
+                  {/* Expandable Category Toggle Button */}
+                  <button
+                    id="nav-category-talent-acquisition"
+                    type="button"
+                    onClick={() => setIsTalentAcquisitionExpanded(!isTalentAcquisitionExpanded)}
+                    className="w-full px-3 py-2.5 flex items-center justify-between text-left hover:bg-slate-100/80 transition-colors cursor-pointer group"
+                  >
+                    <div className="flex items-center space-x-2.5">
+                      <div className="w-7 h-7 rounded-lg bg-orange-100 text-[#FA7014] flex items-center justify-center shrink-0">
+                        <Users className="w-4 h-4" />
+                      </div>
+                      <div>
+                        <span className="text-xs font-bold text-slate-800 group-hover:text-slate-900 block leading-tight">
+                          Talent Acquisition
+                        </span>
+                        <span className="text-[10px] text-slate-500 font-medium block">
+                          Overview & 2 Forms
+                        </span>
+                      </div>
+                    </div>
+                    <div className="text-slate-400 group-hover:text-slate-600 transition-transform">
+                      {isTalentAcquisitionExpanded ? (
+                        <ChevronDown className="w-4 h-4" />
+                      ) : (
+                        <ChevronRight className="w-4 h-4" />
+                      )}
+                    </div>
+                  </button>
+
+                  {/* Subcategories (Overview, Requisition Form & Candidate Onboarding Form) */}
+                  {isTalentAcquisitionExpanded && (
+                    <div className="pl-4 pr-2 pb-2 pt-1 border-t border-slate-200/60 bg-white/70 space-y-1">
+                      {/* Sub-item 1: Overview Dashboard */}
+                      <button
+                        id="nav-submodule-talent-overview"
+                        type="button"
+                        onClick={() => {
+                          onSelectModule('talent-acquisition-overview');
+                          setIsMobileSidebarOpen(false);
+                        }}
+                        className={`w-full flex items-center justify-between px-2.5 py-2 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+                          activeModule === 'talent-acquisition-overview' || activeModule === 'talent-acquisition'
+                            ? 'bg-[#FA7014]/15 text-[#FA7014] font-bold shadow-2xs'
+                            : 'text-slate-700 hover:text-[#FA7014] hover:bg-orange-50'
+                        }`}
+                        title="View Talent Acquisition Recruitment Overview Dashboard"
+                      >
+                        <div className="flex items-center space-x-2 min-w-0">
+                          <span
+                            className={`w-1.5 h-1.5 rounded-full transition-colors shrink-0 ${
+                              activeModule === 'talent-acquisition-overview' || activeModule === 'talent-acquisition'
+                                ? 'bg-[#FA7014]'
+                                : 'bg-slate-300'
+                            }`}
+                          />
+                          <LayoutDashboard
+                            className={`w-3.5 h-3.5 shrink-0 transition-colors ${
+                              activeModule === 'talent-acquisition-overview' || activeModule === 'talent-acquisition'
+                                ? 'text-[#FA7014]'
+                                : 'text-slate-400'
+                            }`}
+                          />
+                          <span className="truncate">Overview</span>
+                        </div>
+                        {(activeModule === 'talent-acquisition-overview' || activeModule === 'talent-acquisition') && (
+                          <span className="w-1.5 h-1.5 rounded-full bg-[#FA7014] shrink-0" />
+                        )}
+                      </button>
+
+                      {/* Sub-item 2: Requisition Form */}
+                      <a
+                        id="link-requisition-form"
+                        href={REQUISITION_FORM_URL}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                        }}
+                        className="w-full flex items-center justify-between px-2.5 py-2 rounded-lg text-xs font-semibold text-slate-700 hover:text-[#FA7014] hover:bg-orange-50 active:bg-orange-100/70 transition-all group cursor-pointer"
+                        title="Open Job Requisition Form in a new browser tab"
+                      >
+                        <div className="flex items-center space-x-2 min-w-0">
+                          <span className="w-1.5 h-1.5 rounded-full bg-slate-300 group-hover:bg-[#FA7014] transition-colors shrink-0" />
+                          <FileSpreadsheet className="w-3.5 h-3.5 text-slate-400 group-hover:text-[#FA7014] shrink-0 transition-colors" />
+                          <span className="truncate">Requisition Form</span>
+                        </div>
+                        <div className="flex items-center space-x-1 shrink-0 text-slate-400 group-hover:text-[#FA7014]">
+                          <span className="text-[9px] font-mono font-medium px-1.5 py-0.5 rounded bg-slate-100 group-hover:bg-orange-100/60">
+                            n8n
+                          </span>
+                          <ExternalLink className="w-3.5 h-3.5" />
+                        </div>
+                      </a>
+
+                      {/* Sub-item 3: Candidate Onboarding Form */}
+                      <a
+                        id="link-candidate-onboarding-form"
+                        href={CANDIDATE_ONBOARDING_FORM_URL}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                        }}
+                        className="w-full flex items-center justify-between px-2.5 py-2 rounded-lg text-xs font-semibold text-slate-700 hover:text-[#FA7014] hover:bg-orange-50 active:bg-orange-100/70 transition-all group cursor-pointer"
+                        title="Open Candidate Onboarding Form in a new browser tab"
+                      >
+                        <div className="flex items-center space-x-2 min-w-0">
+                          <span className="w-1.5 h-1.5 rounded-full bg-slate-300 group-hover:bg-[#FA7014] transition-colors shrink-0" />
+                          <UserCheck className="w-3.5 h-3.5 text-slate-400 group-hover:text-[#FA7014] shrink-0 transition-colors" />
+                          <span className="truncate">Candidate Onboarding Form</span>
+                        </div>
+                        <div className="flex items-center space-x-1 shrink-0 text-slate-400 group-hover:text-[#FA7014]">
+                          <span className="text-[9px] font-mono font-medium px-1.5 py-0.5 rounded bg-slate-100 group-hover:bg-orange-100/60">
+                            n8n
+                          </span>
+                          <ExternalLink className="w-3.5 h-3.5" />
+                        </div>
+                      </a>
+                    </div>
+                  )}
+                </div>
+
+                {/* ---------------------------------------------------- */}
+                {/* 2. DOCUMENT VERSION CONTROL (HR & Approver)          */}
+                {/* ---------------------------------------------------- */}
+                <button
+                  id="nav-module-document-version-control"
+                  type="button"
+                  onClick={() => {
+                    onSelectModule('document-version-control');
+                    setIsMobileSidebarOpen(false);
+                  }}
+                  className={`w-full px-3 py-2.5 rounded-xl border flex items-center justify-between text-left transition-all cursor-pointer ${
+                    activeModule === 'document-version-control'
+                      ? 'bg-[#FA7014]/10 border-[#FA7014]/40 text-slate-900 shadow-xs'
+                      : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50 hover:border-slate-300'
+                  }`}
+                >
+                  <div className="flex items-center space-x-2.5 min-w-0">
+                    <div
+                      className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 ${
+                        activeModule === 'document-version-control'
+                          ? 'bg-[#FA7014] text-white shadow-xs'
+                          : 'bg-slate-100 text-slate-600'
+                      }`}
+                    >
+                      <Layers className="w-4 h-4" />
+                    </div>
+                    <div className="truncate">
+                      <div className="flex items-center space-x-1.5">
+                        <span
+                          className={`text-xs font-bold block truncate ${
+                            activeModule === 'document-version-control'
+                              ? 'text-[#FA7014]'
+                              : 'text-slate-800'
+                          }`}
+                        >
+                          Document Version Control
+                        </span>
+                      </div>
+                      <span className="text-[10px] text-slate-500 font-medium block truncate">
+                        {isHR ? 'Policy Governance & Lifecycle' : 'Review & Authorizations'}
+                      </span>
+                    </div>
+                  </div>
+
+                  {activeModule === 'document-version-control' && (
+                    <div className="w-5 h-5 rounded-full bg-[#FA7014] text-white flex items-center justify-center shrink-0 ml-1.5">
+                      <Check className="w-3 h-3 stroke-[3]" />
+                    </div>
+                  )}
+                </button>
+              </nav>
+            </div>
+          </div>
+
+          {/* ============================================================ */}
+          {/* BOTTOM SECTION: CURRENT USER PROFILE & LOGOUT OPTION         */}
+          {/* ============================================================ */}
+          <div className="shrink-0 border-t border-slate-200 bg-slate-50/80 p-3 sm:p-3.5 min-w-[18rem] sm:min-w-[19rem]">
+            {/* User Identity Details */}
+            <div className="flex items-center gap-2.5 mb-2.5 px-0.5">
+              <div className="w-8 h-8 rounded-full bg-slate-900 text-white font-bold text-xs flex items-center justify-center shrink-0 shadow-2xs border border-slate-700/50">
+                {currentUser.name ? currentUser.name.charAt(0).toUpperCase() : 'U'}
+              </div>
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-1.5">
+                  <span className="text-xs font-bold text-slate-900 truncate block leading-tight">
+                    {currentUser.name || 'User'}
+                  </span>
+                </div>
+                <div className="flex items-center gap-1.5 text-[10px] text-slate-500 truncate mt-0.5">
+                  {displayId && (
+                    <span className="font-mono font-medium text-slate-700 bg-white px-1.5 py-0.2 rounded border border-slate-200 text-[9px] shrink-0">
+                      {displayId}
+                    </span>
+                  )}
+                  <span
+                    className="truncate text-slate-500 font-medium"
+                    title={currentUser.title || (isHR ? 'HR Policy Lead' : 'Approver')}
+                  >
+                    {currentUser.title || (isHR ? 'HR Policy Lead' : 'Approver')}
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            {/* Logout Option */}
+            {onLogout && (
+              <button
+                id="btn-sidebar-logout"
+                type="button"
+                onClick={() => {
+                  setIsMobileSidebarOpen(false);
+                  onLogout();
+                }}
+                className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-lg text-xs font-semibold text-slate-700 bg-white hover:text-rose-600 hover:bg-rose-50 hover:border-rose-200 border border-slate-200 transition-all cursor-pointer shadow-2xs group"
+                title="Logout from platform"
+                aria-label="Logout"
+              >
+                <LogOut className="w-3.5 h-3.5 text-slate-400 group-hover:text-rose-600 transition-colors" />
+                <span>Log Out</span>
+              </button>
+            )}
+          </div>
+        </aside>
+
+        {/* ============================================================ */}
+        {/* RIGHT CONTENT AREA: HOSTS SELECTED MODULE                   */}
+        {/* ============================================================ */}
+        <main
+          id="hr-agent-right-workspace"
+          className="flex-1 min-w-0 h-full overflow-y-auto bg-[#F8FAFC]"
+        >
+          {children}
+        </main>
+      </div>
+    </div>
+  );
+};

@@ -1,0 +1,104 @@
+import React from 'react';
+import {
+  LogOut,
+  PanelLeftClose,
+  PanelLeftOpen,
+} from 'lucide-react';
+import { User } from '../types';
+import { AmaavigoLogo } from './AmaavigoLogo';
+
+interface TalentAcquisitionHeaderProps {
+  currentUser: User;
+  onLogout: () => void;
+  isSidebarOpen?: boolean;
+  onToggleSidebar?: () => void;
+}
+
+export const TalentAcquisitionHeader: React.FC<TalentAcquisitionHeaderProps> = ({
+  currentUser,
+  onLogout,
+  isSidebarOpen,
+  onToggleSidebar,
+}) => {
+  const displayId = currentUser.empId || currentUser.loginId || currentUser.id || '';
+
+  return (
+    <header
+      id="talent-acquisition-header"
+      className="bg-white/95 backdrop-blur-md border-b border-slate-200 text-slate-900 sticky top-0 z-40 shadow-xs"
+    >
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div className="flex items-center justify-between h-16">
+          {/* Logo & Talent Acquisition Branding */}
+          <div className="flex items-center space-x-3 shrink-0">
+            {onToggleSidebar && (
+              <button
+                id="btn-talent-toggle-sidebar"
+                type="button"
+                onClick={onToggleSidebar}
+                className="hidden lg:flex p-2 rounded-xl text-slate-500 hover:text-slate-900 hover:bg-slate-100 transition-colors cursor-pointer mr-1"
+                title={isSidebarOpen ? 'Close side panel' : 'Open HR AI Agent side panel'}
+                aria-label={isSidebarOpen ? 'Close side panel' : 'Open HR AI Agent side panel'}
+              >
+                {isSidebarOpen ? (
+                  <PanelLeftClose className="w-5 h-5" />
+                ) : (
+                  <PanelLeftOpen className="w-5 h-5 text-[#FA7014]" />
+                )}
+              </button>
+            )}
+            <div className="flex items-center shrink-0">
+              <AmaavigoLogo size="md" variant="full" theme="light" height={48} className="shrink-0" />
+            </div>
+            <div className="hidden sm:flex items-center pl-3 border-l border-slate-200 space-x-2 shrink-0">
+              <span className="font-bold text-sm tracking-tight text-slate-900 flex items-center gap-1.5">
+                <span className="text-slate-800">Talent Acquisition</span>
+                <span className="bg-[#FA7014]/10 text-[#FA7014] text-[10px] px-2.5 py-0.5 rounded-full font-mono font-bold border border-[#FA7014]/30">
+                  Overview
+                </span>
+              </span>
+            </div>
+          </div>
+
+          {/* Clean center area: No Document Version Control tabs (no Creator Studio, Compliance Tracker, or Audit Trail) */}
+
+          {/* Right actions: User Profile & Logout Option */}
+          <div className="flex items-center space-x-2.5">
+            <div className="flex items-center space-x-2 pl-2 border-l border-slate-200">
+              <div className="hidden sm:block text-left">
+                <div className="flex items-center space-x-1.5">
+                  <div className="text-xs font-bold text-slate-900 leading-tight">
+                    {currentUser.name || 'Talent Lead'}
+                  </div>
+                  {displayId && (
+                    <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-orange-50 text-[#FA7014] font-semibold border border-orange-200">
+                      {displayId}
+                    </span>
+                  )}
+                </div>
+                <div className="text-[10px] text-slate-500 flex items-center space-x-1.5 mt-0.5">
+                  <span className="inline-block w-2 h-2 rounded-full bg-[#FA7014]" />
+                  <span className="truncate max-w-[170px] font-medium" title={currentUser.title || 'Talent Acquisition'}>
+                    {currentUser.title || 'Talent Acquisition & Recruitment'}
+                  </span>
+                </div>
+              </div>
+
+              {/* Logout Button */}
+              <button
+                id="btn-talent-logout"
+                type="button"
+                onClick={onLogout}
+                className="p-1.5 text-slate-500 hover:text-rose-600 hover:bg-slate-100 rounded-lg transition-colors cursor-pointer"
+                title="Logout from Talent Acquisition"
+                aria-label="Logout from Talent Acquisition"
+              >
+                <LogOut className="w-4 h-4" />
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </header>
+  );
+};

@@ -4,6 +4,8 @@ import {
   Users,
   History,
   LogOut,
+  PanelLeftClose,
+  PanelLeftOpen,
 } from 'lucide-react';
 import { User } from '../types';
 import { AmaavigoLogo } from './AmaavigoLogo';
@@ -16,6 +18,8 @@ interface ApproverHeaderProps {
   notificationCount?: number;
   pendingComplianceCount?: number;
   onOpenNotifications?: () => void;
+  isSidebarOpen?: boolean;
+  onToggleSidebar?: () => void;
 }
 
 export const ApproverHeader: React.FC<ApproverHeaderProps> = ({
@@ -24,6 +28,8 @@ export const ApproverHeader: React.FC<ApproverHeaderProps> = ({
   activeTab,
   setActiveTab,
   pendingComplianceCount = 0,
+  isSidebarOpen,
+  onToggleSidebar,
 }) => {
   const displayId = currentUser.empId || currentUser.loginId || currentUser.id || '';
 
@@ -35,7 +41,23 @@ export const ApproverHeader: React.FC<ApproverHeaderProps> = ({
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex items-center justify-between h-16">
           {/* Logo & Approver Governance Branding */}
-          <div className="flex items-center space-x-3.5 shrink-0">
+          <div className="flex items-center space-x-3 shrink-0">
+            {onToggleSidebar && (
+              <button
+                id="btn-approver-toggle-sidebar"
+                type="button"
+                onClick={onToggleSidebar}
+                className="hidden lg:flex p-2 rounded-xl text-slate-500 hover:text-slate-900 hover:bg-slate-100 transition-colors cursor-pointer mr-1"
+                title={isSidebarOpen ? "Close side panel" : "Open HR AI Agent side panel"}
+                aria-label={isSidebarOpen ? "Close side panel" : "Open HR AI Agent side panel"}
+              >
+                {isSidebarOpen ? (
+                  <PanelLeftClose className="w-5 h-5" />
+                ) : (
+                  <PanelLeftOpen className="w-5 h-5 text-emerald-600" />
+                )}
+              </button>
+            )}
             <div className="flex items-center shrink-0">
               <AmaavigoLogo size="md" variant="full" theme="light" height={48} className="shrink-0" />
             </div>

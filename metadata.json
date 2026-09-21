@@ -1,6 +1,6 @@
 {
   "name": "Amaavigo HR Document Governance & Version Control",
-  "description": "Amaavigo Enterprise HR Document Governance, Version Control, Review Workflow, Employee Policy Acknowledgements, and Secure Broadcasting.",
+  "description": "Amaavigo Enterprise HR AI Agent, Document Governance, Version Control, Review Workflow, Employee Policy Acknowledgements, and Secure Broadcasting.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

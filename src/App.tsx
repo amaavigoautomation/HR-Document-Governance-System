@@ -29,13 +29,17 @@ import { NotificationDrawer } from './components/NotificationDrawer';
 import { DocumentViewer } from './components/DocumentViewer';
 import { formatDDMMYYYY } from './utils/documentHeaderFooter';
 import { downloadDocumentWithIntactFormat } from './utils/documentStamper';
-import { FileText, X, Download } from 'lucide-react';
+import { FileText, X, Download, ExternalLink, Users, FileSpreadsheet, UserCheck } from 'lucide-react';
 import { StatusBadge } from './components/StatusBadge';
+import { HRAgentShell, HRAgentModule } from './components/HRAgentShell';
+import { TalentAcquisitionOverview } from './components/TalentAcquisitionOverview';
+import { TalentAcquisitionHeader } from './components/TalentAcquisitionHeader';
 
 const CURRENT_USER_STORAGE_KEY = 'amaavigo_current_user_id';
 const CURRENT_USER_DATA_KEY = 'amaavigo_current_user_data';
 const CURRENT_USER_ROLE_KEY = 'amaavigo_current_user_role';
 const ACTIVE_TAB_STORAGE_KEY = 'amaavigo_active_tab';
+const HR_AGENT_MODULE_STORAGE_KEY = 'amaavigo_hr_agent_module';
 
 export default function App() {
   const [currentUser, setCurrentUser] = useState<User | null>(() => {
@@ -103,6 +107,110 @@ export default function App() {
     }
     return 'creator';
   });
+
+  // HR AI Agent Shell Module State (Defaults to 'document-version-control')
+  const [hrAgentModule, setHrAgentModule] = useState<HRAgentModule>(() => {
+    try {
+      const pathname = window.location.pathname;
+      if (pathname.includes('/talent-acquisition')) {
+        return 'talent-acquisition-overview';
+      }
+      const saved = localStorage.getItem(HR_AGENT_MODULE_STORAGE_KEY);
+      if (
+        saved === 'talent-acquisition' ||
+        saved === 'talent-acquisition-overview' ||
+        saved === 'document-version-control'
+      ) {
+        return saved === 'talent-acquisition' ? 'talent-acquisition-overview' : (saved as HRAgentModule);
+      }
+    } catch (e) {}
+    return 'document-version-control';
+  });
+
+  // Desktop sidebar collapse/open state with persistent storage
+  const [isSidebarOpen, setIsSidebarOpen] = useState<boolean>(() => {
+    try {
+      const saved = localStorage.getItem('amaavigo_hr_agent_sidebar_open');
+      if (saved !== null) {
+        return saved === 'true';
+      }
+    } catch (e) {}
+    return true;
+  });
+
+  const handleToggleSidebar = () => {
+    setIsSidebarOpen((prev) => {
+      const next = !prev;
+      try {
+        localStorage.setItem('amaavigo_hr_agent_sidebar_open', String(next));
+      } catch (e) {}
+      return next;
+    });
+  };
+
+  const handleSelectHRAgentModule = (module: HRAgentModule) => {
+    // Both HR and Approver roles have access to Talent Acquisition and Document Version Control
+    const isTalentModule = module === 'talent-acquisition' || module === 'talent-acquisition-overview';
+    if (isTalentModule && currentUser?.role !== UserRole.CREATOR && currentUser?.role !== UserRole.REVIEWER) {
+      setHrAgentModule('document-version-control');
+      try {
+        localStorage.setItem(HR_AGENT_MODULE_STORAGE_KEY, 'document-version-control');
+      } catch (e) {}
+      return;
+    }
+    setHrAgentModule(module);
+    try {
+      localStorage.setItem(HR_AGENT_MODULE_STORAGE_KEY, module);
+    } catch (e) {}
+  };
+
+  // URL Routing synchronization to maintain clean URLs across roles
+  useEffect(() => {
+    try {
+      const currentPath = window.location.pathname;
+      let targetPath = currentPath;
+
+      if (!currentUser) {
+        if (currentPath !== '/login' && currentPath !== '/') {
+          targetPath = '/login';
+        }
+      } else if (currentUser.role === UserRole.EMPLOYEE) {
+        targetPath = '/employee';
+      } else if (currentUser.role === UserRole.CREATOR) {
+        if (hrAgentModule === 'talent-acquisition') {
+          targetPath = '/hr/talent-acquisition';
+        } else {
+          targetPath = '/hr/document-version-control';
+        }
+      } else if (currentUser.role === UserRole.REVIEWER) {
+        targetPath = '/approver/document-version-control';
+      }
+
+      if (targetPath && targetPath !== currentPath) {
+        window.history.replaceState({}, '', targetPath);
+      }
+    } catch (e) {
+      console.warn('URL routing sync note:', e);
+    }
+  }, [currentUser, hrAgentModule]);
+
+  // Browser navigation popstate listener
+  useEffect(() => {
+    const handlePopState = () => {
+      const path = window.location.pathname;
+      if (path.includes('/talent-acquisition')) {
+        if (currentUser?.role === UserRole.CREATOR) {
+          setHrAgentModule('talent-acquisition');
+        } else {
+          setHrAgentModule('document-version-control');
+        }
+      } else if (path.includes('/document-version-control')) {
+        setHrAgentModule('document-version-control');
+      }
+    };
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, [currentUser]);
 
   // Governance Data State
   const [allUsers, setAllUsers] = useState<User[]>([]);
@@ -391,18 +499,23 @@ export default function App() {
       targetTab = 'employee';
     }
     setActiveTab(targetTab);
+    // Always default HR/Approver to Document Version Control on login
+    setHrAgentModule('document-version-control');
     try {
       localStorage.setItem(ACTIVE_TAB_STORAGE_KEY, targetTab);
+      localStorage.setItem(HR_AGENT_MODULE_STORAGE_KEY, 'document-version-control');
     } catch (e) {}
   };
 
   const handleLogout = () => {
     setCurrentUser(null);
+    setHrAgentModule('document-version-control');
     try {
       localStorage.removeItem(CURRENT_USER_STORAGE_KEY);
       localStorage.removeItem(CURRENT_USER_DATA_KEY);
       localStorage.removeItem(CURRENT_USER_ROLE_KEY);
       localStorage.removeItem(ACTIVE_TAB_STORAGE_KEY);
+      localStorage.removeItem(HR_AGENT_MODULE_STORAGE_KEY);
     } catch (e) {}
   };
 
@@ -441,110 +554,150 @@ export default function App() {
   };
 
   return (
-    <div className={!currentUser ? "h-screen max-h-screen overflow-hidden bg-[#F8FAFC] flex flex-col font-sans text-slate-900" : "min-h-screen bg-[#F8FAFC] bg-[radial-gradient(ellipse_80%_80%_at_50%_-20%,rgba(250,112,20,0.05),rgba(255,255,255,0))] flex flex-col font-sans text-slate-900"}>
-      {/* Separate Isolated Header for each dashboard */}
-      {!currentUser ? null : currentUser.role === UserRole.CREATOR ? (
-        <HRHeader
-          currentUser={currentUser}
-          onLogout={handleLogout}
-          activeTab={activeTab === 'compliance' || activeTab === 'audit' ? activeTab : 'creator'}
-          setActiveTab={(tab) => setActiveTab(tab)}
-          pendingComplianceCount={pendingComplianceCount}
-        />
-      ) : currentUser.role === UserRole.REVIEWER ? (
-        <ApproverHeader
-          currentUser={currentUser}
-          onLogout={handleLogout}
-          activeTab={activeTab === 'compliance' || activeTab === 'audit' ? activeTab : 'reviewer'}
-          setActiveTab={(tab) => setActiveTab(tab)}
-          pendingComplianceCount={pendingComplianceCount}
-        />
-      ) : (
-        <EmployeeHeader
-          currentUser={currentUser}
-          onLogout={handleLogout}
-          activeTab={employeeTab}
-          onTabChange={setEmployeeTab}
-          pendingCount={employeePendingCount}
-          totalDocsCount={employeeTotalDocsCount}
-        />
-      )}
-
-      {/* Main Screen Content */}
-      <main className={currentUser ? "flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6" : "flex-1 w-full h-full p-0 flex flex-col overflow-hidden"}>
-        {!currentUser ? (
-          /* Dual Creator / Reviewer / Employee Login Screen */
-          <LoginView users={allUsers} onSelectUser={handleLogin} />
-        ) : currentUser.role === UserRole.CREATOR ? (
-          <>
-            {(activeTab === 'creator' || (activeTab !== 'compliance' && activeTab !== 'audit')) && (
-              <CreatorDashboard
-                currentUser={currentUser}
-                documents={documents}
-                versions={versions}
-                onOpenCreateDocument={() => setShowCreateDocModal(true)}
-                onOpenCreateVersion={handleOpenCreateVersion}
-                onOpenDocumentDetail={(doc) => setDetailDocument(doc)}
-                onOpenComparison={handleOpenComparison}
-                onOpenComplianceTracker={() => setActiveTab('compliance')}
-                onDeleteDocument={handleDeleteDocument}
-                onClearAllDocuments={handleClearAllDocuments}
-                onRestoreSeedDocuments={handleRestoreSeedDocuments}
-              />
-            )}
-
-            {activeTab === 'compliance' && (
-              <EmployeeComplianceModule
-                currentUser={currentUser}
-                users={allUsers}
-                documents={documents}
-                versions={versions}
-                onOpenDocumentView={(ver) => setReaderVersion(ver)}
-                onRefreshData={refreshData}
-              />
-            )}
-
-            {activeTab === 'audit' && <AuditLogView users={allUsers} />}
-          </>
-        ) : currentUser.role === UserRole.REVIEWER ? (
-          <>
-            {(activeTab === 'reviewer' || (activeTab !== 'compliance' && activeTab !== 'audit')) && (
-              <ReviewerDashboard
-                currentUser={currentUser}
-                documents={documents}
-                versions={versions}
-                users={allUsers}
-                onOpenReviewModal={(ver) => setReviewVersion(ver)}
-                onOpenDocumentDetail={(doc) => setDetailDocument(doc)}
-                onOpenComplianceTracker={() => setActiveTab('compliance')}
-              />
-            )}
-
-            {activeTab === 'compliance' && (
-              <EmployeeComplianceModule
-                currentUser={currentUser}
-                users={allUsers}
-                documents={documents}
-                versions={versions}
-                onOpenDocumentView={(ver) => setReaderVersion(ver)}
-                onRefreshData={refreshData}
-              />
-            )}
-
-            {activeTab === 'audit' && <AuditLogView users={allUsers} />}
-          </>
-        ) : (
-          <EmployeePortalView
+    <>
+      {!currentUser ? (
+        /* 1. Unauthenticated Login Screen */
+        <div className="h-screen max-h-screen overflow-hidden bg-[#F8FAFC] flex flex-col font-sans text-slate-900">
+          <main className="flex-1 w-full h-full p-0 flex flex-col overflow-hidden">
+            <LoginView users={allUsers} onSelectUser={handleLogin} />
+          </main>
+        </div>
+      ) : currentUser.role === UserRole.EMPLOYEE ? (
+        /* 2. Employee Portal: Remained 100% untouched as required */
+        <div className="min-h-screen bg-[#F8FAFC] bg-[radial-gradient(ellipse_80%_80%_at_50%_-20%,rgba(250,112,20,0.05),rgba(255,255,255,0))] flex flex-col font-sans text-slate-900">
+          <EmployeeHeader
             currentUser={currentUser}
-            documents={documents}
-            versions={versions}
-            acknowledgements={acknowledgements}
-            onOpenDocumentView={(ver) => setReaderVersion(ver)}
+            onLogout={handleLogout}
             activeTab={employeeTab}
             onTabChange={setEmployeeTab}
+            pendingCount={employeePendingCount}
+            totalDocsCount={employeeTotalDocsCount}
           />
-        )}
-      </main>
+          <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6">
+            <EmployeePortalView
+              currentUser={currentUser}
+              documents={documents}
+              versions={versions}
+              acknowledgements={acknowledgements}
+              onOpenDocumentView={(ver) => setReaderVersion(ver)}
+              activeTab={employeeTab}
+              onTabChange={setEmployeeTab}
+            />
+          </main>
+        </div>
+      ) : (
+        /* 3. HR AI Agent Platform Shell for HR and Approver roles */
+        <HRAgentShell
+          currentUser={currentUser}
+          activeModule={hrAgentModule}
+          onSelectModule={handleSelectHRAgentModule}
+          isSidebarOpen={isSidebarOpen}
+          onToggleSidebar={handleToggleSidebar}
+          onLogout={handleLogout}
+        >
+          {/* Selected Module: Document Version Control (Default) */}
+          {hrAgentModule === 'document-version-control' && (
+            <div className="flex-1 flex flex-col min-w-0">
+              {currentUser.role === UserRole.CREATOR ? (
+                <HRHeader
+                  currentUser={currentUser}
+                  onLogout={handleLogout}
+                  activeTab={activeTab === 'compliance' || activeTab === 'audit' ? activeTab : 'creator'}
+                  setActiveTab={(tab) => setActiveTab(tab)}
+                  pendingComplianceCount={pendingComplianceCount}
+                  isSidebarOpen={isSidebarOpen}
+                  onToggleSidebar={handleToggleSidebar}
+                />
+              ) : (
+                <ApproverHeader
+                  currentUser={currentUser}
+                  onLogout={handleLogout}
+                  activeTab={activeTab === 'compliance' || activeTab === 'audit' ? activeTab : 'reviewer'}
+                  setActiveTab={(tab) => setActiveTab(tab)}
+                  pendingComplianceCount={pendingComplianceCount}
+                  isSidebarOpen={isSidebarOpen}
+                  onToggleSidebar={handleToggleSidebar}
+                />
+              )}
+
+              <div className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6">
+                {currentUser.role === UserRole.CREATOR ? (
+                  <>
+                    {(activeTab === 'creator' || (activeTab !== 'compliance' && activeTab !== 'audit')) && (
+                      <CreatorDashboard
+                        currentUser={currentUser}
+                        documents={documents}
+                        versions={versions}
+                        onOpenCreateDocument={() => setShowCreateDocModal(true)}
+                        onOpenCreateVersion={handleOpenCreateVersion}
+                        onOpenDocumentDetail={(doc) => setDetailDocument(doc)}
+                        onOpenComparison={handleOpenComparison}
+                        onOpenComplianceTracker={() => setActiveTab('compliance')}
+                        onDeleteDocument={handleDeleteDocument}
+                        onClearAllDocuments={handleClearAllDocuments}
+                        onRestoreSeedDocuments={handleRestoreSeedDocuments}
+                      />
+                    )}
+
+                    {activeTab === 'compliance' && (
+                      <EmployeeComplianceModule
+                        currentUser={currentUser}
+                        users={allUsers}
+                        documents={documents}
+                        versions={versions}
+                        onOpenDocumentView={(ver) => setReaderVersion(ver)}
+                        onRefreshData={refreshData}
+                      />
+                    )}
+
+                    {activeTab === 'audit' && <AuditLogView users={allUsers} />}
+                  </>
+                ) : (
+                  <>
+                    {(activeTab === 'reviewer' || (activeTab !== 'compliance' && activeTab !== 'audit')) && (
+                      <ReviewerDashboard
+                        currentUser={currentUser}
+                        documents={documents}
+                        versions={versions}
+                        users={allUsers}
+                        onOpenReviewModal={(ver) => setReviewVersion(ver)}
+                        onOpenDocumentDetail={(doc) => setDetailDocument(doc)}
+                        onOpenComplianceTracker={() => setActiveTab('compliance')}
+                      />
+                    )}
+
+                    {activeTab === 'compliance' && (
+                      <EmployeeComplianceModule
+                        currentUser={currentUser}
+                        users={allUsers}
+                        documents={documents}
+                        versions={versions}
+                        onOpenDocumentView={(ver) => setReaderVersion(ver)}
+                        onRefreshData={refreshData}
+                      />
+                    )}
+
+                    {activeTab === 'audit' && <AuditLogView users={allUsers} />}
+                  </>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Module: Talent Acquisition Overview Dashboard (HR & Approver) */}
+          {(hrAgentModule === 'talent-acquisition' || hrAgentModule === 'talent-acquisition-overview') && currentUser && (
+            <div className="flex-1 flex flex-col min-w-0">
+              <TalentAcquisitionHeader
+                currentUser={currentUser}
+                onLogout={handleLogout}
+                isSidebarOpen={isSidebarOpen}
+                onToggleSidebar={handleToggleSidebar}
+              />
+              <TalentAcquisitionOverview currentUser={currentUser} onLogout={handleLogout} />
+            </div>
+          )}
+        </HRAgentShell>
+      )}
 
       {/* MODAL: CREATE DOCUMENT MASTER */}
       {showCreateDocModal && currentUser && (
@@ -695,6 +848,6 @@ export default function App() {
         isOpen={isNotifDrawerOpen}
         onClose={() => setIsNotifDrawerOpen(false)}
       />
-    </div>
+    </>
   );
 }

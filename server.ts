@@ -6,6 +6,8 @@ import { auditService } from './src/services/audit';
 import { defaultStorageProvider } from './src/services/storage';
 import { defaultEmailProvider } from './src/services/email';
 import { dispatchLiveEmail, getEmailConfigStatus } from './src/services/serverEmail';
+import { getGoogleSheetsConfigStatus, computeRecruitmentOverview, fetchSheetData } from './src/services/serverSheets';
+import { runCandidateEvaluation, clearEvaluationCache } from './src/services/aiEvaluationService';
 import { UserRole } from './src/types';
 import { generateCorporatePdfBlob } from './src/utils/pdfGenerator';
 import { generateCorporateDocxBlob } from './src/utils/documentStamper';
@@ -60,6 +62,94 @@ async function startServer() {
       res.json(result);
     } catch (err: any) {
       res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
+  // ----------------------------------------------------
+  // TALENT ACQUISITION: GOOGLE SHEETS OVERVIEW API
+  // ----------------------------------------------------
+
+  // Configuration status check (Safe, never exposes raw API keys)
+  app.get('/api/recruitment/config', (req, res) => {
+    res.json(getGoogleSheetsConfigStatus());
+  });
+
+  // Recruitment Overview (KPIs, Designation metrics, Pipeline charts)
+  app.get('/api/recruitment/overview', async (req, res) => {
+    try {
+      const userRole = req.headers['x-user-role'] as string;
+      // Protect sensitive recruitment data: allow HR (CREATOR) or Approver (REVIEWER)
+      if (userRole === UserRole.EMPLOYEE) {
+        return res.status(403).json({
+          success: false,
+          error: 'Access denied: Employee role is not authorized to access recruitment data.',
+        });
+      }
+
+      const result = await computeRecruitmentOverview();
+      res.json(result);
+    } catch (err: any) {
+      console.error('Error in /api/recruitment/overview:', err);
+      res.status(500).json({ success: false, error: err.message || 'Failed to compute recruitment overview' });
+    }
+  });
+
+  // Sheet Explorer Table Data (Fetch complete selected worksheet)
+  app.get('/api/recruitment/sheet-data', async (req, res) => {
+    try {
+      const userRole = req.headers['x-user-role'] as string;
+      if (userRole === UserRole.EMPLOYEE) {
+        return res.status(403).json({
+          error: 'Access denied: Employee role is not authorized to access worksheet tables.',
+        });
+      }
+
+      const tabName = (req.query.tabName as string || '').trim();
+      if (!tabName) {
+        return res.status(400).json({ error: 'Worksheet tab name parameter is required' });
+      }
+
+      // Security validation on tabName
+      if (tabName.length > 100 || /[<>{}\\]/.test(tabName)) {
+        return res.status(400).json({ error: 'Invalid worksheet tab name format' });
+      }
+
+      const sheetData = await fetchSheetData(tabName);
+      res.json(sheetData);
+    } catch (err: any) {
+      console.error('Error in /api/recruitment/sheet-data:', err);
+      const isNotFound = err.message?.includes('NOT_FOUND');
+      const isPermission = err.message?.includes('PERMISSION_DENIED');
+      const isNotConfigured = err.message?.includes('SPREADSHEET_NOT_CONFIGURED');
+      const status = isNotFound ? 404 : isPermission ? 403 : isNotConfigured ? 400 : 500;
+      res.status(status).json({ error: err.message || 'Failed to fetch worksheet data' });
+    }
+  });
+
+  // AI-Powered Candidate Evaluation & Recommendation API
+  app.get('/api/recruitment/ai-evaluation', async (req, res) => {
+    try {
+      const userRole = req.headers['x-user-role'] as string;
+      if (userRole === UserRole.EMPLOYEE) {
+        return res.status(403).json({
+          error: 'Access denied: Employee role is not authorized to access candidate evaluations.',
+        });
+      }
+
+      const designation = (req.query.designation as string || 'Performance Marketing Expert').trim();
+      const forceRefresh = req.query.refresh === 'true' || req.query.force === 'true';
+      if (forceRefresh) {
+        clearEvaluationCache();
+      }
+
+      const evaluation = await runCandidateEvaluation(designation, forceRefresh);
+      res.json(evaluation);
+    } catch (err: any) {
+      console.error('Error in /api/recruitment/ai-evaluation:', err);
+      res.status(500).json({
+        success: false,
+        error: err.message || 'Failed to generate AI candidate evaluation',
+      });
     }
   });
 
@@ -425,6 +515,11 @@ async function startServer() {
   app.post('/api/system/reset', (req, res) => {
     governanceEngine.resetToSeed();
     res.json({ message: 'System state reset to baseline seed data successfully.' });
+  });
+
+  // Catch unmatched API routes to ensure they never fall through to Vite SPA index.html
+  app.all('/api/*', (req, res) => {
+    res.status(404).json({ error: `API route ${req.method} ${req.originalUrl} not found` });
   });
 
   // Vite middleware for development
