@@ -188,9 +188,6 @@ export const CandidateEvaluationSection: React.FC<CandidateEvaluationSectionProp
                   AI-Powered
                 </span>
               </div>
-              <p className="text-sm text-slate-500 mt-0.5">
-                Objective, evidence-based candidate assessment dynamically parsed from Google Sheet JDs & applicant records
-              </p>
             </div>
           </div>
         </div>
@@ -275,13 +272,6 @@ export const CandidateEvaluationSection: React.FC<CandidateEvaluationSectionProp
                       {data.jdSummary.department}
                     </span>
                   </div>
-                  <p className="text-xs text-slate-500 mt-0.5 flex items-center gap-2">
-                    <span>Target Experience: <strong className="text-slate-700">{data.jdSummary.minExperience}</strong></span>
-                    <span>•</span>
-                    <span>Total Applicants Analyzed: <strong className="text-slate-700">{data.totalCandidates}</strong></span>
-                    <span>•</span>
-                    <span>Live Source: <strong className="text-slate-700">Google Sheets (`JD's` + `{data.designation}`)</strong></span>
-                  </p>
                 </div>
               </div>
 
@@ -691,18 +681,6 @@ export const CandidateEvaluationSection: React.FC<CandidateEvaluationSectionProp
                 {data.hrRecommendation.summaryReasoning}
               </div>
             )}
-
-            {/* Explicit Hiring Decision Guardrail & Fairness Note */}
-            <div className="mt-5 pt-4 border-t border-orange-200/80 grid grid-cols-1 md:grid-cols-2 gap-3 text-[11px] text-slate-500">
-              <div className="flex items-start gap-2">
-                <Info className="w-3.5 h-3.5 text-slate-400 flex-shrink-0 mt-0.5" />
-                <span>{data.hrRecommendation.advisoryDisclaimer}</span>
-              </div>
-              <div className="flex items-start gap-2">
-                <ShieldCheck className="w-3.5 h-3.5 text-emerald-600 flex-shrink-0 mt-0.5" />
-                <span>{data.fairnessNote}</span>
-              </div>
-            </div>
           </div>
         </div>
       )}

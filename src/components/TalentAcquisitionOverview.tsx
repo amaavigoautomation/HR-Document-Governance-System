@@ -612,18 +612,6 @@ export const TalentAcquisitionOverview: React.FC<TalentAcquisitionOverviewProps>
             </a>
           </div>
 
-          {/* Refresh Timestamp */}
-          {formattedLastRefreshed && (
-            <div className="text-right hidden md:block">
-              <span className="text-[10px] uppercase font-bold tracking-wider text-slate-400 block">
-                Last Refreshed
-              </span>
-              <span className="text-xs font-semibold text-slate-700 font-mono">
-                {formattedLastRefreshed}
-              </span>
-            </div>
-          )}
-
           {/* Refresh Button */}
           <button
             id="btn-refresh-recruitment-data"
@@ -762,10 +750,6 @@ export const TalentAcquisitionOverview: React.FC<TalentAcquisitionOverviewProps>
               <span>Active requisition postings</span>
             </p>
           </div>
-          <div className="mt-3 pt-3 border-t border-slate-100 flex items-center justify-between text-[10px] text-slate-400 font-mono">
-            <span>Source: Request Data</span>
-            <span className="font-semibold text-slate-600">Requisitions</span>
-          </div>
         </div>
 
         {/* KPI 2: Total Vacancies */}
@@ -792,10 +776,6 @@ export const TalentAcquisitionOverview: React.FC<TalentAcquisitionOverviewProps>
               <span className="w-1.5 h-1.5 rounded-full bg-blue-500" />
               <span>Total approved headcounts</span>
             </p>
-          </div>
-          <div className="mt-3 pt-3 border-t border-slate-100 flex items-center justify-between text-[10px] text-slate-400 font-mono">
-            <span>Source: Request Data</span>
-            <span className="font-semibold text-slate-600">Headcounts</span>
           </div>
         </div>
 
@@ -830,10 +810,6 @@ export const TalentAcquisitionOverview: React.FC<TalentAcquisitionOverviewProps>
               </span>
             </p>
           </div>
-          <div className="mt-3 pt-3 border-t border-slate-100 flex items-center justify-between text-[10px] text-slate-400 font-mono">
-            <span>Source: Candidate Log</span>
-            <span className="font-semibold text-slate-600">Applicants</span>
-          </div>
         </div>
 
         {/* KPI 4: Active Departments */}
@@ -860,10 +836,6 @@ export const TalentAcquisitionOverview: React.FC<TalentAcquisitionOverviewProps>
               <span className="w-1.5 h-1.5 rounded-full bg-purple-500" />
               <span>Active business functions</span>
             </p>
-          </div>
-          <div className="mt-3 pt-3 border-t border-slate-100 flex items-center justify-between text-[10px] text-slate-400 font-mono">
-            <span>Source: Request Data</span>
-            <span className="font-semibold text-slate-600">Org Units</span>
           </div>
         </div>
       </div>
@@ -955,9 +927,9 @@ export const TalentAcquisitionOverview: React.FC<TalentAcquisitionOverviewProps>
           </div>
         )}
 
-        {/* Secondary Analytical Cards (Department & Stages) */}
+        {/* Secondary Analytical Cards (Department) */}
         {overviewData?.status === 'OK' && (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-4 border-t border-slate-100">
+          <div className="pt-4 border-t border-slate-100">
             {/* Department Breakdown */}
             <div className="bg-slate-50/70 rounded-xl p-4 border border-slate-200/80">
               <h3 className="text-xs font-bold uppercase tracking-wider text-slate-700 mb-3 flex items-center justify-between">
@@ -965,9 +937,9 @@ export const TalentAcquisitionOverview: React.FC<TalentAcquisitionOverviewProps>
                 <Building2 className="w-3.5 h-3.5 text-slate-400" />
               </h3>
               {overviewData.positionsByDepartment && overviewData.positionsByDepartment.length > 0 ? (
-                <div className="space-y-2">
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
                   {overviewData.positionsByDepartment.map(dept => (
-                    <div key={dept.department} className="flex items-center justify-between text-xs">
+                    <div key={dept.department} className="flex items-center justify-between text-xs bg-white p-2.5 rounded-lg border border-slate-200/60 shadow-2xs">
                       <span className="font-medium text-slate-700 truncate">{dept.department}</span>
                       <div className="flex items-center space-x-2 font-mono text-[11px]">
                         <span className="text-slate-500">{dept.openPositions} pos</span>
@@ -980,48 +952,6 @@ export const TalentAcquisitionOverview: React.FC<TalentAcquisitionOverviewProps>
                 </div>
               ) : (
                 <p className="text-xs text-slate-400">Department data not specified in Request Data.</p>
-              )}
-            </div>
-
-            {/* Candidate Pipeline Stages */}
-            <div className="bg-slate-50/70 rounded-xl p-4 border border-slate-200/80">
-              <h3 className="text-xs font-bold uppercase tracking-wider text-slate-700 mb-3 flex items-center justify-between">
-                <span>Candidate Pipeline Stages</span>
-                <UserCheck className="w-3.5 h-3.5 text-slate-400" />
-              </h3>
-              {overviewData.applicationsByStage && overviewData.applicationsByStage.length > 0 ? (
-                <div className="space-y-2">
-                  {overviewData.applicationsByStage.map(stage => (
-                    <button
-                      key={stage.stage}
-                      type="button"
-                      onClick={() => {
-                        const candTab = visibleSheetTabs.find(t => /candidate/i.test(t));
-                        if (candTab && activeSheetTab !== candTab) {
-                          setActiveSheetTab(candTab);
-                        }
-                        setSelectedStatusFilter(stage.stage);
-                        setCurrentPage(1);
-                      }}
-                      className={`w-full flex items-center justify-between text-xs px-2.5 py-1.5 rounded-lg transition-all cursor-pointer ${
-                        selectedStatusFilter.toLowerCase() === stage.stage.toLowerCase()
-                          ? 'bg-orange-100 text-[#FA7014] font-bold border border-orange-300'
-                          : 'hover:bg-white hover:shadow-2xs text-slate-700'
-                      }`}
-                      title={`Filter table by '${stage.stage}'`}
-                    >
-                      <span className="font-medium truncate">{stage.stage}</span>
-                      <div className="flex items-center gap-1.5">
-                        <span className="font-mono font-bold text-slate-800 bg-white border border-slate-200 px-2 py-0.5 rounded text-[11px]">
-                          {stage.count}
-                        </span>
-                        <Filter className="w-3 h-3 text-slate-400 opacity-60 group-hover:opacity-100" />
-                      </div>
-                    </button>
-                  ))}
-                </div>
-              ) : (
-                <p className="text-xs text-slate-400">Stage data not specified in Candidate Log.</p>
               )}
             </div>
           </div>
