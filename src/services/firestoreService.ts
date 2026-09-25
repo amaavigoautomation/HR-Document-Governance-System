@@ -12,6 +12,7 @@ import {
   onSnapshot,
 } from 'firebase/firestore';
 import { db } from './firebase';
+import { ensurePersistentMedia } from './mediaStorage';
 import {
   DocumentMaster,
   DocumentVersion,
@@ -288,7 +289,25 @@ export const firestoreService = {
 
   async saveVersion(version: DocumentVersion): Promise<void> {
     try {
-      await setDoc(doc(db, VERSIONS_COLLECTION, version.id), cleanFirestoreData(version));
+      // Ensure large media payloads (e.g. video base64) are stored in server/IndexedDB storage rather than crashing Firestore with >1MB payload
+      const sanitizedVersion = { ...version };
+      if (sanitizedVersion.fileUrl && sanitizedVersion.fileUrl.startsWith('data:')) {
+        try {
+          sanitizedVersion.fileUrl = await ensurePersistentMedia(
+            sanitizedVersion.fileUrl,
+            sanitizedVersion.fileName,
+            sanitizedVersion.mimeType,
+            sanitizedVersion.documentId,
+            sanitizedVersion.id
+          );
+        } catch (e) {
+          console.warn('[Firestore] Media upload fallback for saveVersion:', e);
+        }
+      }
+      if (sanitizedVersion.originalFileUrl && sanitizedVersion.originalFileUrl.startsWith('data:')) {
+        sanitizedVersion.originalFileUrl = sanitizedVersion.fileUrl;
+      }
+      await setDoc(doc(db, VERSIONS_COLLECTION, sanitizedVersion.id), cleanFirestoreData(sanitizedVersion));
     } catch (e) {
       console.warn('[Firestore] Save version offline note:', e);
     }
@@ -296,7 +315,24 @@ export const firestoreService = {
 
   async updateVersion(versionId: string, updates: Partial<DocumentVersion>): Promise<void> {
     try {
-      await updateDoc(doc(db, VERSIONS_COLLECTION, versionId), cleanFirestoreData(updates));
+      const sanitizedUpdates = { ...updates };
+      if (sanitizedUpdates.fileUrl && sanitizedUpdates.fileUrl.startsWith('data:')) {
+        try {
+          sanitizedUpdates.fileUrl = await ensurePersistentMedia(
+            sanitizedUpdates.fileUrl,
+            sanitizedUpdates.fileName || 'media_asset',
+            sanitizedUpdates.mimeType || 'video/mp4',
+            sanitizedUpdates.documentId,
+            versionId
+          );
+        } catch (e) {
+          console.warn('[Firestore] Media upload fallback for updateVersion:', e);
+        }
+      }
+      if (sanitizedUpdates.originalFileUrl && sanitizedUpdates.originalFileUrl.startsWith('data:')) {
+        sanitizedUpdates.originalFileUrl = sanitizedUpdates.fileUrl;
+      }
+      await updateDoc(doc(db, VERSIONS_COLLECTION, versionId), cleanFirestoreData(sanitizedUpdates));
     } catch (e) {
       console.warn('[Firestore] Update version offline note:', e);
     }

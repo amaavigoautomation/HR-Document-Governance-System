@@ -24,6 +24,8 @@ import {
   extractHeaderFooterData,
 } from './documentHeaderFooter';
 import { generateCorporatePdfBlob } from './pdfGenerator';
+import { getMediaFromIndexedDb, findMediaInIndexedDb } from '../services/localMediaDb';
+import { resolvePlayableMediaUrl } from '../services/mediaStorage';
 
 export interface HeaderFooterMetadata {
   documentTitle: string;
@@ -1319,6 +1321,8 @@ export async function downloadDocumentWithIntactFormat(params: {
   companyName?: string;
   rawContent?: string;
   fileUrl?: string;
+  versionId?: string;
+  documentId?: string;
   headerFooterData?: DocumentHeaderFooterData;
   forcedFormat?: 'pdf' | 'docx';
 }): Promise<void> {
@@ -1327,20 +1331,92 @@ export async function downloadDocumentWithIntactFormat(params: {
   // Case 0: Video Asset (MP4, WebM, MOV, etc.) - No header & footer appended, download original video intact
   const isVideoTarget =
     Boolean(originalName.toLowerCase().match(/\.(mp4|webm|mov|m4v|mkv|avi|ogv)$/)) ||
-    Boolean(params.fileUrl && params.fileUrl.startsWith('data:video/'));
+    Boolean(params.fileUrl && (params.fileUrl.startsWith('data:video/') || params.fileUrl.includes('.mp4') || params.fileUrl.includes('.webm') || params.fileUrl.includes('.mov')));
 
   if (isVideoTarget) {
-    const downloadName = originalName;
-    if (params.fileUrl) {
-      if (params.fileUrl.startsWith('data:') || params.fileUrl.startsWith('blob:')) {
+    const downloadName = originalName.toLowerCase().match(/\.(mp4|webm|mov|m4v|mkv|avi|ogv)$/)
+      ? originalName
+      : `${originalName.replace(/\.[^/.]+$/, '')}.mp4`;
+
+    // 1. Resolve through comprehensive media resolver
+    try {
+      const resolvedUrl = await resolvePlayableMediaUrl(params.fileUrl, params.versionId, params.documentId, originalName);
+      if (resolvedUrl && (resolvedUrl.startsWith('data:') || resolvedUrl.startsWith('blob:'))) {
+        const resp = await fetch(resolvedUrl);
+        if (resp.ok) {
+          const blob = await resp.blob();
+          if (blob && blob.size > 0) {
+            triggerDownload(blob, downloadName);
+            return;
+          }
+        }
+      } else if (resolvedUrl && (resolvedUrl.startsWith('/api/') || resolvedUrl.startsWith('http'))) {
+        const downloadApiUrl = resolvedUrl.includes('/api/storage/file/')
+          ? resolvedUrl.replace('/api/storage/file/', '/api/storage/download/')
+          : resolvedUrl;
+        const resp = await fetch(downloadApiUrl);
+        if (resp.ok) {
+          const blob = await resp.blob();
+          if (blob && blob.size > 0 && blob.type !== 'text/html') {
+            triggerDownload(blob, downloadName);
+            return;
+          }
+        }
+      }
+    } catch (resolveErr) {
+      console.warn('Video resolver download attempt failed:', resolveErr);
+    }
+
+    // 2. Direct data URL or blob URL
+    if (params.fileUrl && (params.fileUrl.startsWith('data:') || params.fileUrl.startsWith('blob:'))) {
+      try {
         const resp = await fetch(params.fileUrl);
+        if (resp.ok) {
+          const blob = await resp.blob();
+          if (blob && blob.size > 0) {
+            triggerDownload(blob, downloadName);
+            return;
+          }
+        }
+      } catch (err) {
+        console.warn('Direct data/blob video fetch error:', err);
+      }
+    }
+
+    // 3. Search client IndexedDB cache thoroughly
+    try {
+      const idsToCheck = [
+        params.fileUrl,
+        params.versionId,
+        params.documentId,
+        originalName,
+      ].filter(Boolean) as string[];
+      const localItem = await findMediaInIndexedDb(idsToCheck);
+      if (localItem?.dataUrl) {
+        const resp = await fetch(localItem.dataUrl);
         const blob = await resp.blob();
         triggerDownload(blob, downloadName);
         return;
       }
+      if (localItem?.blob) {
+        triggerDownload(localItem.blob, downloadName);
+        return;
+      }
+    } catch (err) {
+      console.warn('IndexedDB video retrieval error:', err);
     }
-    const blob = new Blob([params.rawContent || ''], { type: 'video/mp4' });
-    triggerDownload(blob, downloadName);
+
+    // 4. If rawContent is actually a video data URL
+    if (params.rawContent && params.rawContent.startsWith('data:video/')) {
+      const resp = await fetch(params.rawContent);
+      const blob = await resp.blob();
+      triggerDownload(blob, downloadName);
+      return;
+    }
+
+    // If genuine video binary is not found, notify user cleanly
+    console.error('Video file asset is not available for download');
+    alert('Video file asset is not available. Please verify the video upload or refresh your browser.');
     return;
   }
 

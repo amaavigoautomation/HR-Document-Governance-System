@@ -388,14 +388,14 @@ export default function App() {
         if (cloudEmps && cloudEmps.length > 0) {
           governanceEngine.setEmployees(cloudEmps);
         }
-        if (cloudDocs !== undefined) {
+        if (cloudDocs && cloudDocs.length > 0) {
           (governanceEngine as any).documentMasters = cloudDocs;
         }
-        if (cloudVers !== undefined) {
+        if (cloudVers && cloudVers.length > 0) {
           (governanceEngine as any).documentVersions = cloudVers;
           governanceEngine.syncVersionsToStorage(cloudVers);
         }
-        if (cloudAcks !== undefined) {
+        if (cloudAcks && cloudAcks.length > 0) {
           governanceEngine.setAcknowledgements(cloudAcks);
         }
         if (cloudLogs && cloudLogs.length > 0) {
@@ -418,14 +418,14 @@ export default function App() {
     });
 
     const unsubDocs = firestoreService.subscribeToDocuments((cloudDocs) => {
-      if (cloudDocs !== undefined) {
+      if (cloudDocs && cloudDocs.length > 0) {
         (governanceEngine as any).documentMasters = cloudDocs;
         refreshData();
       }
     });
 
     const unsubVers = firestoreService.subscribeToVersions((cloudVers) => {
-      if (cloudVers !== undefined) {
+      if (cloudVers && cloudVers.length > 0) {
         (governanceEngine as any).documentVersions = cloudVers;
         governanceEngine.syncVersionsToStorage(cloudVers);
         refreshData();
@@ -433,7 +433,7 @@ export default function App() {
     });
 
     const unsubAcks = firestoreService.subscribeToAcknowledgements((cloudAcks) => {
-      if (cloudAcks !== undefined) {
+      if (cloudAcks && cloudAcks.length > 0) {
         governanceEngine.setAcknowledgements(cloudAcks);
         refreshData();
       }
@@ -799,7 +799,9 @@ export default function App() {
                           : 'Not yet approved',
                       companyName: 'Amaavigo',
                       rawContent: readerVersion.rawContent,
-                      fileUrl: readerVersion.fileUrl,
+                      fileUrl: readerVersion.fileUrl || readerVersion.originalFileUrl,
+                      versionId: readerVersion.id,
+                      documentId: readerVersion.documentId,
                     })
                   }
                   className="inline-flex items-center space-x-1.5 bg-slate-800 hover:bg-slate-700 text-white text-xs font-semibold px-3 py-1.5 rounded-lg transition-colors border border-slate-700 cursor-pointer"
@@ -820,8 +822,10 @@ export default function App() {
               <DocumentViewer
                 fileName={readerVersion.fileName}
                 rawContent={readerVersion.rawContent}
-                fileUrl={readerVersion.fileUrl}
+                fileUrl={readerVersion.fileUrl || readerVersion.originalFileUrl}
                 mimeType={readerVersion.mimeType}
+                versionId={readerVersion.id}
+                documentId={readerVersion.documentId}
                 headerFooterData={{
                   companyName: 'Amaavigo',
                   documentTitle: readerVersion.documentTitle,

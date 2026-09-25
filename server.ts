@@ -1,6 +1,6 @@
 import express from 'express';
 import path from 'path';
-import { createServer as createViteServer } from 'vite';
+import fs from 'fs';
 import { governanceEngine } from './src/services/governance';
 import { auditService } from './src/services/audit';
 import { defaultStorageProvider } from './src/services/storage';
@@ -12,19 +12,34 @@ import { UserRole } from './src/types';
 import { generateCorporatePdfBlob } from './src/utils/pdfGenerator';
 import { generateCorporateDocxBlob } from './src/utils/documentStamper';
 
+// Permanent media & file upload directory on disk
+const UPLOADS_DIR = path.join(process.cwd(), 'data', 'uploads');
+try {
+  if (!fs.existsSync(UPLOADS_DIR)) {
+    fs.mkdirSync(UPLOADS_DIR, { recursive: true });
+  }
+} catch (dirErr) {
+  console.warn('Notice: Could not create uploads directory at startup:', dirErr);
+}
+
 async function startServer() {
   const app = express();
   const PORT = 3000;
 
-  app.use(express.json({ limit: '10mb' }));
-  app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+  // Support up to 100MB payload for video and high-resolution document uploads
+  app.use(express.json({ limit: '100mb' }));
+  app.use(express.urlencoded({ extended: true, limit: '100mb' }));
 
-  // Sync versions to storage if available dynamically from database
-  governanceEngine.syncVersionsToStorage();
+  // Safe sync versions to storage if available dynamically from database
+  try {
+    governanceEngine.syncVersionsToStorage();
+  } catch (syncErr) {
+    console.warn('Initial governance storage sync notice:', syncErr);
+  }
 
-  // API Health Check
-  app.get('/api/health', (req, res) => {
-    res.json({ status: 'ok', timestamp: new Date().toISOString() });
+  // Health Check endpoints for Cloud Run container lifecycle & load balancers
+  app.get(['/api/health', '/healthz', '/livez', '/readyz'], (req, res) => {
+    res.status(200).json({ status: 'ok', timestamp: new Date().toISOString() });
   });
 
   // Live Email Provider Status
@@ -417,7 +432,248 @@ async function startServer() {
     }
   });
 
-  // Storage Download
+  // Storage Upload Endpoint (Handles Videos, PDFs, DOCXs & Large Media)
+  app.post('/api/storage/upload', async (req, res) => {
+    try {
+      const { fileName = 'media_asset', mimeType = 'application/octet-stream', dataUrl, base64, documentId = 'doc', versionId } = req.body;
+
+      let buffer: Buffer;
+      if (dataUrl && typeof dataUrl === 'string') {
+        if (dataUrl.includes('base64,')) {
+          const base64Str = dataUrl.split('base64,')[1];
+          buffer = Buffer.from(base64Str, 'base64');
+        } else {
+          buffer = Buffer.from(dataUrl, 'utf-8');
+        }
+      } else if (base64 && typeof base64 === 'string') {
+        buffer = Buffer.from(base64, 'base64');
+      } else {
+        return res.status(400).json({ error: 'dataUrl or base64 payload is required' });
+      }
+
+      const safeDocId = (documentId || 'doc').replace(/[^a-zA-Z0-9_-]/g, '_');
+      const safeFileName = path.basename(fileName).replace(/[^a-zA-Z0-9._-]/g, '_');
+      const ext = path.extname(safeFileName) || (mimeType.includes('video') ? '.mp4' : mimeType.includes('pdf') ? '.pdf' : '.bin');
+      const fileId = `${safeDocId}_${Date.now()}_${Math.random().toString(36).substring(2, 7)}${ext}`;
+      const targetPath = path.join(UPLOADS_DIR, fileId);
+
+      // Write media binary to persistent disk storage
+      fs.writeFileSync(targetPath, buffer);
+
+      // Write metadata file
+      const meta = {
+        fileId,
+        fileName: safeFileName,
+        mimeType,
+        sizeBytes: buffer.length,
+        documentId,
+        versionId,
+        uploadedAt: new Date().toISOString(),
+      };
+      fs.writeFileSync(path.join(UPLOADS_DIR, `${fileId}.meta.json`), JSON.stringify(meta, null, 2));
+
+      // Also register in memory storage provider
+      defaultStorageProvider.storeFile(fileId, buffer.toString('binary'), {
+        fileName: safeFileName,
+        mimeType,
+        sizeBytes: buffer.length,
+      });
+
+      res.status(201).json({
+        success: true,
+        fileId,
+        fileUrl: `/api/storage/file/${fileId}`,
+        fileName: safeFileName,
+        mimeType,
+        sizeBytes: buffer.length,
+      });
+    } catch (err: any) {
+      console.error('[Server Storage] Upload error:', err);
+      res.status(500).json({ error: err.message || 'Failed to upload media file' });
+    }
+  });
+
+  // Media Streaming & Retrieval Endpoint (Supports HTML5 video range streaming)
+  app.get('/api/storage/file/:fileId', (req, res) => {
+    try {
+      const rawFileId = path.basename(req.params.fileId);
+      let fileId = rawFileId;
+      let filePath = path.join(UPLOADS_DIR, fileId);
+
+      if (!fs.existsSync(filePath)) {
+        // Fallback 1: Scan meta files in UPLOADS_DIR for matching versionId, documentId, or fileName
+        try {
+          const allUploads = fs.readdirSync(UPLOADS_DIR);
+          for (const item of allUploads) {
+            if (item.endsWith('.meta.json')) {
+              try {
+                const meta = JSON.parse(fs.readFileSync(path.join(UPLOADS_DIR, item), 'utf8'));
+                if (
+                  meta.fileId === rawFileId ||
+                  meta.versionId === rawFileId ||
+                  meta.documentId === rawFileId ||
+                  meta.fileName === rawFileId ||
+                  (meta.documentId && rawFileId.includes(meta.documentId)) ||
+                  (meta.versionId && rawFileId.includes(meta.versionId))
+                ) {
+                  const candidatePath = path.join(UPLOADS_DIR, meta.fileId);
+                  if (fs.existsSync(candidatePath)) {
+                    fileId = meta.fileId;
+                    filePath = candidatePath;
+                    break;
+                  }
+                }
+              } catch (parseErr) {}
+            }
+          }
+        } catch (e) {}
+
+        // Fallback 2: Search file name prefix / suffix in UPLOADS_DIR
+        if (!fs.existsSync(filePath)) {
+          try {
+            const allUploads = fs.readdirSync(UPLOADS_DIR);
+            const match = allUploads.find(
+              (f) => !f.endsWith('.meta.json') && (f.includes(rawFileId) || rawFileId.includes(f))
+            );
+            if (match) {
+              fileId = match;
+              filePath = path.join(UPLOADS_DIR, match);
+            }
+          } catch (e) {}
+        }
+      }
+
+      if (!fs.existsSync(filePath)) {
+        return res.status(404).json({ error: `File not found: ${rawFileId}` });
+      }
+
+      // Read metadata if available
+      let mimeType = 'application/octet-stream';
+      const metaPath = path.join(UPLOADS_DIR, `${fileId}.meta.json`);
+      if (fs.existsSync(metaPath)) {
+        try {
+          const meta = JSON.parse(fs.readFileSync(metaPath, 'utf8'));
+          mimeType = meta.mimeType || mimeType;
+        } catch (e) {}
+      } else {
+        const ext = path.extname(fileId).toLowerCase();
+        if (ext === '.mp4') mimeType = 'video/mp4';
+        else if (ext === '.webm') mimeType = 'video/webm';
+        else if (ext === '.mov') mimeType = 'video/quicktime';
+        else if (ext === '.pdf') mimeType = 'application/pdf';
+        else if (ext === '.docx') mimeType = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+      }
+
+      const stat = fs.statSync(filePath);
+      const fileSize = stat.size;
+      const range = req.headers.range;
+
+      // Handle HTTP Range Requests (Critical for video scrubbing, playback & seek!)
+      if (range) {
+        const parts = range.replace(/bytes=/, '').split('-');
+        const start = parseInt(parts[0], 10);
+        const end = parts[1] ? parseInt(parts[1], 10) : fileSize - 1;
+
+        if (start >= fileSize) {
+          res.status(416).send(`Requested range not satisfiable\n${start} >= ${fileSize}`);
+          return;
+        }
+
+        const chunksize = end - start + 1;
+        const fileStream = fs.createReadStream(filePath, { start, end });
+        const head = {
+          'Content-Range': `bytes ${start}-${end}/${fileSize}`,
+          'Accept-Ranges': 'bytes',
+          'Content-Length': chunksize,
+          'Content-Type': mimeType,
+          'Cache-Control': 'public, max-age=86400',
+        };
+        res.writeHead(206, head);
+        fileStream.pipe(res);
+      } else {
+        const head = {
+          'Content-Length': fileSize,
+          'Content-Type': mimeType,
+          'Accept-Ranges': 'bytes',
+          'Cache-Control': 'public, max-age=86400',
+        };
+        res.writeHead(200, head);
+        fs.createReadStream(filePath).pipe(res);
+      }
+    } catch (err: any) {
+      console.error('[Server Storage] File stream error:', err);
+      res.status(500).json({ error: 'Error streaming requested file' });
+    }
+  });
+
+  // Storage Download by fileId
+  app.get('/api/storage/download/:fileId', (req, res) => {
+    try {
+      const rawFileId = path.basename(req.params.fileId);
+      let fileId = rawFileId;
+      let filePath = path.join(UPLOADS_DIR, fileId);
+
+      if (!fs.existsSync(filePath)) {
+        try {
+          const allUploads = fs.readdirSync(UPLOADS_DIR);
+          for (const item of allUploads) {
+            if (item.endsWith('.meta.json')) {
+              try {
+                const meta = JSON.parse(fs.readFileSync(path.join(UPLOADS_DIR, item), 'utf8'));
+                if (
+                  meta.fileId === rawFileId ||
+                  meta.versionId === rawFileId ||
+                  meta.documentId === rawFileId ||
+                  meta.fileName === rawFileId ||
+                  (meta.documentId && rawFileId.includes(meta.documentId)) ||
+                  (meta.versionId && rawFileId.includes(meta.versionId))
+                ) {
+                  const candidatePath = path.join(UPLOADS_DIR, meta.fileId);
+                  if (fs.existsSync(candidatePath)) {
+                    fileId = meta.fileId;
+                    filePath = candidatePath;
+                    break;
+                  }
+                }
+              } catch (parseErr) {}
+            }
+          }
+        } catch (e) {}
+
+        if (!fs.existsSync(filePath)) {
+          try {
+            const allUploads = fs.readdirSync(UPLOADS_DIR);
+            const match = allUploads.find(
+              (f) => !f.endsWith('.meta.json') && (f.includes(rawFileId) || rawFileId.includes(f))
+            );
+            if (match) {
+              fileId = match;
+              filePath = path.join(UPLOADS_DIR, match);
+            }
+          } catch (e) {}
+        }
+      }
+
+      if (!fs.existsSync(filePath)) {
+        return res.status(404).json({ error: `File not found: ${rawFileId}` });
+      }
+
+      let downloadName = fileId;
+      const metaPath = path.join(UPLOADS_DIR, `${fileId}.meta.json`);
+      if (fs.existsSync(metaPath)) {
+        try {
+          const meta = JSON.parse(fs.readFileSync(metaPath, 'utf8'));
+          downloadName = meta.fileName || downloadName;
+        } catch (e) {}
+      }
+
+      res.download(filePath, downloadName);
+    } catch (err: any) {
+      res.status(500).json({ error: 'Error downloading file' });
+    }
+  });
+
+  // Storage Download (Legacy key query)
   app.get('/api/storage/download', async (req, res) => {
     try {
       const key = req.query.key as string;
@@ -522,24 +778,70 @@ async function startServer() {
     res.status(404).json({ error: `API route ${req.method} ${req.originalUrl} not found` });
   });
 
-  // Vite middleware for development
-  if (process.env.NODE_ENV !== 'production') {
-    const vite = await createViteServer({
-      server: { middlewareMode: true },
-      appType: 'spa',
-    });
-    app.use(vite.middlewares);
-  } else {
-    const distPath = path.join(process.cwd(), 'dist');
+  // Environment detection: Check if running from compiled production bundle
+  const isCompiledServer = typeof __filename !== 'undefined' && __filename.includes('dist');
+  const distPath = path.join(process.cwd(), 'dist');
+  const distIndexPath = path.join(distPath, 'index.html');
+  const rootIndexPath = path.join(process.cwd(), 'index.html');
+
+  if (isCompiledServer && fs.existsSync(distIndexPath)) {
+    // Production compiled server mode: Serve static assets from dist
     app.use(express.static(distPath));
     app.get('*', (req, res) => {
-      res.sendFile(path.join(distPath, 'index.html'));
+      if (fs.existsSync(distIndexPath)) {
+        res.sendFile(distIndexPath);
+      } else if (fs.existsSync(rootIndexPath)) {
+        res.sendFile(rootIndexPath);
+      } else {
+        res.status(200).send('<!DOCTYPE html><html><body><div id="root"></div></body></html>');
+      }
     });
+  } else {
+    // Development / Live Preview mode: Always mount Vite middleware
+    try {
+      const { createServer: createViteServer } = await import('vite');
+      const vite = await createViteServer({
+        server: { middlewareMode: true },
+        appType: 'spa',
+      });
+      app.use(vite.middlewares);
+    } catch (viteErr) {
+      console.warn('Vite middleware initialization warning:', viteErr);
+      if (fs.existsSync(distIndexPath)) {
+        app.use(express.static(distPath));
+        app.get('*', (_req, res) => res.sendFile(distIndexPath));
+      } else if (fs.existsSync(rootIndexPath)) {
+        app.use(express.static(process.cwd()));
+        app.get('*', (_req, res) => res.sendFile(rootIndexPath));
+      }
+    }
   }
 
-  app.listen(PORT, '0.0.0.0', () => {
-    console.log(`HR Document Governance Server running on http://0.0.0.0:${PORT}`);
+  const server = app.listen(PORT, '0.0.0.0', () => {
+    console.log(`HR Document Governance Server running on http://0.0.0.0:${PORT} [mode: ${isCompiledServer ? 'production-bundle' : 'development-vite'}]`);
   });
+
+  const handleShutdown = (signal: string) => {
+    console.log(`Received ${signal}, shutting down gracefully...`);
+    server.close(() => {
+      console.log('HTTP server closed.');
+      process.exit(0);
+    });
+  };
+
+  process.on('SIGTERM', () => handleShutdown('SIGTERM'));
+  process.on('SIGINT', () => handleShutdown('SIGINT'));
 }
 
-startServer();
+process.on('unhandledRejection', (reason, promise) => {
+  console.warn('Unhandled Rejection at:', promise, 'reason:', reason);
+});
+
+process.on('uncaughtException', (err) => {
+  console.error('Uncaught Exception:', err);
+});
+
+startServer().catch((err) => {
+  console.error('Failed to start server:', err);
+  process.exit(1);
+});

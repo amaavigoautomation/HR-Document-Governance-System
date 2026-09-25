@@ -16,6 +16,8 @@ import {
   ShieldCheck,
   Clock,
   Video,
+  Download,
+  RefreshCw,
 } from 'lucide-react';
 import { extractTextFromRawPdfStream, isRawPdfStream, getBrowserPdfjs } from '../utils/fileParser';
 import {
@@ -27,8 +29,9 @@ import {
   stripPolicyMetadataHeader,
 } from '../utils/documentHeaderFooter';
 import { generateCorporatePdfBlob } from '../utils/pdfGenerator';
-import { stampPdfWithHeaderFooter, stampDocxWithHeaderFooter, toUint8Array } from '../utils/documentStamper';
+import { stampPdfWithHeaderFooter, stampDocxWithHeaderFooter, toUint8Array, downloadDocumentWithIntactFormat } from '../utils/documentStamper';
 import { renderAsync } from 'docx-preview';
+import { resolvePlayableMediaUrl } from '../services/mediaStorage';
 
 interface DocumentViewerProps {
   fileName: string;
@@ -36,6 +39,8 @@ interface DocumentViewerProps {
   fileUrl?: string;
   mimeType?: string;
   className?: string;
+  versionId?: string;
+  documentId?: string;
   headerFooterData?: DocumentHeaderFooterData;
 }
 
@@ -45,6 +50,8 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({
   fileUrl,
   mimeType,
   className = '',
+  versionId,
+  documentId,
   headerFooterData,
 }) => {
   const isDocx =
@@ -82,6 +89,24 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({
 
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const renderTaskRef = useRef<any>(null);
+
+  const [activeVideoUrl, setActiveVideoUrl] = useState<string>(fileUrl || '');
+
+  useEffect(() => {
+    let isMounted = true;
+    if (isVideo || (fileName && fileName.toLowerCase().match(/\.(mp4|webm|mov|m4v|mkv|avi|ogv)$/))) {
+      resolvePlayableMediaUrl(fileUrl, versionId, documentId, fileName).then((url) => {
+        if (isMounted && url) {
+          setActiveVideoUrl(url);
+        }
+      });
+    } else if (fileUrl) {
+      setActiveVideoUrl(fileUrl);
+    }
+    return () => {
+      isMounted = false;
+    };
+  }, [fileUrl, versionId, documentId, fileName, isVideo]);
 
   // Keep viewMode synchronized with document type if props change
   useEffect(() => {
@@ -550,11 +575,21 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({
         {viewMode === 'video' && (
           <div className="flex flex-col items-center justify-center w-full max-w-4xl mx-auto py-2">
             <div className="w-full bg-slate-950 rounded-2xl overflow-hidden shadow-lg border border-slate-800 flex flex-col items-center">
-              {fileUrl ? (
+              {activeVideoUrl || fileUrl ? (
                 <video
                   controls
+                  playsInline
+                  preload="auto"
+                  crossOrigin="anonymous"
                   className="w-full max-h-[55vh] bg-black rounded-t-2xl object-contain"
-                  src={fileUrl}
+                  src={activeVideoUrl || fileUrl}
+                  onError={async () => {
+                    console.warn('[Video Player] Direct stream failed, attempting IndexedDB / fallback resolution...');
+                    const resolved = await resolvePlayableMediaUrl(fileUrl, versionId, documentId, fileName);
+                    if (resolved && resolved !== activeVideoUrl) {
+                      setActiveVideoUrl(resolved);
+                    }
+                  }}
                 >
                   Your browser does not support HTML5 video playback.
                 </video>
@@ -571,9 +606,30 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({
                   </span>
                   <span className="font-mono text-slate-200 truncate max-w-xs">{fileName}</span>
                 </div>
-                <div className="text-[11px] text-slate-400 flex items-center space-x-1.5">
-                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
-                  <span>Header & footer stamping omitted for video media</span>
+                <div className="flex items-center space-x-3">
+                  <div className="text-[11px] text-slate-400 flex items-center space-x-1.5">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+                    <span>Media Intact</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      downloadDocumentWithIntactFormat({
+                        fileName,
+                        rawContent,
+                        fileUrl: activeVideoUrl || fileUrl,
+                        versionId,
+                        documentId,
+                        documentTitle: effectiveHeaderFooterData?.documentTitle || fileName,
+                        versionNumber: effectiveHeaderFooterData?.versionNumber || '1.0',
+                      })
+                    }
+                    className="inline-flex items-center space-x-1 bg-slate-800 hover:bg-slate-700 text-white text-[11px] font-medium px-2.5 py-1 rounded-lg border border-slate-700 transition-colors cursor-pointer"
+                    title="Download Video"
+                  >
+                    <Download className="w-3 h-3 text-[#FA7014]" />
+                    <span>Download Video</span>
+                  </button>
                 </div>
               </div>
             </div>

@@ -18,6 +18,7 @@ import { compareDocumentTexts } from './comparison';
 import { defaultEmailProvider } from './email';
 import { calculateSha256, defaultStorageProvider } from './storage';
 import { firestoreService } from './firestoreService';
+import { uploadMediaToServer } from './mediaStorage';
 import { appendApprovedHeaderAndFooter, formatDDMMYYYY, stripPolicyMetadataHeader, extractCleanBody } from '../utils/documentHeaderFooter';
 import { stampPdfWithHeaderFooter, stampDocxWithHeaderFooter, cleanDocxDataUrl, HeaderFooterMetadata } from '../utils/documentStamper';
 
@@ -796,6 +797,22 @@ export class DocumentGovernanceEngine {
     }
     // Note: Video files do NOT append header and footer, keeping video bytes intact
 
+    // Persist large binary media (e.g. video/pdf/docx) to persistent server storage and IndexedDB
+    if (sanitizedFileUrl && (isVideoUpload || sanitizedFileUrl.startsWith('data:'))) {
+      try {
+        const uploadRes = await uploadMediaToServer({
+          fileName: data.fileName || `${documentId}_v1.0.${isVideoUpload ? 'mp4' : 'bin'}`,
+          mimeType: data.mimeType || (isVideoUpload ? 'video/mp4' : 'application/octet-stream'),
+          dataUrl: sanitizedFileUrl,
+          documentId,
+          versionId,
+        });
+        sanitizedFileUrl = uploadRes.fileUrl;
+      } catch (uploadErr) {
+        console.warn('[Governance] Media upload to server storage error:', uploadErr);
+      }
+    }
+
     // Store file in Storage Provider
     const storageMeta = await defaultStorageProvider.uploadFile(
       documentId,
@@ -845,7 +862,7 @@ export class DocumentGovernanceEngine {
       storageKey: storageMeta.storageKey,
       storagePath: storageMeta.storagePath,
       fileUrl: sanitizedFileUrl || defaultStorageProvider.getFileUrl(storageMeta.storageKey),
-      originalFileUrl: (isPdfUpload || isDocxUpload || isVideoUpload) && data.fileDataUrl ? data.fileDataUrl : undefined,
+      originalFileUrl: sanitizedFileUrl || (isPdfUpload || isDocxUpload || isVideoUpload ? data.fileDataUrl : undefined),
       contentHash: storageMeta.contentHash,
       rawContent: sanitizedRawContent,
       createdById: creator.id,
@@ -863,8 +880,8 @@ export class DocumentGovernanceEngine {
 
     // Persist to Cloud Firestore (non-blocking)
     try {
-      firestoreService.saveDocument(newMaster).catch((e) => console.warn('Firestore doc sync:', e));
-      firestoreService.saveVersion(newVersion).catch((e) => console.warn('Firestore ver sync:', e));
+      await firestoreService.saveDocument(newMaster);
+      await firestoreService.saveVersion(newVersion);
     } catch (e) {
       console.warn('Firestore cloud sync error:', e);
     }
@@ -1043,6 +1060,22 @@ export class DocumentGovernanceEngine {
     }
     // Video revisions keep original file data intact without appending header or footer
 
+    // Persist large binary media (e.g. video/pdf/docx) to persistent server storage and IndexedDB
+    if (sanitizedFileUrl && (isVideo || sanitizedFileUrl.startsWith('data:'))) {
+      try {
+        const uploadRes = await uploadMediaToServer({
+          fileName: data.fileName || `${master.documentId}_v${nextVersionNumber}.${isVideo ? 'mp4' : 'bin'}`,
+          mimeType: data.mimeType || (isVideo ? 'video/mp4' : 'application/octet-stream'),
+          dataUrl: sanitizedFileUrl,
+          documentId: master.documentId,
+          versionId,
+        });
+        sanitizedFileUrl = uploadRes.fileUrl;
+      } catch (uploadErr) {
+        console.warn('[Governance] Media upload on revision error:', uploadErr);
+      }
+    }
+
     // If text/markdown, embed the newly updated header and footer
     if (!isPdf && !isDocx && !isVideo && sanitizedRawContent) {
       sanitizedRawContent = appendApprovedHeaderAndFooter(sanitizedRawContent, revisionHeaderFooterData);
@@ -1072,7 +1105,7 @@ export class DocumentGovernanceEngine {
       storageKey: storageMeta.storageKey,
       storagePath: storageMeta.storagePath,
       fileUrl: sanitizedFileUrl || defaultStorageProvider.getFileUrl(storageMeta.storageKey),
-      originalFileUrl: (isPdf || isDocx || isVideo) && data.fileDataUrl ? data.fileDataUrl : undefined,
+      originalFileUrl: sanitizedFileUrl || ((isPdf || isDocx || isVideo) && data.fileDataUrl ? data.fileDataUrl : undefined),
       contentHash: storageMeta.contentHash,
       rawContent: sanitizedRawContent,
       createdById: creator.id,
@@ -1349,8 +1382,11 @@ export class DocumentGovernanceEngine {
         version.rawContent || '',
         version.mimeType || (isVideo ? 'video/mp4' : 'text/markdown')
       );
-      if (!version.fileUrl || !version.fileUrl.startsWith('data:')) {
-        version.fileUrl = defaultStorageProvider.getFileUrl(version.storageKey);
+      // For videos or pre-existing server media endpoints, preserve fileUrl intact!
+      if (!isVideo) {
+        if (!version.fileUrl || (!version.fileUrl.startsWith('data:') && !version.fileUrl.startsWith('/api/storage/file/'))) {
+          version.fileUrl = defaultStorageProvider.getFileUrl(version.storageKey);
+        }
       }
     } catch (err) {
       console.warn('Storage sync error with header/footer:', err);

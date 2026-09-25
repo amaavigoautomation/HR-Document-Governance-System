@@ -28,7 +28,6 @@ import {
 } from 'lucide-react';
 import { recruitmentService } from '../services/recruitmentService';
 import { RecruitmentOverviewResult, SheetRowData, isExcludedSheetTab } from '../services/serverSheets';
-import { CandidateEvaluationSection } from './CandidateEvaluationSection';
 import { User, UserRole } from '../types';
 
 interface TalentAcquisitionOverviewProps {
@@ -998,20 +997,6 @@ export const TalentAcquisitionOverview: React.FC<TalentAcquisitionOverviewProps>
                 )}
               </select>
             </div>
-
-            {/* Diagnostics toggle button */}
-            <button
-              type="button"
-              onClick={() => setShowDiagnostics(!showDiagnostics)}
-              className={`p-1.5 rounded-xl border transition-colors ${
-                showDiagnostics
-                  ? 'bg-orange-50 border-orange-200 text-[#FA7014]'
-                  : 'border-slate-200 text-slate-600 hover:text-slate-900 hover:bg-slate-50'
-              }`}
-              title="Inspect Column Mapping"
-            >
-              <Info className="w-3.5 h-3.5" />
-            </button>
           </div>
         </div>
 
@@ -1337,27 +1322,6 @@ export const TalentAcquisitionOverview: React.FC<TalentAcquisitionOverviewProps>
           </div>
         )}
       </div>
-
-      {/* AI-Powered Candidate Evaluation & Recommendation (Below Explore Sheet Data) */}
-      <CandidateEvaluationSection
-        availableDesignations={
-          visibleSheetTabs.length > 0
-            ? visibleSheetTabs
-            : [
-                'Performance Marketing Expert',
-                'Lead Generation Expert',
-                'Social Media Content Creator',
-                'Social Media Analyst',
-              ]
-        }
-        initialDesignation={
-          activeSheetTab && !isExcludedSheetTab(activeSheetTab)
-            ? activeSheetTab
-            : 'Performance Marketing Expert'
-        }
-        refreshTrigger={refreshCount}
-        userRole={currentUser.role}
-      />
     </div>
   );
 };

@@ -1,4 +1,4 @@
-import { fetchSheetData, getSpreadsheetTabNames } from './serverSheets.js';
+import { fetchSheetData, getSpreadsheetTabNames } from './serverSheets';
 import { GoogleGenAI, Type } from '@google/genai';
 
 export interface CandidateEvaluationResult {

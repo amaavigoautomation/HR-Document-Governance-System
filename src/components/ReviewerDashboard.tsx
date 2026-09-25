@@ -714,14 +714,29 @@ export const ReviewerDashboard: React.FC<ReviewerDashboardProps> = ({
                         </td>
 
                         <td className="px-6 py-4 text-right whitespace-nowrap">
-                          <button
-                            id={`btn-reviewer-consolidated-view-${doc.id}`}
-                            onClick={() => onOpenDocumentDetail(doc)}
-                            className="inline-flex items-center space-x-1 text-xs font-semibold text-slate-800 hover:text-slate-950 bg-slate-100 hover:bg-slate-200 px-3 py-1.5 rounded-lg transition-colors border border-slate-200"
-                          >
-                            <Eye className="w-3.5 h-3.5" />
-                            <span>Audit & Versions ({docVers.length})</span>
-                          </button>
+                          <div className="inline-flex items-center space-x-2">
+                            {hasPendingReview && (
+                              <button
+                                id={`btn-reviewer-consolidated-review-${doc.id}`}
+                                onClick={() => {
+                                  const pendingVer = docVers.find((v) => v.status === VersionStatus.IN_REVIEW);
+                                  if (pendingVer) onOpenReviewModal(pendingVer);
+                                }}
+                                className="inline-flex items-center space-x-1 text-xs font-semibold text-white bg-[#FA7014] hover:bg-[#e0620f] px-3 py-1.5 rounded-lg transition-colors shadow-xs cursor-pointer"
+                              >
+                                <ShieldCheck className="w-3.5 h-3.5" />
+                                <span>Review v{docVers.find((v) => v.status === VersionStatus.IN_REVIEW)?.versionNumber || ''}</span>
+                              </button>
+                            )}
+                            <button
+                              id={`btn-reviewer-consolidated-view-${doc.id}`}
+                              onClick={() => onOpenDocumentDetail(doc)}
+                              className="inline-flex items-center space-x-1 text-xs font-semibold text-slate-800 hover:text-slate-950 bg-slate-100 hover:bg-slate-200 px-3 py-1.5 rounded-lg transition-colors border border-slate-200 cursor-pointer"
+                            >
+                              <Eye className="w-3.5 h-3.5" />
+                              <span>Audit & Versions ({docVers.length})</span>
+                            </button>
+                          </div>
                         </td>
                       </tr>
                     );

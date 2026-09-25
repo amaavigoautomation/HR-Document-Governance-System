@@ -135,6 +135,18 @@ export const EmployeePortalView: React.FC<EmployeePortalViewProps> = ({
     setLocalAcks(governanceEngine.getAcknowledgements());
   };
 
+  const getPublishedVersionForDoc = (doc: DocumentMaster): DocumentVersion | undefined => {
+    if (doc.currentPublishedVersionId) {
+      const v = versions.find((ver) => ver.id === doc.currentPublishedVersionId);
+      if (v) return v;
+    }
+    const matching = versions
+      .filter((v) => (v.documentMasterId === doc.id || v.documentId === doc.documentId) && v.status === VersionStatus.PUBLISHED)
+      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+    if (matching.length > 0) return matching[0];
+    return versions.find((v) => v.documentMasterId === doc.id || v.documentId === doc.documentId);
+  };
+
   const handleDownloadIntact = async (doc: DocumentMaster, ver: DocumentVersion) => {
     setDownloadingDocId(doc.id);
     try {
@@ -154,7 +166,9 @@ export const EmployeePortalView: React.FC<EmployeePortalViewProps> = ({
             : 'Not yet approved',
         companyName: doc.companyName || 'Amaavigo',
         rawContent: ver.rawContent,
-        fileUrl: ver.fileUrl,
+        fileUrl: ver.fileUrl || ver.originalFileUrl,
+        versionId: ver.id,
+        documentId: doc.documentId || ver.documentId,
       });
     } catch (e) {
       console.error('Download error', e);
@@ -295,8 +309,8 @@ export const EmployeePortalView: React.FC<EmployeePortalViewProps> = ({
                   </div>
                 ) : (
                   filteredPendingDocs.map((doc) => {
-                    const pubVersion = versions.find((v) => v.id === doc.currentPublishedVersionId);
-                    const verNumber = doc.currentPublishedVersionNumber || '1.0';
+                    const pubVersion = getPublishedVersionForDoc(doc);
+                    const verNumber = doc.currentPublishedVersionNumber || pubVersion?.versionNumber || '1.0';
 
                     return (
                       <div
@@ -433,8 +447,8 @@ export const EmployeePortalView: React.FC<EmployeePortalViewProps> = ({
                   </thead>
                   <tbody className="divide-y divide-slate-100">
                     {filteredAllDocs.map((doc) => {
-                      const pubVersion = versions.find((v) => v.id === doc.currentPublishedVersionId);
-                      const verNumber = doc.currentPublishedVersionNumber || '1.0';
+                      const pubVersion = getPublishedVersionForDoc(doc);
+                      const verNumber = doc.currentPublishedVersionNumber || pubVersion?.versionNumber || '1.0';
 
                       const ack = userAcks.find(
                         (a) =>
