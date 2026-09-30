@@ -21,6 +21,7 @@ service cloud.firestore {
              (!('title' in data) || (data.title is string && data.title.size() <= 128)) &&
              (!('departmentName' in data) || (data.departmentName is string && data.departmentName.size() <= 128)) &&
              (!('companyName' in data) || (data.companyName is string && data.companyName.size() <= 128)) &&
+             (!('authorizedModules' in data) || (data.authorizedModules is string && data.authorizedModules.size() <= 128) || (data.authorizedModules is list)) &&
              (!('password' in data) || (data.password is string && data.password.size() <= 128));
     }
 

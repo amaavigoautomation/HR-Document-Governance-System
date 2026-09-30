@@ -18,6 +18,7 @@
         "title": { "type": "string", "maxLength": 128 },
         "avatar": { "type": "string", "maxLength": 1000 },
         "password": { "type": "string", "maxLength": 128 },
+        "authorizedModules": { "type": "string", "maxLength": 128 },
         "active": { "type": "boolean" },
         "createdAt": { "type": "string" },
         "updatedAt": { "type": "string" }

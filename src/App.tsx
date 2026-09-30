@@ -34,6 +34,7 @@ import { StatusBadge } from './components/StatusBadge';
 import { HRAgentShell, HRAgentModule } from './components/HRAgentShell';
 import { TalentAcquisitionOverview } from './components/TalentAcquisitionOverview';
 import { TalentAcquisitionHeader } from './components/TalentAcquisitionHeader';
+import { hasModulePermission, normalizeAuthorizedModules } from './utils/authorization';
 
 const CURRENT_USER_STORAGE_KEY = 'amaavigo_current_user_id';
 const CURRENT_USER_DATA_KEY = 'amaavigo_current_user_data';
@@ -149,15 +150,32 @@ export default function App() {
   };
 
   const handleSelectHRAgentModule = (module: HRAgentModule) => {
-    // Both HR and Approver roles have access to Talent Acquisition and Document Version Control
     const isTalentModule = module === 'talent-acquisition' || module === 'talent-acquisition-overview';
-    if (isTalentModule && currentUser?.role !== UserRole.CREATOR && currentUser?.role !== UserRole.REVIEWER) {
-      setHrAgentModule('document-version-control');
-      try {
-        localStorage.setItem(HR_AGENT_MODULE_STORAGE_KEY, 'document-version-control');
-      } catch (e) {}
+    const hasTalent = hasModulePermission(currentUser, 'talent-acquisition');
+    const hasDocGov = hasModulePermission(currentUser, 'document-version-control');
+
+    // If user is not authorized for Talent Acquisition
+    if (isTalentModule && !hasTalent) {
+      if (hasDocGov) {
+        setHrAgentModule('document-version-control');
+        try {
+          localStorage.setItem(HR_AGENT_MODULE_STORAGE_KEY, 'document-version-control');
+        } catch (e) {}
+      }
       return;
     }
+
+    // If user is not authorized for Document Version Control
+    if (module === 'document-version-control' && !hasDocGov) {
+      if (hasTalent) {
+        setHrAgentModule('talent-acquisition-overview');
+        try {
+          localStorage.setItem(HR_AGENT_MODULE_STORAGE_KEY, 'talent-acquisition-overview');
+        } catch (e) {}
+      }
+      return;
+    }
+
     setHrAgentModule(module);
     try {
       localStorage.setItem(HR_AGENT_MODULE_STORAGE_KEY, module);
@@ -499,11 +517,17 @@ export default function App() {
       targetTab = 'employee';
     }
     setActiveTab(targetTab);
-    // Always default HR/Approver to Document Version Control on login
-    setHrAgentModule('document-version-control');
+    // Determine default landing module based on user's authorization
+    const hasTalent = hasModulePermission(user, 'talent-acquisition');
+    const hasDocGov = hasModulePermission(user, 'document-version-control');
+    let defaultModule: HRAgentModule = 'document-version-control';
+    if (!hasDocGov && hasTalent) {
+      defaultModule = 'talent-acquisition-overview';
+    }
+    setHrAgentModule(defaultModule);
     try {
       localStorage.setItem(ACTIVE_TAB_STORAGE_KEY, targetTab);
-      localStorage.setItem(HR_AGENT_MODULE_STORAGE_KEY, 'document-version-control');
+      localStorage.setItem(HR_AGENT_MODULE_STORAGE_KEY, defaultModule);
     } catch (e) {}
   };
 
@@ -594,6 +618,7 @@ export default function App() {
           isSidebarOpen={isSidebarOpen}
           onToggleSidebar={handleToggleSidebar}
           onLogout={handleLogout}
+          onRefreshData={refreshData}
         >
           {/* Selected Module: Document Version Control (Default) */}
           {hrAgentModule === 'document-version-control' && (

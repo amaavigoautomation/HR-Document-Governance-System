@@ -13,6 +13,7 @@ import {
 } from 'firebase/firestore';
 import { db } from './firebase';
 import { ensurePersistentMedia } from './mediaStorage';
+import { normalizeAuthorizedModules, ModuleAuthorizationCode } from '../utils/authorization';
 import {
   DocumentMaster,
   DocumentVersion,
@@ -111,6 +112,14 @@ export const firestoreService = {
       data.status !== 'INACTIVE' &&
       data.status !== 'inactive';
 
+    const rawAuth =
+      data.authorizedModules ||
+      data.allowedModules ||
+      data.moduleAccess ||
+      data.modules ||
+      data.moduleAuthorization;
+    const authorizedModules = normalizeAuthorizedModules(rawAuth);
+
     return {
       ...data,
       id: docId,
@@ -119,6 +128,7 @@ export const firestoreService = {
       name,
       email: String(email).trim(),
       role,
+      authorizedModules,
       title:
         data.title ||
         data.designation ||
@@ -245,6 +255,20 @@ export const firestoreService = {
 
   async updateEmployee(employeeId: string, updates: Partial<User>): Promise<void> {
     await updateDoc(doc(db, EMPLOYEES_COLLECTION, employeeId), cleanFirestoreData(updates));
+  },
+
+  async updateUserModuleAuthorization(
+    employeeId: string,
+    authorizedModules: ModuleAuthorizationCode | string
+  ): Promise<void> {
+    const normalized = normalizeAuthorizedModules(authorizedModules);
+    await updateDoc(
+      doc(db, EMPLOYEES_COLLECTION, employeeId),
+      cleanFirestoreData({
+        authorizedModules: normalized,
+        updatedAt: new Date().toISOString(),
+      })
+    );
   },
 
   async deleteEmployee(employeeId: string): Promise<void> {

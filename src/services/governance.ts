@@ -19,6 +19,7 @@ import { defaultEmailProvider } from './email';
 import { calculateSha256, defaultStorageProvider } from './storage';
 import { firestoreService } from './firestoreService';
 import { uploadMediaToServer } from './mediaStorage';
+import { normalizeAuthorizedModules, getAuthorizationLabel, ModuleAuthorizationCode } from '../utils/authorization';
 import { appendApprovedHeaderAndFooter, formatDDMMYYYY, stripPolicyMetadataHeader, extractCleanBody } from '../utils/documentHeaderFooter';
 import { stampPdfWithHeaderFooter, stampDocxWithHeaderFooter, cleanDocxDataUrl, HeaderFooterMetadata } from '../utils/documentStamper';
 
@@ -338,6 +339,14 @@ export class DocumentGovernanceEngine {
         (emp as any).status !== 'INACTIVE' &&
         (emp as any).status !== 'inactive';
 
+      const rawAuth =
+        emp.authorizedModules ||
+        (emp as any).allowedModules ||
+        (emp as any).moduleAccess ||
+        (emp as any).modules ||
+        (emp as any).moduleAuthorization;
+      const authorizedModules = normalizeAuthorizedModules(rawAuth);
+
       const normalized: User = {
         ...emp,
         id: emp.id || emp.empId || emp.loginId || rawLoginId,
@@ -346,6 +355,7 @@ export class DocumentGovernanceEngine {
         name: emp.name || (role === UserRole.CREATOR ? 'HR Creator' : role === UserRole.REVIEWER ? 'Approver' : 'Employee'),
         email: (emp.email || '').trim(),
         role,
+        authorizedModules,
         title:
           emp.title ||
           (role === UserRole.CREATOR
@@ -610,6 +620,44 @@ export class DocumentGovernanceEngine {
     });
 
     return updatedUser;
+  }
+
+  // Update module authorization for HR or Founder/Reviewer user and persist to Firestore
+  public async updateUserModuleAuthorization(
+    userId: string,
+    authorizedModules: ModuleAuthorizationCode | string,
+    performer?: User
+  ): Promise<User> {
+    const normalized = normalizeAuthorizedModules(authorizedModules);
+    const user = this.users.find(
+      (u) =>
+        u.id === userId ||
+        (u.empId && u.empId.toUpperCase() === userId.toUpperCase()) ||
+        (u.loginId && u.loginId.toUpperCase() === userId.toUpperCase())
+    );
+
+    if (!user) {
+      throw new Error(`User with ID "${userId}" not found.`);
+    }
+
+    const previousAuth = getAuthorizationLabel(user.authorizedModules);
+    const newAuth = getAuthorizationLabel(normalized);
+
+    user.authorizedModules = normalized;
+    user.updatedAt = new Date().toISOString();
+
+    try {
+      await firestoreService.updateUserModuleAuthorization(user.id, normalized);
+    } catch (e) {
+      console.warn('[Governance] Firestore module authorization update note:', e);
+    }
+
+    const adminPerformer = performer || user;
+    auditService.logEvent(AuditAction.AUTHORIZATION_UPDATED, adminPerformer, {
+      reason: `Module access authorization for ${user.name} (${user.role} - ${user.loginId || user.empId}) was updated from "${previousAuth}" to "${newAuth}" in database.`,
+    });
+
+    return user;
   }
 
   public setAcknowledgements(acks: AcknowledgementRecord[]): void {

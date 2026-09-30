@@ -63,6 +63,7 @@ export enum AuditAction {
   ACCESS_DENIED = 'ACCESS_DENIED',
   DOCUMENT_ACKNOWLEDGED = 'DOCUMENT_ACKNOWLEDGED',
   USER_UPDATED = 'USER_UPDATED',
+  AUTHORIZATION_UPDATED = 'AUTHORIZATION_UPDATED',
 }
 
 export interface User {
@@ -73,6 +74,7 @@ export interface User {
   name: string;
   email: string;
   role: UserRole;
+  authorizedModules?: string | string[]; // 'ALL' | 'TALENT_ACQUISITION' | 'DOCUMENT_VERSION_CONTROL'
   companyId: string;
   companyName: string;
   departmentId: string;
