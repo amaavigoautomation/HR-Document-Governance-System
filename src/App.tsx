@@ -20,6 +20,7 @@ import { CreatorDashboard } from './components/CreatorDashboard';
 import { ReviewerDashboard } from './components/ReviewerDashboard';
 import { EmployeePortalView } from './components/EmployeePortalView';
 import { EmployeeComplianceModule } from './components/EmployeeComplianceModule';
+import { PolicySuggestionsDashboard } from './components/PolicySuggestionsDashboard';
 import { AuditLogView } from './components/AuditLogView';
 import { CreateDocumentModal } from './components/CreateDocumentModal';
 import { CreateVersionModal } from './components/CreateVersionModal';
@@ -35,6 +36,7 @@ import { HRAgentShell, HRAgentModule } from './components/HRAgentShell';
 import { TalentAcquisitionOverview } from './components/TalentAcquisitionOverview';
 import { TalentAcquisitionHeader } from './components/TalentAcquisitionHeader';
 import { hasModulePermission, normalizeAuthorizedModules } from './utils/authorization';
+import { DocumentSuggestion } from './types';
 
 const CURRENT_USER_STORAGE_KEY = 'amaavigo_current_user_id';
 const CURRENT_USER_DATA_KEY = 'amaavigo_current_user_data';
@@ -79,19 +81,19 @@ export default function App() {
     return null;
   });
 
-  const [activeTab, setActiveTab] = useState<'creator' | 'reviewer' | 'employee' | 'compliance' | 'audit' | 'notifications'>(() => {
+  const [activeTab, setActiveTab] = useState<'creator' | 'reviewer' | 'employee' | 'compliance' | 'suggestions' | 'audit' | 'notifications'>(() => {
     try {
       const savedTab = localStorage.getItem(ACTIVE_TAB_STORAGE_KEY);
       const savedRole = localStorage.getItem(CURRENT_USER_ROLE_KEY);
 
       if (savedRole === UserRole.CREATOR) {
-        if (savedTab && ['creator', 'compliance', 'audit'].includes(savedTab)) {
+        if (savedTab && ['creator', 'compliance', 'suggestions', 'audit'].includes(savedTab)) {
           return savedTab as any;
         }
         return 'creator';
       }
       if (savedRole === UserRole.REVIEWER) {
-        if (savedTab && ['reviewer', 'compliance', 'audit'].includes(savedTab)) {
+        if (savedTab && ['reviewer', 'compliance', 'suggestions', 'audit'].includes(savedTab)) {
           return savedTab as any;
         }
         return 'reviewer';
@@ -100,7 +102,7 @@ export default function App() {
         return 'employee';
       }
 
-      if (savedTab && ['creator', 'reviewer', 'employee', 'compliance', 'audit', 'notifications'].includes(savedTab)) {
+      if (savedTab && ['creator', 'reviewer', 'employee', 'compliance', 'suggestions', 'audit', 'notifications'].includes(savedTab)) {
         return savedTab as any;
       }
     } catch (e) {
@@ -237,6 +239,9 @@ export default function App() {
   const [acknowledgements, setAcknowledgements] = useState<AcknowledgementRecord[]>(() =>
     governanceEngine.getAcknowledgements()
   );
+  const [suggestions, setSuggestions] = useState<DocumentSuggestion[]>(() =>
+    governanceEngine.getDocumentSuggestions()
+  );
   const [notificationCount, setNotificationCount] = useState(0);
   const [pendingComplianceCount, setPendingComplianceCount] = useState(0);
 
@@ -308,6 +313,36 @@ export default function App() {
       return false;
     }).length;
   }, [currentUser, documents]);
+
+  // Published document identifiers (strictly for published policies authorized and published by Approver)
+  const publishedDocIdentifiers = useMemo(() => {
+    const ids = new Set<string>();
+    documents.forEach((d) => {
+      const hasPublishedVer =
+        Boolean(d.currentPublishedVersionId) ||
+        versions.some(
+          (v) =>
+            (v.documentMasterId === d.id || v.documentId === d.documentId) &&
+            v.status === VersionStatus.PUBLISHED
+        );
+      if (d.active && d.currentStatus === VersionStatus.PUBLISHED && hasPublishedVer) {
+        if (d.id) ids.add(d.id.toLowerCase().trim());
+        if (d.documentId) ids.add(d.documentId.toLowerCase().trim());
+      }
+    });
+    return ids;
+  }, [documents, versions]);
+
+  const activeSuggestions = useMemo(() => {
+    return suggestions.filter((s) => {
+      const docLogicalId = (s.documentId || '').toLowerCase().trim();
+      const docMasterId = (s.documentMasterId || '').toLowerCase().trim();
+      return (
+        (docLogicalId && publishedDocIdentifiers.has(docLogicalId)) ||
+        (docMasterId && publishedDocIdentifiers.has(docMasterId))
+      );
+    });
+  }, [suggestions, publishedDocIdentifiers]);
 
   // Sync data from governance engine
   const refreshData = () => {
@@ -388,6 +423,8 @@ export default function App() {
     const acks = governanceEngine.getAcknowledgements();
     setAcknowledgements([...acks]);
     setPendingComplianceCount(acks.filter((a) => a.status === 'PENDING').length);
+    const sugs = governanceEngine.getDocumentSuggestions();
+    setSuggestions([...sugs]);
   };
 
   useEffect(() => {
@@ -395,37 +432,65 @@ export default function App() {
     // Dynamically hydrate from Firestore database
     const hydrateFromFirestore = async () => {
       try {
-        const [cloudEmps, cloudDocs, cloudVers, cloudAcks, cloudLogs] = await Promise.all([
+        // One-time purge of all policy documents and dummy suggestions per user request
+        if (localStorage.getItem('ama_purged_user_request_v2') !== 'true') {
+          localStorage.setItem('ama_purged_user_request_v2', 'true');
+          localStorage.setItem('ama_docs_cleared', 'true');
+          localStorage.removeItem('ama_governance_suggestions');
+          localStorage.removeItem('ama_governance_acks');
+          localStorage.removeItem('ama_rereview_reminders_sent');
+          localStorage.removeItem('ama_document_versions');
+          await governanceEngine.clearAllDocuments();
+          refreshData();
+        }
+
+        const [cloudEmps, cloudDocs, cloudVers, cloudAcks, cloudLogs, cloudSugs] = await Promise.all([
           firestoreService.getEmployees(),
           firestoreService.getDocuments(),
           firestoreService.getVersions(),
           firestoreService.getAcknowledgements(),
           firestoreService.getAuditLogs(),
+          firestoreService.getSuggestions(),
         ]);
 
         if (cloudEmps && cloudEmps.length > 0) {
           governanceEngine.setEmployees(cloudEmps);
         }
-        if (cloudDocs && cloudDocs.length > 0) {
+        if (Array.isArray(cloudDocs)) {
           (governanceEngine as any).documentMasters = cloudDocs;
         }
-        if (cloudVers && cloudVers.length > 0) {
+        if (Array.isArray(cloudVers)) {
           (governanceEngine as any).documentVersions = cloudVers;
           governanceEngine.syncVersionsToStorage(cloudVers);
         }
-        if (cloudAcks && cloudAcks.length > 0) {
+        if (Array.isArray(cloudAcks)) {
           governanceEngine.setAcknowledgements(cloudAcks);
         }
         if (cloudLogs && cloudLogs.length > 0) {
           auditService.syncCloudLogs(cloudLogs);
         }
+        if (Array.isArray(cloudSugs)) {
+          governanceEngine.setDocumentSuggestions(cloudSugs);
+        }
         refreshData();
+
+        // Automatically verify and dispatch 2-day re-review reminders to HR Creators
+        try {
+          await governanceEngine.checkAndDispatchReReviewReminders();
+        } catch (e) {
+          console.warn('Auto re-review reminder note:', e);
+        }
       } catch (e) {
         console.warn('Firestore hydration note:', e);
       }
     };
 
     hydrateFromFirestore();
+
+    // Periodic check for upcoming 2-day re-review dates
+    const reminderTimer = setInterval(() => {
+      governanceEngine.checkAndDispatchReReviewReminders().catch(() => {});
+    }, 15 * 60 * 1000);
 
     // Real-time synchronization listeners
     const unsubEmployees = firestoreService.subscribeToEmployees((cloudEmployees) => {
@@ -436,14 +501,14 @@ export default function App() {
     });
 
     const unsubDocs = firestoreService.subscribeToDocuments((cloudDocs) => {
-      if (cloudDocs && cloudDocs.length > 0) {
+      if (Array.isArray(cloudDocs) && (cloudDocs.length > 0 || localStorage.getItem('ama_docs_cleared') === 'true')) {
         (governanceEngine as any).documentMasters = cloudDocs;
         refreshData();
       }
     });
 
     const unsubVers = firestoreService.subscribeToVersions((cloudVers) => {
-      if (cloudVers && cloudVers.length > 0) {
+      if (Array.isArray(cloudVers) && (cloudVers.length > 0 || localStorage.getItem('ama_docs_cleared') === 'true')) {
         (governanceEngine as any).documentVersions = cloudVers;
         governanceEngine.syncVersionsToStorage(cloudVers);
         refreshData();
@@ -451,7 +516,7 @@ export default function App() {
     });
 
     const unsubAcks = firestoreService.subscribeToAcknowledgements((cloudAcks) => {
-      if (cloudAcks && cloudAcks.length > 0) {
+      if (Array.isArray(cloudAcks)) {
         governanceEngine.setAcknowledgements(cloudAcks);
         refreshData();
       }
@@ -468,13 +533,22 @@ export default function App() {
       refreshData();
     });
 
+    const unsubSuggestions = firestoreService.subscribeToSuggestions((cloudSugs) => {
+      if (Array.isArray(cloudSugs)) {
+        governanceEngine.setDocumentSuggestions(cloudSugs);
+        refreshData();
+      }
+    });
+
     return () => {
+      clearInterval(reminderTimer);
       unsubEmployees();
       unsubDocs();
       unsubVers();
       unsubAcks();
       unsubAudit();
       unsubAuditLocal();
+      unsubSuggestions();
     };
   }, []);
 
@@ -508,7 +582,7 @@ export default function App() {
       localStorage.setItem(CURRENT_USER_DATA_KEY, JSON.stringify(user));
       localStorage.setItem(CURRENT_USER_ROLE_KEY, user.role);
     } catch (e) {}
-    let targetTab: 'creator' | 'reviewer' | 'employee' | 'compliance' | 'audit' = 'creator';
+    let targetTab: 'creator' | 'reviewer' | 'employee' | 'compliance' | 'suggestions' | 'audit' = 'creator';
     if (user.role === UserRole.CREATOR) {
       targetTab = 'creator';
     } else if (user.role === UserRole.REVIEWER) {
@@ -627,9 +701,10 @@ export default function App() {
                 <HRHeader
                   currentUser={currentUser}
                   onLogout={handleLogout}
-                  activeTab={activeTab === 'compliance' || activeTab === 'audit' ? activeTab : 'creator'}
+                  activeTab={activeTab === 'compliance' || activeTab === 'audit' || activeTab === 'suggestions' ? activeTab : 'creator'}
                   setActiveTab={(tab) => setActiveTab(tab)}
                   pendingComplianceCount={pendingComplianceCount}
+                  suggestionsCount={activeSuggestions.length}
                   isSidebarOpen={isSidebarOpen}
                   onToggleSidebar={handleToggleSidebar}
                 />
@@ -637,9 +712,10 @@ export default function App() {
                 <ApproverHeader
                   currentUser={currentUser}
                   onLogout={handleLogout}
-                  activeTab={activeTab === 'compliance' || activeTab === 'audit' ? activeTab : 'reviewer'}
+                  activeTab={activeTab === 'compliance' || activeTab === 'audit' || activeTab === 'suggestions' ? activeTab : 'reviewer'}
                   setActiveTab={(tab) => setActiveTab(tab)}
                   pendingComplianceCount={pendingComplianceCount}
+                  suggestionsCount={activeSuggestions.length}
                   isSidebarOpen={isSidebarOpen}
                   onToggleSidebar={handleToggleSidebar}
                 />
@@ -648,7 +724,34 @@ export default function App() {
               <div className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6">
                 {currentUser.role === UserRole.CREATOR ? (
                   <>
-                    {(activeTab === 'creator' || (activeTab !== 'compliance' && activeTab !== 'audit')) && (
+                    {/* Policy Suggestions Dashboard (Beside Compliance Tracker) */}
+                    {activeTab === 'suggestions' && (
+                      <PolicySuggestionsDashboard
+                        currentUser={currentUser}
+                        documents={documents}
+                        versions={versions}
+                        suggestions={activeSuggestions}
+                        onOpenCreateVersion={handleOpenCreateVersion}
+                        onOpenDocumentDetail={(doc) => setDetailDocument(doc)}
+                        onRefreshData={refreshData}
+                      />
+                    )}
+
+                    {activeTab === 'compliance' && (
+                      <EmployeeComplianceModule
+                        currentUser={currentUser}
+                        users={allUsers}
+                        documents={documents}
+                        versions={versions}
+                        onOpenDocumentView={(ver) => setReaderVersion(ver)}
+                        onRefreshData={refreshData}
+                      />
+                    )}
+
+                    {activeTab === 'audit' && <AuditLogView users={allUsers} />}
+
+                    {(activeTab === 'creator' ||
+                      (activeTab !== 'compliance' && activeTab !== 'audit' && activeTab !== 'suggestions')) && (
                       <CreatorDashboard
                         currentUser={currentUser}
                         documents={documents}
@@ -663,6 +766,21 @@ export default function App() {
                         onRestoreSeedDocuments={handleRestoreSeedDocuments}
                       />
                     )}
+                  </>
+                ) : (
+                  <>
+                    {/* Policy Suggestions Dashboard (For Founder / Approver panel) */}
+                    {activeTab === 'suggestions' && (
+                      <PolicySuggestionsDashboard
+                        currentUser={currentUser}
+                        documents={documents}
+                        versions={versions}
+                        suggestions={activeSuggestions}
+                        onOpenCreateVersion={handleOpenCreateVersion}
+                        onOpenDocumentDetail={(doc) => setDetailDocument(doc)}
+                        onRefreshData={refreshData}
+                      />
+                    )}
 
                     {activeTab === 'compliance' && (
                       <EmployeeComplianceModule
@@ -676,10 +794,9 @@ export default function App() {
                     )}
 
                     {activeTab === 'audit' && <AuditLogView users={allUsers} />}
-                  </>
-                ) : (
-                  <>
-                    {(activeTab === 'reviewer' || (activeTab !== 'compliance' && activeTab !== 'audit')) && (
+
+                    {(activeTab === 'reviewer' ||
+                      (activeTab !== 'compliance' && activeTab !== 'audit' && activeTab !== 'suggestions')) && (
                       <ReviewerDashboard
                         currentUser={currentUser}
                         documents={documents}
@@ -690,19 +807,6 @@ export default function App() {
                         onOpenComplianceTracker={() => setActiveTab('compliance')}
                       />
                     )}
-
-                    {activeTab === 'compliance' && (
-                      <EmployeeComplianceModule
-                        currentUser={currentUser}
-                        users={allUsers}
-                        documents={documents}
-                        versions={versions}
-                        onOpenDocumentView={(ver) => setReaderVersion(ver)}
-                        onRefreshData={refreshData}
-                      />
-                    )}
-
-                    {activeTab === 'audit' && <AuditLogView users={allUsers} />}
                   </>
                 )}
               </div>

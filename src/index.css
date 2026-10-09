@@ -75,10 +75,106 @@
   border-radius: 6px !important;
   margin-bottom: 1.5rem !important;
   box-sizing: border-box !important;
+  position: relative !important;
 }
 
 .docx-preview-container .docx table {
   border-collapse: collapse !important;
   max-width: 100% !important;
 }
+
+/* Ensure corporate header table never overlaps the document body title in Word preview while keeping tight natural spacing */
+.docx-preview-container .docx header,
+.docx-preview-container .docx .docx-header {
+  position: relative !important;
+  display: block !important;
+  width: 100% !important;
+  margin-bottom: 0.75rem !important;
+  clear: both !important;
+  z-index: 10 !important;
+}
+
+.docx-preview-container .docx article,
+.docx-preview-container .docx section.docx-body,
+.docx-preview-container .docx main {
+  clear: both !important;
+  margin-top: 0 !important;
+  display: block !important;
+}
+
+.docx-preview-container .docx footer,
+.docx-preview-container .docx .docx-footer {
+  position: relative !important;
+  display: block !important;
+  width: 100% !important;
+  margin-top: 1rem !important;
+  clear: both !important;
+}
+
+/* Document HTML Content (Faithful Styler Typography & Spacing) */
+.document-html-content h1 {
+  font-size: 1.65rem !important;
+  font-weight: 700 !important;
+  color: #0f172a;
+  margin-top: 1.5rem !important;
+  margin-bottom: 0.85rem !important;
+  border-bottom: 1px solid #e2e8f0;
+  padding-bottom: 0.5rem;
+}
+
+.document-html-content h2 {
+  font-size: 1.25rem !important;
+  font-weight: 700 !important;
+  color: #FA7014;
+  margin-top: 1.25rem !important;
+  margin-bottom: 0.6rem !important;
+}
+
+.document-html-content h3 {
+  font-size: 1.1rem !important;
+  font-weight: 700 !important;
+  color: #1e293b;
+  margin-top: 1rem !important;
+  margin-bottom: 0.45rem !important;
+}
+
+.document-html-content p {
+  margin-bottom: 0.75rem !important;
+  line-height: 1.65 !important;
+  color: #334155;
+}
+
+.document-html-content p:empty,
+.document-html-content p:has(br:only-child) {
+  min-height: 1.35rem;
+  margin-bottom: 0.75rem !important;
+}
+
+.document-html-content table {
+  width: 100% !important;
+  border-collapse: collapse !important;
+  margin: 1.25rem 0 !important;
+}
+
+.document-html-content th,
+.document-html-content td {
+  padding: 8px 12px !important;
+  border: 1px solid #e2e8f0 !important;
+}
+
+.document-html-content th {
+  background-color: #f8fafc !important;
+  font-weight: 700 !important;
+  color: #0f172a !important;
+}
+
+.document-html-content blockquote {
+  background-color: #eff6ff !important;
+  border-left: 4px solid #3b82f6 !important;
+  padding: 12px 16px !important;
+  margin: 12px 0 !important;
+  border-radius: 8px !important;
+  color: #1e3a8a !important;
+}
+
 

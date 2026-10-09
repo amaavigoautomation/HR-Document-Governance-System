@@ -39,6 +39,7 @@ import { DocumentViewer } from './DocumentViewer';
 import { formatIST, formatISTDate } from '../utils/dateFormat';
 import { formatDDMMYYYY } from '../utils/documentHeaderFooter';
 import { downloadDocumentWithIntactFormat } from '../utils/documentStamper';
+import { extractPointByPointDiffs, PointDiffItem } from '../services/comparison';
 
 interface ReviewDocumentModalProps {
   version: DocumentVersion;
@@ -179,6 +180,20 @@ export const ReviewDocumentModal: React.FC<ReviewDocumentModalProps> = ({
     candidateBaselines.find((b) => b.id === version.previousVersionId) ||
     (master?.currentPublishedVersionId ? governanceEngine.getVersionById(master.currentPublishedVersionId) : null) ||
     candidateBaselines[0];
+
+  const [summaryFilter, setSummaryFilter] = useState<'all' | 'modified' | 'added' | 'removed'>('all');
+  const [sideBySideMode, setSideBySideMode] = useState<'cards' | 'changed' | 'lines'>('cards');
+
+  const pointDiffs = useMemo(() => {
+    return extractPointByPointDiffs(activeBaseline?.rawContent || '', version.rawContent || '');
+  }, [activeBaseline?.rawContent, version.rawContent]);
+
+  const filteredPointDiffs = useMemo(() => {
+    if (summaryFilter === 'modified') return pointDiffs.filter((p) => p.type === 'modified');
+    if (summaryFilter === 'added') return pointDiffs.filter((p) => p.type === 'added');
+    if (summaryFilter === 'removed') return pointDiffs.filter((p) => p.type === 'removed');
+    return pointDiffs.filter((p) => p.type !== 'unchanged');
+  }, [pointDiffs, summaryFilter]);
 
   useEffect(() => {
     if (!version.id) return;
@@ -368,6 +383,10 @@ export const ReviewDocumentModal: React.FC<ReviewDocumentModalProps> = ({
               <span className="font-bold text-[#FA7014] font-mono">{formatDDMMYYYY(version.effectiveFrom || version.createdAt)}</span>
             </div>
             <div>
+              <span className="text-slate-500">Re-review Date:</span>{' '}
+              <span className="font-bold text-slate-800 font-mono">{formatDDMMYYYY(version.reviewDueDate, '1 Year')}</span>
+            </div>
+            <div>
               <span className="text-slate-500">Acknowledgement:</span>{' '}
               <span className="font-semibold text-slate-800">{master?.acknowledgementRequired ? 'Mandatory' : 'Optional'}</span>
             </div>
@@ -472,168 +491,347 @@ export const ReviewDocumentModal: React.FC<ReviewDocumentModalProps> = ({
                         </span>
                       )}
                     </div>
+
                     <div className="flex items-center space-x-3 text-slate-500 font-mono text-xs">
-                      {activeBaseline?.status === VersionStatus.REVISION_REQUIRED || activeBaseline?.status === VersionStatus.SUPERSEDED ? (
-                        <span className="text-[11px] font-semibold text-[#FA7014] bg-orange-50 px-2 py-0.5 rounded border border-orange-200">
-                          Addressing Revisions on v{activeBaseline.versionNumber}
-                        </span>
-                      ) : null}
+                      {/* View Mode Switcher */}
+                      <div className="flex items-center space-x-1 bg-slate-100 p-1 rounded-xl font-sans font-semibold">
+                        <button
+                          id="btn-mode-cards"
+                          onClick={() => setSideBySideMode('cards')}
+                          className={`px-2.5 py-1 rounded-lg text-xs transition-all cursor-pointer ${
+                            sideBySideMode === 'cards'
+                              ? 'bg-white text-[#FA7014] font-bold shadow-2xs'
+                              : 'text-slate-600 hover:text-slate-900'
+                          }`}
+                        >
+                          Point-by-Point View
+                        </button>
+                        <button
+                          id="btn-mode-lines"
+                          onClick={() => setSideBySideMode('lines')}
+                          className={`px-2.5 py-1 rounded-lg text-xs transition-all cursor-pointer ${
+                            sideBySideMode === 'lines'
+                              ? 'bg-white text-[#FA7014] font-bold shadow-2xs'
+                              : 'text-slate-600 hover:text-slate-900'
+                          }`}
+                        >
+                          Line Code Table
+                        </button>
+                      </div>
+
                       <span>
                         Similarity: <strong className="text-slate-900">{comparison?.statistics.similarityPercentage}%</strong>
                       </span>
                     </div>
                   </div>
 
-                  {/* Side-by-side table */}
-                  <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden font-mono text-xs">
-                    <div className="grid grid-cols-2 bg-slate-900 text-white font-sans text-xs font-bold py-2.5 px-4 border-b border-slate-800">
-                      <div className="flex items-center space-x-2 flex-wrap gap-y-1">
-                        <span className="bg-slate-800 px-2 py-0.5 rounded text-[11px] border border-slate-700 text-slate-300">
-                          {activeBaseline?.id === master?.currentPublishedVersionId ? 'LIVE BASELINE' : 'PREVIOUS VERSION'}
-                        </span>
-                        <span>{activeBaseline ? `v${activeBaseline.versionNumber} (${activeBaseline.status.replace('_', ' ')})` : 'Baseline Not Set'}</span>
-                        {activeBaseline?.effectiveFrom && (
-                          <span className="text-slate-400 font-mono text-[11px] font-normal">
-                            • Eff: {formatDDMMYYYY(activeBaseline.effectiveFrom)}
-                          </span>
-                        )}
+                  {/* POINT CARDS SIDE BY SIDE VIEW */}
+                  {sideBySideMode !== 'lines' ? (
+                    <div className="space-y-4">
+                      {/* Sub-filter Bar */}
+                      <div className="bg-white p-3 rounded-xl border border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
+                        <div className="font-bold text-slate-900 flex items-center space-x-2">
+                          <Split className="w-4 h-4 text-[#FA7014]" />
+                          <span>Full Document Side-by-Side Comparison with Point Highlights</span>
+                        </div>
+                        <div className="flex items-center space-x-1 bg-slate-100 p-1 rounded-xl font-semibold shrink-0">
+                          <button
+                            id="btn-sb-filter-all"
+                            onClick={() => setSummaryFilter('all')}
+                            className={`px-2.5 py-1 rounded-lg transition-all cursor-pointer ${
+                              summaryFilter === 'all'
+                                ? 'bg-white text-slate-900 font-bold shadow-2xs'
+                                : 'text-slate-600 hover:text-slate-900'
+                            }`}
+                          >
+                            All Document Points ({pointDiffs.length})
+                          </button>
+                          <button
+                            id="btn-sb-filter-[#FA7014]"
+                            onClick={() => setSummaryFilter('modified')}
+                            className={`px-2.5 py-1 rounded-lg transition-all cursor-pointer ${
+                              summaryFilter === 'modified'
+                                ? 'bg-white text-[#FA7014] font-bold shadow-2xs'
+                                : 'text-slate-600 hover:text-slate-900'
+                            }`}
+                          >
+                            Changed Points ({pointDiffs.filter((p) => p.type !== 'unchanged').length})
+                          </button>
+                        </div>
                       </div>
-                      <div className="flex items-center space-x-2 pl-4 border-l border-slate-800 flex-wrap gap-y-1">
-                        <span className="bg-[#FA7014] px-2 py-0.5 rounded text-[11px] text-white font-bold">NEW VERSION</span>
-                        <span>v{version.versionNumber} (In Review)</span>
-                        <span className="text-orange-200 font-mono text-[11px] font-semibold bg-orange-950/60 px-2 py-0.5 rounded border border-orange-700/50">
-                          Eff: {formatDDMMYYYY(version.effectiveFrom || version.createdAt)}
-                        </span>
-                      </div>
-                    </div>
 
-                    <div className="divide-y divide-slate-200 overflow-x-auto max-h-[55vh]">
-                      {comparison?.sideBySideLines.map((row, idx) => {
-                        const left = row.left;
-                        const right = row.right;
-
-                        const leftBg =
-                          left?.type === 'removed'
-                            ? 'bg-slate-100 text-slate-500 line-through'
-                            : left?.type === 'modified'
-                            ? 'bg-orange-50/70 text-slate-800 font-medium'
-                            : 'bg-white text-slate-700';
-
-                        const rightBg =
-                          right?.type === 'added'
-                            ? 'bg-orange-50 text-slate-900 font-medium'
-                            : right?.type === 'modified'
-                            ? 'bg-orange-50/70 text-slate-900 font-medium'
-                            : 'bg-white text-slate-700';
-
-                        return (
-                          <div key={idx} className="grid grid-cols-2 text-[12px] leading-relaxed">
-                            {/* Left Line */}
-                            <div className={`p-2 flex items-start space-x-3 border-r border-slate-200 ${leftBg}`}>
-                              <span className="text-slate-400 select-none text-[10px] w-6 text-right shrink-0">
-                                {left?.lineNumber || ''}
-                              </span>
-                              <pre className="font-mono whitespace-pre-wrap break-words flex-1">
-                                {left?.content || (left?.type === 'empty' ? ' ' : '')}
-                              </pre>
+                      {/* Point Cards */}
+                      {pointDiffs
+                        .filter((p) => (summaryFilter === 'modified' ? p.type !== 'unchanged' : true))
+                        .map((pt, idx) => (
+                          <div key={`sb-card-${pt.id || idx}`} className="border border-slate-200 rounded-2xl overflow-hidden bg-white shadow-2xs">
+                            {/* Point Card Top Header */}
+                            <div className="bg-slate-900 text-white px-4 py-2.5 flex items-center justify-between text-xs font-bold">
+                              <div className="flex items-center space-x-2">
+                                <span className="bg-[#FA7014] px-2.5 py-0.5 rounded text-[11px] font-extrabold uppercase text-white">
+                                  {pt.pointNumber}
+                                </span>
+                                <span className="text-slate-200 truncate max-w-lg">{pt.title}</span>
+                              </div>
+                              <div>
+                                {pt.type === 'modified' && (
+                                  <span className="bg-amber-500/20 text-amber-300 border border-amber-500/40 px-2 py-0.5 rounded text-[10px] uppercase tracking-wider font-semibold">
+                                    Point Modified
+                                  </span>
+                                )}
+                                {pt.type === 'added' && (
+                                  <span className="bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 px-2 py-0.5 rounded text-[10px] uppercase tracking-wider font-semibold">
+                                    New Point Added
+                                  </span>
+                                )}
+                                {pt.type === 'removed' && (
+                                  <span className="bg-rose-500/20 text-rose-300 border border-rose-500/40 px-2 py-0.5 rounded text-[10px] uppercase tracking-wider font-semibold">
+                                    Point Removed
+                                  </span>
+                                )}
+                                {pt.type === 'unchanged' && (
+                                  <span className="bg-slate-800 text-slate-400 border border-slate-700 px-2 py-0.5 rounded text-[10px] uppercase tracking-wider font-medium">
+                                    Unchanged Point
+                                  </span>
+                                )}
+                              </div>
                             </div>
 
-                            {/* Right Line */}
-                            <div className={`p-2 flex items-start space-x-3 ${rightBg}`}>
-                              <span className="text-slate-400 select-none text-[10px] w-6 text-right shrink-0">
-                                {right?.lineNumber || ''}
-                              </span>
-                              <pre className="font-mono whitespace-pre-wrap break-words flex-1">
-                                {right?.content || (right?.type === 'empty' ? ' ' : '')}
-                              </pre>
+                            {/* Side-by-Side Paragraph Comparison Grid */}
+                            <div className="grid grid-cols-1 md:grid-cols-2 text-xs divide-y md:divide-y-0 md:divide-x divide-slate-200">
+                              {/* Left Column: Baseline */}
+                              <div className={`p-4 ${pt.type === 'removed' ? 'bg-rose-50/40' : pt.type === 'modified' ? 'bg-amber-50/20' : 'bg-slate-50/50'}`}>
+                                <div className="text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-2 flex items-center justify-between">
+                                  <span>BASELINE (v{activeBaseline?.versionNumber || '1.0'})</span>
+                                  {pt.type === 'removed' && <span className="text-rose-600 font-semibold">[Removed]</span>}
+                                </div>
+                                <div className="text-slate-700 leading-relaxed font-sans whitespace-pre-wrap">
+                                  {pt.oldWords && pt.oldWords.length > 0 ? (
+                                    pt.oldWords.map((w, wi) =>
+                                      w.isRemoved ? (
+                                        <span key={wi} className="bg-rose-100 text-rose-800 line-through font-medium px-0.5 rounded">
+                                          {w.text}
+                                        </span>
+                                      ) : (
+                                        <span key={wi}>{w.text}</span>
+                                      )
+                                    )
+                                  ) : (
+                                    <span className="text-slate-400 italic">{pt.oldText}</span>
+                                  )}
+                                </div>
+                              </div>
+
+                              {/* Right Column: New Revision */}
+                              <div className={`p-4 ${pt.type === 'added' ? 'bg-emerald-50/40' : pt.type === 'modified' ? 'bg-orange-50/40' : 'bg-white'}`}>
+                                <div className="text-[11px] font-bold text-[#FA7014] uppercase tracking-wider mb-2 flex items-center justify-between">
+                                  <span>NEW REVISION (v{version.versionNumber})</span>
+                                  {pt.type === 'added' && <span className="text-emerald-600 font-semibold">[Added]</span>}
+                                </div>
+                                <div className="text-slate-900 leading-relaxed font-sans whitespace-pre-wrap">
+                                  {pt.newWords && pt.newWords.length > 0 ? (
+                                    pt.newWords.map((w, wi) =>
+                                      w.isAdded ? (
+                                        <span key={wi} className="bg-orange-200/90 text-slate-900 font-bold px-0.5 rounded">
+                                          {w.text}
+                                        </span>
+                                      ) : (
+                                        <span key={wi}>{w.text}</span>
+                                      )
+                                    )
+                                  ) : (
+                                    <span className="text-slate-400 italic">{pt.newText}</span>
+                                  )}
+                                </div>
+                              </div>
                             </div>
                           </div>
-                        );
-                      })}
+                        ))}
                     </div>
-                  </div>
+                  ) : (
+                    /* Line-by-line table view */
+                    <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden font-mono text-xs">
+                      <div className="grid grid-cols-2 bg-slate-900 text-white font-sans text-xs font-bold py-2.5 px-4 border-b border-slate-800">
+                        <div className="flex items-center space-x-2 flex-wrap gap-y-1">
+                          <span className="bg-slate-800 px-2 py-0.5 rounded text-[11px] border border-slate-700 text-slate-300">
+                            {activeBaseline?.id === master?.currentPublishedVersionId ? 'LIVE BASELINE' : 'PREVIOUS VERSION'}
+                          </span>
+                          <span>{activeBaseline ? `v${activeBaseline.versionNumber} (${activeBaseline.status.replace('_', ' ')})` : 'Baseline Not Set'}</span>
+                        </div>
+                        <div className="flex items-center space-x-2 pl-4 border-l border-slate-800 flex-wrap gap-y-1">
+                          <span className="bg-[#FA7014] px-2 py-0.5 rounded text-[11px] text-white font-bold">NEW VERSION</span>
+                          <span>v{version.versionNumber} (In Review)</span>
+                        </div>
+                      </div>
+
+                      <div className="divide-y divide-slate-200 overflow-x-auto max-h-[55vh]">
+                        {comparison?.sideBySideLines.map((row, idx) => {
+                          const left = row.left;
+                          const right = row.right;
+
+                          const leftBg =
+                            left?.type === 'removed'
+                              ? 'bg-slate-100 text-slate-500 line-through'
+                              : left?.type === 'modified'
+                              ? 'bg-orange-50/70 text-slate-800 font-medium'
+                              : 'bg-white text-slate-700';
+
+                          const rightBg =
+                            right?.type === 'added'
+                              ? 'bg-orange-50 text-slate-900 font-medium'
+                              : right?.type === 'modified'
+                              ? 'bg-orange-50/70 text-slate-900 font-medium'
+                              : 'bg-white text-slate-700';
+
+                          return (
+                            <div key={idx} className="grid grid-cols-2 text-[12px] leading-relaxed">
+                              {/* Left Line */}
+                              <div className={`p-2 flex items-start space-x-3 border-r border-slate-200 ${leftBg}`}>
+                                <span className="text-slate-400 select-none text-[10px] w-6 text-right shrink-0">
+                                  {left?.lineNumber || ''}
+                                </span>
+                                <pre className="font-mono whitespace-pre-wrap break-words flex-1">
+                                  {left?.content || (left?.type === 'empty' ? ' ' : '')}
+                                </pre>
+                              </div>
+
+                              {/* Right Line */}
+                              <div className={`p-2 flex items-start space-x-3 ${rightBg}`}>
+                                <span className="text-slate-400 select-none text-[10px] w-6 text-right shrink-0">
+                                  {right?.lineNumber || ''}
+                                </span>
+                                <pre className="font-mono whitespace-pre-wrap break-words flex-1">
+                                  {right?.content || (right?.type === 'empty' ? ' ' : '')}
+                                </pre>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
 
               {/* TAB 2: CHANGE SUMMARY & HIGHLIGHTS */}
               {activeTab === 'summary' && (
                 <div className="space-y-6">
-                  {/* Summary Card */}
+                  {/* CREATOR CHANGE SUMMARY CARD */}
                   <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
-                    <h3 className="text-xs font-bold text-slate-700 uppercase tracking-wider mb-2">
-                      Creator Change Summary
-                    </h3>
-                    <p className="text-sm text-slate-800 bg-slate-50 p-4 rounded-xl border border-slate-200 leading-relaxed">
+                    <div className="flex items-center justify-between mb-2">
+                      <h3 className="text-xs font-bold text-slate-700 uppercase tracking-wider flex items-center space-x-2">
+                        <Sparkles className="w-4 h-4 text-[#FA7014]" />
+                        <span>Creator Change Summary & Justification</span>
+                      </h3>
+                      <span className="text-[11px] font-mono text-slate-500">
+                        Authored by: <strong className="text-slate-900">{creator.name}</strong>
+                      </span>
+                    </div>
+                    <p className="text-sm text-slate-800 bg-slate-50 p-4 rounded-xl border border-slate-200 leading-relaxed font-medium">
                       {version.changeSummary || 'No explicit change summary submitted.'}
                     </p>
                   </div>
 
-                  {/* Added Content Section */}
-                  {comparison && comparison.addedContent.length > 0 && (
-                    <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-xs">
-                      <div className="flex items-center space-x-2 text-slate-900 font-bold text-sm mb-3">
-                        <CheckCircle2 className="w-4 h-4 text-[#FA7014]" />
-                        <span>Added Content ({comparison.addedContent.length} sections)</span>
+                  {/* EXECUTIVE CONCISE 5-6 LINES CHANGE SUMMARY */}
+                  <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-xs">
+                    <div className="mb-4 pb-3 border-b border-slate-200 flex items-center justify-between">
+                      <div>
+                        <h4 className="text-sm font-bold text-slate-900 flex items-center space-x-2">
+                          <Sparkles className="w-4 h-4 text-[#FA7014]" />
+                          <span>Executive Version Transition Summary (v{activeBaseline?.versionNumber || '1.0'} → v{version.versionNumber})</span>
+                        </h4>
+                        <p className="text-xs text-slate-500 mt-0.5">
+                          High-level point-by-point summary highlighting key policy alterations between baseline and new revision.
+                        </p>
                       </div>
-                      <div className="space-y-3">
-                        {comparison.addedContent.map((item, i) => (
-                          <div key={i} className="bg-orange-50/50 p-3.5 rounded-xl border border-orange-200 text-xs text-slate-900 whitespace-pre-wrap font-mono">
-                            {item}
-                          </div>
-                        ))}
-                      </div>
+                      <span className="bg-orange-50 text-[#FA7014] border border-orange-200 text-[11px] font-bold px-2.5 py-1 rounded-lg">
+                        {pointDiffs.filter((p) => p.type !== 'unchanged').length} Point Change(s) Detected
+                      </span>
                     </div>
-                  )}
 
-                  {/* Removed Content Section */}
-                  {comparison && comparison.removedContent.length > 0 && (
-                    <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-xs">
-                      <div className="flex items-center space-x-2 text-slate-700 font-bold text-sm mb-3">
-                        <XCircle className="w-4 h-4 text-slate-500" />
-                        <span>Removed Content ({comparison.removedContent.length} sections)</span>
-                      </div>
-                      <div className="space-y-3">
-                        {comparison.removedContent.map((item, i) => (
-                          <div key={i} className="bg-slate-50 p-3.5 rounded-xl border border-slate-200 text-xs text-slate-500 line-through whitespace-pre-wrap font-mono">
-                            {item}
-                          </div>
-                        ))}
-                      </div>
+                    <div className="space-y-2.5">
+                      {pointDiffs.filter((p) => p.type !== 'unchanged').length === 0 ? (
+                        <div className="p-4 bg-slate-50 rounded-xl text-center text-xs text-slate-500">
+                          No text changes detected between version {activeBaseline?.versionNumber || '1.0'} and v{version.versionNumber}.
+                        </div>
+                      ) : (
+                        pointDiffs
+                          .filter((p) => p.type !== 'unchanged')
+                          .map((pt, idx) => (
+                            <div key={`exec-sum-${pt.id || idx}`} className="p-3.5 bg-slate-50 rounded-xl border border-slate-200 flex items-start space-x-3 text-xs leading-relaxed">
+                              <span className="bg-[#FA7014] text-white font-extrabold text-[11px] px-2 py-0.5 rounded shrink-0">
+                                {pt.pointNumber}
+                              </span>
+                              <div className="flex-1">
+                                <span className="font-bold text-slate-900">{pt.title}: </span>
+                                <span className="text-slate-800 font-medium">{pt.summaryText}</span>
+                              </div>
+                            </div>
+                          ))
+                      )}
                     </div>
-                  )}
+                  </div>
 
-                  {/* Modified Content Section */}
-                  {comparison && comparison.modifiedContent.length > 0 && (
-                    <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-xs">
-                      <div className="flex items-center space-x-2 text-slate-900 font-bold text-sm mb-3">
+                  {/* POINT-BY-POINT TRANSITION LOG ("First it was... Now changed to...") */}
+                  <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-xs">
+                    <div className="mb-4 pb-3 border-b border-slate-200">
+                      <h4 className="text-sm font-bold text-slate-900 flex items-center space-x-2">
                         <GitCompare className="w-4 h-4 text-[#FA7014]" />
-                        <span>Modified Sections ({comparison.modifiedContent.length})</span>
-                      </div>
-                      <div className="space-y-4">
-                        {comparison.modifiedContent.map((item, i) => (
-                          <div key={i} className="bg-slate-50 p-4 rounded-xl border border-slate-200">
-                            <div className="font-bold text-xs text-slate-900 mb-2">
-                              Section: {item.section}
-                            </div>
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
-                              <div className="bg-white p-3 rounded-xl border border-slate-200">
-                                <div className="text-[11px] font-bold text-slate-500 uppercase mb-1">
-                                  {activeBaseline ? `Baseline (v${activeBaseline.versionNumber})` : 'Old Baseline'}
-                                </div>
-                                <div className="text-slate-600 font-mono whitespace-pre-wrap">{item.oldText}</div>
-                              </div>
-                              <div className="bg-white p-3 rounded-xl border border-orange-200">
-                                <div className="text-[11px] font-bold text-[#FA7014] uppercase mb-1">
-                                  New Revision (v{version.versionNumber})
-                                </div>
-                                <div className="text-slate-900 font-mono whitespace-pre-wrap">{item.newText}</div>
-                              </div>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
+                        <span>Point Transition Log ("First it was... Now changed to...")</span>
+                      </h4>
+                      <p className="text-xs text-slate-500 mt-0.5">
+                        Detailed before & after wording comparison for every modified point in this revision.
+                      </p>
                     </div>
-                  )}
+
+                    <div className="space-y-4">
+                      {pointDiffs.filter((p) => p.type !== 'unchanged').length === 0 ? (
+                        <div className="py-6 text-center text-slate-500 text-xs">No point transitions to display.</div>
+                      ) : (
+                        pointDiffs
+                          .filter((p) => p.type !== 'unchanged')
+                          .map((pt, idx) => (
+                            <div key={`summary-log-${pt.id || idx}`} className="bg-slate-50 rounded-xl p-4 border border-slate-200 space-y-3">
+                              <div className="flex items-center justify-between border-b border-slate-200 pb-2">
+                                <span className="font-bold text-xs text-slate-900 flex items-center space-x-2">
+                                  <span className="bg-slate-800 text-white px-2 py-0.5 rounded text-[11px] font-bold">
+                                    {pt.pointNumber}
+                                  </span>
+                                  <span>{pt.title}</span>
+                                </span>
+                                <span className="text-[11px] font-bold text-slate-500 uppercase">
+                                  {pt.type === 'modified' ? 'Modified Point' : pt.type === 'added' ? 'New Point Added' : 'Point Removed'}
+                                </span>
+                              </div>
+
+                              <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
+                                {/* First it was */}
+                                <div className="bg-white p-3.5 rounded-xl border border-slate-200">
+                                  <div className="text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1.5 flex items-center space-x-1">
+                                    <XCircle className="w-3.5 h-3.5 text-rose-500 shrink-0" />
+                                    <span>First it was (Baseline v{activeBaseline?.versionNumber || '1.0'}):</span>
+                                  </div>
+                                  <div className="text-slate-600 font-sans leading-relaxed bg-slate-50 p-2.5 rounded-lg border border-slate-200 whitespace-pre-wrap">
+                                    {pt.oldText}
+                                  </div>
+                                </div>
+
+                                {/* Now changed to */}
+                                <div className="bg-white p-3.5 rounded-xl border border-orange-200">
+                                  <div className="text-[11px] font-bold text-[#FA7014] uppercase tracking-wider mb-1.5 flex items-center space-x-1">
+                                    <CheckCircle2 className="w-3.5 h-3.5 text-[#FA7014] shrink-0" />
+                                    <span>Now changed to (New Revision v{version.versionNumber}):</span>
+                                  </div>
+                                  <div className="text-slate-900 font-sans leading-relaxed bg-orange-50/50 p-2.5 rounded-lg border border-orange-200 whitespace-pre-wrap font-medium">
+                                    {pt.newText}
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
+                          ))
+                      )}
+                    </div>
+                  </div>
                 </div>
               )}
 

@@ -64,6 +64,9 @@ export enum AuditAction {
   DOCUMENT_ACKNOWLEDGED = 'DOCUMENT_ACKNOWLEDGED',
   USER_UPDATED = 'USER_UPDATED',
   AUTHORIZATION_UPDATED = 'AUTHORIZATION_UPDATED',
+  SUGGESTION_SUBMITTED = 'SUGGESTION_SUBMITTED',
+  SUGGESTION_REVIEWED = 'SUGGESTION_REVIEWED',
+  RE_REVIEW_REMINDER_SENT = 'RE_REVIEW_REMINDER_SENT',
 }
 
 export interface User {
@@ -283,3 +286,42 @@ export interface StorageMetadata {
   contentHash: string;
   storedAt: string;
 }
+
+export type SuggestionCategory =
+  | 'IMPROVEMENT'
+  | 'CLARITY'
+  | 'OPERATIONAL'
+  | 'TYPO_CORRECTION'
+  | 'POLICY_CHANGE'
+  | 'GENERAL';
+
+export type SuggestionStatus =
+  | 'PENDING_REVIEW'
+  | 'REVIEWED'
+  | 'ACCEPTED'
+  | 'INCORPORATED_IN_REVISION'
+  | 'DISMISSED';
+
+export interface DocumentSuggestion {
+  id: string;
+  documentId: string;
+  documentMasterId: string;
+  documentTitle: string;
+  versionNumber?: string;
+  employeeId: string;
+  employeeName: string;
+  employeeEmail: string;
+  employeeDepartment?: string;
+  employeeRole?: string;
+  category: SuggestionCategory;
+  subject: string;
+  content: string;
+  status: SuggestionStatus;
+  reviewNotes?: string;
+  reviewedById?: string;
+  reviewedByName?: string;
+  reviewedAt?: string;
+  createdAt: string;
+  updatedAt?: string;
+}
+

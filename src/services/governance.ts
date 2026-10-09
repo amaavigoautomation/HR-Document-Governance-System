@@ -7,6 +7,9 @@ import {
   DocumentMaster,
   DocumentPublicationRecord,
   DocumentVersion,
+  DocumentSuggestion,
+  SuggestionCategory,
+  SuggestionStatus,
   EmailNotification,
   User,
   UserRole,
@@ -60,10 +63,73 @@ export class DocumentGovernanceEngine {
   private publicationRecords: DocumentPublicationRecord[] = [];
   private acknowledgements: AcknowledgementRecord[] = [];
   private comparisons: Map<string, DocumentComparisonResult> = new Map();
+  private documentSuggestions: DocumentSuggestion[] = [];
+  private reReviewRemindersSent: Set<string> = new Set();
 
   constructor() {
-    // Load cached acknowledgements if available
+    // Load cached acknowledgements & suggestions if available
     this.loadAcknowledgementsFromStorage();
+    this.loadSuggestionsFromStorage();
+    this.loadReminderKeysFromStorage();
+  }
+
+  private loadSuggestionsFromStorage(): void {
+    try {
+      if (typeof window !== 'undefined' && typeof localStorage !== 'undefined') {
+        const stored = localStorage.getItem('ama_governance_suggestions');
+        if (stored !== null) {
+          const parsed = JSON.parse(stored);
+          if (Array.isArray(parsed)) {
+            // Filter out any legacy dummy seed suggestions
+            this.documentSuggestions = parsed.filter(
+              (s: any) => !s.id?.startsWith('sug-seed-') && !s.documentId?.includes('doc-seed')
+            );
+            return;
+          }
+        }
+      }
+    } catch (e) {
+      console.warn('Could not load cached suggestions from storage', e);
+    }
+
+    // Default to clean empty list - no dummy suggestions
+    this.documentSuggestions = [];
+  }
+
+  public saveSuggestionsToStorage(): void {
+    try {
+      if (typeof window !== 'undefined' && typeof localStorage !== 'undefined') {
+        localStorage.setItem('ama_governance_suggestions', JSON.stringify(this.documentSuggestions));
+      }
+    } catch (e) {
+      console.warn('Could not save suggestions to storage', e);
+    }
+  }
+
+  private loadReminderKeysFromStorage(): void {
+    try {
+      if (typeof window !== 'undefined' && typeof localStorage !== 'undefined') {
+        const stored = localStorage.getItem('ama_rereview_reminders_sent');
+        if (stored) {
+          const parsed = JSON.parse(stored);
+          if (Array.isArray(parsed)) {
+            this.reReviewRemindersSent = new Set(parsed);
+          }
+        }
+      }
+    } catch (e) {
+      console.warn('Could not load reminder keys from storage', e);
+    }
+  }
+
+  public saveReminderKeysToStorage(): void {
+    try {
+      if (typeof window !== 'undefined' && typeof localStorage !== 'undefined') {
+        localStorage.setItem('ama_rereview_reminders_sent', JSON.stringify(Array.from(this.reReviewRemindersSent)));
+      }
+    } catch (e) {
+      console.warn('Could not save reminder keys to storage', e);
+    }
   }
 
   private loadAcknowledgementsFromStorage(): void {
@@ -756,6 +822,19 @@ export class DocumentGovernanceEngine {
     return this.documentVersions.find((v) => v.id === id);
   }
 
+  public getPublishedVersion(masterId: string): DocumentVersion | undefined {
+    const master = this.documentMasters.find((d) => d.id === masterId || d.documentId === masterId);
+    if (master?.currentPublishedVersionId) {
+      const ver = this.getVersionById(master.currentPublishedVersionId);
+      if (ver) return ver;
+    }
+    return this.documentVersions.find(
+      (v) =>
+        (v.documentMasterId === masterId || (master && v.documentMasterId === master.id)) &&
+        v.status === VersionStatus.PUBLISHED
+    );
+  }
+
   public getReviewQueue(): DocumentVersion[] {
     return this.documentVersions
       .filter((v) => v.status === VersionStatus.IN_REVIEW)
@@ -1161,7 +1240,13 @@ export class DocumentGovernanceEngine {
       createdByTitle: creator.title,
       createdAt: new Date().toISOString(),
       effectiveFrom: data.effectiveFrom || new Date().toISOString().split('T')[0],
-      reviewDueDate: data.reviewDueDate || master.updatedAt.split('T')[0],
+      reviewDueDate:
+        data.reviewDueDate ||
+        (() => {
+          const d = new Date(data.effectiveFrom || Date.now());
+          d.setFullYear(d.getFullYear() + 1);
+          return d.toISOString().split('T')[0];
+        })(),
       previousVersionId: predecessorVersion?.id,
       previousVersionNumber: predecessorVersion?.versionNumber,
       changeSummary: data.changeSummary || `Revision ${nextVersionNumber} created from predecessor ${baselineNumber}.`,
@@ -2237,8 +2322,34 @@ export class DocumentGovernanceEngine {
       (v) => v.documentMasterId !== targetId && v.documentId !== docLogicalId
     );
     this.acknowledgements = this.acknowledgements.filter((a) => a.documentId !== docLogicalId);
+    this.saveAcknowledgementsToStorage();
 
-    // Sync deletion to Firestore (documents, versions, acks only - audit logs are NEVER deleted)
+    // If document itself is deleted, delete all suggestions for that document as well
+    const targetLower = targetId.toLowerCase().trim();
+    const docLogicalLower = docLogicalId.toLowerCase().trim();
+    this.documentSuggestions = this.documentSuggestions.filter((s) => {
+      const sDocId = (s.documentId || '').toLowerCase().trim();
+      const sMasterId = (s.documentMasterId || '').toLowerCase().trim();
+      return (
+        sMasterId !== targetLower &&
+        sMasterId !== docLogicalLower &&
+        sDocId !== targetLower &&
+        sDocId !== docLogicalLower
+      );
+    });
+    this.saveSuggestionsToStorage();
+
+    // Clean up any re-review reminder tracking keys for this document
+    const keysToRemove: string[] = [];
+    this.reReviewRemindersSent.forEach((k) => {
+      if (k.toLowerCase().includes(docLogicalLower) || k.toLowerCase().includes(targetLower)) {
+        keysToRemove.push(k);
+      }
+    });
+    keysToRemove.forEach((k) => this.reReviewRemindersSent.delete(k));
+    this.saveReminderKeysToStorage();
+
+    // Sync deletion to Firestore (documents, versions, acks, suggestions - audit logs are NEVER deleted)
     try {
       await firestoreService.deleteDocument(targetId);
     } catch (e) {
@@ -2276,6 +2387,10 @@ export class DocumentGovernanceEngine {
     this.documentVersions = [];
     this.acknowledgements = [];
     this.publicationRecords = [];
+    this.documentSuggestions = [];
+    this.saveSuggestionsToStorage();
+    this.reReviewRemindersSent.clear();
+    this.saveReminderKeysToStorage();
 
     // Mark cleared in localStorage so it does not re-seed automatically on refresh
     try {
@@ -2314,6 +2429,278 @@ export class DocumentGovernanceEngine {
       newValue: 'PURGED',
       reason: `All active document masters, revisions, and acknowledgment records were purged by ${effectiveUser.name} (${effectiveUser.role}). Immutable audit logs remain intact.`,
     });
+  }
+
+  // ==========================================
+  // EMPLOYEE DOCUMENT SUGGESTIONS & REVIEWS
+  // ==========================================
+
+  public getDocumentSuggestions(documentId?: string): DocumentSuggestion[] {
+    if (!documentId) return [...this.documentSuggestions];
+    const clean = documentId.toLowerCase().trim();
+    return this.documentSuggestions.filter(
+      (s) =>
+        s.documentId.toLowerCase() === clean ||
+        s.documentMasterId.toLowerCase() === clean ||
+        s.documentTitle.toLowerCase().includes(clean)
+    );
+  }
+
+  public setDocumentSuggestions(suggestions: DocumentSuggestion[]): void {
+    if (!Array.isArray(suggestions)) return;
+    const cleanList = suggestions.filter(
+      (s) => !s.id?.startsWith('sug-seed-') && !s.documentId?.includes('doc-seed')
+    );
+    this.documentSuggestions = cleanList.sort(
+      (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+    );
+    this.saveSuggestionsToStorage();
+  }
+
+  public async submitDocumentSuggestion(
+    employee: User,
+    data: {
+      documentId: string;
+      category: SuggestionCategory;
+      subject: string;
+      content: string;
+    }
+  ): Promise<DocumentSuggestion> {
+    const master = this.documentMasters.find(
+      (d) => d.documentId.toLowerCase() === data.documentId.toLowerCase() || d.id === data.documentId
+    );
+    if (!master || master.currentStatus !== VersionStatus.PUBLISHED || !master.active) {
+      throw new Error('Suggestions can only be submitted for authorized and published policy documents.');
+    }
+    const pubVer = this.getPublishedVersion(master.id);
+    if (!pubVer || pubVer.status !== VersionStatus.PUBLISHED) {
+      throw new Error('Suggestions can only be submitted for authorized and published policy documents.');
+    }
+
+    const newSuggestion: DocumentSuggestion = {
+      id: `sug-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`,
+      documentId: master?.documentId || data.documentId,
+      documentMasterId: master?.id || data.documentId,
+      documentTitle: master?.title || 'Governance Policy',
+      versionNumber: pubVer?.versionNumber || master?.currentPublishedVersionNumber || '1.0',
+      employeeId: employee.empId || employee.loginId || employee.id || 'EMP',
+      employeeName: employee.name || 'Employee',
+      employeeEmail: employee.email || '',
+      employeeDepartment: employee.departmentName || (employee as any).department || 'General',
+      employeeRole: employee.role,
+      category: data.category,
+      subject: data.subject.trim(),
+      content: data.content.trim(),
+      status: 'PENDING_REVIEW',
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+
+    this.documentSuggestions.unshift(newSuggestion);
+    this.saveSuggestionsToStorage();
+
+    // Persist to Cloud Firestore
+    try {
+      await firestoreService.saveSuggestion(newSuggestion);
+    } catch (e) {
+      console.warn('Firestore suggestion cloud sync note:', e);
+    }
+
+    auditService.logEvent(AuditAction.SUGGESTION_SUBMITTED, employee, {
+      documentId: newSuggestion.documentId,
+      documentMasterId: newSuggestion.documentMasterId,
+      reason: `Employee ${employee.name} submitted a ${data.category} suggestion for ${newSuggestion.documentId}: "${data.subject}"`,
+    });
+
+    return newSuggestion;
+  }
+
+  public async updateSuggestionStatus(
+    suggestionId: string,
+    status: SuggestionStatus,
+    reviewNotes?: string,
+    reviewer?: User
+  ): Promise<DocumentSuggestion> {
+    const index = this.documentSuggestions.findIndex((s) => s.id === suggestionId);
+    if (index === -1) {
+      throw new Error(`Suggestion not found: ${suggestionId}`);
+    }
+
+    const updated: DocumentSuggestion = {
+      ...this.documentSuggestions[index],
+      status,
+      reviewNotes: reviewNotes !== undefined ? reviewNotes : this.documentSuggestions[index].reviewNotes,
+      reviewedById: reviewer?.id,
+      reviewedByName: reviewer?.name,
+      reviewedAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+
+    this.documentSuggestions[index] = updated;
+    this.saveSuggestionsToStorage();
+
+    try {
+      await firestoreService.updateSuggestion(suggestionId, {
+        status,
+        reviewNotes: updated.reviewNotes,
+        reviewedById: updated.reviewedById,
+        reviewedByName: updated.reviewedByName,
+        reviewedAt: updated.reviewedAt,
+        updatedAt: updated.updatedAt,
+      });
+    } catch (e) {
+      console.warn('Firestore suggestion status update note:', e);
+    }
+
+    if (reviewer) {
+      auditService.logEvent(AuditAction.SUGGESTION_REVIEWED, reviewer, {
+        documentId: updated.documentId,
+        documentMasterId: updated.documentMasterId,
+        newValue: status,
+        reason: `${reviewer.name} marked suggestion "${updated.subject}" as ${status}. ${reviewNotes ? `Notes: ${reviewNotes}` : ''}`,
+      });
+    }
+
+    return updated;
+  }
+
+  // ==========================================
+  // AUTOMATED 2-DAY RE-REVIEW REMINDERS ENGINE
+  // ==========================================
+  public async checkAndDispatchReReviewReminders(
+    options: { force?: boolean; mockDaysNotice?: number; targetDocId?: string } = {}
+  ): Promise<{ sentCount: number; checkedDocs: number; details: string[] }> {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    const creators = this.getCreators();
+    if (creators.length === 0) {
+      return { sentCount: 0, checkedDocs: 0, details: ['No HR Creator recipients found to notify.'] };
+    }
+
+    const details: string[] = [];
+    let sentCount = 0;
+    let checkedDocs = 0;
+
+    const docsToCheck = options.targetDocId
+      ? this.documentMasters.filter((d) => d.id === options.targetDocId || d.documentId === options.targetDocId)
+      : this.documentMasters;
+
+    for (const master of docsToCheck) {
+      if (!master.active || master.currentStatus !== VersionStatus.PUBLISHED) continue;
+      checkedDocs++;
+
+      const pubVer = this.getPublishedVersion(master.id) || this.documentVersions.find((v) => v.documentMasterId === master.id);
+      if (!pubVer || !pubVer.reviewDueDate) continue;
+
+      const reviewDueDate = new Date(pubVer.reviewDueDate);
+      reviewDueDate.setHours(0, 0, 0, 0);
+
+      const diffTime = reviewDueDate.getTime() - today.getTime();
+      const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+
+      // Trigger condition: within 2 days prior to re-review date (or force)
+      const isTargetDueWindow = options.force ? true : (diffDays <= (options.mockDaysNotice ?? 2) && diffDays >= 0);
+
+      if (!isTargetDueWindow) continue;
+
+      // Unique deduplication key: docId_reviewDueDate_reminder
+      const reminderKey = `reminder_${master.documentId}_${pubVer.reviewDueDate}_2days`;
+      if (!options.force && this.reReviewRemindersSent.has(reminderKey)) {
+        continue;
+      }
+
+      // Collect all suggestions for this document
+      const docSuggestions = this.getDocumentSuggestions(master.documentId);
+
+      let suggestionsSection = '';
+      if (docSuggestions.length > 0) {
+        suggestionsSection =
+          `EMPLOYEE SUGGESTIONS RECEIVED (${docSuggestions.length}):\n` +
+          docSuggestions
+            .map(
+              (s, idx) =>
+                `  ${idx + 1}. [${s.category}] "${s.subject}"\n` +
+                `     Submitted by: ${s.employeeName} (${s.employeeDepartment || 'Employee'})\n` +
+                `     Feedback: "${s.content}"\n` +
+                `     Status: ${s.status}${s.reviewNotes ? ` (HR Note: ${s.reviewNotes})` : ''}`
+            )
+            .join('\n\n');
+      } else {
+        suggestionsSection =
+          `EMPLOYEE SUGGESTIONS:\nNo suggestions from employees have been submitted for this document.`;
+      }
+
+      const urgencyNotice =
+        diffDays === 0
+          ? `TODAY is the scheduled Re-review Due Date`
+          : diffDays === 1
+          ? `Re-review Due Date is TOMORROW (${formatDDMMYYYY(pubVer.reviewDueDate)})`
+          : diffDays === 2
+          ? `Re-review Due Date is in 2 DAYS (${formatDDMMYYYY(pubVer.reviewDueDate)})`
+          : `Re-review Due Date is ${formatDDMMYYYY(pubVer.reviewDueDate)} (in ${diffDays} days)`;
+
+      const subject = `[Action Required] Upcoming Policy Re-Review in 2 Days: ${master.title} (${master.documentId})`;
+
+      const body =
+        `Dear HR Governance Team,\n\n` +
+        `This is an automated 2-day reminder that the corporate policy "${master.title}" is reaching its scheduled re-review date.\n\n` +
+        `POLICY DETAILS:\n` +
+        `• Document Title: ${master.title}\n` +
+        `• Document ID: ${master.documentId}\n` +
+        `• Live Version: v${pubVer.versionNumber}\n` +
+        `• Category: ${master.category}\n` +
+        `• Department: ${master.departmentName}\n` +
+        `• Effective From: ${formatDDMMYYYY(pubVer.effectiveFrom)}\n` +
+        `• Re-review Due Date: ${formatDDMMYYYY(pubVer.reviewDueDate)} (${urgencyNotice})\n\n` +
+        `--------------------------------------------------\n` +
+        `${suggestionsSection}\n` +
+        `--------------------------------------------------\n\n` +
+        `REQUIRED ACTIONS FOR HR & LEADERSHIP:\n` +
+        `1. Open the "Policy Suggestions" tab to review employee feedback for ${master.documentId}.\n` +
+        `2. Go to "Creator Studio" and click "Revise Document" to draft the revised Version ${pubVer.versionNumber ? (parseFloat(pubVer.versionNumber) + 0.1).toFixed(1) : '1.1'}.\n` +
+        `3. Submit the revision for Approver review.\n\n` +
+        `Best regards,\n` +
+        `Amaavigo HR Compliance Automation Engine`;
+
+      // Dispatch notification email to each HR Creator
+      for (const creator of creators) {
+        await defaultEmailProvider.sendEmail(
+          creator.email,
+          creator.name,
+          subject,
+          body,
+          {
+            documentId: master.documentId,
+            documentTitle: master.title,
+            versionNumber: pubVer.versionNumber,
+            documentVersionId: pubVer.id,
+            acknowledgementRequired: false,
+          }
+        );
+        sentCount++;
+      }
+
+      this.reReviewRemindersSent.add(reminderKey);
+      this.saveReminderKeysToStorage();
+
+      auditService.logEvent(
+        AuditAction.RE_REVIEW_REMINDER_SENT,
+        creators[0] || ({ id: 'SYSTEM', name: 'Automation Engine', role: UserRole.CREATOR } as any),
+        {
+          documentId: master.documentId,
+          documentMasterId: master.id,
+          versionNumber: pubVer.versionNumber,
+          reason: `Dispatched 2-day re-review reminder for ${master.documentId} (${docSuggestions.length} employee suggestions attached) to ${creators.length} HR members.`,
+        }
+      );
+
+      details.push(
+        `Dispatched 2-day reminder for ${master.documentId} to ${creators.length} HR recipients (${docSuggestions.length} suggestions attached).`
+      );
+    }
+
+    return { sentCount, checkedDocs, details };
   }
 
   // Reload data from Firestore

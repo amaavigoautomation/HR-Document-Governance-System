@@ -68,6 +68,8 @@
         "changeSummary": { "type": "string", "maxLength": 2000 },
         "approvalStatus": { "type": "string", "enum": ["DRAFT", "IN_REVIEW", "APPROVED", "REJECTED", "PUBLISHED", "ARCHIVED"] },
         "effectiveDate": { "type": "string" },
+        "effectiveFrom": { "type": "string", "maxLength": 64 },
+        "reviewDueDate": { "type": "string", "maxLength": 64 },
         "expiryDate": { "type": "string" },
         "rawContent": { "type": "string" },
         "fileName": { "type": "string", "maxLength": 256 },
@@ -138,6 +140,33 @@
         "createdAt": { "type": "string" }
       },
       "required": ["id", "title", "message", "read"]
+    },
+    "documentSuggestions": {
+      "title": "Employee Document Suggestions",
+      "description": "Feedback, improvement proposals, and suggestions submitted by employees for corporate governance documents.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "documentId": { "type": "string", "maxLength": 128 },
+        "documentMasterId": { "type": "string", "maxLength": 128 },
+        "documentTitle": { "type": "string", "maxLength": 500 },
+        "versionNumber": { "type": "string", "maxLength": 32 },
+        "employeeId": { "type": "string", "maxLength": 128 },
+        "employeeName": { "type": "string", "maxLength": 128 },
+        "employeeEmail": { "type": "string", "maxLength": 128 },
+        "employeeDepartment": { "type": "string", "maxLength": 128 },
+        "category": { "type": "string", "maxLength": 64 },
+        "subject": { "type": "string", "maxLength": 256 },
+        "content": { "type": "string", "maxLength": 4000 },
+        "status": { "type": "string", "enum": ["PENDING_REVIEW", "REVIEWED", "ACCEPTED", "INCORPORATED_IN_REVISION", "DISMISSED"] },
+        "reviewNotes": { "type": "string", "maxLength": 2000 },
+        "reviewedById": { "type": "string", "maxLength": 128 },
+        "reviewedByName": { "type": "string", "maxLength": 128 },
+        "reviewedAt": { "type": "string" },
+        "createdAt": { "type": "string" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["id", "documentId", "employeeName", "subject", "content", "status"]
     }
   },
   "firestore": {
@@ -164,6 +193,10 @@
     "/notifications/{notifId}": {
       "schema": "notifications",
       "description": "System reminders, compliance triggers, and reviewer alerts."
+    },
+    "/documentSuggestions/{suggestionId}": {
+      "schema": "documentSuggestions",
+      "description": "Employee suggestions and feedback on documents for HR and Founder review."
     }
   }
 }

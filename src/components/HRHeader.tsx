@@ -2,6 +2,7 @@ import React from 'react';
 import {
   FileText,
   Users,
+  MessageSquare,
   History,
   LogOut,
   PanelLeftClose,
@@ -13,9 +14,10 @@ import { AmaavigoLogo } from './AmaavigoLogo';
 interface HRHeaderProps {
   currentUser: User;
   onLogout: () => void;
-  activeTab: 'creator' | 'compliance' | 'audit';
-  setActiveTab: (tab: 'creator' | 'compliance' | 'audit') => void;
+  activeTab: 'creator' | 'compliance' | 'suggestions' | 'audit';
+  setActiveTab: (tab: 'creator' | 'compliance' | 'suggestions' | 'audit') => void;
   pendingComplianceCount?: number;
+  suggestionsCount?: number;
   isSidebarOpen?: boolean;
   onToggleSidebar?: () => void;
 }
@@ -26,6 +28,7 @@ export const HRHeader: React.FC<HRHeaderProps> = ({
   activeTab,
   setActiveTab,
   pendingComplianceCount = 0,
+  suggestionsCount = 0,
   isSidebarOpen,
   onToggleSidebar,
 }) => {
@@ -102,6 +105,32 @@ export const HRHeader: React.FC<HRHeaderProps> = ({
             >
               <Users className="w-3.5 h-3.5" />
               <span>Compliance Tracker</span>
+            </button>
+
+            {/* Policy Suggestions Tab (Beside Compliance Tracker) */}
+            <button
+              id="hr-nav-suggestions"
+              type="button"
+              onClick={() => setActiveTab('suggestions')}
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center space-x-1.5 ${
+                activeTab === 'suggestions'
+                  ? 'bg-[#FA7014] text-white shadow-sm'
+                  : 'text-slate-600 hover:bg-white hover:text-slate-900'
+              }`}
+            >
+              <MessageSquare className="w-3.5 h-3.5" />
+              <span>Policy Suggestions</span>
+              {suggestionsCount > 0 && (
+                <span
+                  className={`text-[10px] px-1.5 py-0.2 rounded-full font-bold transition-colors ${
+                    activeTab === 'suggestions'
+                      ? 'bg-white/25 text-white'
+                      : 'bg-orange-100 text-[#FA7014]'
+                  }`}
+                >
+                  {suggestionsCount}
+                </span>
+              )}
             </button>
 
             {/* Audit Trail Tab */}

@@ -20,6 +20,7 @@ import {
   AuditLogEntry,
   AcknowledgementRecord,
   EmailNotification,
+  DocumentSuggestion,
   User,
   UserRole,
 } from '../types';
@@ -31,6 +32,7 @@ const VERSIONS_COLLECTION = 'versions';
 const AUDIT_COLLECTION = 'auditLogs';
 const ACKS_COLLECTION = 'acknowledgments';
 const NOTIFS_COLLECTION = 'notifications';
+const SUGGESTIONS_COLLECTION = 'documentSuggestions';
 
 // Helper to strip undefined values so Firestore does not reject writes
 function cleanFirestoreData<T>(obj: T): T {
@@ -435,29 +437,75 @@ export const firestoreService = {
     }
   },
 
+  // Document Suggestions
+  async getSuggestions(): Promise<DocumentSuggestion[]> {
+    try {
+      const snap = await getDocs(collection(db, SUGGESTIONS_COLLECTION));
+      const suggestions = snap.docs.map((d) => ({ ...d.data(), id: d.id }) as DocumentSuggestion);
+      return suggestions.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+    } catch (e) {
+      console.warn('[Firestore] Error getting suggestions (using local cache):', e);
+      return [];
+    }
+  },
+
+  async saveSuggestion(suggestion: DocumentSuggestion): Promise<void> {
+    try {
+      await setDoc(doc(db, SUGGESTIONS_COLLECTION, suggestion.id), cleanFirestoreData(suggestion));
+    } catch (e) {
+      console.warn('[Firestore] Save suggestion offline note:', e);
+    }
+  },
+
+  async updateSuggestion(suggestionId: string, updates: Partial<DocumentSuggestion>): Promise<void> {
+    try {
+      await updateDoc(doc(db, SUGGESTIONS_COLLECTION, suggestionId), cleanFirestoreData(updates));
+    } catch (e) {
+      console.warn('[Firestore] Update suggestion offline note:', e);
+    }
+  },
+
   // Delete a single document master and its associated versions & acknowledgements
   async deleteDocument(documentId: string): Promise<void> {
     try {
+      const targetLower = documentId.toLowerCase().trim();
+
       // 1. Delete document master (by ID or matching documentId)
       const dSnap = await getDocs(collection(db, DOCS_COLLECTION));
       let logicalDocId = documentId;
       for (const d of dSnap.docs) {
         const data = d.data() as any;
-        if (d.id === documentId || data.id === documentId || data.documentId === documentId) {
+        const dIdLower = (d.id || '').toLowerCase().trim();
+        const dataIdLower = (data.id || '').toLowerCase().trim();
+        const dataDocIdLower = (data.documentId || '').toLowerCase().trim();
+
+        if (
+          dIdLower === targetLower ||
+          dataIdLower === targetLower ||
+          dataDocIdLower === targetLower
+        ) {
           if (data.documentId) logicalDocId = data.documentId;
           await deleteDoc(doc(db, DOCS_COLLECTION, d.id));
         }
       }
 
+      const logicalLower = logicalDocId.toLowerCase().trim();
+
       // 2. Delete all matching versions
       const vSnap = await getDocs(collection(db, VERSIONS_COLLECTION));
       for (const d of vSnap.docs) {
         const data = d.data() as DocumentVersion;
+        const vDocIdLower = (data.documentId || '').toLowerCase().trim();
+        const vMasterIdLower = (data.documentMasterId || '').toLowerCase().trim();
+        const dIdLower = (d.id || '').toLowerCase().trim();
+
         if (
-          d.id === documentId ||
-          data.documentMasterId === documentId ||
-          data.documentId === documentId ||
-          data.documentId === logicalDocId
+          dIdLower === targetLower ||
+          dIdLower === logicalLower ||
+          vMasterIdLower === targetLower ||
+          vMasterIdLower === logicalLower ||
+          vDocIdLower === targetLower ||
+          vDocIdLower === logicalLower
         ) {
           await deleteDoc(doc(db, VERSIONS_COLLECTION, d.id));
         }
@@ -467,8 +515,29 @@ export const firestoreService = {
       const aSnap = await getDocs(collection(db, ACKS_COLLECTION));
       for (const d of aSnap.docs) {
         const data = d.data() as AcknowledgementRecord;
-        if (data.documentId === documentId || data.documentId === logicalDocId) {
+        const aDocIdLower = (data.documentId || '').toLowerCase().trim();
+        if (aDocIdLower === targetLower || aDocIdLower === logicalLower) {
           await deleteDoc(doc(db, ACKS_COLLECTION, d.id));
+        }
+      }
+
+      // 4. Delete all matching employee suggestions from documentSuggestions
+      const sSnap = await getDocs(collection(db, SUGGESTIONS_COLLECTION));
+      for (const d of sSnap.docs) {
+        const data = d.data() as DocumentSuggestion;
+        const sDocId = (data.documentId || '').toLowerCase().trim();
+        const sMasterId = (data.documentMasterId || '').toLowerCase().trim();
+        const dIdLower = (d.id || '').toLowerCase().trim();
+
+        if (
+          dIdLower === targetLower ||
+          dIdLower === logicalLower ||
+          sMasterId === targetLower ||
+          sMasterId === logicalLower ||
+          sDocId === targetLower ||
+          sDocId === logicalLower
+        ) {
+          await deleteDoc(doc(db, SUGGESTIONS_COLLECTION, d.id));
         }
       }
     } catch (err) {
@@ -477,10 +546,10 @@ export const firestoreService = {
     }
   },
 
-  // Clear all documents, versions, and acknowledgments from Firestore database
+  // Clear all documents, versions, acknowledgments, and suggestions from Firestore database
   async clearAllDocuments(): Promise<void> {
     try {
-      console.log('[Firestore] Clearing all documents, versions, and acknowledgements...');
+      console.log('[Firestore] Clearing all documents, versions, acknowledgements, and suggestions...');
       const dSnap = await getDocs(collection(db, DOCS_COLLECTION));
       for (const d of dSnap.docs) {
         await deleteDoc(doc(db, DOCS_COLLECTION, d.id));
@@ -495,7 +564,12 @@ export const firestoreService = {
       for (const d of aSnap.docs) {
         await deleteDoc(doc(db, ACKS_COLLECTION, d.id));
       }
-      console.log('[Firestore] All document collections cleared successfully.');
+
+      const sSnap = await getDocs(collection(db, SUGGESTIONS_COLLECTION));
+      for (const d of sSnap.docs) {
+        await deleteDoc(doc(db, SUGGESTIONS_COLLECTION, d.id));
+      }
+      console.log('[Firestore] All document collections and suggestions cleared successfully.');
     } catch (err) {
       console.error('[Firestore] Error clearing document collections:', err);
       throw err;
@@ -662,6 +736,21 @@ export const firestoreService = {
       },
       (error) => {
         console.warn('[Firestore] Audit logs subscription offline/retry note:', error?.message || error);
+      }
+    );
+  },
+
+  // Real-time listener for document suggestions
+  subscribeToSuggestions(callback: (suggestions: DocumentSuggestion[]) => void) {
+    return onSnapshot(
+      collection(db, SUGGESTIONS_COLLECTION),
+      (snap) => {
+        const items = snap.docs.map((d) => ({ ...d.data(), id: d.id }) as DocumentSuggestion);
+        items.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+        callback(items);
+      },
+      (error) => {
+        console.warn('[Firestore] Suggestions subscription offline/retry note:', error?.message || error);
       }
     );
   },

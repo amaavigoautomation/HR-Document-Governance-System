@@ -164,94 +164,15 @@ export function stripPolicyMetadataHeader(text: string): string {
   if (!text) return '';
   let res = text;
 
-  // 1. Remove HTML table blocks containing policy metadata
-  res = res.replace(/<table[^>]*>[\s\S]*?<\/table>/gi, (tbl) => {
-    if (
-      /Policy\s*Owner/i.test(tbl) &&
-      (/Effective\s*Date/i.test(tbl) || /Review\s*Frequency/i.test(tbl) || /Applies\s*To/i.test(tbl))
-    ) {
-      return '';
-    }
-    return tbl;
-  });
+  // 1. Strip tagged header/footer blocks
+  res = res.replace(/<!--AMAAVIGO_HEADER_START-->[\s\S]*?<!--AMAAVIGO_HEADER_END-->\n*/gi, '');
+  res = res.replace(/\n*<!--AMAAVIGO_FOOTER_START-->[\s\S]*?<!--AMAAVIGO_FOOTER_END-->/gi, '');
 
-  // 2. Remove Markdown table rows containing policy metadata
-  res = res.replace(
-    /^[ \t]*\|?[ \t]*(?:(?:\*{1,2}|<[^>]+>)*)(?:Policy\s*Owner|Effective\s*Date|Review\s*Frequency|Applies\s*To)[\s\S]*?\|?[ \t]*$/gim,
-    ''
-  );
+  // 2. Strip legacy header/footer tables
+  res = res.replace(/<table[^>]*class="[^"]*amaavigo-document-header[^"]*"[\s\S]*?<\/table>\n*/gi, '');
+  res = res.replace(/\n*<table[^>]*class="[^"]*amaavigo-document-footer[^"]*"[\s\S]*?<\/table>/gi, '');
 
-  // 3. Remove HTML paragraph/div/td blocks containing policy metadata
-  res = res.replace(
-    /<(?:p|div|tr|td)[^>]*>(?:[\s\S]*?)(?:Policy\s*Owner|Effective\s*Date|Review\s*Frequency|Applies\s*To)[\s\S]*?<\/(?:p|div|tr|td)>/gi,
-    ''
-  );
-
-  // 4. Line-by-line filtering for multi-line documents
-  const lines = res.split(/\r?\n/);
-  const filteredLines: string[] = [];
-  let skipNextValue = false;
-
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i];
-    const trimmed = line.trim();
-    if (!trimmed) {
-      if (!skipNextValue) {
-        filteredLines.push('');
-      }
-      continue;
-    }
-
-    const normalized = trimmed
-      .replace(/^[-*•#|>\s]+/, '')
-      .replace(/<[^>]+>/g, '')
-      .replace(/\*\*/g, '')
-      .trim();
-
-    // Check if line is purely a metadata label (e.g. "Policy Owner:" or "Policy Owner")
-    const isPureLabel = /^(?:Policy\s*Owner|Effective\s*Date|Review\s*Frequency|Applies\s*To)\s*[:\-–—]?$/i.test(normalized);
-    if (isPureLabel) {
-      skipNextValue = true;
-      continue;
-    }
-
-    // Check if line is a metadata line with value (e.g. "Policy Owner: Human Resources")
-    const isMetaLine = /^(?:Policy\s*Owner|Effective\s*Date|Review\s*Frequency|Applies\s*To)\s*[:\-–—]/i.test(normalized);
-    if (isMetaLine) {
-      continue;
-    }
-
-    // If previous line was a pure label, this line is the value (unless it looks like a heading)
-    if (skipNextValue) {
-      skipNextValue = false;
-      if (!/^(?:[0-9]+\.|#|\bPurpose\b|\bScope\b)/i.test(normalized)) {
-        continue;
-      }
-    }
-
-    filteredLines.push(line);
-  }
-  res = filteredLines.join('\n');
-
-  // 5. Full multi-field metadata block removal (works across single-line or compressed paragraphs)
-  res = res.replace(
-    /(?:^|\s+)(?:\*{0,2})Policy\s*Owner\s*:?[\s\S]*?(?:Applies\s*To\s*:?[^\n\r]*?(?:business\s*requirements|requirements|employees[^\n\r]*?|All\s*employees))(?=\s*(?:1\.|\bPurpose\b|\n\n|##|\bScope\b|$))/gi,
-    '\n\n'
-  );
-
-  // 6. Isolated inline phrases if present on the same line as titles
-  res = res.replace(/(?:^|\s+)(?:\*{0,2}|<[^>]+>)*Policy\s*Owner\s*[:\-–—]?\s*[^,\n\r]+(?:\.|\,|\n|$|\s+(?=Effective|Review|Applies|1\.))/gi, ' ');
-  res = res.replace(/(?:^|\s+)(?:\*{0,2}|<[^>]+>)*Effective\s*Date\s*[:\-–—]?\s*[0-9A-Za-z\s,/-]+(?=\s*(?:Review|Applies|1\.|\n|$))/gi, ' ');
-  res = res.replace(/(?:^|\s+)(?:\*{0,2}|<[^>]+>)*Review\s*Frequency\s*[:\-–—]?\s*[^,\n\r]+(?:\.|\,|\n|$|\s+(?=Applies|Effective|1\.))/gi, ' ');
-  res = res.replace(/(?:^|\s+)(?:\*{0,2}|<[^>]+>)*Applies\s*To\s*[:\-–—]?\s*[^.\n\r]+(?:\.|\,|\n|$|\s+(?=1\.|\bPurpose\b))/gi, ' ');
-
-  // 7. Remove any remnant label strings on a line by themselves
-  res = res.replace(/^[ \t]*(?:(?:\*{1,2}|<[^>]+>)*)(?:Policy\s*Owner|Effective\s*Date|Review\s*Frequency|Applies\s*To)\s*[:\-–—]?[ \t]*$/gim, '');
-
-  // 8. Format clean line-breaks before numbered headings (e.g. "1. Purpose", "2. Eligibility") if single-line
-  res = res.replace(/([^\n])\s+(?=[0-9]+\.\s+[A-Z])/g, '$1\n\n');
-
-  return res.replace(/\n{3,}/g, '\n\n').trim();
+  return res;
 }
 
 /**
@@ -398,33 +319,33 @@ export const DocumentHeaderTable: React.FC<{
     >
       <div className="grid grid-cols-12 text-xs divide-x divide-slate-900 items-stretch">
         {/* Col 1: Brand Logo */}
-        <div className="col-span-3 sm:col-span-3 p-2 sm:p-3 flex items-center justify-center text-center bg-white">
-          <AmaavigoLogo size="sm" variant="full" height={36} showTagline={true} align="center" />
+        <div className="col-span-3 sm:col-span-3 p-2 sm:p-2.5 flex items-center justify-center text-center bg-white min-w-0 overflow-hidden">
+          <AmaavigoLogo size="sm" variant="full" height={34} showTagline={true} align="center" />
         </div>
 
-        {/* Col 2: Document Name - Full display with generous column width */}
-        <div className="col-span-5 sm:col-span-5 p-3 sm:p-4 flex flex-col justify-center bg-white">
-          <span className="text-[11px] sm:text-xs font-bold text-slate-900 block uppercase tracking-wide">
+        {/* Col 2: Document Name - Full display with ample space, zero overlap */}
+        <div className="col-span-4 sm:col-span-4 p-2.5 sm:p-3 flex flex-col justify-center bg-white min-w-0 overflow-hidden">
+          <span className="text-[10px] sm:text-[11px] font-bold text-slate-900 block uppercase tracking-wide truncate">
             Document Name:
           </span>
-          <span className="text-xs sm:text-sm font-semibold text-slate-800 mt-1 leading-snug break-words">
+          <span className="text-xs sm:text-sm font-semibold text-slate-800 mt-0.5 leading-snug break-words">
             {title}
           </span>
         </div>
 
         {/* Col 3: Version */}
-        <div className="col-span-2 sm:col-span-2 p-3 sm:p-4 flex items-center justify-center text-center bg-white">
-          <span className="text-xs sm:text-sm font-bold text-slate-900 whitespace-nowrap">
+        <div className="col-span-2 sm:col-span-2 p-2 sm:p-2.5 flex flex-col justify-center items-center text-center bg-white min-w-0 overflow-hidden">
+          <span className="text-[11px] sm:text-xs font-bold text-slate-900 break-words leading-tight">
             Version: {ver}
           </span>
         </div>
 
         {/* Col 4: Effective Date */}
-        <div className="col-span-2 sm:col-span-2 p-3 sm:p-4 flex flex-col justify-center bg-white">
-          <span className="text-[11px] sm:text-xs font-bold text-slate-900 block uppercase tracking-wide whitespace-nowrap">
+        <div className="col-span-3 sm:col-span-3 p-2.5 sm:p-3 flex flex-col justify-center bg-white min-w-0 overflow-hidden">
+          <span className="text-[10px] sm:text-[11px] font-bold text-slate-900 block uppercase tracking-wide truncate">
             Effective date :
           </span>
-          <span className="text-xs sm:text-sm font-semibold text-slate-800 mt-1 font-mono whitespace-nowrap">
+          <span className="text-xs sm:text-sm font-semibold text-slate-800 mt-0.5 font-mono truncate">
             {effective}
           </span>
         </div>

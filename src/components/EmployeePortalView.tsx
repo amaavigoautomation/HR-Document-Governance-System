@@ -14,6 +14,7 @@ import {
   ExternalLink,
   Layers,
   Filter,
+  MessageSquarePlus,
 } from 'lucide-react';
 import {
   AcknowledgementRecord,
@@ -28,6 +29,7 @@ import { governanceEngine, isEmployeeInDepartment } from '../services/governance
 import { formatISTDate } from '../utils/dateFormat';
 import { formatDDMMYYYY } from '../utils/documentHeaderFooter';
 import { downloadDocumentWithIntactFormat } from '../utils/documentStamper';
+import { SubmitSuggestionModal } from './SubmitSuggestionModal';
 
 interface EmployeePortalViewProps {
   currentUser: User;
@@ -60,6 +62,8 @@ export const EmployeePortalView: React.FC<EmployeePortalViewProps> = ({
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<string>('ALL');
   const [downloadingDocId, setDownloadingDocId] = useState<string | null>(null);
+  const [selectedDocForSuggestion, setSelectedDocForSuggestion] = useState<DocumentMaster | null>(null);
+  const [suggestionSuccessMsg, setSuggestionSuccessMsg] = useState<string | null>(null);
 
   const [localAcks, setLocalAcks] = useState<AcknowledgementRecord[]>(() => {
     return acknowledgements && acknowledgements.length > 0
@@ -94,13 +98,21 @@ export const EmployeePortalView: React.FC<EmployeePortalViewProps> = ({
   const publishedDocs = useMemo(() => {
     return documents.filter((d) => {
       if (!d.active || d.currentStatus !== VersionStatus.PUBLISHED) return false;
+      const hasPublishedVersion =
+        Boolean(d.currentPublishedVersionId) ||
+        versions.some(
+          (v) =>
+            (v.documentMasterId === d.id || v.documentId === d.documentId) &&
+            v.status === VersionStatus.PUBLISHED
+        );
+      if (!hasPublishedVersion) return false;
       if (d.confidentiality === ConfidentialityLevel.PUBLIC) return true;
       if (d.confidentiality === ConfidentialityLevel.SPECIFIC_DEPARTMENT) {
         return isEmployeeInDepartment(currentUser, d.departmentName, d.departmentId);
       }
       return false;
     });
-  }, [documents, currentUser]);
+  }, [documents, versions, currentUser]);
 
   const userIdentifiers = useMemo(() => {
     const list = [currentUser.id, currentUser.empId, currentUser.loginId, currentUser.email]
@@ -144,7 +156,7 @@ export const EmployeePortalView: React.FC<EmployeePortalViewProps> = ({
       .filter((v) => (v.documentMasterId === doc.id || v.documentId === doc.documentId) && v.status === VersionStatus.PUBLISHED)
       .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
     if (matching.length > 0) return matching[0];
-    return versions.find((v) => v.documentMasterId === doc.id || v.documentId === doc.documentId);
+    return undefined;
   };
 
   const handleDownloadIntact = async (doc: DocumentMaster, ver: DocumentVersion) => {
@@ -365,17 +377,30 @@ export const EmployeePortalView: React.FC<EmployeePortalViewProps> = ({
                             <span>Acknowledge Policy v{verNumber}</span>
                           </button>
 
-                          {/* Read Document Button */}
-                          {pubVersion && (
+                          <div className="flex items-center gap-2">
+                            {/* Suggestion Button */}
                             <button
-                              id={`btn-employee-read-${doc.id}`}
-                              onClick={() => onOpenDocumentView(pubVersion)}
-                              className="inline-flex items-center justify-center space-x-1.5 bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-semibold px-3.5 py-2 rounded-xl transition-colors border border-slate-200 cursor-pointer"
+                              id={`btn-card-suggest-${doc.id}`}
+                              onClick={() => setSelectedDocForSuggestion(doc)}
+                              className="inline-flex items-center justify-center space-x-1.5 bg-white hover:bg-orange-50 text-slate-700 hover:text-[#FA7014] text-xs font-medium px-3 py-2 rounded-xl transition-colors border border-slate-200 hover:border-orange-300 cursor-pointer"
+                              title="Give feedback or suggest an improvement on this policy"
                             >
-                              <Eye className="w-3.5 h-3.5 text-slate-600" />
-                              <span>Read Document</span>
+                              <MessageSquarePlus className="w-3.5 h-3.5 text-[#FA7014]" />
+                              <span>Give Suggestion</span>
                             </button>
-                          )}
+
+                            {/* Read Document Button */}
+                            {pubVersion && (
+                              <button
+                                id={`btn-employee-read-${doc.id}`}
+                                onClick={() => onOpenDocumentView(pubVersion)}
+                                className="inline-flex items-center justify-center space-x-1.5 bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-semibold px-3.5 py-2 rounded-xl transition-colors border border-slate-200 cursor-pointer"
+                              >
+                                <Eye className="w-3.5 h-3.5 text-slate-600" />
+                                <span>Read Document</span>
+                              </button>
+                            )}
+                          </div>
                         </div>
                       </div>
                     );
@@ -548,6 +573,17 @@ export const EmployeePortalView: React.FC<EmployeePortalViewProps> = ({
                           {/* Actions */}
                           <td className="py-3.5 px-4 align-top text-right whitespace-nowrap">
                             <div className="inline-flex items-center space-x-1.5">
+                              {/* Employee Suggestion Button */}
+                              <button
+                                id={`btn-table-suggest-${doc.id}`}
+                                onClick={() => setSelectedDocForSuggestion(doc)}
+                                className="inline-flex items-center space-x-1 bg-white hover:bg-orange-50 hover:text-[#FA7014] text-slate-700 text-xs font-semibold px-2.5 py-1.5 rounded-lg transition-colors border border-slate-200 hover:border-orange-300 cursor-pointer shadow-2xs"
+                                title="Give Suggestion or Feedback on this document"
+                              >
+                                <MessageSquarePlus className="w-3.5 h-3.5 text-[#FA7014]" />
+                                <span>Suggest</span>
+                              </button>
+
                               {pubVersion && (
                                 <button
                                   id={`btn-table-read-${doc.id}`}
@@ -582,6 +618,34 @@ export const EmployeePortalView: React.FC<EmployeePortalViewProps> = ({
             )}
           </div>
         </div>
+      )}
+
+      {/* SUCCESS TOAST FOR SUGGESTION */}
+      {suggestionSuccessMsg && (
+        <div className="fixed bottom-6 right-6 z-50 bg-slate-900 text-white px-4 py-3 rounded-xl shadow-xl flex items-center space-x-2.5 border border-slate-700 animate-in slide-in-from-bottom duration-200">
+          <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+          <span className="text-xs font-medium">{suggestionSuccessMsg}</span>
+          <button
+            onClick={() => setSuggestionSuccessMsg(null)}
+            className="text-slate-400 hover:text-white ml-2 text-xs"
+          >
+            ✕
+          </button>
+        </div>
+      )}
+
+      {/* MODAL: SUBMIT SUGGESTION */}
+      {selectedDocForSuggestion && currentUser && (
+        <SubmitSuggestionModal
+          document={selectedDocForSuggestion}
+          currentUser={currentUser}
+          onClose={() => setSelectedDocForSuggestion(null)}
+          onSuccess={(newSug) => {
+            setSelectedDocForSuggestion(null);
+            setSuggestionSuccessMsg(`Suggestion for ${newSug.documentId} submitted successfully to HR!`);
+            setTimeout(() => setSuggestionSuccessMsg(null), 5000);
+          }}
+        />
       )}
     </div>
   );

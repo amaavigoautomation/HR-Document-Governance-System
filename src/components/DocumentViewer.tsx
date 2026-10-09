@@ -29,7 +29,7 @@ import {
   stripPolicyMetadataHeader,
 } from '../utils/documentHeaderFooter';
 import { generateCorporatePdfBlob } from '../utils/pdfGenerator';
-import { stampPdfWithHeaderFooter, stampDocxWithHeaderFooter, toUint8Array, downloadDocumentWithIntactFormat } from '../utils/documentStamper';
+import { stampPdfWithHeaderFooter, stampDocxWithHeaderFooter, toUint8Array, downloadDocumentWithIntactFormat, resolveDocumentBytes } from '../utils/documentStamper';
 import { renderAsync } from 'docx-preview';
 import { resolvePlayableMediaUrl } from '../services/mediaStorage';
 
@@ -37,6 +37,7 @@ interface DocumentViewerProps {
   fileName: string;
   rawContent: string;
   fileUrl?: string;
+  originalFileUrl?: string;
   mimeType?: string;
   className?: string;
   versionId?: string;
@@ -48,27 +49,30 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({
   fileName,
   rawContent,
   fileUrl,
+  originalFileUrl,
   mimeType,
   className = '',
   versionId,
   documentId,
   headerFooterData,
 }) => {
+  const effectiveFileUrl = originalFileUrl || fileUrl;
+
   const isDocx =
     fileName?.toLowerCase().endsWith('.docx') ||
     mimeType?.includes('wordprocessingml') ||
-    (fileUrl && fileUrl.includes('wordprocessingml'));
+    (effectiveFileUrl && effectiveFileUrl.includes('wordprocessingml'));
 
   const isPdf =
     fileName?.toLowerCase().endsWith('.pdf') ||
     mimeType === 'application/pdf' ||
     isRawPdfStream(rawContent) ||
-    fileUrl?.startsWith('data:application/pdf');
+    effectiveFileUrl?.startsWith('data:application/pdf');
 
   const isVideo =
     Boolean(fileName?.toLowerCase().match(/\.(mp4|webm|mov|m4v|mkv|avi|ogv)$/)) ||
     Boolean(mimeType?.startsWith('video/')) ||
-    Boolean(fileUrl && fileUrl.startsWith('data:video/'));
+    Boolean(effectiveFileUrl && effectiveFileUrl.startsWith('data:video/'));
 
   const [viewMode, setViewMode] = useState<'video' | 'docx' | 'pdf' | 'formatted' | 'raw'>(
     isVideo ? 'video' : isPdf ? 'pdf' : isDocx ? 'docx' : 'formatted'
@@ -90,23 +94,23 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const renderTaskRef = useRef<any>(null);
 
-  const [activeVideoUrl, setActiveVideoUrl] = useState<string>(fileUrl || '');
+  const [activeVideoUrl, setActiveVideoUrl] = useState<string>(effectiveFileUrl || '');
 
   useEffect(() => {
     let isMounted = true;
     if (isVideo || (fileName && fileName.toLowerCase().match(/\.(mp4|webm|mov|m4v|mkv|avi|ogv)$/))) {
-      resolvePlayableMediaUrl(fileUrl, versionId, documentId, fileName).then((url) => {
+      resolvePlayableMediaUrl(effectiveFileUrl, versionId, documentId, fileName).then((url) => {
         if (isMounted && url) {
           setActiveVideoUrl(url);
         }
       });
-    } else if (fileUrl) {
-      setActiveVideoUrl(fileUrl);
+    } else if (effectiveFileUrl) {
+      setActiveVideoUrl(effectiveFileUrl);
     }
     return () => {
       isMounted = false;
     };
-  }, [fileUrl, versionId, documentId, fileName, isVideo]);
+  }, [effectiveFileUrl, versionId, documentId, fileName, isVideo]);
 
   // Keep viewMode synchronized with document type if props change
   useEffect(() => {
@@ -131,19 +135,13 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({
   useEffect(() => {
     let isMounted = true;
     if (isDocx) {
-      const source = fileUrl || null;
+      const source = effectiveFileUrl || null;
       if (source) {
         setLoadingDocx(true);
         setDocxError(null);
         (async () => {
           try {
-            let bytes: Uint8Array;
-            if (source.startsWith('data:')) {
-              bytes = toUint8Array(source);
-            } else {
-              const res = await fetch(source);
-              bytes = new Uint8Array(await res.arrayBuffer());
-            }
+            const bytes = await resolveDocumentBytes(source);
 
             if (bytes.length > 4 && bytes[0] === 0x50 && bytes[1] === 0x4b) {
               if (effectiveHeaderFooterData) {
@@ -192,7 +190,7 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({
     return () => {
       isMounted = false;
     };
-  }, [isDocx, fileUrl, effectiveHeaderFooterData, fileName]);
+  }, [isDocx, effectiveFileUrl, effectiveHeaderFooterData, fileName]);
 
   // Render Word document via docx-preview into container
   useEffect(() => {
@@ -231,12 +229,7 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({
   useEffect(() => {
     let isMounted = true;
     if (isPdf && effectiveHeaderFooterData) {
-      const source =
-        fileUrl && (fileUrl.startsWith('data:application/pdf') || fileUrl.startsWith('blob:'))
-          ? fileUrl
-          : isRawPdfStream(rawContent)
-          ? rawContent
-          : null;
+      const source = effectiveFileUrl || (isRawPdfStream(rawContent) ? rawContent : null);
 
       if (source) {
         stampPdfWithHeaderFooter(source, {
@@ -259,15 +252,15 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({
     return () => {
       isMounted = false;
     };
-  }, [isPdf, fileUrl, rawContent, effectiveHeaderFooterData, fileName]);
+  }, [isPdf, effectiveFileUrl, rawContent, effectiveHeaderFooterData, fileName]);
 
   // Convert raw PDF string to Base64 or Blob Data URL if needed
   const effectivePdfDataUrl = React.useMemo(() => {
     if (stampedPdfUrl) {
       return stampedPdfUrl;
     }
-    if (fileUrl && fileUrl.startsWith('data:application/pdf')) {
-      return fileUrl;
+    if (effectiveFileUrl && (effectiveFileUrl.startsWith('data:application/pdf') || effectiveFileUrl.startsWith('blob:') || effectiveFileUrl.startsWith('/') || effectiveFileUrl.startsWith('http'))) {
+      return effectiveFileUrl;
     }
     if (isRawPdfStream(rawContent)) {
       try {
@@ -284,8 +277,8 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({
       }
     }
 
-    // Synthesize valid corporate PDF if isPdf is true
-    if (isPdf && rawContent) {
+    // Synthesize valid corporate PDF ONLY if no uploaded file exists and rawContent is pure markdown text
+    if (!effectiveFileUrl && isPdf && rawContent && !rawContent.startsWith('%PDF')) {
       try {
         const blob = generateCorporatePdfBlob({
           documentTitle: effectiveHeaderFooterData?.documentTitle || fileName.replace(/\.[^/.]+$/, ''),
@@ -305,7 +298,7 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({
     }
 
     return '';
-  }, [stampedPdfUrl, fileUrl, rawContent, isPdf, effectiveHeaderFooterData, fileName]);
+  }, [stampedPdfUrl, effectiveFileUrl, rawContent, isPdf, effectiveHeaderFooterData, fileName]);
 
   // Load PDF Document with PDF.js
   useEffect(() => {
@@ -749,53 +742,79 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({
               </div>
             )}
 
-            <div className="prose max-w-none text-sm leading-relaxed space-y-4 py-2">
-              {cleanBodyForFormatted.split('\n\n').map((para, i) => {
-                const trimmed = para.trim();
-                if (!trimmed) return null;
-                const isMetaPara =
-                  /^(?:(?:\*{1,2}|#+\s*|[-•|]\s*)?Policy\s*Owner\s*[:\-–—]?)/i.test(trimmed) ||
-                  /^(?:(?:\*{1,2}|#+\s*|[-•|]\s*)?Effective\s*Date\s*[:\-–—]?)/i.test(trimmed) ||
-                  /^(?:(?:\*{1,2}|#+\s*|[-•|]\s*)?Review\s*Frequency\s*[:\-–—]?)/i.test(trimmed) ||
-                  /^(?:(?:\*{1,2}|#+\s*|[-•|]\s*)?Applies\s*To\s*[:\-–—]?)/i.test(trimmed);
-                if (isMetaPara) return null;
-                if (trimmed.startsWith('# ')) {
+            {/<[a-z][\s\S]*>/i.test(cleanBodyForFormatted) ? (
+              <div
+                className="document-html-content text-slate-800 text-sm leading-relaxed py-2"
+                dangerouslySetInnerHTML={{ __html: cleanBodyForFormatted }}
+              />
+            ) : (
+              <div className="prose max-w-none text-sm leading-relaxed space-y-4 py-2">
+                {cleanBodyForFormatted.split('\n\n').map((para, i) => {
+                  const trimmed = para.trim();
+                  if (!trimmed) return null;
+                  const isMetaPara =
+                    /^(?:(?:\*{1,2}|#+\s*|[-•|]\s*)?Policy\s*Owner\s*[:\-–—]?)/i.test(trimmed) ||
+                    /^(?:(?:\*{1,2}|#+\s*|[-•|]\s*)?Effective\s*Date\s*[:\-–—]?)/i.test(trimmed) ||
+                    /^(?:(?:\*{1,2}|#+\s*|[-•|]\s*)?Review\s*Frequency\s*[:\-–—]?)/i.test(trimmed) ||
+                    /^(?:(?:\*{1,2}|#+\s*|[-•|]\s*)?Applies\s*To\s*[:\-–—]?)/i.test(trimmed);
+                  if (isMetaPara) return null;
+                  if (trimmed.startsWith('# ')) {
+                    return (
+                      <h1 key={i} className="text-xl font-bold text-slate-900 border-b border-slate-200 pb-2 mt-4">
+                        {trimmed.replace(/^# /, '')}
+                      </h1>
+                    );
+                  }
+                  if (trimmed.startsWith('## ')) {
+                    return (
+                      <h2 key={i} className="text-base font-bold text-[#FA7014] mt-4 mb-1">
+                        {trimmed.replace(/^## /, '')}
+                      </h2>
+                    );
+                  }
+                  if (trimmed.startsWith('### ')) {
+                    return (
+                      <h3 key={i} className="text-sm font-bold text-slate-800 mt-3">
+                        {trimmed.replace(/^### /, '')}
+                      </h3>
+                    );
+                  }
+                  if (trimmed.startsWith('- ') || trimmed.startsWith('* ')) {
+                    return (
+                      <ul key={i} className="list-disc list-inside space-y-1 pl-2 text-slate-700">
+                        {trimmed.split('\n').map((li, j) => (
+                          <li key={j}>{li.replace(/^[-*]\s+/, '')}</li>
+                        ))}
+                      </ul>
+                    );
+                  }
+                  if (
+                    trimmed.startsWith('<table') ||
+                    trimmed.startsWith('<div') ||
+                    trimmed.startsWith('<p') ||
+                    trimmed.startsWith('<blockquote') ||
+                    trimmed.startsWith('<h1') ||
+                    trimmed.startsWith('<h2') ||
+                    trimmed.startsWith('<h3')
+                  ) {
+                    return (
+                      <div
+                        key={i}
+                        className="text-slate-800 my-2 overflow-x-auto font-sans"
+                        dangerouslySetInnerHTML={{ __html: trimmed }}
+                      />
+                    );
+                  }
                   return (
-                    <h1 key={i} className="text-xl font-bold text-slate-900 border-b border-slate-200 pb-2 mt-4">
-                      {trimmed.replace(/^# /, '')}
-                    </h1>
+                    <p
+                      key={i}
+                      className="text-slate-700 whitespace-pre-wrap leading-relaxed"
+                      dangerouslySetInnerHTML={{ __html: trimmed }}
+                    />
                   );
-                }
-                if (trimmed.startsWith('## ')) {
-                  return (
-                    <h2 key={i} className="text-base font-bold text-[#FA7014] mt-4 mb-1">
-                      {trimmed.replace(/^## /, '')}
-                    </h2>
-                  );
-                }
-                if (trimmed.startsWith('### ')) {
-                  return (
-                    <h3 key={i} className="text-sm font-bold text-slate-800 mt-3">
-                      {trimmed.replace(/^### /, '')}
-                    </h3>
-                  );
-                }
-                if (trimmed.startsWith('- ') || trimmed.startsWith('* ')) {
-                  return (
-                    <ul key={i} className="list-disc list-inside space-y-1 pl-2 text-slate-700">
-                      {trimmed.split('\n').map((li, j) => (
-                        <li key={j}>{li.replace(/^[-*]\s+/, '')}</li>
-                      ))}
-                    </ul>
-                  );
-                }
-                return (
-                  <p key={i} className="text-slate-700 whitespace-pre-wrap">
-                    {trimmed}
-                  </p>
-                );
-              })}
-            </div>
+                })}
+              </div>
+            )}
 
             {/* DYNAMIC CORPORATE FOOTER TABLE (Omitted for Video Files) */}
             {effectiveHeaderFooterData && !isVideo && (

@@ -18,6 +18,9 @@ import { DocumentMaster, DocumentVersion, User, VersionStatus, VersionType } fro
 import { governanceEngine } from '../services/governance';
 import { parseUploadedFile, extractTextFromRawPdfStream, isRawPdfStream } from '../utils/fileParser';
 import { stripPolicyMetadataHeader, extractCleanBody, formatDDMMYYYY, DocumentHeaderTable } from '../utils/documentHeaderFooter';
+import { WysiwygDocumentEditor } from './WysiwygDocumentEditor';
+import { DocumentViewer } from './DocumentViewer';
+import { stampPdfWithHeaderFooter, stampDocxWithHeaderFooter } from '../utils/documentStamper';
 
 interface CreateVersionModalProps {
   currentUser: User;
@@ -52,14 +55,33 @@ export const CreateVersionModal: React.FC<CreateVersionModalProps> = ({
   const [revisionType, setRevisionType] = useState<VersionType>(VersionType.MINOR);
   const [changeSummary, setChangeSummary] = useState('');
   const [rawContent, setRawContent] = useState('');
+  const [isPreviewMode, setIsPreviewMode] = useState(false);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
   const [fileName, setFileName] = useState('');
   const [fileDataUrl, setFileDataUrl] = useState<string>('');
   const [mimeType, setMimeType] = useState<string>('');
   const [parsingFile, setParsingFile] = useState<boolean>(false);
   const [uploadStatus, setUploadStatus] = useState<string>('');
+  const [contentTab, setContentTab] = useState<'preview' | 'editor'>('preview');
   const [effectiveFrom, setEffectiveFrom] = useState(new Date().toISOString().split('T')[0]);
+  const [reviewDueDate, setReviewDueDate] = useState(() => {
+    const d = new Date();
+    d.setFullYear(d.getFullYear() + 1);
+    return d.toISOString().split('T')[0];
+  });
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
+
+  const handleEffectiveFromChange = (newDate: string) => {
+    setEffectiveFrom(newDate);
+    if (newDate) {
+      try {
+        const d = new Date(newDate);
+        d.setFullYear(d.getFullYear() + 1);
+        setReviewDueDate(d.toISOString().split('T')[0]);
+      } catch {}
+    }
+  };
 
   const selectedMaster = documents.find((d) => d.id === selectedDocId);
 
@@ -113,10 +135,17 @@ export const CreateVersionModal: React.FC<CreateVersionModalProps> = ({
 
     // Default effective date for this new revision to today's date (or rejected draft's date if future)
     const todayStr = new Date().toISOString().split('T')[0];
+    const defaultReviewDate = () => {
+      const d = new Date();
+      d.setFullYear(d.getFullYear() + 1);
+      return d.toISOString().split('T')[0];
+    };
     if (rejectedVersion?.effectiveFrom && rejectedVersion.effectiveFrom >= todayStr) {
       setEffectiveFrom(rejectedVersion.effectiveFrom);
+      setReviewDueDate(rejectedVersion.reviewDueDate || defaultReviewDate());
     } else {
       setEffectiveFrom(todayStr);
+      setReviewDueDate(defaultReviewDate());
     }
 
     if (rejectedVersion?.reviewerComments) {
@@ -188,19 +217,67 @@ export const CreateVersionModal: React.FC<CreateVersionModalProps> = ({
     setParsingFile(true);
     setError("");
     setFileName(file.name);
+    const docTitle = selectedMaster?.title || file.name.replace(/\.[^/.]+$/, "").replace(/[_-]/g, " ");
 
     try {
       const parsed = await parseUploadedFile(file);
       setRawContent(parsed.extractedText || '');
-      setFileDataUrl(parsed.fileDataUrl || '');
-      setMimeType(parsed.mimeType || 'text/plain');
-      if (parsed.isVideo) {
-        setUploadStatus(`Video media loaded (${(file.size / (1024 * 1024)).toFixed(1)} MB) • Ready for approval`);
-      } else if (parsed.isPdf) {
-        setUploadStatus(`PDF document loaded (${(file.size / 1024).toFixed(1)} KB) • Text extracted`);
+      let effectiveUrl = parsed.fileDataUrl || '';
+      const effectiveMime =
+        parsed.mimeType ||
+        (lowerName.endsWith('.pdf')
+          ? 'application/pdf'
+          : lowerName.endsWith('.docx')
+          ? 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+          : 'text/plain');
+      setMimeType(effectiveMime);
+
+      const isPdfFile = parsed.isPdf || lowerName.endsWith('.pdf');
+      const isDocxFile = lowerName.endsWith('.docx') || effectiveMime.includes('wordprocessingml');
+
+      // Pre-stamp PDF / DOCX with revision corporate Header & Footer while keeping 100% of original pages, layout, and structure intact
+      if (isPdfFile && effectiveUrl) {
+        try {
+          const stamped = await stampPdfWithHeaderFooter(effectiveUrl, {
+            documentTitle: docTitle,
+            versionNumber: calculatedNextVersion || '1.1',
+            effectiveDate: effectiveFrom || new Date().toISOString().split('T')[0],
+            createdByName: currentUser.name,
+            approvedByName: 'Not yet approved',
+            approvedDate: 'Not yet approved',
+            companyName: selectedMaster?.companyName || currentUser.companyName || 'Amaavigo',
+          });
+          effectiveUrl = stamped.dataUrl;
+          setUploadStatus(`Revision PDF ready (${(file.size / 1024).toFixed(1)} KB) • Multi-page structure intact • Header & footer applied`);
+        } catch (stampErr) {
+          console.warn('Revision PDF stamping note:', stampErr);
+          setUploadStatus(`Revision PDF loaded (${(file.size / 1024).toFixed(1)} KB) • Structure intact`);
+        }
+      } else if (isDocxFile && effectiveUrl) {
+        try {
+          const stamped = await stampDocxWithHeaderFooter(effectiveUrl, {
+            documentTitle: docTitle,
+            versionNumber: calculatedNextVersion || '1.1',
+            effectiveDate: effectiveFrom || new Date().toISOString().split('T')[0],
+            createdByName: currentUser.name,
+            approvedByName: 'Not yet approved',
+            approvedDate: 'Not yet approved',
+            companyName: selectedMaster?.companyName || currentUser.companyName || 'Amaavigo',
+          });
+          effectiveUrl = stamped.dataUrl;
+          setUploadStatus(`Revision Word (.docx) ready (${(file.size / 1024).toFixed(1)} KB) • Layout intact • Header & footer applied`);
+        } catch (stampErr) {
+          console.warn('Revision DOCX stamping note:', stampErr);
+          setUploadStatus(`Revision Word document loaded (${(file.size / 1024).toFixed(1)} KB) • Structure intact`);
+        }
+      } else if (parsed.isVideo) {
+        setUploadStatus(`Video media loaded (${(file.size / (1024 * 1024)).toFixed(1)} MB) • Media intact`);
       } else {
         setUploadStatus(`Document loaded (${(file.size / 1024).toFixed(1)} KB)`);
       }
+
+      setFileDataUrl(effectiveUrl);
+      setContentTab('preview');
     } catch (err: any) {
       console.error('File parse error in revision:', err);
       setError('Could not parse file format. You can manually edit the content below.');
@@ -223,6 +300,14 @@ export const CreateVersionModal: React.FC<CreateVersionModalProps> = ({
       setError('Please provide a brief change summary of what was revised.');
       return;
     }
+    if (!effectiveFrom || !effectiveFrom.trim()) {
+      setError('Effective Date for Revision is mandatory.');
+      return;
+    }
+    if (!reviewDueDate || !reviewDueDate.trim()) {
+      setError('Re-review date is mandatory. Please select a re-review date.');
+      return;
+    }
     if (!rawContent.trim()) {
       setError('Document content is required.');
       return;
@@ -241,10 +326,11 @@ export const CreateVersionModal: React.FC<CreateVersionModalProps> = ({
           `${selectedMaster?.documentId}_v${calculatedNextVersion}.${
             mimeType?.startsWith('video/') || fileName?.toLowerCase().match(/\.(mp4|webm|mov|m4v|mkv|avi|ogv)$/)
               ? 'mp4'
-              : 'txt'
+              : 'pdf'
           }`,
         changeSummary: changeSummary.trim(),
         effectiveFrom: effectiveFrom || new Date().toISOString().split('T')[0],
+        reviewDueDate: reviewDueDate || new Date(Date.now() + 365 * 86400000).toISOString().split('T')[0],
         fileDataUrl,
         mimeType:
           mimeType ||
@@ -252,6 +338,8 @@ export const CreateVersionModal: React.FC<CreateVersionModalProps> = ({
             ? 'video/mp4'
             : fileName?.endsWith('.pdf')
             ? 'application/pdf'
+            : /<[a-z][\s\S]*>/i.test(rawContent)
+            ? 'text/html'
             : 'text/markdown'),
         previousVersionId: rejectedVersion?.id || selectedMaster?.currentPublishedVersionId || docVersions[0]?.id,
       });
@@ -370,20 +458,17 @@ export const CreateVersionModal: React.FC<CreateVersionModalProps> = ({
             </div>
           )}
 
-          {/* 1. EFFECTIVE DATE (TAKEN & ADDED FIRST FOR REVISION AS REQUESTED) */}
+          {/* EFFECTIVE DATE (TAKEN & ADDED FIRST FOR REVISION AS REQUESTED) */}
           <div className="bg-orange-50/40 border-2 border-orange-200/90 rounded-2xl p-4 space-y-3 shadow-xs">
             <div>
               <div className="flex items-center space-x-2">
-                <span className="w-5 h-5 rounded-md bg-[#FA7014] text-white flex items-center justify-center text-xs font-black shadow-xs">
-                  1
-                </span>
                 <label className="text-xs font-bold text-slate-900 uppercase tracking-wider flex items-center space-x-1.5" htmlFor="input-revision-effective-date">
                   <Calendar className="w-4 h-4 text-[#FA7014]" />
                   <span>Effective Date for Revision</span>
                   <span className="text-[#FA7014] font-black">*</span>
                 </label>
               </div>
-              <p className="text-[11px] text-slate-500 mt-1 ml-7">
+              <p className="text-[11px] text-slate-500 mt-1">
                 Specify when this revision becomes effective. This will be stamped into the official document header.
               </p>
             </div>
@@ -394,7 +479,7 @@ export const CreateVersionModal: React.FC<CreateVersionModalProps> = ({
                   id="input-revision-effective-date"
                   type="date"
                   value={effectiveFrom}
-                  onChange={(e) => setEffectiveFrom(e.target.value)}
+                  onChange={(e) => handleEffectiveFromChange(e.target.value)}
                   className="w-full text-sm font-semibold p-2.5 bg-white border border-slate-300 text-slate-900 rounded-xl focus:outline-hidden focus:ring-2 focus:ring-[#FA7014] shadow-xs cursor-pointer"
                   required
                 />
@@ -404,7 +489,7 @@ export const CreateVersionModal: React.FC<CreateVersionModalProps> = ({
               <div className="sm:col-span-6 flex flex-wrap gap-2">
                 <button
                   type="button"
-                  onClick={() => setEffectiveFrom(new Date().toISOString().split('T')[0])}
+                  onClick={() => handleEffectiveFromChange(new Date().toISOString().split('T')[0])}
                   className="text-[11px] font-semibold px-2.5 py-1.5 bg-white hover:bg-orange-50 text-slate-700 hover:text-[#FA7014] border border-slate-200 rounded-lg transition-colors shadow-2xs cursor-pointer"
                 >
                   Today
@@ -414,7 +499,7 @@ export const CreateVersionModal: React.FC<CreateVersionModalProps> = ({
                   onClick={() => {
                     const d = new Date();
                     d.setDate(d.getDate() + 7);
-                    setEffectiveFrom(d.toISOString().split('T')[0]);
+                    handleEffectiveFromChange(d.toISOString().split('T')[0]);
                   }}
                   className="text-[11px] font-semibold px-2.5 py-1.5 bg-white hover:bg-orange-50 text-slate-700 hover:text-[#FA7014] border border-slate-200 rounded-lg transition-colors shadow-2xs cursor-pointer"
                 >
@@ -425,12 +510,79 @@ export const CreateVersionModal: React.FC<CreateVersionModalProps> = ({
                   onClick={() => {
                     const d = new Date();
                     d.setMonth(d.getMonth() + 1, 1);
-                    setEffectiveFrom(d.toISOString().split('T')[0]);
+                    handleEffectiveFromChange(d.toISOString().split('T')[0]);
                   }}
                   className="text-[11px] font-semibold px-2.5 py-1.5 bg-white hover:bg-orange-50 text-slate-700 hover:text-[#FA7014] border border-slate-200 rounded-lg transition-colors shadow-2xs cursor-pointer"
                 >
                   1st Next Month
                 </button>
+              </div>
+            </div>
+
+            {/* RE-REVIEW DATE (JUST BELOW EFFECTIVE FROM DATE) */}
+            <div className="pt-3 border-t border-orange-200/80">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1 mb-1.5">
+                <label className="text-xs font-bold text-slate-900 uppercase tracking-wider flex items-center space-x-1.5" htmlFor="input-revision-rereview-date">
+                  <Calendar className="w-4 h-4 text-[#FA7014]" />
+                  <span>Re-review Date</span>
+                  <span className="text-[#FA7014] font-black">*</span>
+                </label>
+                <div className="flex items-center space-x-1.5">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const base = effectiveFrom ? new Date(effectiveFrom) : new Date();
+                      base.setMonth(base.getMonth() + 6);
+                      setReviewDueDate(base.toISOString().split('T')[0]);
+                    }}
+                    className="text-[10px] font-semibold px-2 py-0.5 bg-white hover:bg-orange-50 text-slate-700 hover:text-[#FA7014] border border-slate-200 rounded-md transition-colors cursor-pointer shadow-2xs"
+                  >
+                    +6 Months
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const base = effectiveFrom ? new Date(effectiveFrom) : new Date();
+                      base.setFullYear(base.getFullYear() + 1);
+                      setReviewDueDate(base.toISOString().split('T')[0]);
+                    }}
+                    className="text-[10px] font-semibold px-2 py-0.5 bg-white hover:bg-orange-50 text-slate-700 hover:text-[#FA7014] border border-slate-200 rounded-md transition-colors cursor-pointer shadow-2xs"
+                  >
+                    +1 Year (Annual)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const base = effectiveFrom ? new Date(effectiveFrom) : new Date();
+                      base.setFullYear(base.getFullYear() + 2);
+                      setReviewDueDate(base.toISOString().split('T')[0]);
+                    }}
+                    className="text-[10px] font-semibold px-2 py-0.5 bg-white hover:bg-orange-50 text-slate-700 hover:text-[#FA7014] border border-slate-200 rounded-md transition-colors cursor-pointer shadow-2xs"
+                  >
+                    +2 Years
+                  </button>
+                </div>
+              </div>
+              <p className="text-[11px] text-slate-500 mb-2 ml-0 sm:ml-5.5">
+                Specify the date by which this revised policy must undergo mandatory compliance re-review.
+              </p>
+
+              <div className="grid grid-cols-1 sm:grid-cols-12 gap-3 items-center">
+                <div className="sm:col-span-6">
+                  <input
+                    id="input-revision-rereview-date"
+                    type="date"
+                    value={reviewDueDate}
+                    onChange={(e) => setReviewDueDate(e.target.value)}
+                    className="w-full text-sm font-semibold p-2.5 bg-white border border-slate-300 text-slate-900 rounded-xl focus:outline-hidden focus:ring-2 focus:ring-[#FA7014] shadow-xs cursor-pointer"
+                    required
+                  />
+                </div>
+                <div className="sm:col-span-6">
+                  <span className="text-[11px] text-slate-500">
+                    Recommended: 1 year from effective date for corporate policies, or 6 months for dynamic operating guidelines.
+                  </span>
+                </div>
               </div>
             </div>
           </div>
@@ -653,31 +805,63 @@ export const CreateVersionModal: React.FC<CreateVersionModalProps> = ({
             </div>
 
             {parsingFile && (
-              <div className="text-xs text-slate-700 mb-2 font-mono bg-white p-2.5 rounded-xl border border-slate-200 flex items-center space-x-2">
-                <Clock className="w-3.5 h-3.5 animate-spin text-[#FA7014]" />
-                <span>Parsing file and extracting readable document content...</span>
+              <div className="text-xs text-slate-700 font-mono bg-white p-3 rounded-xl border border-slate-200 flex items-center space-x-2 shadow-xs">
+                <Clock className="w-4 h-4 animate-spin text-[#FA7014]" />
+                <span>Parsing file, applying corporate header/footer, and preparing intact multi-page preview...</span>
               </div>
             )}
 
             {fileName && !parsingFile && (
-              <div className="text-xs text-slate-800 mb-2 font-mono bg-white p-2.5 rounded-xl border border-slate-200 flex items-center justify-between">
-                <span className="truncate max-w-[70%]">Selected File: {fileName}</span>
-                <span className="text-[11px] text-[#FA7014] font-sans font-semibold flex items-center space-x-1">
-                  <CheckCircle2 className="w-3.5 h-3.5" />
-                  <span>{uploadStatus || 'File Ready'}</span>
-                </span>
+              <div className="space-y-3">
+                <div className="text-xs text-slate-800 font-mono bg-white p-3 rounded-xl border border-slate-200 flex flex-wrap items-center justify-between gap-2 shadow-xs">
+                  <div className="flex items-center space-x-2 truncate max-w-[75%]">
+                    <FileText className="w-4 h-4 text-[#FA7014] shrink-0" />
+                    <span className="font-bold text-slate-900 truncate">{fileName}</span>
+                  </div>
+                  <span className="text-[11px] text-emerald-700 bg-emerald-50 px-2.5 py-0.5 rounded-full border border-emerald-200 font-sans font-bold flex items-center space-x-1">
+                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                    <span>{uploadStatus || 'Multi-Page Structure Intact'}</span>
+                  </span>
+                </div>
+
+                {/* Content Header */}
+                <div className="flex items-center space-x-2 border-b border-slate-200 pb-2">
+                  <div className="text-xs font-bold px-3.5 py-1.5 rounded-xl bg-slate-900 text-white shadow-xs flex items-center space-x-1.5">
+                    <FileText className="w-3.5 h-3.5 text-[#FA7014]" />
+                    <span>Intact Revision Preview (Header & Footer Applied)</span>
+                  </div>
+                </div>
+
+                <div className="rounded-2xl border border-slate-200 overflow-hidden bg-slate-900/5 p-2">
+                  <DocumentViewer
+                    fileName={fileName}
+                    rawContent={rawContent}
+                    fileUrl={fileDataUrl}
+                    mimeType={mimeType}
+                    headerFooterData={{
+                      documentTitle: selectedMaster?.title || fileName.replace(/\.[^/.]+$/, ''),
+                      versionNumber: calculatedNextVersion || '1.1',
+                      effectiveDate: effectiveFrom || new Date().toISOString().split('T')[0],
+                      createdByName: currentUser.name,
+                      approvedByName: 'Not yet approved',
+                      approvedDate: 'Not yet approved',
+                      companyName: selectedMaster?.companyName || currentUser.companyName || 'Amaavigo',
+                    }}
+                  />
+                </div>
               </div>
             )}
 
-            <textarea
-              id="textarea-revised-content"
-              value={rawContent}
-              onChange={(e) => setRawContent(e.target.value)}
-              rows={10}
-              placeholder="Upload a PDF / DOCX file above, or type/paste new revision text here..."
-              className="w-full text-xs font-mono p-3 bg-white border border-slate-200 text-slate-900 rounded-xl focus:outline-hidden focus:ring-2 focus:ring-[#FA7014] leading-relaxed placeholder:text-slate-400"
-              required
-            />
+            {!fileName && !parsingFile && (
+              <WysiwygDocumentEditor
+                id="textarea-revised-content"
+                value={rawContent}
+                onChange={setRawContent}
+                placeholder="Upload a PDF / DOCX file above, or type, paste, and format new revision text directly here like in Microsoft Word..."
+                minHeight="280px"
+                required
+              />
+            )}
           </div>
 
           {/* BUTTONS */}

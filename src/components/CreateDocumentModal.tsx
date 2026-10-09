@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import {
   X,
   FileText,
@@ -16,6 +16,9 @@ import { ConfidentialityLevel, DocumentCategory, User } from '../types';
 import { governanceEngine } from '../services/governance';
 import { parseUploadedFile } from '../utils/fileParser';
 import { stripPolicyMetadataHeader } from '../utils/documentHeaderFooter';
+import { WysiwygDocumentEditor } from './WysiwygDocumentEditor';
+import { DocumentViewer } from './DocumentViewer';
+import { stampPdfWithHeaderFooter, stampDocxWithHeaderFooter } from '../utils/documentStamper';
 
 interface CreateDocumentModalProps {
   currentUser: User;
@@ -33,17 +36,22 @@ export const CreateDocumentModal: React.FC<CreateDocumentModalProps> = ({
   const [department, setDepartment] = useState('All Department');
   const [confidentiality, setConfidentiality] = useState<ConfidentialityLevel | ''>(ConfidentialityLevel.PUBLIC);
   const [acknowledgementRequired, setAcknowledgementRequired] = useState(true);
-  const [effectiveFrom, setEffectiveFrom] = useState('');
-  const [reviewDueDate, setReviewDueDate] = useState(
-    new Date(Date.now() + 365 * 86400000).toISOString().split('T')[0]
-  );
+  const [effectiveFrom, setEffectiveFrom] = useState(new Date().toISOString().split('T')[0]);
+  const [reviewDueDate, setReviewDueDate] = useState(() => {
+    const d = new Date();
+    d.setFullYear(d.getFullYear() + 1);
+    return d.toISOString().split('T')[0];
+  });
   const [description, setDescription] = useState('');
   const [rawContent, setRawContent] = useState('');
+  const [isPreviewMode, setIsPreviewMode] = useState(false);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
   const [fileName, setFileName] = useState('');
   const [fileDataUrl, setFileDataUrl] = useState<string>('');
   const [mimeType, setMimeType] = useState<string>('');
   const [parsingFile, setParsingFile] = useState<boolean>(false);
   const [uploadStatus, setUploadStatus] = useState<string>('');
+  const [contentTab, setContentTab] = useState<'preview' | 'editor'>('preview');
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
@@ -87,6 +95,17 @@ export const CreateDocumentModal: React.FC<CreateDocumentModalProps> = ({
     confidentiality === ConfidentialityLevel.PUBLIC ||
     confidentiality === ConfidentialityLevel.INTERNAL;
 
+  const handleEffectiveFromChange = (newDate: string) => {
+    setEffectiveFrom(newDate);
+    if (newDate) {
+      try {
+        const d = new Date(newDate);
+        d.setFullYear(d.getFullYear() + 1);
+        setReviewDueDate(d.toISOString().split('T')[0]);
+      } catch {}
+    }
+  };
+
   // Quick Template Injector for demo & testing
   const loadTemplate = (type: 'remote' | 'conduct' | 'wellness') => {
     setFileDataUrl('');
@@ -94,7 +113,10 @@ export const CreateDocumentModal: React.FC<CreateDocumentModalProps> = ({
     setUploadStatus('');
     setConfidentiality(ConfidentialityLevel.PUBLIC);
     setDepartment('All Department');
-    setEffectiveFrom(new Date().toISOString().split('T')[0]);
+    const todayStr = new Date().toISOString().split('T')[0];
+    const nextYearStr = new Date(Date.now() + 365 * 86400000).toISOString().split('T')[0];
+    setEffectiveFrom(todayStr);
+    setReviewDueDate(nextYearStr);
     if (type === 'remote') {
       setTitle('Hybrid Workplace & Remote Work Agreement');
       setCategory(DocumentCategory.POLICY);
@@ -161,22 +183,70 @@ Employees should notify their immediate manager via the HR self-service portal a
     setParsingFile(true);
     setError("");
     setFileName(file.name);
+    const docTitle = title.trim() || file.name.replace(/\.[^/.]+$/, "").replace(/[_-]/g, " ");
     if (!title) {
-      setTitle(file.name.replace(/\.[^/.]+$/, "").replace(/[_-]/g, " "));
+      setTitle(docTitle);
     }
 
     try {
       const parsed = await parseUploadedFile(file);
       setRawContent(parsed.extractedText || '');
-      setFileDataUrl(parsed.fileDataUrl || '');
-      setMimeType(parsed.mimeType || 'text/plain');
-      if (parsed.isVideo) {
-        setUploadStatus(`Video media loaded (${(file.size / (1024 * 1024)).toFixed(1)} MB) • Ready for approval`);
-      } else if (parsed.isPdf) {
-        setUploadStatus(`PDF document loaded (${(file.size / 1024).toFixed(1)} KB) • Text extracted successfully`);
+      let effectiveUrl = parsed.fileDataUrl || '';
+      const effectiveMime =
+        parsed.mimeType ||
+        (lowerName.endsWith('.pdf')
+          ? 'application/pdf'
+          : lowerName.endsWith('.docx')
+          ? 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+          : 'text/plain');
+      setMimeType(effectiveMime);
+
+      const isPdfFile = parsed.isPdf || lowerName.endsWith('.pdf');
+      const isDocxFile = lowerName.endsWith('.docx') || effectiveMime.includes('wordprocessingml');
+
+      // Pre-stamp PDF / DOCX with official corporate Header & Footer while keeping 100% of original pages, layout, and structure intact
+      if (isPdfFile && effectiveUrl) {
+        try {
+          const stamped = await stampPdfWithHeaderFooter(effectiveUrl, {
+            documentTitle: docTitle,
+            versionNumber: '1.0',
+            effectiveDate: effectiveFrom || new Date().toISOString().split('T')[0],
+            createdByName: currentUser.name,
+            approvedByName: 'Not yet approved',
+            approvedDate: 'Not yet approved',
+            companyName: currentUser.companyName || 'Amaavigo',
+          });
+          effectiveUrl = stamped.dataUrl;
+          setUploadStatus(`PDF document ready (${(file.size / 1024).toFixed(1)} KB) • Original structure intact • Header & footer applied`);
+        } catch (stampErr) {
+          console.warn('Initial PDF stamping note:', stampErr);
+          setUploadStatus(`PDF document loaded (${(file.size / 1024).toFixed(1)} KB) • Structure intact`);
+        }
+      } else if (isDocxFile && effectiveUrl) {
+        try {
+          const stamped = await stampDocxWithHeaderFooter(effectiveUrl, {
+            documentTitle: docTitle,
+            versionNumber: '1.0',
+            effectiveDate: effectiveFrom || new Date().toISOString().split('T')[0],
+            createdByName: currentUser.name,
+            approvedByName: 'Not yet approved',
+            approvedDate: 'Not yet approved',
+            companyName: currentUser.companyName || 'Amaavigo',
+          });
+          effectiveUrl = stamped.dataUrl;
+          setUploadStatus(`Word (.docx) ready (${(file.size / 1024).toFixed(1)} KB) • Original layout intact • Header & footer applied`);
+        } catch (stampErr) {
+          console.warn('Initial DOCX stamping note:', stampErr);
+          setUploadStatus(`Word document loaded (${(file.size / 1024).toFixed(1)} KB) • Structure intact`);
+        }
+      } else if (parsed.isVideo) {
+        setUploadStatus(`Video media loaded (${(file.size / (1024 * 1024)).toFixed(1)} MB) • Media intact`);
       } else {
         setUploadStatus(`Document loaded (${(file.size / 1024).toFixed(1)} KB)`);
       }
+
+      setFileDataUrl(effectiveUrl);
+      setContentTab('preview');
     } catch (err: any) {
       console.error('File parse error:', err);
       setError('Could not process file format. You can manually paste document text below.');
@@ -203,6 +273,10 @@ Employees should notify their immediate manager via the HR self-service portal a
       setError('Effective from Date is mandatory. Please select an effective date.');
       return;
     }
+    if (!reviewDueDate || !reviewDueDate.trim()) {
+      setError('Re-review date is mandatory. Please select a re-review date.');
+      return;
+    }
     if (!rawContent.trim()) {
       setError('Document content or file upload is required.');
       return;
@@ -226,16 +300,16 @@ Employees should notify their immediate manager via the HR self-service portal a
         effectiveFrom: effectiveFrom.trim(),
         reviewDueDate,
         description,
-        fileName: fileName || `${title.replace(/[^a-zA-Z0-9]/g, '_')}_v1.0.txt`,
+        fileName: fileName || `${title.replace(/[^a-zA-Z0-9]/g, '_')}_v1.0.pdf`,
         rawContent: stripPolicyMetadataHeader(rawContent),
         fileDataUrl,
         mimeType:
           mimeType ||
           (fileName?.toLowerCase().match(/\.(mp4|webm|mov|m4v|mkv|avi|ogv)$/)
             ? 'video/mp4'
-            : fileName?.endsWith('.pdf')
+            : fileName
             ? 'application/pdf'
-            : 'text/markdown'),
+            : 'text/html'),
       });
 
       onSuccess();
@@ -311,7 +385,7 @@ Employees should notify their immediate manager via the HR self-service portal a
             </div>
           </div>
 
-          {/* CATEGORY & DEPARTMENT */}
+          {/* CATEGORY & CONFIDENTIALITY LEVEL */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5" htmlFor="select-document-category">
@@ -331,6 +405,35 @@ Employees should notify their immediate manager via the HR self-service portal a
               </select>
             </div>
 
+            <div>
+              <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5" htmlFor="select-document-confidentiality">
+                Confidentiality Level <span className="text-[#FA7014]">*</span>
+              </label>
+              <select
+                id="select-document-confidentiality"
+                value={confidentiality}
+                onChange={(e) => handleConfidentialityChange(e.target.value as ConfidentialityLevel)}
+                className={`w-full text-sm p-2.5 bg-slate-50 border rounded-xl focus:outline-hidden focus:ring-2 focus:ring-[#FA7014] focus:bg-white cursor-pointer ${
+                  !confidentiality ? 'border-slate-300 text-slate-500' : 'border-slate-200 text-slate-900'
+                }`}
+                required
+              >
+                <option value="" disabled>-- Select Confidentiality Level (Mandatory) --</option>
+                <option value={ConfidentialityLevel.PUBLIC} className="bg-white text-slate-900 py-1">
+                  Public (All Employees)
+                </option>
+                <option value={ConfidentialityLevel.SPECIFIC_DEPARTMENT} className="bg-white text-slate-900 py-1 font-semibold text-amber-700">
+                  Specific Department
+                </option>
+                <option value={ConfidentialityLevel.INTERNAL} className="bg-white text-slate-900 py-1">
+                  Internal Company
+                </option>
+              </select>
+            </div>
+          </div>
+
+          {/* DEPARTMENT & ACKNOWLEDGEMENT */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <div className="flex items-center justify-between mb-1.5">
                 <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider" htmlFor="select-document-department">
@@ -392,35 +495,6 @@ Employees should notify their immediate manager via the HR self-service portal a
                 </p>
               ) : null}
             </div>
-          </div>
-
-          {/* CONFIDENTIALITY & ACKNOWLEDGEMENT */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5" htmlFor="select-document-confidentiality">
-                Confidentiality Level <span className="text-[#FA7014]">*</span>
-              </label>
-              <select
-                id="select-document-confidentiality"
-                value={confidentiality}
-                onChange={(e) => handleConfidentialityChange(e.target.value as ConfidentialityLevel)}
-                className={`w-full text-sm p-2.5 bg-slate-50 border rounded-xl focus:outline-hidden focus:ring-2 focus:ring-[#FA7014] focus:bg-white cursor-pointer ${
-                  !confidentiality ? 'border-slate-300 text-slate-500' : 'border-slate-200 text-slate-900'
-                }`}
-                required
-              >
-                <option value="" disabled>-- Select Confidentiality Level (Mandatory) --</option>
-                <option value={ConfidentialityLevel.PUBLIC} className="bg-white text-slate-900 py-1">
-                  Public (All Employees)
-                </option>
-                <option value={ConfidentialityLevel.SPECIFIC_DEPARTMENT} className="bg-white text-slate-900 py-1 font-semibold text-amber-700">
-                  Specific Department
-                </option>
-                <option value={ConfidentialityLevel.INTERNAL} className="bg-white text-slate-900 py-1">
-                  Internal Company
-                </option>
-              </select>
-            </div>
 
             <div className="flex flex-col justify-start">
               <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
@@ -463,10 +537,31 @@ Employees should notify their immediate manager via the HR self-service portal a
               id="input-effective-from"
               type="date"
               value={effectiveFrom}
-              onChange={(e) => setEffectiveFrom(e.target.value)}
+              onChange={(e) => handleEffectiveFromChange(e.target.value)}
               className="w-full text-sm p-2.5 bg-slate-50 border border-slate-200 text-slate-900 rounded-xl focus:outline-hidden focus:ring-2 focus:ring-[#FA7014] focus:bg-white cursor-pointer"
               required
             />
+            <p className="text-[11px] text-slate-500 mt-1">
+              Date on which this document officially becomes binding across the organization.
+            </p>
+          </div>
+
+          {/* RE-REVIEW DATE (JUST BELOW EFFECTIVE FROM DATE) */}
+          <div>
+            <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5" htmlFor="input-review-due-date">
+              Re-review Date <span className="text-[#FA7014]">*</span>
+            </label>
+            <input
+              id="input-review-due-date"
+              type="date"
+              value={reviewDueDate}
+              onChange={(e) => setReviewDueDate(e.target.value)}
+              className="w-full text-sm p-2.5 bg-slate-50 border border-slate-200 text-slate-900 rounded-xl focus:outline-hidden focus:ring-2 focus:ring-[#FA7014] focus:bg-white cursor-pointer"
+              required
+            />
+            <p className="text-[11px] text-slate-500 mt-1">
+              Scheduled date by which this document must undergo mandatory compliance re-review and revision.
+            </p>
           </div>
 
           {/* DESCRIPTION */}
@@ -483,51 +578,101 @@ Employees should notify their immediate manager via the HR self-service portal a
             />
           </div>
 
-          {/* FILE UPLOAD & TEXT EDITOR */}
-          <div className="border border-slate-200 rounded-2xl p-4 bg-slate-50/50">
-            <div className="flex items-center justify-between mb-2">
+          {/* FILE UPLOAD & DOCUMENT VIEWER / WYSIWYG EDITOR */}
+          <div className="border border-slate-200 rounded-2xl p-4 bg-slate-50/50 space-y-3">
+            <div className="flex flex-wrap items-center justify-between gap-2">
               <label className="block text-xs font-bold text-slate-900 uppercase tracking-wider">
-                Document Content / File (PDF, DOCX, Video) <span className="text-[#FA7014]">*</span>
+                Document Content / Master File (PDF, DOCX, Video) <span className="text-[#FA7014]">*</span>
               </label>
 
-              <label className="cursor-pointer inline-flex items-center space-x-1.5 text-xs font-semibold text-slate-700 hover:text-slate-900 bg-white border border-slate-200 px-3 py-1.5 rounded-xl shadow-xs hover:bg-slate-50 transition-colors">
-                <UploadCloud className="w-3.5 h-3.5 text-[#FA7014]" />
-                <span>Upload File</span>
-                <input
-                  type="file"
-                  accept=".pdf,.docx,video/*,.mp4,.webm,.mov,.m4v,.mkv,.avi"
-                  onChange={handleFileUpload}
-                  className="hidden"
-                />
-              </label>
+              <div className="flex items-center space-x-2">
+                {fileName && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setFileName('');
+                      setFileDataUrl('');
+                      setMimeType('text/markdown');
+                      setUploadStatus('');
+                      setContentTab('editor');
+                    }}
+                    className="text-xs text-rose-600 hover:text-rose-800 font-semibold px-2.5 py-1 bg-rose-50 hover:bg-rose-100 rounded-xl border border-rose-200 transition-colors cursor-pointer"
+                  >
+                    Clear File
+                  </button>
+                )}
+
+                <label className="cursor-pointer inline-flex items-center space-x-1.5 text-xs font-semibold text-slate-700 hover:text-slate-900 bg-white border border-slate-200 px-3 py-1.5 rounded-xl shadow-xs hover:bg-slate-50 transition-colors">
+                  <UploadCloud className="w-3.5 h-3.5 text-[#FA7014]" />
+                  <span>{fileName ? 'Replace File' : 'Upload File'}</span>
+                  <input
+                    type="file"
+                    accept=".pdf,.docx,video/*,.mp4,.webm,.mov,.m4v,.mkv,.avi"
+                    onChange={handleFileUpload}
+                    className="hidden"
+                  />
+                </label>
+              </div>
             </div>
 
             {parsingFile && (
-              <div className="text-xs text-slate-700 mb-2 font-mono bg-white p-2.5 rounded-xl border border-slate-200 flex items-center space-x-2">
-                <Clock className="w-3.5 h-3.5 animate-spin text-[#FA7014]" />
-                <span>Parsing file and extracting readable document content...</span>
+              <div className="text-xs text-slate-700 font-mono bg-white p-3 rounded-xl border border-slate-200 flex items-center space-x-2 shadow-xs">
+                <Clock className="w-4 h-4 animate-spin text-[#FA7014]" />
+                <span>Parsing file, applying corporate header/footer, and preparing intact multi-page preview...</span>
               </div>
             )}
 
             {fileName && !parsingFile && (
-              <div className="text-xs text-slate-800 mb-2 font-mono bg-white p-2.5 rounded-xl border border-slate-200 flex items-center justify-between">
-                <span className="truncate max-w-[70%]">Selected File: {fileName}</span>
-                <span className="text-[11px] text-[#FA7014] font-sans font-semibold flex items-center space-x-1">
-                  <CheckCircle2 className="w-3.5 h-3.5" />
-                  <span>{uploadStatus || 'Loaded'}</span>
-                </span>
+              <div className="space-y-3">
+                <div className="text-xs text-slate-800 font-mono bg-white p-3 rounded-xl border border-slate-200 flex flex-wrap items-center justify-between gap-2 shadow-xs">
+                  <div className="flex items-center space-x-2 truncate max-w-[75%]">
+                    <FileText className="w-4 h-4 text-[#FA7014] shrink-0" />
+                    <span className="font-bold text-slate-900 truncate">{fileName}</span>
+                  </div>
+                  <span className="text-[11px] text-emerald-700 bg-emerald-50 px-2.5 py-0.5 rounded-full border border-emerald-200 font-sans font-bold flex items-center space-x-1">
+                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                    <span>{uploadStatus || 'Multi-Page Structure Intact'}</span>
+                  </span>
+                </div>
+
+                {/* Content Header */}
+                <div className="flex items-center space-x-2 border-b border-slate-200 pb-2">
+                  <div className="text-xs font-bold px-3.5 py-1.5 rounded-xl bg-slate-900 text-white shadow-xs flex items-center space-x-1.5">
+                    <FileText className="w-3.5 h-3.5 text-[#FA7014]" />
+                    <span>Intact Document Preview (Header & Footer Applied)</span>
+                  </div>
+                </div>
+
+                <div className="rounded-2xl border border-slate-200 overflow-hidden bg-slate-900/5 p-2">
+                  <DocumentViewer
+                    fileName={fileName}
+                    rawContent={rawContent}
+                    fileUrl={fileDataUrl}
+                    mimeType={mimeType}
+                    headerFooterData={{
+                      documentTitle: title.trim() || fileName.replace(/\.[^/.]+$/, ''),
+                      versionNumber: '1.0',
+                      effectiveDate: effectiveFrom || new Date().toISOString().split('T')[0],
+                      createdByName: currentUser.name,
+                      approvedByName: 'Not yet approved',
+                      approvedDate: 'Not yet approved',
+                      companyName: currentUser.companyName || 'Amaavigo',
+                    }}
+                  />
+                </div>
               </div>
             )}
 
-            <textarea
-              id="textarea-document-content"
-              value={rawContent}
-              onChange={(e) => setRawContent(e.target.value)}
-              rows={8}
-              placeholder="Type, paste, or upload Markdown / policy text here..."
-              className="w-full text-xs font-mono p-3 bg-white border border-slate-200 text-slate-900 rounded-xl focus:outline-hidden focus:ring-2 focus:ring-[#FA7014] placeholder:text-slate-400"
-              required
-            />
+            {!fileName && !parsingFile && (
+              <WysiwygDocumentEditor
+                id="textarea-document-content"
+                value={rawContent}
+                onChange={setRawContent}
+                placeholder="Type, format, and edit document content directly here like in Microsoft Word..."
+                minHeight="260px"
+                required
+              />
+            )}
           </div>
 
           {/* SUBMIT BUTTONS */}

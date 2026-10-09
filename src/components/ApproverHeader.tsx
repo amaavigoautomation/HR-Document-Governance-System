@@ -2,6 +2,7 @@ import React from 'react';
 import {
   ShieldCheck,
   Users,
+  MessageSquare,
   History,
   LogOut,
   PanelLeftClose,
@@ -13,10 +14,11 @@ import { AmaavigoLogo } from './AmaavigoLogo';
 interface ApproverHeaderProps {
   currentUser: User;
   onLogout: () => void;
-  activeTab: 'reviewer' | 'compliance' | 'audit';
-  setActiveTab: (tab: 'reviewer' | 'compliance' | 'audit') => void;
+  activeTab: 'reviewer' | 'compliance' | 'suggestions' | 'audit';
+  setActiveTab: (tab: 'reviewer' | 'compliance' | 'suggestions' | 'audit') => void;
   notificationCount?: number;
   pendingComplianceCount?: number;
+  suggestionsCount?: number;
   onOpenNotifications?: () => void;
   isSidebarOpen?: boolean;
   onToggleSidebar?: () => void;
@@ -28,6 +30,7 @@ export const ApproverHeader: React.FC<ApproverHeaderProps> = ({
   activeTab,
   setActiveTab,
   pendingComplianceCount = 0,
+  suggestionsCount = 0,
   isSidebarOpen,
   onToggleSidebar,
 }) => {
@@ -104,6 +107,32 @@ export const ApproverHeader: React.FC<ApproverHeaderProps> = ({
             >
               <Users className="w-3.5 h-3.5" />
               <span>Compliance Tracker</span>
+            </button>
+
+            {/* Policy Suggestions Tab (Beside Compliance Tracker) */}
+            <button
+              id="approver-nav-suggestions"
+              type="button"
+              onClick={() => setActiveTab('suggestions')}
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center space-x-1.5 ${
+                activeTab === 'suggestions'
+                  ? 'bg-emerald-700 text-white shadow-sm'
+                  : 'text-slate-600 hover:bg-white hover:text-slate-900'
+              }`}
+            >
+              <MessageSquare className="w-3.5 h-3.5" />
+              <span>Policy Suggestions</span>
+              {suggestionsCount > 0 && (
+                <span
+                  className={`text-[10px] px-1.5 py-0.2 rounded-full font-bold transition-colors ${
+                    activeTab === 'suggestions'
+                      ? 'bg-white/25 text-white'
+                      : 'bg-emerald-100 text-emerald-800'
+                  }`}
+                >
+                  {suggestionsCount}
+                </span>
+              )}
             </button>
 
             {/* Audit Trail Tab */}

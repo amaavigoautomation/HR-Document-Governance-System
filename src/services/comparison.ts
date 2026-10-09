@@ -215,3 +215,252 @@ export function compareDocumentTexts(
     reviewerValidated: false,
   };
 }
+
+function stripHtmlAndHeaders(raw: string): string {
+  if (!raw) return '';
+  let clean = raw
+    .replace(/<!--AMAAVIGO_HEADER_START-->[\s\S]*?<!--AMAAVIGO_HEADER_END-->/gi, '')
+    .replace(/<!--AMAAVIGO_FOOTER_START-->[\s\S]*?<!--AMAAVIGO_FOOTER_END-->/gi, '')
+    .replace(/<table[^>]*class="[^"]*amaavigo-document-header[^"]*"[\s\S]*?<\/table>/gi, '')
+    .replace(/<table[^>]*class="[^"]*amaavigo-document-footer[^"]*"[\s\S]*?<\/table>/gi, '')
+    .replace(/<style[\s\S]*?<\/style>/gi, '')
+    .replace(/<script[\s\S]*?<\/script>/gi, '')
+    .replace(/<xml[\s\S]*?<\/xml>/gi, '')
+    // Convert paragraph and block closing tags into clean paragraph breaks
+    .replace(/<\/(p|div|h1|h2|h3|h4|h5|h6|li|tr|section|article|blockquote)>/gi, '\n\n')
+    .replace(/<br\s*\/?>/gi, '\n\n')
+    .replace(/<[^>]*>/g, ' ')
+    .replace(/&nbsp;/gi, ' ')
+    .replace(/&amp;/gi, '&')
+    .replace(/&lt;/gi, '<')
+    .replace(/&gt;/gi, '>')
+    .replace(/\r\n/g, '\n')
+    .replace(/\r/g, '\n');
+
+  return clean.trim();
+}
+
+export function diffWords(oldStr: string, newStr: string) {
+  const oldTokens = oldStr.trim().split(/(\s+)/);
+  const newTokens = newStr.trim().split(/(\s+)/);
+
+  const cleanOld = oldTokens.filter((t) => t.trim().length > 0).map((t) => t.toLowerCase().replace(/[^a-z0-9]/gi, ''));
+  const cleanNew = newTokens.filter((t) => t.trim().length > 0).map((t) => t.toLowerCase().replace(/[^a-z0-9]/gi, ''));
+
+  const setNew = new Set(cleanNew);
+  const setOld = new Set(cleanOld);
+
+  const oldWords = oldTokens.map((token) => {
+    const c = token.toLowerCase().replace(/[^a-z0-9]/gi, '');
+    const isRemoved = Boolean(c && !setNew.has(c));
+    return { text: token, isRemoved };
+  });
+
+  const newWords = newTokens.map((token) => {
+    const c = token.toLowerCase().replace(/[^a-z0-9]/gi, '');
+    const isAdded = Boolean(c && !setOld.has(c));
+    return { text: token, isAdded };
+  });
+
+  return { oldWords, newWords };
+}
+
+export interface PointDiffItem {
+  id: string;
+  pointNumber: string;
+  title: string;
+  type: 'added' | 'removed' | 'modified' | 'unchanged';
+  oldText: string;
+  newText: string;
+  oldWords: { text: string; isRemoved?: boolean }[];
+  newWords: { text: string; isAdded?: boolean }[];
+  summaryText?: string;
+}
+
+function generatePointSummary(type: 'added' | 'removed' | 'modified' | 'unchanged', oldWords: { text: string; isRemoved?: boolean }[], newWords: { text: string; isAdded?: boolean }[], title: string): string {
+  if (type === 'unchanged') return 'Point remains unchanged from baseline version.';
+  if (type === 'added') return `New point "${title}" introduced in this revision.`;
+  if (type === 'removed') return `Point "${title}" was removed from previous baseline version.`;
+
+  const addedSnippets = newWords
+    .filter((w) => w.isAdded)
+    .map((w) => w.text)
+    .join(' ')
+    .trim();
+
+  const removedSnippets = oldWords
+    .filter((w) => w.isRemoved)
+    .map((w) => w.text)
+    .join(' ')
+    .trim();
+
+  const truncate = (s: string, max = 120) => (s.length > max ? s.substring(0, max) + '...' : s);
+
+  if (addedSnippets && removedSnippets) {
+    return `Updated point: Added "${truncate(addedSnippets)}" and removed "${truncate(removedSnippets)}".`;
+  }
+  if (addedSnippets) {
+    return `Updated point: Added "${truncate(addedSnippets)}".`;
+  }
+  if (removedSnippets) {
+    return `Updated point: Removed "${truncate(removedSnippets)}".`;
+  }
+  return `Point "${title}" modified in this revision.`;
+}
+
+export function extractPointByPointDiffs(oldRaw: string, newRaw: string): PointDiffItem[] {
+  const cleanOld = stripHtmlAndHeaders(oldRaw);
+  const cleanNew = stripHtmlAndHeaders(newRaw);
+
+  const splitPoints = (text: string) => {
+    // 1. Initial split by double newlines / paragraph breaks
+    const rawParagraphs = text
+      .split(/\n\s*\n+/)
+      .map((p) => p.trim())
+      .filter((p) => p.replace(/[\s\u00A0\u200B]+/g, '').length > 0);
+
+    // 2. Further split blocks that contain numbered point markers e.g. "1. Purpose ... 2. Eligibility ..."
+    const subSplitBlocks: string[] = [];
+    rawParagraphs.forEach((block) => {
+      const pointMatches = block.split(/(?=\b(?:\d+\.|Point\s+\d+|Section\s+\d+|Clause\s+\d+|Article\s+\d+)\s+[A-Za-z0-9])/g);
+      pointMatches.forEach((sub) => {
+        const trimmed = sub.trim();
+        if (trimmed.length > 0) subSplitBlocks.push(trimmed);
+      });
+    });
+
+    const items: { label: string; title: string; content: string }[] = [];
+
+    subSplitBlocks.forEach((p, idx) => {
+      // Strip metadata headers like "Policy Owner: Human Resources..."
+      const cleanContent = p
+        .replace(/Policy\s*Owner\s*:\s*Human\s*Resources/gi, '')
+        .replace(/Effective\s*Date\s*:\s*\d{1,2}\s+[A-Za-z]+\s+\d{4}/gi, '')
+        .replace(/Review\s*Frequency\s*:[^\n]*/gi, '')
+        .replace(/Applies\s*To\s*:[^\n]*/gi, '')
+        .trim();
+
+      const textToUse = cleanContent || p;
+      const firstLine = textToUse.split('\n')[0].trim();
+      const matchHeader = firstLine.match(/^(?:Point\s+\d+|Section\s+\d+|Clause\s+\d+|Article\s+\d+|\d+\.|\d+\)|\#+)\s*(.*)/i);
+
+      let label = `Point ${idx + 1}`;
+      let title = firstLine.substring(0, 60).replace(/^#+\s*/, '').trim();
+
+      if (matchHeader) {
+        const matchedMarker = matchHeader[0].trim();
+        label = matchedMarker.length > 25 ? matchedMarker.substring(0, 25) : matchedMarker;
+        if (matchHeader[1]) {
+          title = matchHeader[1].substring(0, 60).trim();
+        }
+      }
+
+      if (!title || title.length < 3) {
+        title = textToUse.substring(0, 50).trim();
+      }
+
+      items.push({
+        label,
+        title: title || `Point ${idx + 1}`,
+        content: textToUse,
+      });
+    });
+
+    return items;
+  };
+
+  const oldPoints = splitPoints(cleanOld);
+  const newPoints = splitPoints(cleanNew);
+
+  const results: PointDiffItem[] = [];
+
+  const oldMatched = new Set<number>();
+  const newMatched = new Set<number>();
+
+  // 1. Match by title/label
+  newPoints.forEach((nP, nIdx) => {
+    const oIdx = oldPoints.findIndex((oP, i) => !oldMatched.has(i) && oP.title.toLowerCase() === nP.title.toLowerCase());
+    if (oIdx !== -1) {
+      oldMatched.add(oIdx);
+      newMatched.add(nIdx);
+      const oP = oldPoints[oIdx];
+      const isSame = oP.content.trim() === nP.content.trim();
+      const { oldWords, newWords } = diffWords(oP.content, nP.content);
+      const type = isSame ? 'unchanged' : 'modified';
+
+      results.push({
+        id: `pt-${nIdx}-${oIdx}`,
+        pointNumber: nP.label || `Point ${nIdx + 1}`,
+        title: nP.title,
+        type,
+        oldText: oP.content,
+        newText: nP.content,
+        oldWords,
+        newWords,
+        summaryText: generatePointSummary(type, oldWords, newWords, nP.title),
+      });
+    }
+  });
+
+  // 2. Match remaining by index order
+  newPoints.forEach((nP, nIdx) => {
+    if (newMatched.has(nIdx)) return;
+    const availableOldIdx = oldPoints.findIndex((_, i) => !oldMatched.has(i));
+
+    if (availableOldIdx !== -1) {
+      oldMatched.add(availableOldIdx);
+      newMatched.add(nIdx);
+      const oP = oldPoints[availableOldIdx];
+      const isSame = oP.content.trim() === nP.content.trim();
+      const { oldWords, newWords } = diffWords(oP.content, nP.content);
+      const type = isSame ? 'unchanged' : 'modified';
+
+      results.push({
+        id: `pt-seq-${nIdx}-${availableOldIdx}`,
+        pointNumber: nP.label || `Point ${nIdx + 1}`,
+        title: nP.title || oP.title,
+        type,
+        oldText: oP.content,
+        newText: nP.content,
+        oldWords,
+        newWords,
+        summaryText: generatePointSummary(type, oldWords, newWords, nP.title || oP.title),
+      });
+    } else {
+      // Added point
+      newMatched.add(nIdx);
+      const { newWords } = diffWords('', nP.content);
+      results.push({
+        id: `pt-add-${nIdx}`,
+        pointNumber: nP.label || `Point ${nIdx + 1}`,
+        title: nP.title,
+        type: 'added',
+        oldText: '(Point did not exist in baseline version)',
+        newText: nP.content,
+        oldWords: [],
+        newWords,
+        summaryText: generatePointSummary('added', [], newWords, nP.title),
+      });
+    }
+  });
+
+  // 3. Any leftover old points are removed
+  oldPoints.forEach((oP, oIdx) => {
+    if (!oldMatched.has(oIdx)) {
+      const { oldWords } = diffWords(oP.content, '');
+      results.push({
+        id: `pt-rem-${oIdx}`,
+        pointNumber: oP.label || `Point ${oIdx + 1}`,
+        title: oP.title,
+        type: 'removed',
+        oldText: oP.content,
+        newText: '(Point removed in new revision)',
+        oldWords,
+        newWords: [],
+        summaryText: generatePointSummary('removed', oldWords, [], oP.title),
+      });
+    }
+  });
+
+  return results;
+}

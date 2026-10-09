@@ -324,7 +324,7 @@ export const DocumentDetailModal: React.FC<DocumentDetailModalProps> = ({
                       </div>
 
                       {/* Content & Metadata */}
-                      <div className="mt-3 grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs text-slate-600">
+                      <div className="mt-3 grid grid-cols-1 sm:grid-cols-4 gap-3 text-xs text-slate-600">
                         <div>
                           <span className="text-slate-500 block text-[10px] uppercase font-bold">Created By</span>
                           <span className="font-medium text-slate-900">{ver.createdByName}</span>
@@ -343,6 +343,16 @@ export const DocumentDetailModal: React.FC<DocumentDetailModalProps> = ({
                               {formatIST(ver.reviewedAt)}
                             </span>
                           )}
+                        </div>
+
+                        <div>
+                          <span className="text-slate-500 block text-[10px] uppercase font-bold">Effective & Re-review</span>
+                          <span className="font-medium text-slate-900 block">
+                            Effective: <span className="font-mono text-[#FA7014] font-bold">{formatDDMMYYYY(ver.effectiveFrom || ver.createdAt)}</span>
+                          </span>
+                          <span className="text-slate-500 text-[11px] block">
+                            Re-review: <span className="font-mono font-semibold text-slate-700">{formatDDMMYYYY(ver.reviewDueDate, '1 Year')}</span>
+                          </span>
                         </div>
 
                         <div>

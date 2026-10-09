@@ -29,6 +29,7 @@ import {
 import { recruitmentService } from '../services/recruitmentService';
 import { RecruitmentOverviewResult, SheetRowData, isExcludedSheetTab } from '../services/serverSheets';
 import { User, UserRole } from '../types';
+import { CandidateEvaluationSection } from './CandidateEvaluationSection';
 
 interface TalentAcquisitionOverviewProps {
   currentUser: User;
@@ -1322,6 +1323,25 @@ export const TalentAcquisitionOverview: React.FC<TalentAcquisitionOverviewProps>
           </div>
         )}
       </div>
+
+      {/* ============================================================ */}
+      {/* AI-POWERED CANDIDATE EVALUATION & RECOMMENDATION SECTION     */}
+      {/* Positioned immediately below Explore Sheet Data section      */}
+      {/* ============================================================ */}
+      <CandidateEvaluationSection
+        currentUser={currentUser}
+        activeDesignation={
+          activeSheetTab || (visibleSheetTabs.length > 0 ? visibleSheetTabs[0] : 'Performance Marketing Expert')
+        }
+        availableDesignations={visibleSheetTabs}
+        onSelectDesignation={(newDesig) => {
+          setActiveSheetTab(newDesig);
+          setSelectedStatusFilter('ALL');
+          setSheetSearchQuery('');
+          setCurrentPage(1);
+        }}
+        parentRefreshCount={refreshCount}
+      />
     </div>
   );
 };

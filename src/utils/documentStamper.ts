@@ -88,6 +88,96 @@ export function toUint8Array(input: Uint8Array | ArrayBuffer | string): Uint8Arr
 }
 
 /**
+ * Asynchronously resolves various document inputs (data URL, API URL, Blob URL, remote URL,
+ * IndexedDB cache, or Uint8Array) into pure Uint8Array binary bytes.
+ */
+export async function resolveDocumentBytes(
+  input: Uint8Array | ArrayBuffer | string
+): Promise<Uint8Array> {
+  if (input instanceof Uint8Array) return input;
+  if (input instanceof ArrayBuffer) return new Uint8Array(input);
+
+  if (typeof input === 'string') {
+    // 1. Data URL
+    if (input.startsWith('data:')) {
+      const cleanBase64 = input.includes(',') ? input.split(',')[1] : input;
+      try {
+        const binary = atob(cleanBase64.trim());
+        const bytes = new Uint8Array(binary.length);
+        for (let i = 0; i < binary.length; i++) {
+          bytes[i] = binary.charCodeAt(i);
+        }
+        return bytes;
+      } catch (e) {
+        console.warn('[resolveDocumentBytes] Data URL decode warning:', e);
+      }
+    }
+
+    // 2. Fetchable URLs (API endpoint, relative path, HTTP/HTTPS, Blob URL)
+    if (
+      input.startsWith('/') ||
+      input.startsWith('http://') ||
+      input.startsWith('https://') ||
+      input.startsWith('blob:')
+    ) {
+      try {
+        const resp = await fetch(input);
+        if (resp.ok) {
+          const ab = await resp.arrayBuffer();
+          return new Uint8Array(ab);
+        }
+      } catch (fetchErr) {
+        console.warn('[resolveDocumentBytes] Network fetch failed, checking local cache:', fetchErr);
+      }
+    }
+
+    // 3. Search client-side IndexedDB for cached media
+    try {
+      const cached = await findMediaInIndexedDb([input]);
+      if (cached?.dataUrl && cached.dataUrl.startsWith('data:')) {
+        const cleanBase64 = cached.dataUrl.includes(',') ? cached.dataUrl.split(',')[1] : cached.dataUrl;
+        const binary = atob(cleanBase64.trim());
+        const bytes = new Uint8Array(binary.length);
+        for (let i = 0; i < binary.length; i++) {
+          bytes[i] = binary.charCodeAt(i);
+        }
+        return bytes;
+      }
+      if (cached?.blob) {
+        const ab = await cached.blob.arrayBuffer();
+        return new Uint8Array(ab);
+      }
+    } catch (idbErr) {
+      console.warn('[resolveDocumentBytes] IndexedDB lookup failed:', idbErr);
+    }
+
+    // 4. Raw base64 string without data prefix
+    try {
+      const clean = input.trim();
+      if (/^[A-Za-z0-9+/=]+$/.test(clean) && clean.length % 4 === 0) {
+        const binary = atob(clean);
+        const bytes = new Uint8Array(binary.length);
+        for (let i = 0; i < binary.length; i++) {
+          bytes[i] = binary.charCodeAt(i);
+        }
+        return bytes;
+      }
+    } catch {}
+
+    // 5. Binary character string fallback
+    try {
+      const bytes = new Uint8Array(input.length);
+      for (let i = 0; i < input.length; i++) {
+        bytes[i] = input.charCodeAt(i) & 0xff;
+      }
+      return bytes;
+    } catch {}
+  }
+
+  throw new Error('Unsupported document input format');
+}
+
+/**
  * Escapes XML special characters for OpenXML Word documents
  */
 function escapeXml(str: string): string {
@@ -100,30 +190,63 @@ function escapeXml(str: string): string {
 }
 
 /**
- * Wraps text cleanly into multiple lines based on maximum allowed width in PDF points
+ * Wraps text cleanly into multiple lines based on maximum allowed width in PDF points.
+ * Intelligently handles compound words, underscores, hyphens, slashes, and long words
+ * so text NEVER overflows or overlaps adjacent table columns.
  */
 function wrapPdfText(text: string, maxWidth: number, font: PDFFont, fontSize: number): string[] {
-  const words = text.split(/\s+/).filter(Boolean);
-  if (words.length === 0) return [''];
+  if (!text) return [''];
+  const cleanText = text.trim();
+  if (!cleanText) return [''];
+
+  // Break text into tokens allowing breaks on whitespace, underscores, hyphens, slashes
+  // to prevent long file names or snake_case titles from overflowing column bounds
+  const rawTokens = cleanText.split(/(\s+|_|-|\/)/).filter(Boolean);
+  const words: string[] = [];
+
+  for (const token of rawTokens) {
+    if (font.widthOfTextAtSize(token, fontSize) <= maxWidth) {
+      words.push(token);
+    } else {
+      // Token itself is wider than maxWidth! Break it safely character by character
+      let sub = '';
+      for (let i = 0; i < token.length; i++) {
+        const char = token[i];
+        if (font.widthOfTextAtSize(sub + char, fontSize) <= maxWidth) {
+          sub += char;
+        } else {
+          if (sub) words.push(sub);
+          sub = char;
+        }
+      }
+      if (sub) words.push(sub);
+    }
+  }
+
   const lines: string[] = [];
   let currentLine = '';
 
-  for (const word of words) {
-    const candidate = currentLine ? `${currentLine} ${word}` : word;
-    const width = font.widthOfTextAtSize(candidate, fontSize);
-    if (width <= maxWidth) {
+  for (const token of words) {
+    const isDelimiter = /^[_\-\/\s]$/.test(token);
+    const candidate = currentLine
+      ? (isDelimiter || currentLine.endsWith(' ') || currentLine.endsWith('_') || currentLine.endsWith('-') || currentLine.endsWith('/')
+          ? `${currentLine}${token}`
+          : `${currentLine} ${token}`)
+      : token;
+
+    if (font.widthOfTextAtSize(candidate, fontSize) <= maxWidth) {
       currentLine = candidate;
     } else {
-      if (currentLine) {
-        lines.push(currentLine);
+      if (currentLine && currentLine.trim()) {
+        lines.push(currentLine.trim());
       }
-      currentLine = word;
+      currentLine = token.trim();
     }
   }
-  if (currentLine) {
-    lines.push(currentLine);
+  if (currentLine && currentLine.trim()) {
+    lines.push(currentLine.trim());
   }
-  return lines;
+  return lines.length > 0 ? lines : [''];
 }
 
 /**
@@ -193,27 +316,11 @@ export function isPdfAlreadyStamped(doc: PDFDocument): boolean {
  */
 export async function stampPdfWithHeaderFooter(
   sourcePdfInput: Uint8Array | ArrayBuffer | string,
-  meta: HeaderFooterMetadata
+  meta: HeaderFooterMetadata,
+  options?: { forceRestamp?: boolean }
 ): Promise<StampResult> {
-  const sourceBytes = toUint8Array(sourcePdfInput);
+  const sourceBytes = await resolveDocumentBytes(sourcePdfInput);
   const srcDoc = await PDFDocument.load(sourceBytes, { ignoreEncryption: true });
-
-  // Guard against duplicate stamping: If already stamped with Amaavigo header/footer, return untouched
-  if (isPdfAlreadyStamped(srcDoc)) {
-    const blob = new Blob([sourceBytes], { type: 'application/pdf' });
-    const dataUrl =
-      typeof sourcePdfInput === 'string' && sourcePdfInput.startsWith('data:')
-        ? sourcePdfInput
-        : `data:application/pdf;base64,${bytesToBase64(sourceBytes)}`;
-    return {
-      bytes: sourceBytes,
-      blob,
-      dataUrl,
-    };
-  }
-
-  const pageIndices = srcDoc.getPageIndices();
-  const targetDoc = await PDFDocument.create();
 
   const cleanVer = cleanVersionNumber(meta.versionNumber);
   const effective = formatDDMMYYYY(meta.effectiveDate);
@@ -233,36 +340,58 @@ export async function stampPdfWithHeaderFooter(
   const creator = meta.createdByName || 'HR Author';
   const title = meta.documentTitle || 'Document';
 
+  // Guard against duplicate stamping: If already stamped with Amaavigo header/footer AND has full-width intact layout, return untouched
+  // unless forceRestamp is requested OR approving an unapproved stamped document
+  if (!options?.forceRestamp && isPdfAlreadyStamped(srcDoc)) {
+    const keywords = srcDoc.getKeywords() || '';
+    const alreadyHadApproval = keywords.includes('approved:true');
+    const alreadyHadIntactLayout = keywords.includes('AmaavigoIntactFullWidth');
+    if (alreadyHadIntactLayout && (!isApproved || alreadyHadApproval)) {
+      const blob = new Blob([sourceBytes], { type: 'application/pdf' });
+      const dataUrl =
+        typeof sourcePdfInput === 'string' && sourcePdfInput.startsWith('data:')
+          ? sourcePdfInput
+          : `data:application/pdf;base64,${bytesToBase64(sourceBytes)}`;
+      return {
+        bytes: sourceBytes,
+        blob,
+        dataUrl,
+      };
+    }
+  }
+
   // Mark document metadata so it is reliably recognized as stamped in future passes
-  targetDoc.setSubject('AmaavigoGovernanceStamped');
-  targetDoc.setKeywords(['AmaavigoGovernanceStamped', `v:${cleanVer}`, 'corporate-governance']);
-  targetDoc.setAuthor('Amaavigo Governance Engine');
-  targetDoc.setTitle(title);
+  srcDoc.setSubject('AmaavigoGovernanceStamped');
+  srcDoc.setKeywords([
+    'AmaavigoGovernanceStamped',
+    `v:${cleanVer}`,
+    `approved:${isApproved}`,
+    'corporate-governance',
+    'AmaavigoIntactFullWidth',
+  ]);
+  srcDoc.setTitle(title);
 
-  // Copy original pages directly to preserve all fonts, vector streams, and layouts 100% untouched
-  const copiedPages = await targetDoc.copyPages(srcDoc, pageIndices);
+  const font = await srcDoc.embedFont(StandardFonts.Helvetica);
+  const fontBold = await srcDoc.embedFont(StandardFonts.HelveticaBold);
 
-  const font = await targetDoc.embedFont(StandardFonts.Helvetica);
-  const fontBold = await targetDoc.embedFont(StandardFonts.HelveticaBold);
+  const pageCount = srcDoc.getPageCount();
 
-  for (let i = 0; i < copiedPages.length; i++) {
-    const page = copiedPages[i];
-    targetDoc.addPage(page);
-
+  for (let i = 0; i < pageCount; i++) {
+    const page = srcDoc.getPage(i);
     const { width: origW, height: origH } = page.getSize();
 
-    // Dimensions for Header Table
+    // Dimensions for Header Table (kept compact at top margin to keep document 100% intact without empty space)
     const marginX = 36;
     const tableW = origW - marginX * 2;
-    const headerH = 48;
-    const topMargin = 14;
+    const headerH = 46;
+    const topMargin = 8;
     const headerY = origH - topMargin - headerH;
 
     // Dimensions for Footer Table
-    const footerH = 34;
-    const footerY = 14;
+    const footerH = 28;
+    const footerY = 8;
 
-    // Header Background & Slate Border (drawn above original untouched page content)
+    // 1. Draw Header Background & Slate Border (stamped cleanly above content with solid white background)
     page.drawRectangle({
       x: marginX,
       y: headerY,
@@ -274,10 +403,10 @@ export async function stampPdfWithHeaderFooter(
     });
 
     // Column boundaries:
-    // Give Document Name the largest share so even long titles fit without truncation
-    const col1W = 110;
-    const col3W = 68;
-    const col4W = 95;
+    // Balanced allocation: Document Name gets generous space, Col 3 and Col 4 never get clipped
+    const col1W = 108;
+    const col3W = 74;
+    const col4W = 98;
     const col2W = tableW - col1W - col3W - col4W;
 
     const col1X = marginX;
@@ -310,37 +439,37 @@ export async function stampPdfWithHeaderFooter(
       x: col1X + 8,
       y: headerY + 24,
       font: fontBold,
-      size: 14,
+      size: 13.5,
       color: rgb(24 / 255, 26 / 255, 30 / 255),
     });
     page.drawCircle({
-      x: col1X + 68,
-      y: headerY + 29,
-      size: 4,
+      x: col1X + 66,
+      y: headerY + 28,
+      size: 3.8,
       borderColor: rgb(250 / 255, 112 / 255, 20 / 255),
       borderWidth: 2,
     });
     page.drawRectangle({
-      x: col1X + 61,
-      y: headerY + 35,
+      x: col1X + 59,
+      y: headerY + 34,
       width: 3,
       height: 3,
       color: rgb(250 / 255, 112 / 255, 20 / 255),
     });
     page.drawText('Where Brand takes Flight', {
       x: col1X + 8,
-      y: headerY + 10,
+      y: headerY + 9,
       font,
-      size: 5.8,
+      size: 5.6,
       color: rgb(100 / 255, 116 / 255, 139 / 255),
     });
 
-    // Col 2: Document Name - Full display without any ellipsis or truncation
+    // Col 2: Document Name - Full display without any ellipsis or title overlap
     page.drawText('Document Name:', {
       x: col2X + 8,
-      y: headerY + headerH - 14,
+      y: headerY + headerH - 12,
       font: fontBold,
-      size: 7,
+      size: 6.8,
       color: rgb(15 / 255, 23 / 255, 42 / 255),
     });
 
@@ -353,14 +482,14 @@ export async function stampPdfWithHeaderFooter(
       titleLines = wrapPdfText(title, maxTitleW, fontBold, titleFontSize);
     }
     if (titleLines.length > 3) {
-      titleFontSize = 7;
+      titleFontSize = 6.8;
       titleLines = wrapPdfText(title, maxTitleW, fontBold, titleFontSize);
     }
 
     if (titleLines.length === 1) {
       page.drawText(titleLines[0], {
         x: col2X + 8,
-        y: headerY + 16,
+        y: headerY + 15,
         font: fontBold,
         size: titleFontSize,
         color: rgb(30 / 255, 41 / 255, 59 / 255),
@@ -368,7 +497,7 @@ export async function stampPdfWithHeaderFooter(
     } else if (titleLines.length === 2) {
       page.drawText(titleLines[0], {
         x: col2X + 8,
-        y: headerY + 22,
+        y: headerY + 21,
         font: fontBold,
         size: titleFontSize,
         color: rgb(30 / 255, 41 / 255, 59 / 255),
@@ -382,7 +511,7 @@ export async function stampPdfWithHeaderFooter(
       });
     } else {
       const lineH = 9;
-      const startY = headerY + headerH - 24;
+      const startY = headerY + 23;
       titleLines.slice(0, 3).forEach((line, idx) => {
         page.drawText(line, {
           x: col2X + 8,
@@ -394,28 +523,28 @@ export async function stampPdfWithHeaderFooter(
       });
     }
 
-    // Col 3: Version
+    // Col 3: Version - Cleanly centered
     page.drawText(`Version: ${cleanVer}`, {
       x: col3X + 8,
-      y: headerY + Math.round(headerH / 2) - 3,
+      y: headerY + 18,
       font: fontBold,
-      size: 8.5,
+      size: 8,
       color: rgb(15 / 255, 23 / 255, 42 / 255),
     });
 
-    // Col 4: Effective Date
+    // Col 4: Effective Date - Positioned without label/date collision
     page.drawText('Effective date :', {
       x: col4X + 8,
-      y: headerY + headerH - 14,
+      y: headerY + headerH - 12,
       font: fontBold,
-      size: 7,
+      size: 6.8,
       color: rgb(15 / 255, 23 / 255, 42 / 255),
     });
     page.drawText(effective, {
       x: col4X + 8,
-      y: headerY + 16,
+      y: headerY + 15,
       font,
-      size: 8.5,
+      size: 8,
       color: rgb(30 / 255, 41 / 255, 59 / 255),
     });
 
@@ -447,53 +576,53 @@ export async function stampPdfWithHeaderFooter(
     // Col 1: Created by
     page.drawText('Created by:', {
       x: marginX + 8,
-      y: footerY + 22,
+      y: footerY + footerH - 10,
       font: fontBold,
-      size: 7.2,
+      size: 6.8,
       color: rgb(15 / 255, 23 / 255, 42 / 255),
     });
     page.drawText(creator, {
       x: marginX + 8,
-      y: footerY + 8,
+      y: footerY + 6,
       font,
-      size: 8.2,
+      size: 7.8,
       color: rgb(30 / 255, 41 / 255, 59 / 255),
     });
 
     // Col 2: Approved by
     page.drawText('Approved by:', {
       x: marginX + footColW + 8,
-      y: footerY + 22,
+      y: footerY + footerH - 10,
       font: fontBold,
-      size: 7.2,
+      size: 6.8,
       color: rgb(15 / 255, 23 / 255, 42 / 255),
     });
     page.drawText(approver, {
       x: marginX + footColW + 8,
-      y: footerY + 8,
+      y: footerY + 6,
       font,
-      size: 8.2,
-      color: rgb(30 / 255, 41 / 255, 59 / 255),
+      size: 7.8,
+      color: isApproved ? rgb(22 / 255, 101 / 255, 52 / 255) : rgb(148 / 255, 163 / 255, 184 / 255),
     });
 
     // Col 3: Approved Date
     page.drawText('Approved Date:', {
       x: marginX + footColW * 2 + 8,
-      y: footerY + 22,
+      y: footerY + footerH - 10,
       font: fontBold,
-      size: 7.2,
+      size: 6.8,
       color: rgb(15 / 255, 23 / 255, 42 / 255),
     });
     page.drawText(approvedDt, {
       x: marginX + footColW * 2 + 8,
-      y: footerY + 8,
+      y: footerY + 6,
       font,
-      size: 8.2,
-      color: rgb(30 / 255, 41 / 255, 59 / 255),
+      size: 7.8,
+      color: isApproved ? rgb(22 / 255, 101 / 255, 52 / 255) : rgb(148 / 255, 163 / 255, 184 / 255),
     });
   }
 
-  const stampedBytes = await targetDoc.save();
+  const stampedBytes = await srcDoc.save();
   const blob = new Blob([stampedBytes], { type: 'application/pdf' });
   const dataUrl = `data:application/pdf;base64,${bytesToBase64(stampedBytes)}`;
 
@@ -745,7 +874,7 @@ export async function stampDocxWithHeaderFooter(
   sourceDocxInput: Uint8Array | ArrayBuffer | string,
   meta: HeaderFooterMetadata
 ): Promise<StampResult> {
-  const sourceBytes = toUint8Array(sourceDocxInput);
+  const sourceBytes = await resolveDocumentBytes(sourceDocxInput);
   const zip = await JSZip.loadAsync(sourceBytes);
 
   const cleanVer = cleanVersionNumber(meta.versionNumber);
@@ -847,22 +976,22 @@ export async function stampDocxWithHeaderFooter(
       if (cleaned.includes('<w:pgMar')) {
         cleaned = cleaned.replace(/<w:pgMar\s+([^>]*)\/>/g, (match, attrs) => {
           let updated = attrs;
-          if (!/w:header=/i.test(updated)) updated += ' w:header="720"';
-          if (!/w:footer=/i.test(updated)) updated += ' w:footer="720"';
+          if (!/w:header=/i.test(updated)) updated += ' w:header="540"';
+          if (!/w:footer=/i.test(updated)) updated += ' w:footer="540"';
           if (/w:top="\d+"/i.test(updated)) {
-            updated = updated.replace(/w:top="(\d+)"/i, (m, val) => (Number(val) < 1800 ? 'w:top="1800"' : m));
+            updated = updated.replace(/w:top="(\d+)"/i, (m, val) => (Number(val) < 2160 ? 'w:top="2160"' : m));
           } else {
-            updated += ' w:top="1800"';
+            updated += ' w:top="2160"';
           }
           if (/w:bottom="\d+"/i.test(updated)) {
-            updated = updated.replace(/w:bottom="(\d+)"/i, (m, val) => (Number(val) < 1600 ? 'w:bottom="1600"' : m));
+            updated = updated.replace(/w:bottom="(\d+)"/i, (m, val) => (Number(val) < 1800 ? 'w:bottom="1800"' : m));
           } else {
-            updated += ' w:bottom="1600"';
+            updated += ' w:bottom="1800"';
           }
           return `<w:pgMar ${updated}/>`;
         });
       } else {
-        cleaned += '<w:pgMar w:top="1800" w:right="1440" w:bottom="1600" w:left="1440" w:header="720" w:footer="720" w:gutter="0"/>';
+        cleaned += '<w:pgMar w:top="2160" w:right="1440" w:bottom="1800" w:left="1440" w:header="540" w:footer="540" w:gutter="0"/>';
       }
 
       // Per OpenXML specification, headerReference and footerReference MUST be placed first inside w:sectPr
@@ -898,6 +1027,440 @@ export async function stampDocxWithHeaderFooter(
     blob,
     dataUrl,
   };
+}
+
+interface TextRunFormattingProps {
+  bold?: boolean;
+  italics?: boolean;
+  underline?: boolean;
+  strike?: boolean;
+  color?: string;
+  size?: number; // in half-pts (e.g. 21 = 10.5pt, 24 = 12pt)
+  font?: string;
+}
+
+function extractHexFromColorString(colorStr?: string): string | undefined {
+  if (!colorStr) return undefined;
+  const s = colorStr.trim().toLowerCase();
+  if (s.startsWith('#')) {
+    const hex = s.substring(1);
+    if (hex.length === 3) {
+      return hex.split('').map(c => c + c).join('').toUpperCase();
+    }
+    return hex.toUpperCase();
+  }
+  if (s.startsWith('rgb')) {
+    const matches = s.match(/\d+/g);
+    if (matches && matches.length >= 3) {
+      const r = parseInt(matches[0], 10).toString(16).padStart(2, '0');
+      const g = parseInt(matches[1], 10).toString(16).padStart(2, '0');
+      const b = parseInt(matches[2], 10).toString(16).padStart(2, '0');
+      return `${r}${g}${b}`.toUpperCase();
+    }
+  }
+  return undefined;
+}
+
+function extractHalfPtsFromFontSize(sizeStr?: string): number | undefined {
+  if (!sizeStr) return undefined;
+  const val = parseFloat(sizeStr);
+  if (isNaN(val)) return undefined;
+  if (sizeStr.includes('pt')) return Math.round(val * 2);
+  if (sizeStr.includes('px')) return Math.round(val * 1.5);
+  return Math.round(val * 2);
+}
+
+function extractFontName(fontStr?: string): string | undefined {
+  if (!fontStr) return undefined;
+  const cleaned = fontStr.split(',')[0].replace(/['"]/g, '').trim();
+  return cleaned || undefined;
+}
+
+function extractHalfPtsFromElement(el: HTMLElement, tag: string): number | undefined {
+  if (el.style?.fontSize) {
+    return extractHalfPtsFromFontSize(el.style.fontSize);
+  }
+  if (tag === 'font' && el.getAttribute('size')) {
+    const s = parseInt(el.getAttribute('size') || '3', 10);
+    const sizes = [16, 20, 24, 28, 36, 48, 64]; // half-pts for font size 1..7
+    return sizes[Math.min(Math.max(s - 1, 0), 6)];
+  }
+  return undefined;
+}
+
+function extractTextRunsFromDomNode(node: Node, parentProps: TextRunFormattingProps = {}): TextRun[] {
+  const runs: TextRun[] = [];
+
+  if (node.nodeType === Node.TEXT_NODE) {
+    const text = node.textContent;
+    if (text) {
+      runs.push(
+        new TextRun({
+          text,
+          bold: parentProps.bold,
+          italics: parentProps.italics,
+          underline: parentProps.underline ? {} : undefined,
+          strike: parentProps.strike,
+          color: parentProps.color || '334155',
+          size: parentProps.size || 21,
+          font: parentProps.font || 'Arial',
+        })
+      );
+    }
+    return runs;
+  }
+
+  if (node.nodeType !== Node.ELEMENT_NODE) return runs;
+
+  const el = node as HTMLElement;
+  const tag = el.tagName.toLowerCase();
+
+  if (tag === 'br') {
+    runs.push(new TextRun({ text: '\n' }));
+    return runs;
+  }
+
+  const updatedProps: TextRunFormattingProps = {
+    bold:
+      parentProps.bold ||
+      ['b', 'strong', 'th', 'h1', 'h2', 'h3', 'h4'].includes(tag) ||
+      el.style.fontWeight === 'bold' ||
+      parseInt(el.style.fontWeight || '0', 10) >= 600 ||
+      Boolean(el.style.fontWeight?.includes('bold')),
+    italics: parentProps.italics || ['i', 'em'].includes(tag) || el.style.fontStyle === 'italic',
+    underline: parentProps.underline || ['u', 'ins', 'a'].includes(tag) || Boolean(el.style.textDecoration?.includes('underline')),
+    strike: parentProps.strike || ['s', 'strike', 'del'].includes(tag) || Boolean(el.style.textDecoration?.includes('line-through')),
+    color: extractHexFromColorString(el.style.color) || (tag === 'a' ? '2563EB' : parentProps.color),
+    size: extractHalfPtsFromElement(el, tag) || parentProps.size,
+    font: extractFontName(el.style.fontFamily) || parentProps.font,
+  };
+
+  for (let i = 0; i < el.childNodes.length; i++) {
+    runs.push(...extractTextRunsFromDomNode(el.childNodes[i], updatedProps));
+  }
+
+  return runs;
+}
+
+function getDomElementAlignment(el: HTMLElement): any {
+  let alignStr = (el.style?.textAlign || el.getAttribute('align') || '').toLowerCase();
+  if (!alignStr) {
+    const alignedChild = el.querySelector('[style*="text-align"]') as HTMLElement | null;
+    if (alignedChild) alignStr = (alignedChild.style?.textAlign || '').toLowerCase();
+  }
+  if (alignStr.includes('center')) return AlignmentType.CENTER;
+  if (alignStr.includes('right')) return AlignmentType.RIGHT;
+  if (alignStr.includes('justify')) return AlignmentType.BOTH;
+  return AlignmentType.LEFT;
+}
+
+function processDomChildrenForDocx(container: Element, bodyChildren: (Paragraph | Table)[]) {
+  const children = Array.from(container.childNodes);
+
+  for (const node of children) {
+    if (node.nodeType === Node.TEXT_NODE) {
+      const txt = node.textContent?.trim();
+      if (txt) {
+        bodyChildren.push(
+          new Paragraph({
+            spacing: { before: 60, after: 80, line: 276 },
+            children: [new TextRun({ text: txt, size: 21, color: '334155', font: 'Arial' })],
+          })
+        );
+      }
+      continue;
+    }
+
+    if (node.nodeType !== Node.ELEMENT_NODE) continue;
+
+    const el = node as HTMLElement;
+    const tag = el.tagName.toLowerCase();
+    const alignment = getDomElementAlignment(el);
+
+    // Skip redundant policy metadata headers if any
+    const rawText = el.innerText || el.textContent || '';
+    const isMeta =
+      /^(?:(?:\*{1,2}|#+\s*|[-•|]\s*)?Policy\s*Owner\s*[:\-–—]?)/i.test(rawText.trim()) ||
+      /^(?:(?:\*{1,2}|#+\s*|[-•|]\s*)?Effective\s*Date\s*[:\-–—]?)/i.test(rawText.trim()) ||
+      /^(?:(?:\*{1,2}|#+\s*|[-•|]\s*)?Review\s*Frequency\s*[:\-–—]?)/i.test(rawText.trim()) ||
+      /^(?:(?:\*{1,2}|#+\s*|[-•|]\s*)?Applies\s*To\s*[:\-–—]?)/i.test(rawText.trim());
+    if (isMeta) continue;
+
+    // Headings
+    if (['h1', 'h2', 'h3', 'h4', 'h5', 'h6'].includes(tag)) {
+      const defaultSize = tag === 'h1' ? 32 : tag === 'h2' ? 25 : 22;
+      const defaultColor = tag === 'h1' ? '0F172A' : tag === 'h2' ? 'FA7014' : '1E293B';
+      const beforeSpacing = tag === 'h1' ? 240 : tag === 'h2' ? 200 : 160;
+      const afterSpacing = tag === 'h1' ? 120 : tag === 'h2' ? 80 : 60;
+
+      const runs = extractTextRunsFromDomNode(el, {
+        bold: true,
+        size: defaultSize,
+        color: defaultColor,
+      });
+
+      bodyChildren.push(
+        new Paragraph({
+          alignment,
+          spacing: { before: beforeSpacing, after: afterSpacing },
+          children: runs.length > 0 ? runs : [new TextRun({ text: rawText.trim(), bold: true, size: defaultSize, color: defaultColor, font: 'Arial' })],
+        })
+      );
+      continue;
+    }
+
+    // Tables
+    if (tag === 'table') {
+      const rows: TableRow[] = [];
+      const trs = Array.from(el.querySelectorAll('tr'));
+      trs.forEach((tr) => {
+        const cells: TableCell[] = [];
+        const thsTds = Array.from(tr.querySelectorAll('th, td'));
+        thsTds.forEach((cellEl) => {
+          const isHeaderCell = cellEl.tagName.toLowerCase() === 'th';
+          const cellRuns = extractTextRunsFromDomNode(cellEl, {
+            bold: isHeaderCell,
+            size: 20,
+            color: isHeaderCell ? '0F172A' : '334155',
+          });
+
+          cells.push(
+            new TableCell({
+              shading: {
+                fill: isHeaderCell ? 'F8FAFC' : 'FFFFFF',
+                type: ShadingType.CLEAR,
+                color: 'auto',
+              },
+              margins: { top: 100, bottom: 100, left: 140, right: 140 },
+              borders: {
+                top: { style: BorderStyle.SINGLE, size: 4, color: 'E2E8F0' },
+                bottom: { style: BorderStyle.SINGLE, size: 4, color: 'E2E8F0' },
+                left: { style: BorderStyle.SINGLE, size: 4, color: 'E2E8F0' },
+                right: { style: BorderStyle.SINGLE, size: 4, color: 'E2E8F0' },
+              },
+              children: [
+                new Paragraph({
+                  spacing: { before: 20, after: 20 },
+                  children: cellRuns.length > 0 ? cellRuns : [new TextRun({ text: cellEl.textContent || '', size: 20, font: 'Arial' })],
+                }),
+              ],
+            })
+          );
+        });
+
+        if (cells.length > 0) {
+          rows.push(new TableRow({ children: cells }));
+        }
+      });
+
+      if (rows.length > 0) {
+        bodyChildren.push(
+          new Table({
+            width: { size: 100, type: WidthType.PERCENTAGE },
+            rows,
+          })
+        );
+      }
+      continue;
+    }
+
+    // Lists (ul / ol)
+    if (tag === 'ul' || tag === 'ol') {
+      const lis = Array.from(el.querySelectorAll(':scope > li'));
+      lis.forEach((liEl, index) => {
+        const liRuns = extractTextRunsFromDomNode(liEl, { size: 21, color: '334155' });
+        if (tag === 'ul') {
+          bodyChildren.push(
+            new Paragraph({
+              alignment,
+              bullet: { level: 0 },
+              spacing: { before: 30, after: 30 },
+              children: liRuns.length > 0 ? liRuns : [new TextRun({ text: liEl.textContent || '', size: 21, font: 'Arial' })],
+            })
+          );
+        } else {
+          // Numbered list
+          const numRun = new TextRun({ text: `${index + 1}. `, bold: true, color: 'FA7014', size: 21, font: 'Arial' });
+          bodyChildren.push(
+            new Paragraph({
+              alignment,
+              indent: { left: 360 },
+              spacing: { before: 40, after: 40 },
+              children: [numRun, ...liRuns],
+            })
+          );
+        }
+      });
+      continue;
+    }
+
+    // Callout / Blockquote
+    if (tag === 'blockquote') {
+      const runs = extractTextRunsFromDomNode(el, { size: 20, color: '1E3A8A' });
+      bodyChildren.push(
+        new Table({
+          width: { size: 100, type: WidthType.PERCENTAGE },
+          borders: {
+            top: { style: BorderStyle.NONE, size: 0, color: 'auto' },
+            bottom: { style: BorderStyle.NONE, size: 0, color: 'auto' },
+            left: { style: BorderStyle.SINGLE, size: 8, color: '3B82F6' },
+            right: { style: BorderStyle.NONE, size: 0, color: 'auto' },
+          },
+          rows: [
+            new TableRow({
+              children: [
+                new TableCell({
+                  shading: { fill: 'EFF6FF', type: ShadingType.CLEAR, color: 'auto' },
+                  margins: { top: 120, bottom: 120, left: 160, right: 160 },
+                  children: [
+                    new Paragraph({
+                      children: runs,
+                    }),
+                  ],
+                }),
+              ],
+            }),
+          ],
+        })
+      );
+      continue;
+    }
+
+    // Check for nested block container
+    const childEls = Array.from(el.children);
+    const hasBlockChild = childEls.some((c) =>
+      ['div', 'p', 'h1', 'h2', 'h3', 'h4', 'ul', 'ol', 'table', 'blockquote', 'section'].includes(c.tagName.toLowerCase())
+    );
+
+    if (hasBlockChild) {
+      processDomChildrenForDocx(el, bodyChildren);
+    } else {
+      // Leaf paragraph
+      const runs = extractTextRunsFromDomNode(el);
+      const innerHtml = el.innerHTML || '';
+      const textOnly = (el.innerText || el.textContent || '').replace(/[\s\u00A0]+/g, '').trim();
+
+      if (runs.length > 0 && textOnly.length > 0) {
+        const maxSize = Math.max(...runs.map((r: any) => (r as any).options?.size || 21));
+        const isTitle = maxSize >= 36;
+        bodyChildren.push(
+          new Paragraph({
+            alignment,
+            spacing: {
+              before: isTitle ? 240 : 60,
+              after: isTitle ? 140 : 100,
+              line: 276,
+            },
+            children: runs,
+          })
+        );
+      } else if (innerHtml.includes('<br>') || tag === 'br' || !textOnly) {
+        // Preserve vertical spacing between headings & body in DOCX
+        bodyChildren.push(
+          new Paragraph({
+            spacing: { before: 100, after: 100 },
+            children: [],
+          })
+        );
+      }
+    }
+  }
+}
+
+function parseMarkdownToDocxChildren(cleanBody: string): (Paragraph | Table)[] {
+  const rawParagraphs = cleanBody.split('\n\n');
+  const bodyChildren: (Paragraph | Table)[] = [];
+
+  for (const rawPara of rawParagraphs) {
+    const para = rawPara.trim();
+    if (!para) continue;
+
+    const isMetaPara =
+      /^(?:(?:\*{1,2}|#+\s*|[-•|]\s*)?Policy\s*Owner\s*[:\-–—]?)/i.test(para) ||
+      /^(?:(?:\*{1,2}|#+\s*|[-•|]\s*)?Effective\s*Date\s*[:\-–—]?)/i.test(para) ||
+      /^(?:(?:\*{1,2}|#+\s*|[-•|]\s*)?Review\s*Frequency\s*[:\-–—]?)/i.test(para) ||
+      /^(?:(?:\*{1,2}|#+\s*|[-•|]\s*)?Applies\s*To\s*[:\-–—]?)/i.test(para);
+    if (isMetaPara) continue;
+
+    if (para.startsWith('# ')) {
+      bodyChildren.push(
+        new Paragraph({
+          spacing: { before: 240, after: 120 },
+          children: [new TextRun({ text: para.replace(/^#\s+/, '').trim(), bold: true, size: 32, color: '0F172A', font: 'Arial' })],
+        })
+      );
+      continue;
+    }
+
+    if (para.startsWith('## ')) {
+      bodyChildren.push(
+        new Paragraph({
+          spacing: { before: 200, after: 80 },
+          children: [new TextRun({ text: para.replace(/^##\s+/, '').trim(), bold: true, size: 25, color: 'FA7014', font: 'Arial' })],
+        })
+      );
+      continue;
+    }
+
+    if (para.startsWith('### ')) {
+      bodyChildren.push(
+        new Paragraph({
+          spacing: { before: 160, after: 60 },
+          children: [new TextRun({ text: para.replace(/^###\s+/, '').trim(), bold: true, size: 22, color: '1E293B', font: 'Arial' })],
+        })
+      );
+      continue;
+    }
+
+    if (para.includes('\n- ') || para.includes('\n• ') || para.startsWith('- ') || para.startsWith('• ')) {
+      const bulletLines = para.split('\n');
+      for (const bLine of bulletLines) {
+        const cleanBLine = bLine.replace(/^[-*•]\s+/, '').replace(/\*\*/g, '').trim();
+        if (!cleanBLine) continue;
+        bodyChildren.push(
+          new Paragraph({
+            spacing: { before: 30, after: 30 },
+            bullet: { level: 0 },
+            children: [new TextRun({ text: cleanBLine, size: 21, color: '334155', font: 'Arial' })],
+          })
+        );
+      }
+      continue;
+    }
+
+    bodyChildren.push(
+      new Paragraph({
+        spacing: { before: 60, after: 80, line: 276 },
+        children: [new TextRun({ text: para.replace(/\*\*/g, ''), size: 21, color: '334155', font: 'Arial' })],
+      })
+    );
+  }
+
+  return bodyChildren;
+}
+
+function parseHtmlOrMarkdownToDocxChildren(rawContent: string): (Paragraph | Table)[] {
+  const cleanBody = extractCleanBody(rawContent);
+  if (!cleanBody || !cleanBody.trim()) return [];
+
+  const hasHtml = /<[a-z][\s\S]*>/i.test(cleanBody);
+
+  if (hasHtml && typeof window !== 'undefined' && typeof DOMParser !== 'undefined') {
+    try {
+      const parser = new DOMParser();
+      const doc = parser.parseFromString(`<div>${cleanBody}</div>`, 'text/html');
+      const container = doc.body.firstElementChild;
+      if (container) {
+        const bodyChildren: (Paragraph | Table)[] = [];
+        processDomChildrenForDocx(container, bodyChildren);
+        if (bodyChildren.length > 0) return bodyChildren;
+      }
+    } catch (e) {
+      console.warn('DOMParser failed in DOCX generator:', e);
+    }
+  }
+
+  return parseMarkdownToDocxChildren(cleanBody);
 }
 
 /**
@@ -1081,195 +1644,8 @@ export async function generateCorporateDocxBlob(options: CorporateDocxOptions): 
     ],
   });
 
-  // 3. Parse Body Content
-  const cleanBody = extractCleanBody(options.rawContent);
-  const rawParagraphs = cleanBody.split('\n\n');
-  const bodyChildren: any[] = [];
-
-  for (const rawPara of rawParagraphs) {
-    const para = rawPara.trim();
-    if (!para) continue;
-
-    // Skip redundant policy metadata paragraphs if any survived
-    const isMetaPara =
-      /^(?:(?:\*{1,2}|#+\s*|[-•|]\s*)?Policy\s*Owner\s*[:\-–—]?)/i.test(para) ||
-      /^(?:(?:\*{1,2}|#+\s*|[-•|]\s*)?Effective\s*Date\s*[:\-–—]?)/i.test(para) ||
-      /^(?:(?:\*{1,2}|#+\s*|[-•|]\s*)?Review\s*Frequency\s*[:\-–—]?)/i.test(para) ||
-      /^(?:(?:\*{1,2}|#+\s*|[-•|]\s*)?Applies\s*To\s*[:\-–—]?)/i.test(para);
-    if (isMetaPara) continue;
-
-    // Heading 1 (# ...)
-    if (para.startsWith('# ')) {
-      const headingText = para.replace(/^#\s+/, '').trim();
-      bodyChildren.push(
-        new Paragraph({
-          spacing: { before: 240, after: 120 },
-          children: [
-            new TextRun({
-              text: headingText,
-              bold: true,
-              size: 32, // 16pt
-              color: '0F172A',
-              font: 'Arial',
-            }),
-          ],
-        })
-      );
-      continue;
-    }
-
-    // Heading 2 (## ...)
-    if (para.startsWith('## ')) {
-      const headingText = para.replace(/^##\s+/, '').trim();
-      bodyChildren.push(
-        new Paragraph({
-          spacing: { before: 200, after: 80 },
-          children: [
-            new TextRun({
-              text: headingText,
-              bold: true,
-              size: 25, // 12.5pt
-              color: 'FA7014', // Amaavigo Orange
-              font: 'Arial',
-            }),
-          ],
-        })
-      );
-      continue;
-    }
-
-    // Heading 3 (### ...)
-    if (para.startsWith('### ')) {
-      const headingText = para.replace(/^###\s+/, '').trim();
-      bodyChildren.push(
-        new Paragraph({
-          spacing: { before: 160, after: 60 },
-          children: [
-            new TextRun({
-              text: headingText,
-              bold: true,
-              size: 22, // 11pt
-              color: '1E293B',
-              font: 'Arial',
-            }),
-          ],
-        })
-      );
-      continue;
-    }
-
-    // Document Metadata Box (**Document ID:** ...)
-    if (para.includes('**Document ID:**') || (para.startsWith('**') && para.includes('**Version:**'))) {
-      const metaLines = para.split('\n').filter(l => l.trim().length > 0);
-      const cellParagraphs = metaLines.map(mLine => {
-        const clean = mLine.replace(/\*\*/g, '').trim();
-        const colonIdx = clean.indexOf(':');
-        if (colonIdx > -1) {
-          const k = clean.substring(0, colonIdx + 1);
-          const v = clean.substring(colonIdx + 1).trim();
-          return new Paragraph({
-            spacing: { before: 20, after: 20 },
-            children: [
-              new TextRun({ text: `${k} `, bold: true, size: 19, color: '0F172A', font: 'Arial' }),
-              new TextRun({ text: v, size: 19, color: '334155', font: 'Arial' }),
-            ],
-          });
-        }
-        return new Paragraph({
-          spacing: { before: 20, after: 20 },
-          children: [new TextRun({ text: clean, size: 19, color: '334155', font: 'Arial' })],
-        });
-      });
-
-      bodyChildren.push(
-        new Table({
-          width: { size: 100, type: WidthType.PERCENTAGE },
-          borders: {
-            top: { style: BorderStyle.SINGLE, size: 4, color: 'E2E8F0' },
-            bottom: { style: BorderStyle.SINGLE, size: 4, color: 'E2E8F0' },
-            left: { style: BorderStyle.SINGLE, size: 8, color: 'FA7014' }, // Orange accent bar
-            right: { style: BorderStyle.SINGLE, size: 4, color: 'E2E8F0' },
-            insideHorizontal: borderNone,
-            insideVertical: borderNone,
-          },
-          rows: [
-            new TableRow({
-              children: [
-                new TableCell({
-                  width: { size: 100, type: WidthType.PERCENTAGE },
-                  shading: { fill: 'F8FAFC', type: ShadingType.CLEAR, color: 'auto' },
-                  margins: { top: 120, bottom: 120, left: 160, right: 160 },
-                  children: cellParagraphs,
-                }),
-              ],
-            }),
-          ],
-        })
-      );
-      continue;
-    }
-
-    // Numbered list (1. ... 2. ...)
-    if (/^\d+\.\s+/.test(para)) {
-      const listLines = para.split('\n');
-      for (const item of listLines) {
-        const numMatch = item.match(/^(\d+\.)\s+(.*)/);
-        if (numMatch) {
-          bodyChildren.push(
-            new Paragraph({
-              spacing: { before: 40, after: 40 },
-              indent: { left: 360 },
-              children: [
-                new TextRun({ text: `${numMatch[1]} `, bold: true, size: 21, color: 'FA7014', font: 'Arial' }),
-                new TextRun({ text: numMatch[2].replace(/\*\*/g, ''), size: 21, color: '334155', font: 'Arial' }),
-              ],
-            })
-          );
-        } else {
-          bodyChildren.push(
-            new Paragraph({
-              spacing: { before: 40, after: 40 },
-              indent: { left: 360 },
-              children: [new TextRun({ text: item.replace(/\*\*/g, ''), size: 21, color: '334155', font: 'Arial' })],
-            })
-          );
-        }
-      }
-      continue;
-    }
-
-    // Bullet list (- ... or • ...)
-    if (para.includes('\n- ') || para.includes('\n• ') || para.startsWith('- ') || para.startsWith('• ')) {
-      const bulletLines = para.split('\n');
-      for (const bLine of bulletLines) {
-        const cleanBLine = bLine.replace(/^[-*•]\s+/, '').replace(/\*\*/g, '').trim();
-        if (!cleanBLine) continue;
-        bodyChildren.push(
-          new Paragraph({
-            spacing: { before: 30, after: 30 },
-            bullet: { level: 0 },
-            children: [new TextRun({ text: cleanBLine, size: 21, color: '334155', font: 'Arial' })],
-          })
-        );
-      }
-      continue;
-    }
-
-    // Standard body paragraph
-    bodyChildren.push(
-      new Paragraph({
-        spacing: { before: 60, after: 80, line: 276 },
-        children: [
-          new TextRun({
-            text: para.replace(/\*\*/g, ''),
-            size: 21, // 10.5pt
-            color: '334155',
-            font: 'Arial',
-          }),
-        ],
-      })
-    );
-  }
+  // 3. Parse Body Content into genuine Word paragraphs, runs, tables
+  const bodyChildren = parseHtmlOrMarkdownToDocxChildren(options.rawContent);
 
   // 4. Assemble Document with Section Margins & Native Headers/Footers
   const doc = new Document({
@@ -1442,13 +1818,7 @@ export async function downloadDocumentWithIntactFormat(params: {
     // If source has actual uploaded DOCX bytes, stamp them directly
     if (params.fileUrl) {
       try {
-        let sourceBytes: Uint8Array;
-        if (params.fileUrl.startsWith('data:')) {
-          sourceBytes = toUint8Array(params.fileUrl);
-        } else {
-          const resp = await fetch(params.fileUrl);
-          sourceBytes = new Uint8Array(await resp.arrayBuffer());
-        }
+        const sourceBytes = await resolveDocumentBytes(params.fileUrl);
         // Verify it is a valid zip (starts with 'PK' 0x50 0x4B)
         if (sourceBytes.length > 4 && sourceBytes[0] === 0x50 && sourceBytes[1] === 0x4b) {
           const stamped = await stampDocxWithHeaderFooter(sourceBytes, meta);
@@ -1480,18 +1850,14 @@ export async function downloadDocumentWithIntactFormat(params: {
   const downloadName = originalName.replace(/\.[^/.]+$/, '') + '.pdf';
 
   // If source has uploaded PDF bytes, stamp them directly
-  if (params.fileUrl && (params.fileUrl.startsWith('data:application/pdf') || params.fileUrl.startsWith('blob:'))) {
+  if (params.fileUrl) {
     try {
-      let sourceBytes: Uint8Array;
-      if (params.fileUrl.startsWith('data:')) {
-        sourceBytes = toUint8Array(params.fileUrl);
-      } else {
-        const resp = await fetch(params.fileUrl);
-        sourceBytes = new Uint8Array(await resp.arrayBuffer());
+      const sourceBytes = await resolveDocumentBytes(params.fileUrl);
+      if (sourceBytes.length > 10 && sourceBytes[0] === 0x25 && sourceBytes[1] === 0x50) { // %PDF
+        const stamped = await stampPdfWithHeaderFooter(sourceBytes, meta);
+        triggerDownload(stamped.blob, downloadName);
+        return;
       }
-      const stamped = await stampPdfWithHeaderFooter(sourceBytes, meta);
-      triggerDownload(stamped.blob, downloadName);
-      return;
     } catch (err) {
       console.warn('Existing PDF stamping fallback to generator:', err);
     }

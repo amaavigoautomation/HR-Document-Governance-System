@@ -47,7 +47,9 @@ service cloud.firestore {
                data.approvalStatus == 'ARCHIVED'
              ))) &&
              (!('changeSummary' in data) || (data.changeSummary is string && data.changeSummary.size() <= 4000)) &&
-             (!('authorName' in data) || (data.authorName is string && data.authorName.size() <= 128));
+             (!('authorName' in data) || (data.authorName is string && data.authorName.size() <= 128)) &&
+             (!('effectiveFrom' in data) || (data.effectiveFrom is string && data.effectiveFrom.size() <= 64)) &&
+             (!('reviewDueDate' in data) || (data.reviewDueDate is string && data.reviewDueDate.size() <= 64));
     }
 
     function isValidAuditLog(data) {
@@ -72,6 +74,15 @@ service cloud.firestore {
       return data.id is string && data.id.size() <= 128 &&
              data.title is string && data.title.size() <= 256 &&
              data.message is string && data.message.size() <= 5000;
+    }
+
+    function isValidDocumentSuggestion(data) {
+      return data.id is string && data.id.size() <= 128 &&
+             data.documentId is string && data.documentId.size() <= 128 &&
+             data.subject is string && data.subject.size() <= 256 &&
+             data.content is string && data.content.size() <= 5000 &&
+             (!('employeeName' in data) || (data.employeeName is string && data.employeeName.size() <= 128)) &&
+             (!('status' in data) || (data.status is string && data.status.size() <= 64));
     }
 
     // 1. Employee Directory & Profiles
@@ -124,6 +135,14 @@ service cloud.firestore {
       allow create: if isValidId(notifId) && isValidNotification(request.resource.data);
       allow update: if isValidId(notifId) && isValidNotification(request.resource.data);
       allow delete: if isValidId(notifId);
+    }
+
+    // 7. Employee Document Suggestions
+    match /documentSuggestions/{suggestionId} {
+      allow read: if true;
+      allow create: if isValidId(suggestionId) && isValidDocumentSuggestion(request.resource.data);
+      allow update: if isValidId(suggestionId) && isValidDocumentSuggestion(request.resource.data);
+      allow delete: if isValidId(suggestionId);
     }
   }
 }
