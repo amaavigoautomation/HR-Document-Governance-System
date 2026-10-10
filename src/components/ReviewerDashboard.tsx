@@ -119,7 +119,10 @@ export const ReviewerDashboard: React.FC<ReviewerDashboardProps> = ({
             : 'Not yet approved',
         companyName: parentMaster?.companyName || 'Amaavigo',
         rawContent: ver.rawContent,
-        fileUrl: ver.fileUrl,
+        fileUrl: ver.fileUrl || ver.originalFileUrl,
+        originalFileUrl: ver.originalFileUrl || ver.fileUrl,
+        versionId: ver.id,
+        documentId: ver.documentId || parentMaster?.documentId || parentMaster?.id,
       });
     } catch (err) {
       console.error('Failed to download version in reviewer dashboard:', err);

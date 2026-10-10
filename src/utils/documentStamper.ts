@@ -92,7 +92,8 @@ export function toUint8Array(input: Uint8Array | ArrayBuffer | string): Uint8Arr
  * IndexedDB cache, or Uint8Array) into pure Uint8Array binary bytes.
  */
 export async function resolveDocumentBytes(
-  input: Uint8Array | ArrayBuffer | string
+  input: Uint8Array | ArrayBuffer | string,
+  extraIdentifiers?: string[]
 ): Promise<Uint8Array> {
   if (input instanceof Uint8Array) return input;
   if (input instanceof ArrayBuffer) return new Uint8Array(input);
@@ -124,7 +125,8 @@ export async function resolveDocumentBytes(
         const resp = await fetch(input);
         if (resp.ok) {
           const ab = await resp.arrayBuffer();
-          return new Uint8Array(ab);
+          const bytes = new Uint8Array(ab);
+          if (bytes.length > 0) return bytes;
         }
       } catch (fetchErr) {
         console.warn('[resolveDocumentBytes] Network fetch failed, checking local cache:', fetchErr);
@@ -133,7 +135,20 @@ export async function resolveDocumentBytes(
 
     // 3. Search client-side IndexedDB for cached media
     try {
-      const cached = await findMediaInIndexedDb([input]);
+      const cleanId = input
+        .replace('/api/storage/file/', '')
+        .replace('/api/storage/download/', '')
+        .replace('/api/storage/download?key=', '')
+        .split('?')[0];
+
+      const idsToSearch = [
+        input,
+        cleanId,
+        decodeURIComponent(cleanId),
+        ...(extraIdentifiers || []),
+      ].filter(Boolean) as string[];
+
+      const cached = await findMediaInIndexedDb(idsToSearch);
       if (cached?.dataUrl && cached.dataUrl.startsWith('data:')) {
         const cleanBase64 = cached.dataUrl.includes(',') ? cached.dataUrl.split(',')[1] : cached.dataUrl;
         const binary = atob(cleanBase64.trim());
@@ -647,69 +662,75 @@ function buildNativeHeaderXml(meta: {
     <w:tblPr>
       <w:tblW w:w="5000" w:type="pct"/>
       <w:tblBorders>
-        <w:top w:val="single" w:sz="10" w:space="0" w:color="0F172A"/>
-        <w:left w:val="single" w:sz="10" w:space="0" w:color="0F172A"/>
-        <w:bottom w:val="single" w:sz="10" w:space="0" w:color="0F172A"/>
-        <w:right w:val="single" w:sz="10" w:space="0" w:color="0F172A"/>
+        <w:top w:val="single" w:sz="8" w:space="0" w:color="0F172A"/>
+        <w:left w:val="single" w:sz="8" w:space="0" w:color="0F172A"/>
+        <w:bottom w:val="single" w:sz="8" w:space="0" w:color="0F172A"/>
+        <w:right w:val="single" w:sz="8" w:space="0" w:color="0F172A"/>
         <w:insideH w:val="none"/>
         <w:insideV w:val="single" w:sz="6" w:space="0" w:color="0F172A"/>
       </w:tblBorders>
       <w:tblCellMar>
-        <w:top w:w="80" w:type="dxa"/>
-        <w:left w:w="120" w:type="dxa"/>
-        <w:bottom w:w="80" w:type="dxa"/>
-        <w:right w:w="120" w:type="dxa"/>
+        <w:top w:w="40" w:type="dxa"/>
+        <w:left w:w="100" w:type="dxa"/>
+        <w:bottom w:w="40" w:type="dxa"/>
+        <w:right w:w="100" w:type="dxa"/>
       </w:tblCellMar>
     </w:tblPr>
+    <w:tblGrid>
+      <w:gridCol w:w="2434"/>
+      <w:gridCol w:w="3463"/>
+      <w:gridCol w:w="1591"/>
+      <w:gridCol w:w="1872"/>
+    </w:tblGrid>
     <w:tr>
       <!-- Col 1: Logo -->
       <w:tc>
         <w:tcPr><w:tcW w:w="1300" w:type="pct"/></w:tcPr>
         <w:p>
-          <w:pPr><w:spacing w:before="0" w:after="10"/></w:pPr>
-          <w:r><w:rPr><w:rFonts w:ascii="Arial" w:hAnsi="Arial"/><w:b/><w:sz w:val="28"/><w:color w:val="181A1E"/></w:rPr><w:t>amaavig</w:t></w:r>
-          <w:r><w:rPr><w:rFonts w:ascii="Arial" w:hAnsi="Arial"/><w:b/><w:sz w:val="28"/><w:color w:val="FA7014"/></w:rPr><w:t>o</w:t></w:r>
+          <w:pPr><w:spacing w:before="0" w:after="0" w:line="240" w:lineRule="auto"/></w:pPr>
+          <w:r><w:rPr><w:rFonts w:ascii="Arial" w:hAnsi="Arial"/><w:b/><w:sz w:val="24"/><w:color w:val="181A1E"/></w:rPr><w:t>amaavig</w:t></w:r>
+          <w:r><w:rPr><w:rFonts w:ascii="Arial" w:hAnsi="Arial"/><w:b/><w:sz w:val="24"/><w:color w:val="FA7014"/></w:rPr><w:t>o</w:t></w:r>
         </w:p>
         <w:p>
-          <w:pPr><w:spacing w:before="0" w:after="0"/></w:pPr>
-          <w:r><w:rPr><w:rFonts w:ascii="Arial" w:hAnsi="Arial"/><w:sz w:val="13"/><w:color w:val="64748B"/></w:rPr><w:t>Where Brand takes Flight</w:t></w:r>
+          <w:pPr><w:spacing w:before="0" w:after="0" w:line="180" w:lineRule="auto"/></w:pPr>
+          <w:r><w:rPr><w:rFonts w:ascii="Arial" w:hAnsi="Arial"/><w:sz w:val="12"/><w:color w:val="64748B"/></w:rPr><w:t>Where Brand takes Flight</w:t></w:r>
         </w:p>
       </w:tc>
       <!-- Col 2: Document Name -->
       <w:tc>
         <w:tcPr><w:tcW w:w="1850" w:type="pct"/></w:tcPr>
         <w:p>
-          <w:pPr><w:spacing w:before="0" w:after="15"/></w:pPr>
-          <w:r><w:rPr><w:rFonts w:ascii="Arial" w:hAnsi="Arial"/><w:b/><w:sz w:val="15"/><w:color w:val="0F172A"/></w:rPr><w:t>Document Name:</w:t></w:r>
+          <w:pPr><w:spacing w:before="0" w:after="0" w:line="200" w:lineRule="auto"/></w:pPr>
+          <w:r><w:rPr><w:rFonts w:ascii="Arial" w:hAnsi="Arial"/><w:b/><w:sz w:val="14"/><w:color w:val="0F172A"/></w:rPr><w:t>Document Name:</w:t></w:r>
         </w:p>
         <w:p>
-          <w:pPr><w:spacing w:before="0" w:after="0"/></w:pPr>
-          <w:r><w:rPr><w:rFonts w:ascii="Arial" w:hAnsi="Arial"/><w:b/><w:sz w:val="19"/><w:color w:val="1E293B"/></w:rPr><w:t>${escapeXml(meta.title)}</w:t></w:r>
+          <w:pPr><w:spacing w:before="0" w:after="0" w:line="220" w:lineRule="auto"/></w:pPr>
+          <w:r><w:rPr><w:rFonts w:ascii="Arial" w:hAnsi="Arial"/><w:b/><w:sz w:val="17"/><w:color w:val="1E293B"/></w:rPr><w:t>${escapeXml(meta.title)}</w:t></w:r>
         </w:p>
       </w:tc>
       <!-- Col 3: Version -->
       <w:tc>
         <w:tcPr><w:tcW w:w="850" w:type="pct"/></w:tcPr>
         <w:p>
-          <w:pPr><w:spacing w:before="60" w:after="0"/></w:pPr>
-          <w:r><w:rPr><w:rFonts w:ascii="Arial" w:hAnsi="Arial"/><w:b/><w:sz w:val="18"/><w:color w:val="0F172A"/></w:rPr><w:t>Version: ${escapeXml(meta.version)}</w:t></w:r>
+          <w:pPr><w:spacing w:before="10" w:after="0" w:line="240" w:lineRule="auto"/></w:pPr>
+          <w:r><w:rPr><w:rFonts w:ascii="Arial" w:hAnsi="Arial"/><w:b/><w:sz w:val="16"/><w:color w:val="0F172A"/></w:rPr><w:t>Version: ${escapeXml(meta.version)}</w:t></w:r>
         </w:p>
       </w:tc>
       <!-- Col 4: Effective Date -->
       <w:tc>
         <w:tcPr><w:tcW w:w="1000" w:type="pct"/></w:tcPr>
         <w:p>
-          <w:pPr><w:spacing w:before="0" w:after="15"/></w:pPr>
-          <w:r><w:rPr><w:rFonts w:ascii="Arial" w:hAnsi="Arial"/><w:b/><w:sz w:val="15"/><w:color w:val="0F172A"/></w:rPr><w:t>Effective date :</w:t></w:r>
+          <w:pPr><w:spacing w:before="0" w:after="0" w:line="200" w:lineRule="auto"/></w:pPr>
+          <w:r><w:rPr><w:rFonts w:ascii="Arial" w:hAnsi="Arial"/><w:b/><w:sz w:val="14"/><w:color w:val="0F172A"/></w:rPr><w:t>Effective date :</w:t></w:r>
         </w:p>
         <w:p>
-          <w:pPr><w:spacing w:before="0" w:after="0"/></w:pPr>
-          <w:r><w:rPr><w:rFonts w:ascii="Arial" w:hAnsi="Arial"/><w:sz w:val="18"/><w:color w:val="1E293B"/></w:rPr><w:t>${escapeXml(meta.effectiveDate)}</w:t></w:r>
+          <w:pPr><w:spacing w:before="0" w:after="0" w:line="220" w:lineRule="auto"/></w:pPr>
+          <w:r><w:rPr><w:rFonts w:ascii="Arial" w:hAnsi="Arial"/><w:sz w:val="16"/><w:color w:val="1E293B"/></w:rPr><w:t>${escapeXml(meta.effectiveDate)}</w:t></w:r>
         </w:p>
       </w:tc>
     </w:tr>
   </w:tbl>
-  <w:p><w:pPr><w:spacing w:before="0" w:after="60"/></w:pPr></w:p>
+  <w:p><w:pPr><w:spacing w:before="0" w:after="0" w:line="20" w:lineRule="exact"/><w:rPr><w:sz w:val="2"/></w:rPr></w:pPr></w:p>
 </w:hdr>`;
 }
 
@@ -723,64 +744,69 @@ function buildNativeFooterXml(meta: {
 }): string {
   return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <w:ftr xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
-  <w:p><w:pPr><w:spacing w:before="60" w:after="0"/></w:pPr></w:p>
   <w:tbl>
     <w:tblPr>
       <w:tblW w:w="5000" w:type="pct"/>
       <w:tblBorders>
-        <w:top w:val="single" w:sz="10" w:space="0" w:color="0F172A"/>
-        <w:left w:val="single" w:sz="10" w:space="0" w:color="0F172A"/>
-        <w:bottom w:val="single" w:sz="10" w:space="0" w:color="0F172A"/>
-        <w:right w:val="single" w:sz="10" w:space="0" w:color="0F172A"/>
+        <w:top w:val="single" w:sz="8" w:space="0" w:color="0F172A"/>
+        <w:left w:val="single" w:sz="8" w:space="0" w:color="0F172A"/>
+        <w:bottom w:val="single" w:sz="8" w:space="0" w:color="0F172A"/>
+        <w:right w:val="single" w:sz="8" w:space="0" w:color="0F172A"/>
         <w:insideH w:val="none"/>
         <w:insideV w:val="single" w:sz="6" w:space="0" w:color="0F172A"/>
       </w:tblBorders>
       <w:tblCellMar>
-        <w:top w:w="60" w:type="dxa"/>
-        <w:left w:w="120" w:type="dxa"/>
-        <w:bottom w:w="60" w:type="dxa"/>
-        <w:right w:w="120" w:type="dxa"/>
+        <w:top w:w="40" w:type="dxa"/>
+        <w:left w:w="100" w:type="dxa"/>
+        <w:bottom w:w="40" w:type="dxa"/>
+        <w:right w:w="100" w:type="dxa"/>
       </w:tblCellMar>
     </w:tblPr>
+    <w:tblGrid>
+      <w:gridCol w:w="3120"/>
+      <w:gridCol w:w="3120"/>
+      <w:gridCol w:w="3120"/>
+    </w:tblGrid>
     <w:tr>
       <!-- Col 1: Created by -->
       <w:tc>
         <w:tcPr><w:tcW w:w="1666" w:type="pct"/></w:tcPr>
         <w:p>
-          <w:pPr><w:spacing w:before="0" w:after="12"/></w:pPr>
-          <w:r><w:rPr><w:rFonts w:ascii="Arial" w:hAnsi="Arial"/><w:b/><w:sz w:val="15"/><w:color w:val="0F172A"/></w:rPr><w:t>Created by:</w:t></w:r>
+          <w:pPr><w:spacing w:before="0" w:after="0" w:line="180" w:lineRule="auto"/></w:pPr>
+          <w:r><w:rPr><w:rFonts w:ascii="Arial" w:hAnsi="Arial"/><w:b/><w:sz w:val="14"/><w:color w:val="0F172A"/></w:rPr><w:t>Created by:</w:t></w:r>
         </w:p>
         <w:p>
-          <w:pPr><w:spacing w:before="0" w:after="0"/></w:pPr>
-          <w:r><w:rPr><w:rFonts w:ascii="Arial" w:hAnsi="Arial"/><w:sz w:val="17"/><w:color w:val="1E293B"/></w:rPr><w:t>${escapeXml(meta.creator)}</w:t></w:r>
+          <w:pPr><w:spacing w:before="0" w:after="0" w:line="200" w:lineRule="auto"/></w:pPr>
+          <w:r><w:rPr><w:rFonts w:ascii="Arial" w:hAnsi="Arial"/><w:sz w:val="16"/><w:color w:val="1E293B"/></w:rPr><w:t>${escapeXml(meta.creator)}</w:t></w:r>
         </w:p>
       </w:tc>
       <!-- Col 2: Approved by -->
       <w:tc>
         <w:tcPr><w:tcW w:w="1667" w:type="pct"/></w:tcPr>
         <w:p>
-          <w:pPr><w:spacing w:before="0" w:after="12"/></w:pPr>
-          <w:r><w:rPr><w:rFonts w:ascii="Arial" w:hAnsi="Arial"/><w:b/><w:sz w:val="15"/><w:color w:val="0F172A"/></w:rPr><w:t>Approved by:</w:t></w:r>
+          <w:pPr><w:spacing w:before="0" w:after="0" w:line="180" w:lineRule="auto"/></w:pPr>
+          <w:r><w:rPr><w:rFonts w:ascii="Arial" w:hAnsi="Arial"/><w:b/><w:sz w:val="14"/><w:color w:val="0F172A"/></w:rPr><w:t>Approved by:</w:t></w:r>
         </w:p>
         <w:p>
-          <w:pPr><w:spacing w:before="0" w:after="0"/></w:pPr>
-          <w:r><w:rPr><w:rFonts w:ascii="Arial" w:hAnsi="Arial"/><w:sz w:val="17"/><w:color w:val="1E293B"/></w:rPr><w:t>${escapeXml(meta.approver)}</w:t></w:r>
+          <w:pPr><w:spacing w:before="0" w:after="0" w:line="200" w:lineRule="auto"/></w:pPr>
+          <w:r><w:rPr><w:rFonts w:ascii="Arial" w:hAnsi="Arial"/><w:sz w:val="16"/><w:color w:val="1E293B"/></w:rPr><w:t>${escapeXml(meta.approver)}</w:t></w:r>
         </w:p>
       </w:tc>
       <!-- Col 3: Approved Date -->
       <w:tc>
         <w:tcPr><w:tcW w:w="1667" w:type="pct"/></w:tcPr>
         <w:p>
-          <w:pPr><w:spacing w:before="0" w:after="12"/></w:pPr>
-          <w:r><w:rPr><w:rFonts w:ascii="Arial" w:hAnsi="Arial"/><w:b/><w:sz w:val="15"/><w:color w:val="0F172A"/></w:rPr><w:t>Approved Date:</w:t></w:r>
+          <w:pPr><w:spacing w:before="0" w:after="0" w:line="180" w:lineRule="auto"/></w:pPr>
+          <w:r><w:rPr><w:rFonts w:ascii="Arial" w:hAnsi="Arial"/><w:b/><w:sz w:val="14"/><w:color w:val="0F172A"/></w:rPr><w:t>Approved Date:</w:t></w:r>
         </w:p>
         <w:p>
-          <w:pPr><w:spacing w:before="0" w:after="0"/></w:pPr>
-          <w:r><w:rPr><w:rFonts w:ascii="Arial" w:hAnsi="Arial"/><w:sz w:val="17"/><w:color w:val="1E293B"/></w:rPr><w:t>${escapeXml(meta.approvedDate)}</w:t></w:r>
+          <w:pPr><w:spacing w:before="0" w:after="0" w:line="200" w:lineRule="auto"/></w:pPr>
+          <w:r><w:rPr><w:rFonts w:ascii="Arial" w:hAnsi="Arial"/><w:sz w:val="16"/><w:color w:val="1E293B"/></w:rPr><w:t>${escapeXml(meta.approvedDate)}</w:t></w:r>
         </w:p>
       </w:tc>
     </w:tr>
   </w:tbl>
+  <w:p><w:pPr><w:spacing w:before="0" w:after="0" w:line="20" w:lineRule="exact"/><w:rPr><w:sz w:val="2"/></w:rPr></w:pPr></w:p>
 </w:ftr>`;
 }
 
@@ -964,6 +990,11 @@ export async function stampDocxWithHeaderFooter(
   // CRITICAL: We preserve the original document body, fonts, sizes, colors, tables, and images 100% INTACT!
   let docXml = (await zip.file('word/document.xml')?.async('text')) || '';
   if (docXml) {
+    // Ensure relationships namespace is bound for r:id attributes on header/footer references
+    if (!docXml.includes('xmlns:r=')) {
+      docXml = docXml.replace(/<w:document(?=[\s>])/i, '<w:document xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"');
+    }
+
     const headerFooterRefs = `<w:headerReference w:type="default" r:id="${headerRelId}"/><w:headerReference w:type="first" r:id="${headerRelId}"/><w:footerReference w:type="default" r:id="${footerRelId}"/><w:footerReference w:type="first" r:id="${footerRelId}"/>`;
 
     const updateSectPrInner = (sectPrContent: string): string => {
@@ -972,26 +1003,28 @@ export async function stampDocxWithHeaderFooter(
       cleaned = cleaned.replace(/<w:footerReference[^>]*\/>/g, '');
       cleaned = cleaned.replace(/<w:titlePg[^>]*\/>/g, '');
 
-      // Ensure margins accommodate header and footer without colliding with body content
+      // Ensure margins accommodate header and footer cleanly while preserving original document body space & layout
       if (cleaned.includes('<w:pgMar')) {
         cleaned = cleaned.replace(/<w:pgMar\s+([^>]*)\/>/g, (match, attrs) => {
           let updated = attrs;
-          if (!/w:header=/i.test(updated)) updated += ' w:header="540"';
-          if (!/w:footer=/i.test(updated)) updated += ' w:footer="540"';
+          if (!/w:header=/i.test(updated)) updated += ' w:header="360"';
+          if (!/w:footer=/i.test(updated)) updated += ' w:footer="360"';
+          // Preserve original top margin; only ensure minimum clearance so body doesn't touch header
           if (/w:top="\d+"/i.test(updated)) {
-            updated = updated.replace(/w:top="(\d+)"/i, (m, val) => (Number(val) < 2160 ? 'w:top="2160"' : m));
+            updated = updated.replace(/w:top="(\d+)"/i, (m, val) => (Number(val) < 1100 ? 'w:top="1100"' : m));
           } else {
-            updated += ' w:top="2160"';
+            updated += ' w:top="1440"';
           }
+          // Preserve original bottom margin; do not artificially inflate to 1800
           if (/w:bottom="\d+"/i.test(updated)) {
-            updated = updated.replace(/w:bottom="(\d+)"/i, (m, val) => (Number(val) < 1800 ? 'w:bottom="1800"' : m));
+            updated = updated.replace(/w:bottom="(\d+)"/i, (m, val) => (Number(val) < 1000 ? 'w:bottom="1000"' : m));
           } else {
-            updated += ' w:bottom="1800"';
+            updated += ' w:bottom="1200"';
           }
           return `<w:pgMar ${updated}/>`;
         });
       } else {
-        cleaned += '<w:pgMar w:top="2160" w:right="1440" w:bottom="1800" w:left="1440" w:header="540" w:footer="540" w:gutter="0"/>';
+        cleaned += '<w:pgMar w:top="1440" w:right="1440" w:bottom="1200" w:left="1440" w:header="360" w:footer="360" w:gutter="0"/>';
       }
 
       // Per OpenXML specification, headerReference and footerReference MUST be placed first inside w:sectPr
@@ -1697,6 +1730,7 @@ export async function downloadDocumentWithIntactFormat(params: {
   companyName?: string;
   rawContent?: string;
   fileUrl?: string;
+  originalFileUrl?: string;
   versionId?: string;
   documentId?: string;
   headerFooterData?: DocumentHeaderFooterData;
@@ -1815,22 +1849,76 @@ export async function downloadDocumentWithIntactFormat(params: {
   if (isDocxTarget) {
     const downloadName = originalName.replace(/\.[^/.]+$/, '') + '.docx';
 
-    // If source has actual uploaded DOCX bytes, stamp them directly
-    if (params.fileUrl) {
+    // 1. Gather all potential sources for the original DOCX file
+    const candidateSources = [
+      params.fileUrl,
+      params.originalFileUrl,
+    ].filter(Boolean) as string[];
+
+    const extraIds = [
+      params.versionId,
+      params.documentId,
+      originalName,
+      params.fileName,
+      params.fileUrl,
+      params.originalFileUrl,
+    ].filter(Boolean) as string[];
+
+    let resolvedBytes: Uint8Array | null = null;
+
+    // Try resolving bytes from candidate sources
+    for (const src of candidateSources) {
       try {
-        const sourceBytes = await resolveDocumentBytes(params.fileUrl);
-        // Verify it is a valid zip (starts with 'PK' 0x50 0x4B)
-        if (sourceBytes.length > 4 && sourceBytes[0] === 0x50 && sourceBytes[1] === 0x4b) {
-          const stamped = await stampDocxWithHeaderFooter(sourceBytes, meta);
-          triggerDownload(stamped.blob, downloadName);
-          return;
+        const bytes = await resolveDocumentBytes(src, extraIds);
+        if (bytes && bytes.length > 4 && bytes[0] === 0x50 && bytes[1] === 0x4b) {
+          resolvedBytes = bytes;
+          break;
         }
-      } catch (err) {
-        console.warn('Existing DOCX stamping fallback to generator:', err);
+      } catch (e) {
+        console.warn('Candidate DOCX resolution notice:', e);
       }
     }
 
-    // Generate genuine DOCX with native header & footer
+    // 2. If not yet found, also search IndexedDB directly using extraIds
+    if (!resolvedBytes) {
+      try {
+        const cached = await findMediaInIndexedDb(extraIds);
+        if (cached?.dataUrl) {
+          const bytes = await resolveDocumentBytes(cached.dataUrl);
+          if (bytes && bytes.length > 4 && bytes[0] === 0x50 && bytes[1] === 0x4b) {
+            resolvedBytes = bytes;
+          }
+        } else if (cached?.blob) {
+          const ab = await cached.blob.arrayBuffer();
+          const bytes = new Uint8Array(ab);
+          if (bytes && bytes.length > 4 && bytes[0] === 0x50 && bytes[1] === 0x4b) {
+            resolvedBytes = bytes;
+          }
+        }
+      } catch (idbErr) {
+        console.warn('IndexedDB fallback search notice for DOCX:', idbErr);
+      }
+    }
+
+    // 3. If source DOCX bytes exist (from uploaded Word file), KEEP THEM 100% INTACT!
+    if (resolvedBytes && resolvedBytes.length > 4 && resolvedBytes[0] === 0x50 && resolvedBytes[1] === 0x4b) {
+      try {
+        // Stamp the original Word document with corporate header & footer
+        const stamped = await stampDocxWithHeaderFooter(resolvedBytes, meta);
+        triggerDownload(stamped.blob, downloadName);
+        return;
+      } catch (stampErr) {
+        console.warn('Stamping error on source docx, downloading original uploaded file intact:', stampErr);
+        // CRITICAL: Keep uploaded Word file 100% intact rather than destroying it with plain text generator!
+        const originalBlob = new Blob([resolvedBytes], {
+          type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        });
+        triggerDownload(originalBlob, downloadName);
+        return;
+      }
+    }
+
+    // 4. ONLY IF no source Word file was uploaded (e.g. document created purely through canvas editor):
     const docxBlob = await generateCorporateDocxBlob({
       documentTitle: meta.documentTitle,
       versionNumber: meta.versionNumber,

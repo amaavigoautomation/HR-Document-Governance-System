@@ -469,7 +469,7 @@ async function startServer() {
 
       const safeDocId = (documentId || 'doc').replace(/[^a-zA-Z0-9_-]/g, '_');
       const safeFileName = path.basename(fileName).replace(/[^a-zA-Z0-9._-]/g, '_');
-      const ext = path.extname(safeFileName) || (mimeType.includes('video') ? '.mp4' : mimeType.includes('pdf') ? '.pdf' : '.bin');
+      const ext = path.extname(safeFileName) || (mimeType.includes('video') ? '.mp4' : mimeType.includes('pdf') ? '.pdf' : mimeType.includes('wordprocessingml') ? '.docx' : '.bin');
       const fileId = `${safeDocId}_${Date.now()}_${Math.random().toString(36).substring(2, 7)}${ext}`;
       const targetPath = path.join(UPLOADS_DIR, fileId);
 
@@ -554,6 +554,33 @@ async function startServer() {
             if (match) {
               fileId = match;
               filePath = path.join(UPLOADS_DIR, match);
+            }
+          } catch (e) {}
+        }
+
+        // Fallback 3: Search governanceEngine document versions in memory for dataUrl
+        if (!fs.existsSync(filePath)) {
+          try {
+            const allVersions = governanceEngine.getDocumentVersions();
+            const matchedVer = allVersions.find(
+              (v) =>
+                v.id === rawFileId ||
+                v.fileName === rawFileId ||
+                (v.fileUrl && v.fileUrl.includes(rawFileId)) ||
+                (v.originalFileUrl && v.originalFileUrl.includes(rawFileId))
+            );
+            if (matchedVer) {
+              const dataUrl =
+                (matchedVer.originalFileUrl && matchedVer.originalFileUrl.startsWith('data:'))
+                  ? matchedVer.originalFileUrl
+                  : (matchedVer.fileUrl && matchedVer.fileUrl.startsWith('data:'))
+                  ? matchedVer.fileUrl
+                  : null;
+              if (dataUrl && dataUrl.includes('base64,')) {
+                const b64 = dataUrl.split('base64,')[1];
+                const recoveredBuffer = Buffer.from(b64, 'base64');
+                fs.writeFileSync(filePath, recoveredBuffer);
+              }
             }
           } catch (e) {}
         }
@@ -665,6 +692,33 @@ async function startServer() {
             if (match) {
               fileId = match;
               filePath = path.join(UPLOADS_DIR, match);
+            }
+          } catch (e) {}
+        }
+
+        // Fallback: Check governanceEngine document versions in memory for dataUrl
+        if (!fs.existsSync(filePath)) {
+          try {
+            const allVersions = governanceEngine.getDocumentVersions();
+            const matchedVer = allVersions.find(
+              (v) =>
+                v.id === rawFileId ||
+                v.fileName === rawFileId ||
+                (v.fileUrl && v.fileUrl.includes(rawFileId)) ||
+                (v.originalFileUrl && v.originalFileUrl.includes(rawFileId))
+            );
+            if (matchedVer) {
+              const dataUrl =
+                (matchedVer.originalFileUrl && matchedVer.originalFileUrl.startsWith('data:'))
+                  ? matchedVer.originalFileUrl
+                  : (matchedVer.fileUrl && matchedVer.fileUrl.startsWith('data:'))
+                  ? matchedVer.fileUrl
+                  : null;
+              if (dataUrl && dataUrl.includes('base64,')) {
+                const b64 = dataUrl.split('base64,')[1];
+                const recoveredBuffer = Buffer.from(b64, 'base64');
+                fs.writeFileSync(filePath, recoveredBuffer);
+              }
             }
           } catch (e) {}
         }

@@ -69,7 +69,10 @@ export const DocumentDetailModal: React.FC<DocumentDetailModalProps> = ({
             : 'Not yet approved',
         companyName: document.companyName || 'Amaavigo',
         rawContent: ver.rawContent,
-        fileUrl: ver.fileUrl,
+        fileUrl: ver.fileUrl || ver.originalFileUrl,
+        originalFileUrl: ver.originalFileUrl || ver.fileUrl,
+        versionId: ver.id,
+        documentId: ver.documentId || document.documentId || document.id,
         forcedFormat,
       });
     } catch (err) {

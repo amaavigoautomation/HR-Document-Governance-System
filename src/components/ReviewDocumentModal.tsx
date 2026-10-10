@@ -131,7 +131,10 @@ export const ReviewDocumentModal: React.FC<ReviewDocumentModalProps> = ({
             : 'Not yet approved',
         companyName: master?.companyName || 'Amaavigo',
         rawContent: version.rawContent,
-        fileUrl: version.fileUrl,
+        fileUrl: version.fileUrl || version.originalFileUrl,
+        originalFileUrl: version.originalFileUrl || version.fileUrl,
+        versionId: version.id,
+        documentId: version.documentId || master?.documentId || master?.id,
       });
     } catch (err) {
       console.error('Failed to download version in review modal:', err);

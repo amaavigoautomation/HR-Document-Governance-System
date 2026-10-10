@@ -924,12 +924,15 @@ export class DocumentGovernanceEngine {
     }
     // Note: Video files do NOT append header and footer, keeping video bytes intact
 
+    // Keep the uploaded binary dataUrl in memory for instant intact download & preview
+    const uploadedDataUrl = sanitizedFileUrl;
+
     // Persist large binary media (e.g. video/pdf/docx) to persistent server storage and IndexedDB
     if (sanitizedFileUrl && (isVideoUpload || sanitizedFileUrl.startsWith('data:'))) {
       try {
         const uploadRes = await uploadMediaToServer({
-          fileName: data.fileName || `${documentId}_v1.0.${isVideoUpload ? 'mp4' : 'bin'}`,
-          mimeType: data.mimeType || (isVideoUpload ? 'video/mp4' : 'application/octet-stream'),
+          fileName: data.fileName || `${documentId}_v1.0.${isVideoUpload ? 'mp4' : isDocxUpload ? 'docx' : 'bin'}`,
+          mimeType: data.mimeType || (isDocxUpload ? 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' : isVideoUpload ? 'video/mp4' : 'application/octet-stream'),
           dataUrl: sanitizedFileUrl,
           documentId,
           versionId,
@@ -989,7 +992,7 @@ export class DocumentGovernanceEngine {
       storageKey: storageMeta.storageKey,
       storagePath: storageMeta.storagePath,
       fileUrl: sanitizedFileUrl || defaultStorageProvider.getFileUrl(storageMeta.storageKey),
-      originalFileUrl: sanitizedFileUrl || (isPdfUpload || isDocxUpload || isVideoUpload ? data.fileDataUrl : undefined),
+      originalFileUrl: (uploadedDataUrl && uploadedDataUrl.startsWith('data:')) ? uploadedDataUrl : (data.fileDataUrl || sanitizedFileUrl),
       contentHash: storageMeta.contentHash,
       rawContent: sanitizedRawContent,
       createdById: creator.id,
@@ -1187,12 +1190,15 @@ export class DocumentGovernanceEngine {
     }
     // Video revisions keep original file data intact without appending header or footer
 
+    // Keep the uploaded binary dataUrl in memory for instant intact download & preview
+    const uploadedDataUrl = sanitizedFileUrl;
+
     // Persist large binary media (e.g. video/pdf/docx) to persistent server storage and IndexedDB
     if (sanitizedFileUrl && (isVideo || sanitizedFileUrl.startsWith('data:'))) {
       try {
         const uploadRes = await uploadMediaToServer({
-          fileName: data.fileName || `${master.documentId}_v${nextVersionNumber}.${isVideo ? 'mp4' : 'bin'}`,
-          mimeType: data.mimeType || (isVideo ? 'video/mp4' : 'application/octet-stream'),
+          fileName: data.fileName || `${master.documentId}_v${nextVersionNumber}.${isVideo ? 'mp4' : isDocx ? 'docx' : 'bin'}`,
+          mimeType: data.mimeType || (isDocx ? 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' : isVideo ? 'video/mp4' : 'application/octet-stream'),
           dataUrl: sanitizedFileUrl,
           documentId: master.documentId,
           versionId,
@@ -1232,7 +1238,7 @@ export class DocumentGovernanceEngine {
       storageKey: storageMeta.storageKey,
       storagePath: storageMeta.storagePath,
       fileUrl: sanitizedFileUrl || defaultStorageProvider.getFileUrl(storageMeta.storageKey),
-      originalFileUrl: sanitizedFileUrl || ((isPdf || isDocx || isVideo) && data.fileDataUrl ? data.fileDataUrl : undefined),
+      originalFileUrl: (uploadedDataUrl && uploadedDataUrl.startsWith('data:')) ? uploadedDataUrl : (data.fileDataUrl || sanitizedFileUrl),
       contentHash: storageMeta.contentHash,
       rawContent: sanitizedRawContent,
       createdById: creator.id,

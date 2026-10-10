@@ -179,6 +179,7 @@ export const EmployeePortalView: React.FC<EmployeePortalViewProps> = ({
         companyName: doc.companyName || 'Amaavigo',
         rawContent: ver.rawContent,
         fileUrl: ver.fileUrl || ver.originalFileUrl,
+        originalFileUrl: ver.originalFileUrl || ver.fileUrl,
         versionId: ver.id,
         documentId: doc.documentId || ver.documentId,
       });
