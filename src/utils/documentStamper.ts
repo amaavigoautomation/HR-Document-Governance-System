@@ -1389,13 +1389,19 @@ function processDomChildrenForDocx(container: Element, bodyChildren: (Paragraph 
           })
         );
       } else if (innerHtml.includes('<br>') || tag === 'br' || !textOnly) {
-        // Preserve vertical spacing between headings & body in DOCX
-        bodyChildren.push(
-          new Paragraph({
-            spacing: { before: 100, after: 100 },
-            children: [],
-          })
-        );
+        // Preserve moderate vertical spacing without creating excessive empty lines or blank pages
+        if (bodyChildren.length > 0) {
+          const last = bodyChildren[bodyChildren.length - 1];
+          const isPrevEmpty = last instanceof Paragraph && (last as any).root?.length === 0;
+          if (!isPrevEmpty) {
+            bodyChildren.push(
+              new Paragraph({
+                spacing: { before: 40, after: 40 },
+                children: [],
+              })
+            );
+          }
+        }
       }
     }
   }

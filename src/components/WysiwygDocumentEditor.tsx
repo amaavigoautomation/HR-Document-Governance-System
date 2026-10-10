@@ -362,6 +362,33 @@ export const WysiwygDocumentEditor: React.FC<WysiwygDocumentEditorProps> = ({
     insertNodeAtSelection(callout);
   };
 
+  // Paste handler: Clean up Word clipboard artifacts & redundant empty paragraphs
+  const handlePaste = (e: React.ClipboardEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    const html = e.clipboardData.getData('text/html');
+    const text = e.clipboardData.getData('text/plain');
+
+    if (html) {
+      let clean = html
+        .replace(/<style[\s\S]*?<\/style>/gi, '')
+        .replace(/<xml[\s\S]*?<\/xml>/gi, '')
+        .replace(/<!--[\s\S]*?-->/gi, '')
+        .replace(/<!\[if[\s\S]*?<!\[endif\]>/gi, '')
+        .replace(/<!\[endif\]>/gi, '')
+        .replace(/<\/?o:p[^>]*>/gi, '')
+        .replace(/class="Mso[^"]*"/gi, '')
+        .replace(/style="[^"]*mso-[^"]*"/gi, '');
+
+      // Collapse multiple consecutive empty paragraph breaks into a single clean spacing
+      clean = clean.replace(/(?:<p[^>]*>(?:\s|&nbsp;|<br\s*\/?>)*<\/p>\s*){2,}/gi, '<p><br></p>');
+
+      document.execCommand('insertHTML', false, clean);
+    } else if (text) {
+      document.execCommand('insertText', false, text);
+    }
+    handleEditorInput();
+  };
+
   // Word & Character count calculation
   const textOnly = editorRef.current ? (editorRef.current.innerText || '') : '';
   const wordCount = textOnly.trim() ? textOnly.trim().split(/\s+/).length : 0;
@@ -669,6 +696,7 @@ export const WysiwygDocumentEditor: React.FC<WysiwygDocumentEditorProps> = ({
         contentEditable
         onInput={handleEditorInput}
         onBlur={handleEditorInput}
+        onPaste={handlePaste}
         style={{ minHeight }}
         className="p-4 bg-white text-slate-900 text-sm font-sans leading-relaxed focus:outline-hidden overflow-y-auto max-h-[420px] document-html-content"
         data-placeholder={placeholder}

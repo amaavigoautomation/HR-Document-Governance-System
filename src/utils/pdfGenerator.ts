@@ -240,7 +240,12 @@ export function parseHtmlToPdfBlocks(rawContent: string): FormattedPdfBlock[] {
     .replace(/<head[\s\S]*?<\/head>/gi, '')
     .replace(/<!--[\s\S]*?-->/g, '')
     .replace(/<meta[^>]*>/gi, '')
-    .replace(/<link[^>]*>/gi, '');
+    .replace(/<link[^>]*>/gi, '')
+    .replace(/<!\[if[\s\S]*?<!\[endif\]>/gi, '')
+    .replace(/<!\[endif\]>/gi, '')
+    .replace(/<\/?(?:o:p|w:[^>]+|m:[^>]+)>/gi, '')
+    .replace(/page-break-(?:before|after|inside)\s*:\s*always;?/gi, '')
+    .replace(/break-(?:before|after|inside)\s*:\s*page;?/gi, '');
 
   let rawBlocks: FormattedPdfBlock[] = [];
   const hasHtml = /<[a-z][\s\S]*>/i.test(cleanBody);
@@ -833,22 +838,23 @@ function drawParagraphWithRuns(
   doc: jsPDF,
   runs: FormattedPdfRun[],
   marginX: number,
-  cursorY: number,
+  initialCursorY: number,
   contentWidth: number,
   contentEndY: number,
   align: 'left' | 'center' | 'right' | 'justify' = 'left',
-  addNewPage: () => void,
-  spacingAfter = 10
+  addNewPage: () => number,
+  spacingAfter = 10,
+  contentStartY = 96
 ): number {
   if (!runs || runs.length === 0) {
-    return cursorY;
+    return initialCursorY;
   }
 
   const hasVisibleText = runs.some(
     (r) => r.text && r.text.replace(/[\s\u00A0\u200B\r\n\t]+/g, '').length > 0
   );
   if (!hasVisibleText) {
-    return cursorY;
+    return initialCursorY;
   }
 
   interface LayoutToken {
@@ -913,7 +919,7 @@ function drawParagraphWithRuns(
   }
 
   if (tokens.length === 0) {
-    return cursorY + spacingAfter;
+    return initialCursorY + spacingAfter;
   }
 
   const lines: LayoutToken[][] = [];
@@ -947,12 +953,40 @@ function drawParagraphWithRuns(
     lines.push(currentLine);
   }
 
-  for (const lineTokens of lines) {
+  // Trim leading and trailing empty lines to prevent unwanted vertical gaps or false page triggers
+  while (lines.length > 0 && lines[0].length === 0) {
+    lines.shift();
+  }
+  while (lines.length > 0 && lines[lines.length - 1].length === 0) {
+    lines.pop();
+  }
+
+  if (lines.length === 0) {
+    return initialCursorY;
+  }
+
+  // Collapse consecutive empty lines
+  const cleanedLines: LayoutToken[][] = [];
+  let lastWasEmpty = false;
+  for (const line of lines) {
+    if (line.length === 0) {
+      if (!lastWasEmpty) {
+        cleanedLines.push(line);
+        lastWasEmpty = true;
+      }
+    } else {
+      cleanedLines.push(line);
+      lastWasEmpty = false;
+    }
+  }
+
+  let currentCursorY = initialCursorY;
+
+  for (const lineTokens of cleanedLines) {
     if (lineTokens.length === 0) {
-      if (cursorY + 12 <= contentEndY) {
-        cursorY += 12;
-      } else if (cursorY > 96) {
-        addNewPage();
+      // Empty line spacer inside a paragraph: never trigger page break for a blank line!
+      if (currentCursorY + 12 <= contentEndY && currentCursorY > contentStartY + 10) {
+        currentCursorY += 10;
       }
       continue;
     }
@@ -961,8 +995,8 @@ function drawParagraphWithRuns(
     const lineHeight = Math.max(Math.round(maxFontSize * 1.35), 14);
     const fontOffset = Math.round(maxFontSize * 0.9);
 
-    if (cursorY + lineHeight + fontOffset > contentEndY && cursorY > 96) {
-      addNewPage();
+    if (currentCursorY + lineHeight + fontOffset > contentEndY && currentCursorY > contentStartY) {
+      currentCursorY = addNewPage();
     }
 
     const totalLineWidth = lineTokens.reduce((sum, t) => sum + t.width, 0);
@@ -977,7 +1011,7 @@ function drawParagraphWithRuns(
       if (token.bgHex) {
         const [br, bg, bb] = hexToRgb(token.bgHex);
         doc.setFillColor(br, bg, bb);
-        doc.rect(lineX, cursorY + fontOffset - maxFontSize + 1, token.width, maxFontSize + 2, 'F');
+        doc.rect(lineX, currentCursorY + fontOffset - maxFontSize + 1, token.width, maxFontSize + 2, 'F');
       }
 
       doc.setFont(
@@ -987,16 +1021,16 @@ function drawParagraphWithRuns(
       doc.setFontSize(token.fontSizePt);
       const [r, g, b] = hexToRgb(token.colorHex);
       doc.setTextColor(r, g, b);
-      doc.text(token.text, lineX, cursorY + fontOffset);
+      doc.text(token.text, lineX, currentCursorY + fontOffset);
 
       lineX += token.width;
     }
 
-    cursorY += lineHeight;
+    currentCursorY += lineHeight;
   }
 
-  cursorY += spacingAfter;
-  return cursorY;
+  currentCursorY += spacingAfter;
+  return currentCursorY;
 }
 
 /**
@@ -1067,11 +1101,12 @@ export function generateCorporatePdfBlob(options: CorporatePdfOptions): Blob {
 
   let cursorY = contentStartY;
 
-  const addNewPage = () => {
+  const addNewPage = (): number => {
     doc.addPage();
     decoratePage();
     cursorY = contentStartY;
     isFirstBlockOnPage = true;
+    return contentStartY;
   };
 
   // Parse HTML or Markdown content into clean, structured PDF layout blocks
@@ -1081,7 +1116,7 @@ export function generateCorporatePdfBlob(options: CorporatePdfOptions): Blob {
     // 1. Empty Line / Spacer (preserves vertical spacing between paragraphs without forcing empty pages)
     if (block.type === 'emptyLine') {
       const space = block.spacingAfter || 12;
-      if (cursorY + space > contentEndY || isFirstBlockOnPage) {
+      if (cursorY + space > contentEndY || isFirstBlockOnPage || cursorY <= contentStartY + 5) {
         // Skip empty lines at page boundaries to avoid empty pages
         continue;
       }
@@ -1094,15 +1129,14 @@ export function generateCorporatePdfBlob(options: CorporatePdfOptions): Blob {
       const before = isFirstBlockOnPage ? 0 : (block.spacingBefore || 10);
       const after = block.spacingAfter || 14;
       if (cursorY + before + after > contentEndY && !isFirstBlockOnPage) {
-        addNewPage();
-      } else {
-        cursorY += before;
-        doc.setDrawColor(226, 232, 240);
-        doc.setLineWidth(1);
-        doc.line(marginX, cursorY, marginX + contentWidth, cursorY);
-        cursorY += after;
-        isFirstBlockOnPage = false;
+        cursorY = addNewPage();
       }
+      cursorY += (isFirstBlockOnPage ? 0 : (block.spacingBefore || 10));
+      doc.setDrawColor(226, 232, 240);
+      doc.setLineWidth(1);
+      doc.line(marginX, cursorY, marginX + contentWidth, cursorY);
+      cursorY += after;
+      isFirstBlockOnPage = false;
       continue;
     }
 
@@ -1116,7 +1150,7 @@ export function generateCorporatePdfBlob(options: CorporatePdfOptions): Blob {
         const boxHeight = wrapped.length * 14 + 16;
 
         if (cursorY + boxHeight > contentEndY && !isFirstBlockOnPage) {
-          addNewPage();
+          cursorY = addNewPage();
         }
 
         doc.setFillColor(239, 246, 255);
@@ -1144,7 +1178,7 @@ export function generateCorporatePdfBlob(options: CorporatePdfOptions): Blob {
 
       const totalTableHeight = rows.length * rowHeight + 10;
       if (cursorY + totalTableHeight > contentEndY && !isFirstBlockOnPage && rows.length > 2) {
-        addNewPage();
+        cursorY = addNewPage();
       }
 
       doc.setLineWidth(0.8);
@@ -1152,7 +1186,7 @@ export function generateCorporatePdfBlob(options: CorporatePdfOptions): Blob {
 
       rows.forEach((row, rIdx) => {
         if (cursorY + rowHeight > contentEndY && !isFirstBlockOnPage) {
-          addNewPage();
+          cursorY = addNewPage();
         }
         const isHeader = rIdx === 0;
         doc.setFillColor(isHeader ? 248 : 255, isHeader ? 250 : 255, isHeader ? 252 : 255);
@@ -1191,7 +1225,7 @@ export function generateCorporatePdfBlob(options: CorporatePdfOptions): Blob {
         const itemLineHeight = Math.max(Math.round(maxItemFontSize * 1.35), 14);
 
         if (cursorY + itemLineHeight > contentEndY && !isFirstBlockOnPage) {
-          addNewPage();
+          cursorY = addNewPage();
         }
 
         if (item.isNumbered && item.numberIndex) {
@@ -1213,7 +1247,8 @@ export function generateCorporatePdfBlob(options: CorporatePdfOptions): Blob {
           contentEndY,
           'left',
           addNewPage,
-          4
+          4,
+          contentStartY
         );
         isFirstBlockOnPage = false;
       }
@@ -1226,7 +1261,7 @@ export function generateCorporatePdfBlob(options: CorporatePdfOptions): Blob {
       // Heading Orphan Prevention ("Keep with next paragraph")
       const isHeading = ['heading1', 'heading2', 'heading3'].includes(block.type);
       if (isHeading && cursorY > contentEndY - 50 && !isFirstBlockOnPage) {
-        addNewPage();
+        cursorY = addNewPage();
       }
 
       const beforeSpace = isFirstBlockOnPage ? 0 : (block.spacingBefore || 0);
@@ -1243,7 +1278,8 @@ export function generateCorporatePdfBlob(options: CorporatePdfOptions): Blob {
         contentEndY,
         block.align || 'left',
         addNewPage,
-        block.spacingAfter || 10
+        block.spacingAfter || 10,
+        contentStartY
       );
 
       // Subtle accent line under Heading 1
