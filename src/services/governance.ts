@@ -2622,8 +2622,7 @@ export class DocumentGovernanceEngine {
               (s, idx) =>
                 `  ${idx + 1}. [${s.category}] "${s.subject}"\n` +
                 `     Submitted by: ${s.employeeName} (${s.employeeDepartment || 'Employee'})\n` +
-                `     Feedback: "${s.content}"\n` +
-                `     Status: ${s.status}${s.reviewNotes ? ` (HR Note: ${s.reviewNotes})` : ''}`
+                `     Feedback: "${s.content}"`
             )
             .join('\n\n');
       } else {

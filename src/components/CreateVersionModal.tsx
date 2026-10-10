@@ -12,7 +12,6 @@ import {
   ArrowRight,
   Sparkles,
   Calendar,
-  Copy,
 } from 'lucide-react';
 import { DocumentMaster, DocumentVersion, User, VersionStatus, VersionType } from '../types';
 import { governanceEngine } from '../services/governance';
@@ -154,19 +153,6 @@ export const CreateVersionModal: React.FC<CreateVersionModalProps> = ({
       setChangeSummary('');
     }
   }, [selectedDocId, rejectedVersion]);
-
-  // Optional helper for the user to explicitly copy previous baseline content if desired
-  const handleLoadBaselineContent = () => {
-    const sourceVer = rejectedVersion || baselineVersion;
-    if (sourceVer) {
-      const cleanContent = isRawPdfStream(sourceVer.rawContent)
-        ? extractTextFromRawPdfStream(sourceVer.rawContent)
-        : sourceVer.rawContent;
-      setRawContent(cleanContent ? extractCleanBody(cleanContent) : '');
-      setUploadStatus(`Loaded baseline text from v${sourceVer.versionNumber}`);
-      setError('');
-    }
-  };
 
   const handleClearContent = () => {
     setRawContent('');
@@ -766,19 +752,6 @@ export const CreateVersionModal: React.FC<CreateVersionModalProps> = ({
               </label>
 
               <div className="flex items-center space-x-2">
-                {baselineVersion && !rawContent && (
-                  <button
-                    type="button"
-                    onClick={handleLoadBaselineContent}
-                    className="inline-flex items-center space-x-1.5 text-xs font-medium text-slate-600 hover:text-slate-900 bg-white border border-slate-200 px-2.5 py-1.5 rounded-xl shadow-2xs hover:bg-slate-50 transition-colors cursor-pointer"
-                    title={`Load previous text from baseline v${baselineVersionNumber}`}
-                  >
-                    <Copy className="w-3.5 h-3.5 text-slate-400" />
-                    <span className="hidden sm:inline">Load v{baselineVersionNumber} Baseline Text</span>
-                    <span className="sm:hidden">Load v{baselineVersionNumber}</span>
-                  </button>
-                )}
-
                 {(rawContent || fileName) && (
                   <button
                     type="button"

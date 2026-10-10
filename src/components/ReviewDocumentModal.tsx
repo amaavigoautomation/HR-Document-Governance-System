@@ -6,7 +6,6 @@ import {
   XCircle,
   AlertTriangle,
   FileText,
-  GitCompare,
   GitBranch,
   Layers,
   Clock,
@@ -15,7 +14,6 @@ import {
   Lock,
   ArrowRight,
   Split,
-  FileCode,
   Check,
   Building,
   UserCheck,
@@ -59,7 +57,7 @@ export const ReviewDocumentModal: React.FC<ReviewDocumentModalProps> = ({
   onRejectSuccess,
 }) => {
   const isApprover = currentUser.role === UserRole.REVIEWER;
-  const [activeTab, setActiveTab] = useState<'sideBySide' | 'summary' | 'unified' | 'fullText'>('sideBySide');
+  const [activeTab, setActiveTab] = useState<'sideBySide' | 'summary' | 'fullText'>('sideBySide');
   const [comparison, setComparison] = useState<DocumentComparisonResult | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -423,19 +421,6 @@ export const ReviewDocumentModal: React.FC<ReviewDocumentModalProps> = ({
             </button>
 
             <button
-              id="tab-unified"
-              onClick={() => setActiveTab('unified')}
-              className={`pb-3 text-xs font-bold transition-all border-b-2 flex items-center space-x-1.5 ${
-                activeTab === 'unified'
-                  ? 'border-[#FA7014] text-[#FA7014]'
-                  : 'border-transparent text-slate-500 hover:text-slate-900'
-              }`}
-            >
-              <FileCode className="w-3.5 h-3.5" />
-              <span>Unified Diff</span>
-            </button>
-
-            <button
               id="tab-full-text"
               onClick={() => setActiveTab('fullText')}
               className={`pb-3 text-xs font-bold transition-all border-b-2 flex items-center space-x-1.5 ${
@@ -771,109 +756,10 @@ export const ReviewDocumentModal: React.FC<ReviewDocumentModalProps> = ({
                       )}
                     </div>
                   </div>
-
-                  {/* POINT-BY-POINT TRANSITION LOG ("First it was... Now changed to...") */}
-                  <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-xs">
-                    <div className="mb-4 pb-3 border-b border-slate-200">
-                      <h4 className="text-sm font-bold text-slate-900 flex items-center space-x-2">
-                        <GitCompare className="w-4 h-4 text-[#FA7014]" />
-                        <span>Point Transition Log ("First it was... Now changed to...")</span>
-                      </h4>
-                      <p className="text-xs text-slate-500 mt-0.5">
-                        Detailed before & after wording comparison for every modified point in this revision.
-                      </p>
-                    </div>
-
-                    <div className="space-y-4">
-                      {pointDiffs.filter((p) => p.type !== 'unchanged').length === 0 ? (
-                        <div className="py-6 text-center text-slate-500 text-xs">No point transitions to display.</div>
-                      ) : (
-                        pointDiffs
-                          .filter((p) => p.type !== 'unchanged')
-                          .map((pt, idx) => (
-                            <div key={`summary-log-${pt.id || idx}`} className="bg-slate-50 rounded-xl p-4 border border-slate-200 space-y-3">
-                              <div className="flex items-center justify-between border-b border-slate-200 pb-2">
-                                <span className="font-bold text-xs text-slate-900 flex items-center space-x-2">
-                                  <span className="bg-slate-800 text-white px-2 py-0.5 rounded text-[11px] font-bold">
-                                    {pt.pointNumber}
-                                  </span>
-                                  <span>{pt.title}</span>
-                                </span>
-                                <span className="text-[11px] font-bold text-slate-500 uppercase">
-                                  {pt.type === 'modified' ? 'Modified Point' : pt.type === 'added' ? 'New Point Added' : 'Point Removed'}
-                                </span>
-                              </div>
-
-                              <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
-                                {/* First it was */}
-                                <div className="bg-white p-3.5 rounded-xl border border-slate-200">
-                                  <div className="text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1.5 flex items-center space-x-1">
-                                    <XCircle className="w-3.5 h-3.5 text-rose-500 shrink-0" />
-                                    <span>First it was (Baseline v{activeBaseline?.versionNumber || '1.0'}):</span>
-                                  </div>
-                                  <div className="text-slate-600 font-sans leading-relaxed bg-slate-50 p-2.5 rounded-lg border border-slate-200 whitespace-pre-wrap">
-                                    {pt.oldText}
-                                  </div>
-                                </div>
-
-                                {/* Now changed to */}
-                                <div className="bg-white p-3.5 rounded-xl border border-orange-200">
-                                  <div className="text-[11px] font-bold text-[#FA7014] uppercase tracking-wider mb-1.5 flex items-center space-x-1">
-                                    <CheckCircle2 className="w-3.5 h-3.5 text-[#FA7014] shrink-0" />
-                                    <span>Now changed to (New Revision v{version.versionNumber}):</span>
-                                  </div>
-                                  <div className="text-slate-900 font-sans leading-relaxed bg-orange-50/50 p-2.5 rounded-lg border border-orange-200 whitespace-pre-wrap font-medium">
-                                    {pt.newText}
-                                  </div>
-                                </div>
-                              </div>
-                            </div>
-                          ))
-                      )}
-                    </div>
-                  </div>
                 </div>
               )}
 
-              {/* TAB 3: UNIFIED DIFF */}
-              {activeTab === 'unified' && (
-                <div className="bg-white border border-slate-200 text-slate-800 font-mono text-xs rounded-2xl p-4 shadow-sm overflow-x-auto max-h-[55vh]">
-                  <div className="text-slate-400 mb-3 border-b border-slate-200 pb-2">
-                    --- {activeBaseline ? `v${activeBaseline.versionNumber} (${activeBaseline.status})` : 'Baseline'}{'\n'}
-                    +++ v{version.versionNumber} (In Review)
-                  </div>
-                  {comparison?.diffSegments.map((seg, i) => {
-                    if (seg.type === 'added') {
-                      return (
-                        <div key={i} className="bg-orange-50 text-slate-900 py-0.5 px-2 font-medium">
-                          + {seg.value}
-                        </div>
-                      );
-                    }
-                    if (seg.type === 'removed') {
-                      return (
-                        <div key={i} className="bg-slate-100 text-slate-500 py-0.5 px-2 line-through">
-                          - {seg.value}
-                        </div>
-                      );
-                    }
-                    if (seg.type === 'modified') {
-                      return (
-                        <div key={i} className="bg-orange-50/50 text-[#FA7014] py-0.5 px-2 font-medium">
-                          ~ {seg.newValue || seg.value}
-                        </div>
-                      );
-                    }
-                    return (
-                      <div key={i} className="text-slate-700 py-0.5 px-2">
-                        &nbsp;&nbsp;{seg.value}
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-
-              {/* TAB 4: FULL DOCUMENT TEXT */}
+              {/* TAB 3: FULL DOCUMENT TEXT */}
               {activeTab === 'fullText' && (
                 <div className="space-y-4">
                   <DocumentViewer

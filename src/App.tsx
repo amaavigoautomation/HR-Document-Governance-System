@@ -936,7 +936,7 @@ export default function App() {
                   className="inline-flex items-center space-x-1.5 bg-slate-800 hover:bg-slate-700 text-white text-xs font-semibold px-3 py-1.5 rounded-lg transition-colors border border-slate-700 cursor-pointer"
                 >
                   <Download className="w-3.5 h-3.5" />
-                  <span>Download Intact</span>
+                  <span>Download</span>
                 </button>
                 <button
                   onClick={() => setReaderVersion(null)}

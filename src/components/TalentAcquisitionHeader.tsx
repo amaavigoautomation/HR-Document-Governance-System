@@ -50,14 +50,6 @@ export const TalentAcquisitionHeader: React.FC<TalentAcquisitionHeaderProps> = (
             <div className="flex items-center shrink-0">
               <AmaavigoLogo size="md" variant="full" theme="light" height={48} className="shrink-0" />
             </div>
-            <div className="hidden sm:flex items-center pl-3 border-l border-slate-200 space-x-2 shrink-0">
-              <span className="font-bold text-sm tracking-tight text-slate-900 flex items-center gap-1.5">
-                <span className="text-slate-800">Talent Acquisition</span>
-                <span className="bg-[#FA7014]/10 text-[#FA7014] text-[10px] px-2.5 py-0.5 rounded-full font-mono font-bold border border-[#FA7014]/30">
-                  Overview
-                </span>
-              </span>
-            </div>
           </div>
 
           {/* Clean center area: No Document Version Control tabs (no Creator Studio, Compliance Tracker, or Audit Trail) */}

@@ -294,18 +294,18 @@ function generatePointSummary(type: 'added' | 'removed' | 'modified' | 'unchange
     .join(' ')
     .trim();
 
-  const truncate = (s: string, max = 120) => (s.length > max ? s.substring(0, max) + '...' : s);
+  const truncate = (s: string, max = 130) => (s.length > max ? s.substring(0, max) + '...' : s);
 
   if (addedSnippets && removedSnippets) {
-    return `Updated point: Added "${truncate(addedSnippets)}" and removed "${truncate(removedSnippets)}".`;
+    return `Previously this was: "${truncate(removedSnippets)}", now changed to: "${truncate(addedSnippets)}".`;
   }
   if (addedSnippets) {
-    return `Updated point: Added "${truncate(addedSnippets)}".`;
+    return `Previously absent; now changed to include: "${truncate(addedSnippets)}".`;
   }
   if (removedSnippets) {
-    return `Updated point: Removed "${truncate(removedSnippets)}".`;
+    return `Previously this was: "${truncate(removedSnippets)}", now removed in this version.`;
   }
-  return `Point "${title}" modified in this revision.`;
+  return `Point "${title}" modified from previous baseline version.`;
 }
 
 export function extractPointByPointDiffs(oldRaw: string, newRaw: string): PointDiffItem[] {

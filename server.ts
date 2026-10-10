@@ -432,6 +432,22 @@ async function startServer() {
     }
   });
 
+  // Automated Re-Review Reminder Dispatch API (Manual trigger or external cron webhook)
+  app.post('/api/governance/check-re-review-reminders', async (req, res) => {
+    try {
+      const { force = false, mockDaysNotice = 2, targetDocId } = req.body || {};
+      const result = await governanceEngine.checkAndDispatchReReviewReminders({
+        force,
+        mockDaysNotice,
+        targetDocId,
+      });
+      res.json(result);
+    } catch (err: any) {
+      console.error('Error in /api/governance/check-re-review-reminders:', err);
+      res.status(500).json({ error: err.message || 'Failed checking re-review reminders' });
+    }
+  });
+
   // Storage Upload Endpoint (Handles Videos, PDFs, DOCXs & Large Media)
   app.post('/api/storage/upload', async (req, res) => {
     try {
@@ -819,6 +835,28 @@ async function startServer() {
 
   const server = app.listen(PORT, '0.0.0.0', () => {
     console.log(`HR Document Governance Server running on http://0.0.0.0:${PORT} [mode: ${isCompiledServer ? 'production-bundle' : 'development-vite'}]`);
+
+    // Automated Background Re-Review Checker (runs shortly after server boot)
+    setTimeout(async () => {
+      try {
+        console.log('[Scheduler] Running initial automated policy re-review check...');
+        const result = await governanceEngine.checkAndDispatchReReviewReminders();
+        console.log(`[Scheduler] Initial re-review check completed: ${result.sentCount} reminder(s) dispatched across ${result.checkedDocs} documents.`);
+      } catch (err) {
+        console.warn('[Scheduler] Notice during initial re-review check:', err);
+      }
+    }, 4000);
+
+    // Automated Daily Re-Review Heartbeat (runs every 24 hours)
+    setInterval(async () => {
+      try {
+        console.log('[Scheduler] Daily automated policy re-review heartbeat executing...');
+        const result = await governanceEngine.checkAndDispatchReReviewReminders();
+        console.log(`[Scheduler] Daily check completed: ${result.sentCount} reminder(s) dispatched.`);
+      } catch (err) {
+        console.warn('[Scheduler] Daily re-review check error:', err);
+      }
+    }, 24 * 60 * 60 * 1000);
   });
 
   const handleShutdown = (signal: string) => {
