@@ -258,6 +258,8 @@ export const DocumentDetailModal: React.FC<DocumentDetailModalProps> = ({
                       className={`relative bg-white rounded-2xl border p-5 shadow-xs transition-all ${
                         isCurrentPublished
                           ? 'border-[#FA7014] ring-2 ring-[#FA7014]/20'
+                          : ver.status === VersionStatus.REJECTED
+                          ? 'border-rose-300 bg-rose-50/20'
                           : ver.status === VersionStatus.REVISION_REQUIRED
                           ? 'border-slate-300 bg-slate-50/50'
                           : 'border-slate-200'
@@ -270,6 +272,8 @@ export const DocumentDetailModal: React.FC<DocumentDetailModalProps> = ({
                             ? 'bg-[#FA7014] ring-4 ring-orange-100'
                             : ver.status === VersionStatus.IN_REVIEW
                             ? 'bg-slate-900 ring-4 ring-slate-200'
+                            : ver.status === VersionStatus.REJECTED
+                            ? 'bg-rose-600 ring-4 ring-rose-200'
                             : ver.status === VersionStatus.REVISION_REQUIRED
                             ? 'bg-slate-600 ring-4 ring-slate-200'
                             : 'bg-slate-400'
@@ -388,6 +392,29 @@ export const DocumentDetailModal: React.FC<DocumentDetailModalProps> = ({
                           </div>
                         </div>
                       )}
+
+                      {ver.inlineComments && ver.inlineComments.length > 0 && (
+                        <div className="mt-2 bg-amber-50/70 border border-amber-200 rounded-xl p-3 text-xs text-slate-800 space-y-2">
+                          <div className="flex items-center justify-between font-bold text-slate-900">
+                            <span className="flex items-center space-x-1.5">
+                              <MessageSquare className="w-3.5 h-3.5 text-[#FA7014]" />
+                              <span>Attached Text Comments ({ver.inlineComments.length}):</span>
+                            </span>
+                          </div>
+                          <div className="space-y-1.5 max-h-36 overflow-y-auto">
+                            {ver.inlineComments.map((c, ci) => (
+                              <div key={c.id || ci} className="bg-white p-2.5 rounded-lg border border-amber-200/60 text-xs">
+                                <div className="text-slate-500 font-serif italic text-[11px] mb-1">
+                                  "{c.selectedText}"
+                                </div>
+                                <div className="font-semibold text-slate-900">
+                                  {c.comment}
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
                     </div>
                   );
                 })}
@@ -429,7 +456,12 @@ export const DocumentDetailModal: React.FC<DocumentDetailModalProps> = ({
                 fileName={activeVersion.fileName}
                 rawContent={activeVersion.rawContent}
                 fileUrl={activeVersion.fileUrl}
+                originalFileUrl={activeVersion.originalFileUrl}
                 mimeType={activeVersion.mimeType}
+                versionId={activeVersion.id}
+                documentId={activeVersion.documentId}
+                inlineComments={activeVersion.inlineComments || []}
+                enableInlineComments={false}
                 headerFooterData={{
                   companyName: document.companyName || 'Amaavigo',
                   documentTitle: document.title || activeVersion.documentTitle,

@@ -23,6 +23,7 @@ export enum VersionStatus {
   DRAFT = 'DRAFT',
   IN_REVIEW = 'IN_REVIEW',
   REVISION_REQUIRED = 'REVISION_REQUIRED',
+  REJECTED = 'REJECTED',
   PUBLISHED = 'PUBLISHED',
   SUPERSEDED = 'SUPERSEDED',
   ARCHIVED = 'ARCHIVED',
@@ -153,6 +154,18 @@ export interface DocumentVersion {
   changeSummary?: string;
   locked: boolean;
   createdFromVersionId?: string;
+  inlineComments?: InlineRevisionComment[];
+}
+
+export interface InlineRevisionComment {
+  id: string;
+  selectedText: string;
+  comment: string;
+  createdById: string;
+  createdByName: string;
+  createdByTitle?: string;
+  createdAt: string;
+  resolved?: boolean;
 }
 
 export interface DiffSegment {

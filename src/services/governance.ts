@@ -8,6 +8,7 @@ import {
   DocumentPublicationRecord,
   DocumentVersion,
   DocumentSuggestion,
+  InlineRevisionComment,
   SuggestionCategory,
   SuggestionStatus,
   EmailNotification,
@@ -1765,17 +1766,18 @@ export class DocumentGovernanceEngine {
     return { version, publication };
   }
 
-  // REVIEWER REJECTION (Mandatory comments required)
+  // REVIEWER REJECTION (Mandatory comments required + optional inline selection comments)
   public async rejectVersion(
     reviewer: User,
     versionId: string,
-    comments: string
+    comments: string,
+    inlineComments?: InlineRevisionComment[]
   ): Promise<DocumentVersion> {
     if (reviewer.role !== UserRole.REVIEWER) {
       throw new Error('Forbidden: Only an authorized HR Reviewer can reject documents.');
     }
 
-    if (!comments?.trim()) {
+    if (!comments?.trim() && (!inlineComments || inlineComments.length === 0)) {
       throw new Error('Validation error: Rejection comments are mandatory. You must state the specific reason for requesting revisions.');
     }
 
@@ -1798,7 +1800,8 @@ export class DocumentGovernanceEngine {
     version.reviewedById = reviewer.id;
     version.reviewedByName = reviewer.name;
     version.reviewedAt = nowIso;
-    version.reviewerComments = comments.trim();
+    version.reviewerComments = comments.trim() || 'Please address the attached inline text revision comments.';
+    version.inlineComments = inlineComments && inlineComments.length > 0 ? [...inlineComments] : undefined;
     version.locked = false; // Remains unlocked or editable/viewable
 
     // CRITICAL: Document Master does NOT remove its current published version record,
@@ -1868,6 +1871,117 @@ export class DocumentGovernanceEngine {
       }
     } catch (e) {
       console.warn('[Governance] Could not trigger HR notification email for revision required:', e);
+    }
+
+    return version;
+  }
+
+  /**
+   * Permanently reject a document version.
+   * Closes the document completely with status REJECTED.
+   * No further revisions or editing will be permitted.
+   */
+  public async permanentlyRejectDocument(
+    reviewer: User,
+    versionId: string,
+    reason?: string
+  ): Promise<DocumentVersion> {
+    if (reviewer.role !== UserRole.REVIEWER) {
+      throw new Error('Only authorized Approvers can render formal rejection decisions.');
+    }
+
+    const version = this.getVersionById(versionId);
+    if (!version) throw new Error(`Document Version ${versionId} not found`);
+
+    if (version.status !== VersionStatus.IN_REVIEW) {
+      throw new Error(
+        `Version ${version.versionNumber} is in status ${version.status} and cannot be rejected. Only IN_REVIEW versions can be decided upon.`
+      );
+    }
+
+    const master = this.getDocumentMasterById(version.documentMasterId);
+    if (!master) throw new Error(`Document Master not found for version ${versionId}`);
+
+    const nowIso = new Date().toISOString();
+    const finalReason =
+      reason?.trim() ||
+      'Document has been permanently rejected by the Approver. Closed with no further revisions permitted.';
+
+    // Mark REJECTED
+    version.status = VersionStatus.REJECTED;
+    version.reviewedById = reviewer.id;
+    version.reviewedByName = reviewer.name;
+    version.reviewedAt = nowIso;
+    version.reviewerComments = finalReason;
+    version.locked = true; // Permanently locked
+
+    // Update master status to REJECTED - no further revisions permitted
+    master.currentStatus = VersionStatus.REJECTED;
+    master.updatedAt = nowIso;
+
+    // Persist changes to Cloud Firestore
+    try {
+      await firestoreService.saveDocument(master);
+      await firestoreService.saveVersion(version);
+    } catch (e) {
+      console.warn('Firestore cloud sync error:', e);
+    }
+
+    // Audit logs
+    auditService.logEvent(AuditAction.REVIEW_REJECTED, reviewer, {
+      documentMasterId: master.id,
+      documentId: master.documentId,
+      documentVersionId: version.id,
+      versionNumber: version.versionNumber,
+      oldValue: 'IN_REVIEW',
+      newValue: 'REJECTED',
+      reason: `Permanently rejected: ${finalReason}`,
+    });
+
+    // Notify HR users via email that the document has been permanently rejected and closed
+    try {
+      const hrUsers = this.getCreators();
+      const reviewerDisplay = `${reviewer.name} (${reviewer.loginId || reviewer.empId || 'Approver'})`;
+      const emailSubject = `[Document Rejected] Permanently Rejected by Approver ${reviewerDisplay}: [${master.documentId}] ${master.title}`;
+      const emailBody = `Dear HR Team,\n\nApprover ${reviewerDisplay} (${reviewer.title}) has PERMANENTLY REJECTED document [${master.documentId}] "${master.title}" (Version v${version.versionNumber}).\n\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\nREJECTION REASON / DECISION FROM APPROVER ${reviewer.name}:\n"${finalReason}"\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n• Document ID: ${master.documentId}\n• Title: ${master.title}\n• Version: v${version.versionNumber}\n• Rejected By Approver: ${reviewerDisplay} (${reviewer.title})\n• Decision: Permanently Rejected (Closed - No Further Revisions Permitted)\n\nUnder corporate governance protocols, this document is now closed. No further revision cycles can be submitted for this document.\n\nSincerely,\nHR Document Governance Automation System\n${master.companyName}`;
+
+      const sentEmails = new Set<string>();
+      for (const hr of hrUsers) {
+        if (hr.email && !sentEmails.has(hr.email.toLowerCase())) {
+          sentEmails.add(hr.email.toLowerCase());
+          defaultEmailProvider
+            .sendEmail(hr.email, hr.name || 'HR Team', emailSubject, emailBody, {
+              documentId: master.documentId,
+              documentTitle: master.title,
+              versionNumber: version.versionNumber,
+              documentVersionId: version.id,
+              acknowledgementRequired: false,
+            })
+            .catch((err) => console.warn('[Governance] HR permanent rejection email error:', err));
+        }
+      }
+
+      const creatorTarget = this.getUserById(version.createdById);
+      if (creatorTarget?.email && !sentEmails.has(creatorTarget.email.toLowerCase())) {
+        sentEmails.add(creatorTarget.email.toLowerCase());
+        defaultEmailProvider
+          .sendEmail(
+            creatorTarget.email,
+            creatorTarget.name || 'HR Document Author',
+            emailSubject,
+            emailBody,
+            {
+              documentId: master.documentId,
+              documentTitle: master.title,
+              versionNumber: version.versionNumber,
+              documentVersionId: version.id,
+              acknowledgementRequired: false,
+            }
+          )
+          .catch((err) => console.warn('[Governance] Creator permanent rejection email error:', err));
+      }
+    } catch (e) {
+      console.warn('[Governance] Could not trigger HR email notification for permanent rejection:', e);
     }
 
     return version;

@@ -171,12 +171,12 @@ Employees should notify their immediate manager via the HR self-service portal a
 
     const lowerName = file.name.toLowerCase();
     const isAllowed =
-      lowerName.endsWith(".pdf") ||
       lowerName.endsWith(".docx") ||
+      lowerName.endsWith(".doc") ||
       file.type.startsWith("video/") ||
       Boolean(lowerName.match(/\.(mp4|webm|mov|m4v|mkv|avi|ogv)$/));
     if (!isAllowed) {
-      setError("Invalid file format. Supported formats: .pdf, .docx, and video (.mp4, .webm, .mov, etc.).");
+      setError("Invalid file format. Supported upload formats: Word (.docx) and Video (.mp4, .webm, .mov, etc.).");
       return;
     }
 
@@ -582,7 +582,7 @@ Employees should notify their immediate manager via the HR self-service portal a
           <div className="border border-slate-200 rounded-2xl p-4 bg-slate-50/50 space-y-3">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <label className="block text-xs font-bold text-slate-900 uppercase tracking-wider">
-                Document Content / Master File (PDF, DOCX, Video) <span className="text-[#FA7014]">*</span>
+                Document Content / Master File (Word DOCX, Video) <span className="text-[#FA7014]">*</span>
               </label>
 
               <div className="flex items-center space-x-2">
@@ -607,7 +607,7 @@ Employees should notify their immediate manager via the HR self-service portal a
                   <span>{fileName ? 'Replace File' : 'Upload File'}</span>
                   <input
                     type="file"
-                    accept=".pdf,.docx,video/*,.mp4,.webm,.mov,.m4v,.mkv,.avi"
+                    accept=".docx,.doc,video/*,.mp4,.webm,.mov,.m4v,.mkv,.avi"
                     onChange={handleFileUpload}
                     className="hidden"
                   />

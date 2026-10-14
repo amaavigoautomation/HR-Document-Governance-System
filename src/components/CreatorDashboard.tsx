@@ -20,6 +20,7 @@ import {
   Users,
   Trash2,
   RotateCcw,
+  Ban,
 } from 'lucide-react';
 import { ConfidentialityLevel, DocumentCategory, DocumentMaster, DocumentVersion, User, VersionStatus } from '../types';
 import { StatusBadge } from './StatusBadge';
@@ -374,6 +375,9 @@ export const CreatorDashboard: React.FC<CreatorDashboardProps> = ({
                   const needsRevision = revisionRequiredVersions.find(
                     (v) => v.documentMasterId === doc.id || v.documentId === doc.documentId
                   );
+                  const isDocRejected =
+                    doc.currentStatus === VersionStatus.REJECTED ||
+                    docVersions.some((v) => v.status === VersionStatus.REJECTED && !doc.currentPublishedVersionId);
 
                   return (
                     <tr key={doc.id} className="hover:bg-slate-50/80 transition-colors">
@@ -425,6 +429,11 @@ export const CreatorDashboard: React.FC<CreatorDashboardProps> = ({
                             <AlertTriangle className="w-3 h-3 text-[#FA7014]" />
                             <span>v{needsRevision.versionNumber} revision requested</span>
                           </div>
+                        ) : isDocRejected ? (
+                          <div className="text-[11px] text-rose-600 mt-1 flex items-center space-x-1 font-semibold">
+                            <Ban className="w-3 h-3 text-rose-600" />
+                            <span>Permanently rejected (Closed)</span>
+                          </div>
                         ) : null}
                       </td>
 
@@ -435,6 +444,8 @@ export const CreatorDashboard: React.FC<CreatorDashboardProps> = ({
                               ? VersionStatus.IN_REVIEW
                               : needsRevision
                               ? VersionStatus.REVISION_REQUIRED
+                              : isDocRejected
+                              ? VersionStatus.REJECTED
                               : doc.currentStatus
                           }
                         />
@@ -453,7 +464,7 @@ export const CreatorDashboard: React.FC<CreatorDashboardProps> = ({
                         <button
                           id={`btn-view-doc-${doc.id}`}
                           onClick={() => onOpenDocumentDetail(doc)}
-                          className="inline-flex items-center space-x-1 text-xs font-semibold text-slate-800 hover:text-slate-950 bg-slate-100 hover:bg-slate-200 px-2.5 py-1.5 rounded-lg transition-colors border border-slate-200"
+                          className="inline-flex items-center space-x-1 text-xs font-semibold text-slate-800 hover:text-slate-950 bg-slate-100 hover:bg-slate-200 px-2.5 py-1.5 rounded-lg transition-colors border border-slate-200 cursor-pointer"
                           title="View Complete Permanent Version History"
                         >
                           <Eye className="w-3.5 h-3.5" />
@@ -463,32 +474,44 @@ export const CreatorDashboard: React.FC<CreatorDashboardProps> = ({
                         <button
                           id={`btn-new-version-${doc.id}`}
                           onClick={() => onOpenCreateVersion(doc)}
-                          disabled={!!inReview || doc.currentStatus === VersionStatus.IN_REVIEW}
+                          disabled={!!inReview || doc.currentStatus === VersionStatus.IN_REVIEW || isDocRejected}
                           className={`inline-flex items-center space-x-1 text-xs font-semibold px-2.5 py-1.5 rounded-lg transition-colors shadow-xs ${
-                            inReview || doc.currentStatus === VersionStatus.IN_REVIEW
+                            inReview || doc.currentStatus === VersionStatus.IN_REVIEW || isDocRejected
                               ? 'bg-slate-100 text-slate-400 border border-slate-200 cursor-not-allowed opacity-60'
                               : needsRevision
-                              ? 'text-white bg-[#FA7014] hover:bg-[#E65A05] ring-2 ring-[#FA7014]/20'
-                              : 'text-white bg-slate-900 hover:bg-slate-800'
+                              ? 'text-white bg-[#FA7014] hover:bg-[#E65A05] ring-2 ring-[#FA7014]/20 cursor-pointer'
+                              : 'text-white bg-slate-900 hover:bg-slate-800 cursor-pointer'
                           }`}
                           title={
-                            inReview || doc.currentStatus === VersionStatus.IN_REVIEW
+                            isDocRejected
+                              ? 'Document has been permanently rejected. No further revisions permitted.'
+                              : inReview || doc.currentStatus === VersionStatus.IN_REVIEW
                               ? `Cannot revise: Version v${inReview?.versionNumber || ''} is currently under review`
                               : needsRevision
                               ? `Author next revision addressing reviewer feedback on v${needsRevision.versionNumber}`
                               : 'Create New Revision (Minor/Major)'
                           }
                         >
-                          <GitBranch
-                            className={`w-3.5 h-3.5 ${
-                              inReview || doc.currentStatus === VersionStatus.IN_REVIEW
-                                ? 'text-slate-400'
-                                : needsRevision
-                                ? 'text-white'
-                                : 'text-[#FA7014]'
-                            }`}
-                          />
-                          <span>{needsRevision ? `Author v${needsRevision.versionNumber} Fix` : 'Revise'}</span>
+                          {isDocRejected ? (
+                            <Ban className="w-3.5 h-3.5 text-slate-400" />
+                          ) : (
+                            <GitBranch
+                              className={`w-3.5 h-3.5 ${
+                                inReview || doc.currentStatus === VersionStatus.IN_REVIEW
+                                  ? 'text-slate-400'
+                                  : needsRevision
+                                  ? 'text-white'
+                                  : 'text-[#FA7014]'
+                              }`}
+                            />
+                          )}
+                          <span>
+                            {isDocRejected
+                              ? 'Rejected'
+                              : needsRevision
+                              ? `Author v${needsRevision.versionNumber} Fix`
+                              : 'Revise'}
+                          </span>
                         </button>
 
                         {onDeleteDocument && (

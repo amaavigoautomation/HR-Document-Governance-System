@@ -23,6 +23,7 @@ import {
   Calendar,
   Download,
   Loader2,
+  Ban,
 } from 'lucide-react';
 import { ConfidentialityLevel, DocumentCategory, DocumentMaster, DocumentVersion, User, VersionStatus } from '../types';
 import { StatusBadge } from './StatusBadge';
@@ -710,6 +711,11 @@ export const ReviewerDashboard: React.FC<ReviewerDashboardProps> = ({
                             <span className="inline-flex items-center space-x-1 text-xs font-semibold text-rose-700 bg-rose-50 border border-rose-200 px-2.5 py-1 rounded-lg">
                               <XCircle className="w-3.5 h-3.5 text-rose-600" />
                               <span>Revision Requested</span>
+                            </span>
+                          ) : doc.currentStatus === VersionStatus.REJECTED ? (
+                            <span className="inline-flex items-center space-x-1 text-xs font-semibold text-rose-800 bg-rose-50 border border-rose-200 px-2.5 py-1 rounded-lg">
+                              <Ban className="w-3.5 h-3.5 text-rose-600" />
+                              <span>Rejected (Closed)</span>
                             </span>
                           ) : (
                             <span className="text-xs text-slate-500">Draft Baseline</span>

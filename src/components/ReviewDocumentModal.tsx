@@ -19,11 +19,16 @@ import {
   UserCheck,
   Info,
   Loader2,
+  MessageSquare,
+  MessageSquarePlus,
+  RotateCcw,
+  Ban,
 } from 'lucide-react';
 import {
   DocumentComparisonResult,
   DocumentMaster,
   DocumentVersion,
+  InlineRevisionComment,
   ConfidentialityLevel,
   User,
   UserRole,
@@ -66,12 +71,20 @@ export const ReviewDocumentModal: React.FC<ReviewDocumentModalProps> = ({
   const [approvalNotes, setApprovalNotes] = useState('Reviewed and verified compliance with corporate governance standards.');
   const [isApproving, setIsApproving] = useState(false);
 
-  // Rejection Modal State
+  // Revision Request Modal State (formerly Reject Modal)
   const [showRejectModal, setShowRejectModal] = useState(false);
   const [rejectionComments, setRejectionComments] = useState('');
   const [rejectionError, setRejectionError] = useState('');
   const [isRejecting, setIsRejecting] = useState(false);
   const [isDownloading, setIsDownloading] = useState(false);
+
+  // Permanent Rejection Modal State
+  const [showPermanentRejectModal, setShowPermanentRejectModal] = useState(false);
+  const [permanentRejectReason, setPermanentRejectReason] = useState('');
+  const [isPermanentRejecting, setIsPermanentRejecting] = useState(false);
+
+  // Inline Revision Comments State
+  const [inlineComments, setInlineComments] = useState<InlineRevisionComment[]>(version.inlineComments || []);
 
   const master = governanceEngine.getDocumentMasterById(version.documentMasterId);
 
@@ -247,20 +260,45 @@ export const ReviewDocumentModal: React.FC<ReviewDocumentModalProps> = ({
       return;
     }
 
-    if (!rejectionComments.trim()) {
-      setRejectionError('Rejection comments are mandatory. Please detail the required revisions.');
+    if (!rejectionComments.trim() && inlineComments.length === 0) {
+      setRejectionError('Rejection comments or inline text comments are mandatory. Please detail the required revisions.');
       return;
     }
 
     setIsRejecting(true);
     try {
-      await governanceEngine.rejectVersion(currentUser, version.id, rejectionComments);
+      const finalComments =
+        rejectionComments.trim() ||
+        `Please address the ${inlineComments.length} specific inline revision comment(s) highlighted in the document.`;
+      await governanceEngine.rejectVersion(currentUser, version.id, finalComments, inlineComments);
       setShowRejectModal(false);
       onRejectSuccess();
     } catch (err: any) {
       setRejectionError(err.message || 'Failed to reject document');
     } finally {
       setIsRejecting(false);
+    }
+  };
+
+  const handlePermanentReject = async () => {
+    if (!isApprover) {
+      alert('Forbidden: HR Authors cannot reject documents. Only authorized Approvers can render decisions.');
+      return;
+    }
+
+    setIsPermanentRejecting(true);
+    try {
+      await governanceEngine.permanentlyRejectDocument(
+        currentUser,
+        version.id,
+        permanentRejectReason
+      );
+      setShowPermanentRejectModal(false);
+      onRejectSuccess();
+    } catch (err: any) {
+      alert(err.message || 'Failed to permanently reject document');
+    } finally {
+      setIsPermanentRejecting(false);
     }
   };
 
@@ -434,6 +472,11 @@ export const ReviewDocumentModal: React.FC<ReviewDocumentModalProps> = ({
             >
               <FileText className="w-3.5 h-3.5" />
               <span>Full Submitted Document</span>
+              {inlineComments.length > 0 && (
+                <span className="bg-[#FA7014] text-white text-[10px] font-extrabold px-1.5 py-0.5 rounded-full ml-1">
+                  {inlineComments.length}
+                </span>
+              )}
             </button>
           </div>
         </div>
@@ -765,11 +808,55 @@ export const ReviewDocumentModal: React.FC<ReviewDocumentModalProps> = ({
               {/* TAB 3: FULL DOCUMENT TEXT */}
               {activeTab === 'fullText' && (
                 <div className="space-y-4">
+                  {isApprover && !isAlreadyDecided && (
+                    <div className="bg-orange-50/80 border border-orange-200 rounded-xl p-3 text-xs text-slate-800 flex flex-wrap items-center justify-between shadow-2xs gap-3">
+                      <div className="flex items-center space-x-2">
+                        <MessageSquare className="w-4 h-4 text-[#FA7014] shrink-0" />
+                        <span>
+                          <strong>Approver Inline Revision Mode:</strong> Select any text passage in the Word document with your mouse to attach specific revision comments and instructions for HR before requesting revisions.
+                        </span>
+                      </div>
+                      {inlineComments.length > 0 && (
+                        <span className="bg-[#FA7014] text-white text-[11px] font-bold px-2.5 py-1 rounded-lg shrink-0">
+                          {inlineComments.length} Comment{inlineComments.length > 1 ? 's' : ''} Attached
+                        </span>
+                      )}
+                    </div>
+                  )}
+
+                  {version.status === VersionStatus.REVISION_REQUIRED && inlineComments.length > 0 && !isApprover && (
+                    <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 text-xs text-amber-950 flex items-center justify-between shadow-2xs gap-3">
+                      <div className="flex items-center space-x-2">
+                        <AlertTriangle className="w-4 h-4 text-[#FA7014] shrink-0" />
+                        <span>
+                          <strong>Approver Revision Comments:</strong> The approver highlighted {inlineComments.length} specific passage(s) requiring revision. Review the highlighted sections and notes in the right sidebar.
+                        </span>
+                      </div>
+                    </div>
+                  )}
+
                   <DocumentViewer
                     fileName={version.fileName}
                     rawContent={version.rawContent}
                     fileUrl={version.fileUrl}
+                    originalFileUrl={version.originalFileUrl}
                     mimeType={version.mimeType}
+                    versionId={version.id}
+                    documentId={version.documentId}
+                    enableInlineComments={isApprover && !isAlreadyDecided}
+                    inlineComments={inlineComments}
+                    currentUser={currentUser}
+                    onAddInlineComment={(newC) => {
+                      const commentObj: InlineRevisionComment = {
+                        ...newC,
+                        id: `comment-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+                        createdAt: new Date().toISOString(),
+                      };
+                      setInlineComments((prev) => [...prev, commentObj]);
+                    }}
+                    onDeleteInlineComment={(id) => {
+                      setInlineComments((prev) => prev.filter((c) => c.id !== id));
+                    }}
                     headerFooterData={{
                       companyName: master?.companyName || 'Amaavigo',
                       documentTitle: version.documentTitle || master?.title || 'Document',
@@ -829,12 +916,21 @@ export const ReviewDocumentModal: React.FC<ReviewDocumentModalProps> = ({
             ) : (
               <div className="flex items-center space-x-3 w-full sm:w-auto justify-end">
                 <button
+                  id="btn-open-permanent-reject-modal"
+                  onClick={() => setShowPermanentRejectModal(true)}
+                  className="inline-flex items-center space-x-1.5 bg-rose-50 hover:bg-rose-100 text-rose-700 hover:text-rose-800 border border-rose-300 font-semibold px-4 py-2.5 rounded-xl text-sm transition-colors shadow-xs cursor-pointer"
+                >
+                  <Ban className="w-4 h-4 text-rose-600" />
+                  <span>Reject</span>
+                </button>
+
+                <button
                   id="btn-open-reject-modal"
                   onClick={() => setShowRejectModal(true)}
                   className="inline-flex items-center space-x-1.5 bg-white hover:bg-slate-100 text-slate-900 border border-slate-300 font-semibold px-4 py-2.5 rounded-xl text-sm transition-colors shadow-xs cursor-pointer"
                 >
-                  <XCircle className="w-4 h-4 text-slate-500" />
-                  <span>Reject (Request Revisions)</span>
+                  <RotateCcw className="w-4 h-4 text-slate-500" />
+                  <span>Request Revisions</span>
                 </button>
 
                 <button
@@ -976,9 +1072,34 @@ export const ReviewDocumentModal: React.FC<ReviewDocumentModalProps> = ({
               Per governance requirements, rejection requires specific comments detailing the required changes.
             </p>
 
+            {/* Attached inline comments preview if any */}
+            {inlineComments.length > 0 && (
+              <div className="mt-3 bg-orange-50/70 border border-orange-200 rounded-xl p-3 space-y-2">
+                <div className="flex items-center justify-between text-xs font-bold text-slate-900">
+                  <span className="flex items-center space-x-1.5">
+                    <MessageSquare className="w-3.5 h-3.5 text-[#FA7014]" />
+                    <span>Attached Text Comments ({inlineComments.length}):</span>
+                  </span>
+                  <span className="text-[10px] text-[#FA7014] bg-white px-2 py-0.5 rounded-full border border-orange-200 font-bold">
+                    Sent to HR
+                  </span>
+                </div>
+                <div className="max-h-32 overflow-y-auto space-y-1.5 pr-1">
+                  {inlineComments.map((c, idx) => (
+                    <div key={c.id || idx} className="bg-white p-2 rounded-lg border border-orange-100 text-[11px]">
+                      <div className="text-slate-500 font-serif italic line-clamp-1 mb-0.5">
+                        "{c.selectedText}"
+                      </div>
+                      <div className="font-semibold text-slate-900">{c.comment}</div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
             <div className="mt-4">
               <label className="block text-xs font-bold text-slate-800 mb-1" htmlFor="input-rejection-comments">
-                Mandatory Rejection Comments & Requested Changes <span className="text-[#FA7014]">*</span>
+                Rejection Notes & Guidance {inlineComments.length > 0 ? '(Optional summary)' : <span className="text-[#FA7014]">*</span>}
               </label>
               <textarea
                 id="input-rejection-comments"
@@ -987,9 +1108,13 @@ export const ReviewDocumentModal: React.FC<ReviewDocumentModalProps> = ({
                   setRejectionComments(e.target.value);
                   setRejectionError('');
                 }}
-                rows={4}
+                rows={3}
                 className="w-full text-xs p-3 bg-slate-50 border border-slate-200 text-slate-900 rounded-xl focus:outline-hidden focus:ring-2 focus:ring-[#FA7014] placeholder:text-slate-400"
-                placeholder="Example: Please clarify the manager approval requirements in Section 2 and update the daily overlap schedule..."
+                placeholder={
+                  inlineComments.length > 0
+                    ? `Optional summary: The ${inlineComments.length} inline revision comment(s) above will automatically be returned to HR...`
+                    : 'Example: Please clarify the manager approval requirements in Section 2 and update the daily overlap schedule...'
+                }
               />
               {rejectionError && (
                 <p className="text-xs text-orange-600 font-medium mt-1">{rejectionError}</p>
@@ -1007,10 +1132,78 @@ export const ReviewDocumentModal: React.FC<ReviewDocumentModalProps> = ({
                 id="btn-confirm-reject"
                 disabled={isRejecting}
                 onClick={handleReject}
-                className="bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold px-5 py-2.5 rounded-xl shadow-md flex items-center space-x-1.5 disabled:opacity-50"
+                className="bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold px-5 py-2.5 rounded-xl shadow-md flex items-center space-x-1.5 disabled:opacity-50 cursor-pointer"
               >
-                {isRejecting ? <Clock className="w-3.5 h-3.5 animate-spin" /> : <XCircle className="w-3.5 h-3.5 text-[#FA7014]" />}
-                <span>Return to Creator (Revision Required)</span>
+                {isRejecting ? <Clock className="w-3.5 h-3.5 animate-spin" /> : <RotateCcw className="w-3.5 h-3.5 text-[#FA7014]" />}
+                <span>Send Revision Request to HR</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* DEFINITIVE / PERMANENT REJECTION MODAL */}
+      {showPermanentRejectModal && isApprover && (
+        <div className="fixed inset-0 z-[80] bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl p-6 max-w-md w-full shadow-2xl border border-slate-200 animate-in zoom-in-95 duration-150">
+            <div className="w-12 h-12 rounded-xl bg-rose-50 border border-rose-200 text-rose-600 flex items-center justify-center mb-4">
+              <Ban className="w-7 h-7 text-rose-600" />
+            </div>
+
+            <h3 className="text-lg font-bold text-slate-900">
+              Are you sure you want to reject this document?
+            </h3>
+
+            <p className="text-xs text-rose-600 font-semibold mt-1">
+              This action is permanent and irreversible.
+            </p>
+
+            <div className="mt-3 bg-rose-50/80 border border-rose-200 rounded-xl p-3.5 text-xs text-rose-950 space-y-2">
+              <div className="font-bold flex items-center space-x-1.5 text-rose-900">
+                <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
+                <span>No further revision would be done for this rejected document</span>
+              </div>
+              <p className="text-slate-600 leading-relaxed">
+                Rejecting document <strong>"{version.documentTitle}"</strong> ({version.documentId}) version <strong>v{version.versionNumber}</strong> permanently terminates its governance lifecycle. No further revisions can be authored or submitted for this document.
+              </p>
+            </div>
+
+            <div className="mt-4">
+              <label className="block text-xs font-bold text-slate-800 mb-1" htmlFor="input-permanent-rejection-notes">
+                Rejection Reason / Notes (Optional)
+              </label>
+              <textarea
+                id="input-permanent-rejection-notes"
+                value={permanentRejectReason}
+                onChange={(e) => setPermanentRejectReason(e.target.value)}
+                rows={3}
+                className="w-full text-xs p-3 bg-slate-50 border border-slate-200 text-slate-900 rounded-xl focus:outline-hidden focus:ring-2 focus:ring-rose-500 placeholder:text-slate-400"
+                placeholder="Explain why this document has been permanently rejected..."
+              />
+            </div>
+
+            <div className="mt-6 flex items-center justify-end space-x-3">
+              <button
+                type="button"
+                onClick={() => setShowPermanentRejectModal(false)}
+                disabled={isPermanentRejecting}
+                className="px-4 py-2 text-xs font-semibold text-slate-500 hover:text-slate-900 cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                id="btn-confirm-permanent-reject"
+                type="button"
+                disabled={isPermanentRejecting}
+                onClick={handlePermanentReject}
+                className="bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold px-5 py-2.5 rounded-xl shadow-md shadow-rose-600/20 flex items-center space-x-1.5 cursor-pointer disabled:opacity-50"
+              >
+                {isPermanentRejecting ? (
+                  <Clock className="w-3.5 h-3.5 animate-spin" />
+                ) : (
+                  <Ban className="w-3.5 h-3.5 text-white" />
+                )}
+                <span>Yes, Reject Document</span>
               </button>
             </div>
           </div>

@@ -1,6 +1,6 @@
 import React from 'react';
 import { VersionStatus } from '../types';
-import { CheckCircle2, Clock, AlertTriangle, Archive, FileCode } from 'lucide-react';
+import { CheckCircle2, Clock, AlertTriangle, Archive, FileCode, XCircle } from 'lucide-react';
 
 interface StatusBadgeProps {
   status: VersionStatus;
@@ -32,6 +32,12 @@ export const StatusBadge: React.FC<StatusBadgeProps> = ({
           bg: 'bg-orange-50 text-orange-950 border-orange-200',
           label: 'REVISION REQUIRED',
           icon: <AlertTriangle className="w-3.5 h-3.5 text-[#FA7014] shrink-0" />,
+        };
+      case VersionStatus.REJECTED:
+        return {
+          bg: 'bg-rose-50 text-rose-800 border-rose-200',
+          label: 'REJECTED',
+          icon: <XCircle className="w-3.5 h-3.5 text-rose-600 shrink-0" />,
         };
       case VersionStatus.SUPERSEDED:
         return {

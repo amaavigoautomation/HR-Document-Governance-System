@@ -12,6 +12,8 @@ import {
   ArrowRight,
   Sparkles,
   Calendar,
+  MessageSquare,
+  Ban,
 } from 'lucide-react';
 import { DocumentMaster, DocumentVersion, User, VersionStatus, VersionType } from '../types';
 import { governanceEngine } from '../services/governance';
@@ -94,6 +96,16 @@ export const CreateVersionModal: React.FC<CreateVersionModalProps> = ({
   const rejectedVersion = versions.find(
     (v) => (v.documentMasterId === selectedMaster?.id || v.documentId === selectedMaster?.documentId) && v.status === VersionStatus.REVISION_REQUIRED
   );
+
+  // Check if target document has been permanently rejected (no further revisions permitted)
+  const isDocumentPermanentlyRejected =
+    selectedMaster?.currentStatus === VersionStatus.REJECTED ||
+    (versions.some(
+      (v) =>
+        (v.documentMasterId === selectedMaster?.id || v.documentId === selectedMaster?.documentId) &&
+        v.status === VersionStatus.REJECTED
+    ) &&
+      !selectedMaster?.currentPublishedVersionId);
 
   // Baseline version is the currently published version or latest version
   const baselineVersion = selectedMaster?.currentPublishedVersionId
@@ -191,12 +203,12 @@ export const CreateVersionModal: React.FC<CreateVersionModalProps> = ({
 
     const lowerName = file.name.toLowerCase();
     const isAllowed =
-      lowerName.endsWith(".pdf") ||
       lowerName.endsWith(".docx") ||
+      lowerName.endsWith(".doc") ||
       file.type.startsWith("video/") ||
       Boolean(lowerName.match(/\.(mp4|webm|mov|m4v|mkv|avi|ogv)$/));
     if (!isAllowed) {
-      setError("Invalid file format. Supported formats: .pdf, .docx, and video (.mp4, .webm, .mov, etc.).");
+      setError("Invalid file format. Supported upload formats: Word (.docx) and Video (.mp4, .webm, .mov, etc.).");
       return;
     }
 
@@ -391,6 +403,21 @@ export const CreateVersionModal: React.FC<CreateVersionModalProps> = ({
             </div>
           )}
 
+          {/* PERMANENTLY REJECTED WARNING BANNER */}
+          {isDocumentPermanentlyRejected && !isInReview && (
+            <div className="bg-rose-50 border border-rose-300 rounded-xl p-4 text-xs text-rose-950 flex items-start space-x-3 shadow-xs">
+              <Ban className="w-5 h-5 text-rose-600 shrink-0 mt-0.5" />
+              <div>
+                <div className="font-bold text-rose-900 text-sm">
+                  Revision Blocked: Document Permanently Rejected
+                </div>
+                <p className="text-rose-800 mt-1 leading-relaxed">
+                  <strong>{selectedMaster?.documentId} ({selectedMaster?.title})</strong> has been formally rejected by the Approver. Under governance protocols, <strong>no further revisions can be created or submitted for this rejected document</strong>.
+                </p>
+              </div>
+            </div>
+          )}
+
           {/* TARGET DOCUMENT SELECTOR */}
           <div>
             <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5" htmlFor="select-target-document">
@@ -410,12 +437,19 @@ export const CreateVersionModal: React.FC<CreateVersionModalProps> = ({
                 const docNeedsRevision = versions.find(
                   (v) => (v.documentMasterId === doc.id || v.documentId === doc.documentId) && v.status === VersionStatus.REVISION_REQUIRED
                 );
+                const isDocRejected =
+                  doc.currentStatus === VersionStatus.REJECTED ||
+                  versions.some(
+                    (v) => (v.documentMasterId === doc.id || v.documentId === doc.documentId) && v.status === VersionStatus.REJECTED
+                  );
 
                 return (
                   <option key={doc.id} value={doc.id} className="bg-white text-slate-900 py-1">
                     {doc.documentId} — {doc.title}{' '}
                     {isDocInReview
                       ? `[⚠️ In Review: v${docInReviewVer?.versionNumber || ''} - Blocked]`
+                      : isDocRejected
+                      ? `[❌ Rejected - No Revisions Allowed]`
                       : docNeedsRevision
                       ? `[⚠️ Revision Requested on v${docNeedsRevision.versionNumber}]`
                       : `(Published: v${doc.currentPublishedVersionNumber || 'None'})`}
@@ -438,8 +472,43 @@ export const CreateVersionModal: React.FC<CreateVersionModalProps> = ({
                   <span className="italic">"{rejectedVersion.reviewerComments}"</span>
                 </div>
               )}
+
+              {rejectedVersion.inlineComments && rejectedVersion.inlineComments.length > 0 && (
+                <div className="bg-white rounded-xl border border-slate-200 p-3.5 space-y-2.5 shadow-2xs">
+                  <div className="flex items-center justify-between">
+                    <span className="font-bold text-slate-900 text-xs flex items-center space-x-1.5">
+                      <MessageSquare className="w-4 h-4 text-[#FA7014]" />
+                      <span>Approver's Text Selection Comments ({rejectedVersion.inlineComments.length}):</span>
+                    </span>
+                    <span className="text-[10px] text-[#FA7014] bg-orange-50 border border-orange-200 font-bold px-2 py-0.5 rounded-md">
+                      Changes Required
+                    </span>
+                  </div>
+                  <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
+                    {rejectedVersion.inlineComments.map((c, ci) => (
+                      <div key={c.id || ci} className="p-2.5 rounded-lg border border-slate-200 bg-slate-50/70 text-xs flex items-start space-x-2.5">
+                        <span className="bg-[#FA7014] text-white text-[10px] font-extrabold px-1.5 py-0.5 rounded shrink-0 mt-0.5">
+                          #{ci + 1}
+                        </span>
+                        <div className="flex-1 min-w-0">
+                          <div className="text-slate-500 font-serif italic text-[11px] line-clamp-2">
+                            "{c.selectedText}"
+                          </div>
+                          <div className="text-slate-900 font-bold mt-0.5">
+                            {c.comment}
+                          </div>
+                          <div className="text-[10px] text-slate-400 mt-1">
+                            By {c.createdByName || 'Approver'}
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
               <p className="text-[11px] text-slate-500">
-                The content below is pre-loaded with your draft. Revise the text to address the feedback and submit v{calculatedNextVersion} for approval.
+                The content below is pre-loaded with your draft. Revise the text or upload an updated Word document to address the feedback, and submit v{calculatedNextVersion} for approval.
               </p>
             </div>
           )}
@@ -748,7 +817,7 @@ export const CreateVersionModal: React.FC<CreateVersionModalProps> = ({
           <div className="border border-slate-200 rounded-2xl p-4 bg-slate-50/50">
             <div className="flex items-center justify-between mb-2 flex-wrap gap-2">
               <label className="block text-xs font-bold text-slate-900 uppercase tracking-wider" htmlFor="textarea-revised-content">
-                Document Content / File (PDF, DOCX, Video) <span className="text-[#FA7014]">*</span>
+                Document Content / File (Word DOCX, Video) <span className="text-[#FA7014]">*</span>
               </label>
 
               <div className="flex items-center space-x-2">
@@ -769,7 +838,7 @@ export const CreateVersionModal: React.FC<CreateVersionModalProps> = ({
                   <span>Upload File</span>
                   <input
                     type="file"
-                    accept=".pdf,.docx,video/*,.mp4,.webm,.mov,.m4v,.mkv,.avi"
+                    accept=".docx,.doc,video/*,.mp4,.webm,.mov,.m4v,.mkv,.avi"
                     onChange={handleFileUpload}
                     className="hidden"
                   />
@@ -849,24 +918,34 @@ export const CreateVersionModal: React.FC<CreateVersionModalProps> = ({
             <button
               id="btn-submit-create-version"
               type="submit"
-              disabled={submitting || isInReview}
+              disabled={submitting || isInReview || isDocumentPermanentlyRejected}
               className={`text-white text-xs font-bold px-6 py-2.5 rounded-xl shadow-md flex items-center space-x-2 transition-all ${
-                isInReview
+                isInReview || isDocumentPermanentlyRejected
                   ? 'bg-slate-400 opacity-60 cursor-not-allowed shadow-none'
                   : 'bg-[#FA7014] hover:bg-[#E65A05] shadow-[#FA7014]/20'
               }`}
-              title={isInReview ? 'Cannot submit revision while a version of this document is still in review' : undefined}
+              title={
+                isInReview
+                  ? 'Cannot submit revision while a version of this document is still in review'
+                  : isDocumentPermanentlyRejected
+                  ? 'Document has been permanently rejected. No further revisions permitted.'
+                  : undefined
+              }
             >
               {submitting ? (
                 <Clock className="w-4 h-4 animate-spin" />
               ) : isInReview ? (
                 <AlertTriangle className="w-4 h-4" />
+              ) : isDocumentPermanentlyRejected ? (
+                <Ban className="w-4 h-4" />
               ) : (
                 <CheckCircle2 className="w-4 h-4" />
               )}
               <span>
                 {isInReview
                   ? 'Revision Blocked (Document in Review)'
+                  : isDocumentPermanentlyRejected
+                  ? 'Revision Blocked (Document Permanently Rejected)'
                   : `Submit Revision v${calculatedNextVersion} for Review`}
               </span>
             </button>
