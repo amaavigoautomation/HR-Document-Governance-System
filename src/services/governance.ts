@@ -858,6 +858,7 @@ export class DocumentGovernanceEngine {
       documentOwnerName?: string;
       confidentiality: ConfidentialityLevel;
       acknowledgementRequired: boolean;
+      creationDate?: string;
       effectiveFrom: string;
       reviewDueDate: string;
       description?: string;
@@ -898,10 +899,16 @@ export class DocumentGovernanceEngine {
       Boolean(data.mimeType?.startsWith('video/')) ||
       Boolean(data.fileName?.toLowerCase().match(/\.(mp4|webm|mov|m4v|mkv|avi|ogv)$/));
 
+    const docCreationDateIso = data.creationDate
+      ? (data.creationDate.includes('T') ? data.creationDate : `${data.creationDate}T00:00:00.000Z`)
+      : new Date().toISOString();
+
     const initialHeaderFooter: HeaderFooterMetadata = {
       documentTitle: data.title.trim(),
       versionNumber: '1.0',
       effectiveDate: data.effectiveFrom || new Date().toISOString().split('T')[0],
+      reReviewDate: data.reviewDueDate || '',
+      creationDate: formatDDMMYYYY(docCreationDateIso),
       createdByName: creator.name,
       approvedByName: 'Not yet approved',
       approvedDate: 'Not yet approved',
@@ -974,8 +981,8 @@ export class DocumentGovernanceEngine {
       createdById: creator.id,
       createdByName: creator.name,
       createdByTitle: creator.title,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
+      createdAt: docCreationDateIso,
+      updatedAt: docCreationDateIso,
       active: true,
     };
 
@@ -999,7 +1006,7 @@ export class DocumentGovernanceEngine {
       createdById: creator.id,
       createdByName: creator.name,
       createdByTitle: creator.title,
-      createdAt: new Date().toISOString(),
+      createdAt: docCreationDateIso,
       effectiveFrom: data.effectiveFrom || new Date().toISOString().split('T')[0],
       reviewDueDate: data.reviewDueDate || new Date(Date.now() + 365 * 86400000).toISOString().split('T')[0],
       changeSummary: 'Initial document baseline submission.',
@@ -1147,6 +1154,8 @@ export class DocumentGovernanceEngine {
       documentTitle: master.title,
       versionNumber: nextVersionNumber,
       effectiveDate: formattedEffectiveDate,
+      reReviewDate: data.reviewDueDate ? formatDDMMYYYY(data.reviewDueDate) : '',
+      creationDate: formatDDMMYYYY(master.createdAt),
       createdByName: creator.name || 'Amee Shah',
       approvedByName: 'Not yet approved',
       approvedDate: 'Not yet approved',
@@ -1439,6 +1448,8 @@ export class DocumentGovernanceEngine {
       documentTitle: master.title || version.documentTitle,
       versionNumber: version.versionNumber,
       effectiveDate: formatDDMMYYYY(version.effectiveFrom || nowIso),
+      reReviewDate: formatDDMMYYYY(version.reviewDueDate || ''),
+      creationDate: formatDDMMYYYY(master.createdAt || version.createdAt),
       createdByName: version.createdByName || master.createdByName || 'Amee Shah',
       approvedByName: reviewer.name,
       approvedDate: formatDDMMYYYY(nowIso),

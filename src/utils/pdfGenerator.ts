@@ -11,6 +11,8 @@ export interface CorporatePdfOptions {
   documentTitle: string;
   versionNumber: string;
   effectiveDate: string;
+  reReviewDate?: string;
+  creationDate?: string;
   createdByName?: string;
   approvedByName?: string;
   approvedDate?: string;
@@ -47,7 +49,8 @@ export interface FormattedPdfBlock {
 
 /**
  * Draws the official Amaavigo Corporate Header Table on any given page.
- * Table Dimensions: marginX = 40pt, width = 515.28pt, y = 32pt, height = 52pt.
+ * Table Dimensions: marginX = 36pt, width = contentWidth, y = 48pt, height = 52pt.
+ * Generous 48pt (~0.67 in) top margin completely prevents touching the top of page or cutting when printed.
  */
 export function drawCorporateHeaderTable(
   doc: jsPDF,
@@ -55,10 +58,11 @@ export function drawCorporateHeaderTable(
     title: string;
     version: string;
     effectiveDate: string;
+    reReviewDate?: string;
   },
   marginX: number,
   contentWidth: number,
-  headerY = 32,
+  headerY = 48,
   headerHeight = 52
 ) {
   // Outer border & background
@@ -68,106 +72,122 @@ export function drawCorporateHeaderTable(
   doc.setLineWidth(1.3);
   doc.rect(marginX, headerY, contentWidth, headerHeight, 'S');
 
-  // Column Boundaries
-  const col1W = 108; // Logo
-  const col3W = 74;  // Version
-  const col4W = 98;  // Effective Date
-  const col2W = contentWidth - col1W - col3W - col4W; // Document Name
+  // Column Boundaries (5 columns)
+  const col1W = 100; // Logo
+  const col3W = 65;  // Version
+  const col4W = 85;  // Effective Date
+  const col5W = 85;  // Re-review Date
+  const col2W = contentWidth - col1W - col3W - col4W - col5W; // Document Name
 
   const col1X = marginX;
   const col2X = col1X + col1W;
   const col3X = col2X + col2W;
   const col4X = col3X + col3W;
+  const col5X = col4X + col4W;
 
   // Column Dividers
   doc.setLineWidth(0.8);
   doc.line(col2X, headerY, col2X, headerY + headerHeight);
   doc.line(col3X, headerY, col3X, headerY + headerHeight);
   doc.line(col4X, headerY, col4X, headerY + headerHeight);
+  doc.line(col5X, headerY, col5X, headerY + headerHeight);
 
   // Column 1: Amaavigo Brand Logo (Wordmark + Pip Notch + Ring)
   doc.setFont('helvetica', 'bold');
-  doc.setFontSize(15);
+  doc.setFontSize(14);
   doc.setTextColor(24, 26, 30);
-  doc.text('amaavig', col1X + 8, headerY + 25);
+  doc.text('amaavig', col1X + 6, headerY + 25);
 
   // Brand Orange Mark: "o" ring and pip notch (#FA7014 -> 250, 112, 20)
   doc.setFillColor(250, 112, 20);
   doc.setDrawColor(250, 112, 20);
   // Pip notch
-  doc.rect(col1X + 68, headerY + 14, 3.2, 3.2, 'F');
+  doc.rect(col1X + 63, headerY + 14, 3, 3, 'F');
   // Ring
-  doc.setLineWidth(2.2);
-  doc.circle(col1X + 75, headerY + 22, 4.2, 'S');
+  doc.setLineWidth(2.0);
+  doc.circle(col1X + 70, headerY + 22, 3.8, 'S');
 
   // Brand Tagline
   doc.setFont('helvetica', 'normal');
-  doc.setFontSize(6.2);
+  doc.setFontSize(5.8);
   doc.setTextColor(100, 116, 139); // slate-500
-  doc.text('Where Brand takes Flight', col1X + 8, headerY + 39);
+  doc.text('Where Brand takes Flight', col1X + 6, headerY + 39);
 
-  // Column 2: Document Name (displays full document name without title overlapping)
+  // Column 2: Document Name
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(6.8);
   doc.setTextColor(15, 23, 42);
-  doc.text('Document Name:', col2X + 8, headerY + 14);
+  doc.text('Document Name:', col2X + 7, headerY + 14);
 
-  let titleFontSize = 8.5;
+  let titleFontSize = 8.0;
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(titleFontSize);
   doc.setTextColor(30, 41, 59); // slate-800
 
-  // Normalize tokens so hyphens/underscores/compound words wrap cleanly without overflowing col2
+  // Wrap text cleanly
   const safeTitle = (meta.title || 'Document').replace(/[_-]/g, ' ');
-  let titleLines = doc.splitTextToSize(safeTitle, col2W - 16);
+  let titleLines = doc.splitTextToSize(safeTitle, col2W - 14);
   if (titleLines.length > 2) {
-    titleFontSize = 7.5;
+    titleFontSize = 7.2;
     doc.setFontSize(titleFontSize);
-    titleLines = doc.splitTextToSize(safeTitle, col2W - 16);
+    titleLines = doc.splitTextToSize(safeTitle, col2W - 14);
   }
   if (titleLines.length > 3) {
-    titleFontSize = 6.8;
+    titleFontSize = 6.5;
     doc.setFontSize(titleFontSize);
-    titleLines = doc.splitTextToSize(safeTitle, col2W - 16);
+    titleLines = doc.splitTextToSize(safeTitle, col2W - 14);
   }
 
   if (titleLines.length === 1) {
-    doc.text(titleLines[0], col2X + 8, headerY + 31);
+    doc.text(titleLines[0], col2X + 7, headerY + 31);
   } else if (titleLines.length === 2) {
-    doc.text(titleLines[0], col2X + 8, headerY + 26);
-    doc.text(titleLines[1], col2X + 8, headerY + 38);
+    doc.text(titleLines[0], col2X + 7, headerY + 26);
+    doc.text(titleLines[1], col2X + 7, headerY + 38);
   } else {
-    doc.text(titleLines[0], col2X + 8, headerY + 24);
-    doc.text(titleLines[1], col2X + 8, headerY + 33);
-    doc.text(titleLines[2], col2X + 8, headerY + 42);
+    doc.text(titleLines[0], col2X + 7, headerY + 24);
+    doc.text(titleLines[1], col2X + 7, headerY + 33);
+    doc.text(titleLines[2], col2X + 7, headerY + 42);
   }
 
   // Column 3: Version
   doc.setFont('helvetica', 'bold');
-  doc.setFontSize(8);
+  doc.setFontSize(7.8);
   doc.setTextColor(15, 23, 42);
-  doc.text(`Version: ${meta.version}`, col3X + 8, headerY + 30);
+  doc.text(`Version: ${meta.version}`, col3X + 6, headerY + 30);
 
   // Column 4: Effective Date
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(6.8);
   doc.setTextColor(15, 23, 42);
-  doc.text('Effective date :', col4X + 8, headerY + 14);
+  doc.text('Effective date :', col4X + 6, headerY + 14);
 
   doc.setFont('helvetica', 'normal');
-  doc.setFontSize(8);
+  doc.setFontSize(7.8);
   doc.setTextColor(30, 41, 59);
-  doc.text(meta.effectiveDate, col4X + 8, headerY + 30);
+  doc.text(meta.effectiveDate, col4X + 6, headerY + 30);
+
+  // Column 5: Re-review Date (beside effective date on right!)
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(6.8);
+  doc.setTextColor(15, 23, 42);
+  doc.text('Re-review date :', col5X + 6, headerY + 14);
+
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(7.8);
+  doc.setTextColor(30, 41, 59);
+  doc.text(meta.reReviewDate || 'Annual / As req.', col5X + 6, headerY + 30);
 }
 
 /**
  * Draws the official Amaavigo Governance Approval Footer Table on any given page.
- * Table Dimensions: marginX = 40pt, width = 515.28pt, y = 760pt, height = 40pt.
+ * Table Dimensions: marginX = 36pt, width = contentWidth, y = 760pt, height = 40pt.
+ * 4 balanced columns: Created by, Creation date (in between Created by and Approved by!), Approved by, Approved Date.
  */
 export function drawCorporateFooterTable(
   doc: jsPDF,
   meta: {
     creator: string;
+    creationDate?: string;
     approver: string;
     approvedDate: string;
   },
@@ -183,45 +203,57 @@ export function drawCorporateFooterTable(
   doc.setLineWidth(1.3);
   doc.rect(marginX, footerY, contentWidth, footerHeight, 'S');
 
-  const fColW = contentWidth / 3;
+  const fColW = contentWidth / 4;
   const fCol1X = marginX;
   const fCol2X = fCol1X + fColW;
   const fCol3X = fCol2X + fColW;
+  const fCol4X = fCol3X + fColW;
 
   // Footer Column Dividers
   doc.setLineWidth(0.8);
   doc.line(fCol2X, footerY, fCol2X, footerY + footerHeight);
   doc.line(fCol3X, footerY, fCol3X, footerY + footerHeight);
+  doc.line(fCol4X, footerY, fCol4X, footerY + footerHeight);
 
   // Col 1: Created by
   doc.setFont('helvetica', 'bold');
-  doc.setFontSize(7.5);
+  doc.setFontSize(7);
   doc.setTextColor(15, 23, 42);
-  doc.text('Created by:', fCol1X + 10, footerY + 15);
+  doc.text('Created by:', fCol1X + 8, footerY + 15);
   doc.setFont('helvetica', 'normal');
-  doc.setFontSize(9);
+  doc.setFontSize(8.2);
   doc.setTextColor(30, 41, 59);
-  doc.text(meta.creator, fCol1X + 10, footerY + 29);
+  doc.text(meta.creator || 'HR Author', fCol1X + 8, footerY + 29);
 
-  // Col 2: Approved by
+  // Col 2: Creation date (in between Created by and Approved by!)
   doc.setFont('helvetica', 'bold');
-  doc.setFontSize(7.5);
+  doc.setFontSize(7);
   doc.setTextColor(15, 23, 42);
-  doc.text('Approved by:', fCol2X + 10, footerY + 15);
+  doc.text('Creation date:', fCol2X + 8, footerY + 15);
   doc.setFont('helvetica', 'normal');
-  doc.setFontSize(9);
+  doc.setFontSize(8.2);
   doc.setTextColor(30, 41, 59);
-  doc.text(meta.approver, fCol2X + 10, footerY + 29);
+  doc.text(meta.creationDate || formatDDMMYYYY(new Date()), fCol2X + 8, footerY + 29);
 
-  // Col 3: Approved Date
+  // Col 3: Approved by
   doc.setFont('helvetica', 'bold');
-  doc.setFontSize(7.5);
+  doc.setFontSize(7);
   doc.setTextColor(15, 23, 42);
-  doc.text('Approved Date:', fCol3X + 10, footerY + 15);
+  doc.text('Approved by:', fCol3X + 8, footerY + 15);
   doc.setFont('helvetica', 'normal');
-  doc.setFontSize(9);
+  doc.setFontSize(8.2);
   doc.setTextColor(30, 41, 59);
-  doc.text(meta.approvedDate, fCol3X + 10, footerY + 29);
+  doc.text(meta.approver, fCol3X + 8, footerY + 29);
+
+  // Col 4: Approved Date
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(7);
+  doc.setTextColor(15, 23, 42);
+  doc.text('Approved Date:', fCol4X + 8, footerY + 15);
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(8.2);
+  doc.setTextColor(30, 41, 59);
+  doc.text(meta.approvedDate, fCol4X + 8, footerY + 29);
 }
 
 /**
@@ -1051,13 +1083,13 @@ export function generateCorporatePdfBlob(options: CorporatePdfOptions): Blob {
   const marginX = 36;
   const contentWidth = pageWidth - marginX * 2; // 523.28 pt
 
-  const headerY = 32;
+  const headerY = 48; // Generous 48pt clearance prevents touching top of page or print cutting
   const headerHeight = 52;
   const footerHeight = 40;
   const footerY = 760;
 
   // Content flow boundaries (40pt safety clearance above footer table)
-  const contentStartY = 96; // 12pt clean vertical clearance below header
+  const contentStartY = 114; // 14pt clean vertical clearance below header
   const contentEndY = 720; // 40pt safety buffer above footer table (footerY = 760)
 
   const cleanVer = cleanVersionNumber(options.versionNumber);
@@ -1078,8 +1110,18 @@ export function generateCorporatePdfBlob(options: CorporatePdfOptions): Blob {
   const creator = options.createdByName || 'HR Author';
   const title = options.documentTitle || 'Corporate Policy Document';
 
-  const headerMeta = { title, version: cleanVer, effectiveDate: effective };
-  const footerMeta = { creator, approver, approvedDate: approvedDt };
+  const headerMeta = {
+    title,
+    version: cleanVer,
+    effectiveDate: effective,
+    reReviewDate: formatDDMMYYYY(options.reReviewDate, ''),
+  };
+  const footerMeta = {
+    creator,
+    creationDate: formatDDMMYYYY(options.creationDate, formatDDMMYYYY(new Date())),
+    approver,
+    approvedDate: approvedDt,
+  };
 
   doc.setProperties({
     title,

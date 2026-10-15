@@ -6,7 +6,9 @@ export interface DocumentHeaderFooterData {
   documentTitle: string;
   versionNumber: string;
   effectiveDate: string; // DD/MM/YYYY
+  reReviewDate?: string; // DD/MM/YYYY
   createdByName: string;
+  creationDate?: string; // DD/MM/YYYY
   approvedByName: string;
   approvedDate: string; // DD/MM/YYYY
 }
@@ -75,13 +77,14 @@ export function generateHeaderHtml(data: DocumentHeaderFooterData): string {
   const ver = cleanVersionNumber(data.versionNumber);
   const title = data.documentTitle || 'Corporate Governance Document';
   const effective = formatDDMMYYYY(data.effectiveDate);
+  const reReview = formatDDMMYYYY(data.reReviewDate, '');
 
   return `${HEADER_START_TAG}
-<table class="amaavigo-document-header" style="width: 100%; border-collapse: collapse; border: 2px solid #0f172a; margin-bottom: 24px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background: #ffffff;">
+<table class="amaavigo-document-header" style="width: 100%; border-collapse: collapse; border: 2px solid #0f172a; margin-top: 36px; margin-bottom: 24px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background: #ffffff;">
   <tr>
-    <td style="border: 1px solid #0f172a; padding: 10px 14px; width: 24%; vertical-align: middle; text-align: center; background: #ffffff;">
+    <td style="border: 1px solid #0f172a; padding: 10px 12px; width: 22%; vertical-align: middle; text-align: center; background: #ffffff;">
       <div style="display: inline-block; text-align: center;">
-        <svg viewBox="0 0 240 52" fill="none" xmlns="http://www.w3.org/2000/svg" style="height: 34px; width: auto; max-width: 165px; display: block; margin: 0 auto;" aria-label="Amaavigo - Where Brand takes Flight">
+        <svg viewBox="0 0 240 52" fill="none" xmlns="http://www.w3.org/2000/svg" style="height: 32px; width: auto; max-width: 155px; display: block; margin: 0 auto;" aria-label="Amaavigo - Where Brand takes Flight">
           <g id="amaavigo-wordmark">
             <text x="0" y="28" fill="#181A1E" style="font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; font-weight: 900; font-size: 32px; letter-spacing: -0.035em;">amaavig</text>
             <g transform="translate(196, 0)">
@@ -95,16 +98,20 @@ export function generateHeaderHtml(data: DocumentHeaderFooterData): string {
         </svg>
       </div>
     </td>
-    <td style="border: 1px solid #0f172a; padding: 12px 18px; width: 34%; vertical-align: middle;">
+    <td style="border: 1px solid #0f172a; padding: 10px 14px; width: 30%; vertical-align: middle;">
       <div style="font-size: 11px; font-weight: 700; color: #0f172a; margin-bottom: 3px;">Document Name:</div>
-      <div style="font-size: 14px; font-weight: 600; color: #1e293b; line-height: 1.3;">${title}</div>
+      <div style="font-size: 13px; font-weight: 600; color: #1e293b; line-height: 1.3;">${title}</div>
     </td>
-    <td style="border: 1px solid #0f172a; padding: 12px 18px; width: 18%; vertical-align: middle;">
-      <div style="font-size: 14px; font-weight: 700; color: #0f172a;">Version: ${ver}</div>
+    <td style="border: 1px solid #0f172a; padding: 10px 14px; width: 14%; vertical-align: middle;">
+      <div style="font-size: 13px; font-weight: 700; color: #0f172a;">Version: ${ver}</div>
     </td>
-    <td style="border: 1px solid #0f172a; padding: 12px 18px; width: 24%; vertical-align: middle;">
+    <td style="border: 1px solid #0f172a; padding: 10px 14px; width: 17%; vertical-align: middle;">
       <div style="font-size: 11px; font-weight: 700; color: #0f172a; margin-bottom: 3px;">Effective date :</div>
-      <div style="font-size: 14px; font-weight: 600; color: #1e293b;">${effective}</div>
+      <div style="font-size: 13px; font-weight: 600; color: #1e293b;">${effective}</div>
+    </td>
+    <td style="border: 1px solid #0f172a; padding: 10px 14px; width: 17%; vertical-align: middle;">
+      <div style="font-size: 11px; font-weight: 700; color: #0f172a; margin-bottom: 3px;">Re-review date :</div>
+      <div style="font-size: 13px; font-weight: 600; color: #1e293b;">${reReview || 'Annual / As req.'}</div>
     </td>
   </tr>
 </table>
@@ -116,6 +123,7 @@ ${HEADER_END_TAG}`;
  */
 export function generateFooterHtml(data: DocumentHeaderFooterData): string {
   const creator = data.createdByName || 'HR Author';
+  const creationDate = formatDDMMYYYY(data.creationDate || (data as any).createdAt, formatDDMMYYYY(new Date()));
   const isApproved = Boolean(
     data.approvedByName &&
     data.approvedByName !== 'Not yet approved' &&
@@ -134,17 +142,21 @@ export function generateFooterHtml(data: DocumentHeaderFooterData): string {
   return `${FOOTER_START_TAG}
 <table class="amaavigo-document-footer" style="width: 100%; border-collapse: collapse; border: 2px solid #0f172a; margin-top: 32px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background: #ffffff;">
   <tr>
-    <td style="border: 1px solid #0f172a; padding: 12px 18px; width: 33.33%; vertical-align: middle;">
+    <td style="border: 1px solid #0f172a; padding: 10px 14px; width: 25%; vertical-align: middle;">
       <div style="font-size: 11px; font-weight: 700; color: #0f172a; margin-bottom: 3px;">Created by:</div>
-      <div style="font-size: 14px; font-weight: 600; color: #1e293b;">${creator}</div>
+      <div style="font-size: 13px; font-weight: 600; color: #1e293b;">${creator}</div>
     </td>
-    <td style="border: 1px solid #0f172a; padding: 12px 18px; width: 33.33%; vertical-align: middle;">
+    <td style="border: 1px solid #0f172a; padding: 10px 14px; width: 25%; vertical-align: middle;">
+      <div style="font-size: 11px; font-weight: 700; color: #0f172a; margin-bottom: 3px;">Creation date:</div>
+      <div style="font-size: 13px; font-weight: 600; color: #1e293b;">${creationDate}</div>
+    </td>
+    <td style="border: 1px solid #0f172a; padding: 10px 14px; width: 25%; vertical-align: middle;">
       <div style="font-size: 11px; font-weight: 700; color: #0f172a; margin-bottom: 3px;">Approved by:</div>
-      <div style="font-size: 14px; font-weight: ${isApproved ? '600' : '500'}; color: ${isApproved ? '#1e293b' : '#64748b'};">${approver}</div>
+      <div style="font-size: 13px; font-weight: ${isApproved ? '600' : '500'}; color: ${isApproved ? '#1e293b' : '#64748b'};">${approver}</div>
     </td>
-    <td style="border: 1px solid #0f172a; padding: 12px 18px; width: 33.33%; vertical-align: middle;">
+    <td style="border: 1px solid #0f172a; padding: 10px 14px; width: 25%; vertical-align: middle;">
       <div style="font-size: 11px; font-weight: 700; color: #0f172a; margin-bottom: 3px;">Approved Date:</div>
-      <div style="font-size: 14px; font-weight: ${isApproved ? '600' : '500'}; color: ${isApproved ? '#1e293b' : '#64748b'};">${approvedDate}</div>
+      <div style="font-size: 13px; font-weight: ${isApproved ? '600' : '500'}; color: ${isApproved ? '#1e293b' : '#64748b'};">${approvedDate}</div>
     </td>
   </tr>
 </table>
@@ -269,8 +281,16 @@ export function extractHeaderFooterData(content: string): DocumentHeaderFooterDa
   const effMatch = content.match(/Effective date\s*:[\s\S]*?<div[^>]*>([\s\S]*?)<\/div>/i);
   if (effMatch) effectiveDate = effMatch[1].trim();
 
+  const reRevMatch = content.match(/Re-review date\s*:[\s\S]*?<div[^>]*>([\s\S]*?)<\/div>/i);
+  let reReviewDate = '';
+  if (reRevMatch) reReviewDate = reRevMatch[1].trim();
+
   const creatorMatch = content.match(/Created by:[\s\S]*?<div[^>]*>([\s\S]*?)<\/div>/i);
   if (creatorMatch) createdByName = creatorMatch[1].trim();
+
+  const createDateMatch = content.match(/Creation date\s*:[\s\S]*?<div[^>]*>([\s\S]*?)<\/div>/i);
+  let creationDate = '';
+  if (createDateMatch) creationDate = createDateMatch[1].trim();
 
   const approverMatch = content.match(/Approved by:[\s\S]*?<div[^>]*>([\s\S]*?)<\/div>/i);
   if (approverMatch) approvedByName = approverMatch[1].trim();
@@ -295,7 +315,9 @@ export function extractHeaderFooterData(content: string): DocumentHeaderFooterDa
     documentTitle: documentTitle || 'Document',
     versionNumber: versionNumber || '1.0',
     effectiveDate: effectiveDate || formatDDMMYYYY(new Date()),
+    reReviewDate: reReviewDate || '',
     createdByName: createdByName || 'HR Author',
+    creationDate: creationDate || formatDDMMYYYY(new Date()),
     approvedByName: isApproved ? approvedByName : 'Not yet approved',
     approvedDate: isApproved ? formatDDMMYYYY(approvedDate) : 'Not yet approved',
   };
@@ -303,6 +325,8 @@ export function extractHeaderFooterData(content: string): DocumentHeaderFooterDa
 
 /**
  * React Component: Dynamic Document Header Table matching the provided screenshot specification.
+ * Features 5 balanced columns: Logo, Document Name, Version, Effective Date, and Re-review Date.
+ * Includes ample top breathing room to avoid edge touching / print clipping.
  */
 export const DocumentHeaderTable: React.FC<{
   data: DocumentHeaderFooterData;
@@ -312,19 +336,20 @@ export const DocumentHeaderTable: React.FC<{
   const ver = cleanVersionNumber(data.versionNumber);
   const title = data.documentTitle || 'Document';
   const effective = formatDDMMYYYY(data.effectiveDate);
+  const reReview = formatDDMMYYYY(data.reReviewDate, '');
 
   return (
     <div
-      className={`w-full border-2 border-slate-900 bg-white text-slate-900 overflow-hidden font-sans mt-2 mb-6 sm:mb-8 shadow-2xs ${className}`}
+      className={`w-full border-2 border-slate-900 bg-white text-slate-900 overflow-hidden font-sans mt-6 sm:mt-8 pt-1 mb-6 sm:mb-8 shadow-2xs print:mt-6 print:mb-6 print:break-inside-avoid ${className}`}
     >
       <div className="grid grid-cols-12 text-xs divide-x divide-slate-900 items-stretch">
         {/* Col 1: Brand Logo */}
         <div className="col-span-3 sm:col-span-3 p-2 sm:p-2.5 flex items-center justify-center text-center bg-white min-w-0 overflow-hidden">
-          <AmaavigoLogo size="sm" variant="full" height={34} showTagline={true} align="center" />
+          <AmaavigoLogo size="sm" variant="full" height={32} showTagline={true} align="center" />
         </div>
 
         {/* Col 2: Document Name - Full display with ample space, zero overlap */}
-        <div className="col-span-4 sm:col-span-4 p-2.5 sm:p-3 flex flex-col justify-center bg-white min-w-0 overflow-hidden">
+        <div className="col-span-3 sm:col-span-3 p-2 sm:p-2.5 flex flex-col justify-center bg-white min-w-0 overflow-hidden">
           <span className="text-[10px] sm:text-[11px] font-bold text-slate-900 block uppercase tracking-wide truncate">
             Document Name:
           </span>
@@ -334,19 +359,29 @@ export const DocumentHeaderTable: React.FC<{
         </div>
 
         {/* Col 3: Version */}
-        <div className="col-span-2 sm:col-span-2 p-2 sm:p-2.5 flex flex-col justify-center items-center text-center bg-white min-w-0 overflow-hidden">
+        <div className="col-span-2 sm:col-span-2 p-2 sm:p-2 flex flex-col justify-center items-center text-center bg-white min-w-0 overflow-hidden">
           <span className="text-[11px] sm:text-xs font-bold text-slate-900 break-words leading-tight">
             Version: {ver}
           </span>
         </div>
 
         {/* Col 4: Effective Date */}
-        <div className="col-span-3 sm:col-span-3 p-2.5 sm:p-3 flex flex-col justify-center bg-white min-w-0 overflow-hidden">
+        <div className="col-span-2 sm:col-span-2 p-2 sm:p-2.5 flex flex-col justify-center bg-white min-w-0 overflow-hidden">
           <span className="text-[10px] sm:text-[11px] font-bold text-slate-900 block uppercase tracking-wide truncate">
             Effective date :
           </span>
           <span className="text-xs sm:text-sm font-semibold text-slate-800 mt-0.5 font-mono truncate">
             {effective}
+          </span>
+        </div>
+
+        {/* Col 5: Re-review Date (beside effective date on right!) */}
+        <div className="col-span-2 sm:col-span-2 p-2 sm:p-2.5 flex flex-col justify-center bg-white min-w-0 overflow-hidden">
+          <span className="text-[10px] sm:text-[11px] font-bold text-slate-900 block uppercase tracking-wide truncate">
+            Re-review date :
+          </span>
+          <span className="text-xs sm:text-sm font-semibold text-slate-800 mt-0.5 font-mono truncate">
+            {reReview || 'Annual / As req.'}
           </span>
         </div>
       </div>
@@ -355,13 +390,15 @@ export const DocumentHeaderTable: React.FC<{
 };
 
 /**
- * React Component: Dynamic Document Footer Table matching the provided screenshot specification.
+ * React Component: Dynamic Document Footer Table matching the provided specification.
+ * Features 4 balanced columns: Created by, Creation date (intact from creation), Approved by, and Approved Date.
  */
 export const DocumentFooterTable: React.FC<{
   data: DocumentHeaderFooterData;
   className?: string;
 }> = ({ data, className = '' }) => {
   const creator = data.createdByName || 'HR Author';
+  const creationDate = formatDDMMYYYY(data.creationDate || (data as any).createdAt, formatDDMMYYYY(new Date()));
   const isApproved = Boolean(
     data.approvedByName &&
     data.approvedByName !== 'Not yet approved' &&
@@ -381,24 +418,34 @@ export const DocumentFooterTable: React.FC<{
     <div
       className={`w-full border-2 border-slate-900 bg-white text-slate-900 overflow-hidden font-sans my-4 shadow-2xs ${className}`}
     >
-      <div className="grid grid-cols-1 sm:grid-cols-3 text-xs divide-y sm:divide-y-0 sm:divide-x divide-slate-900 items-stretch">
+      <div className="grid grid-cols-2 sm:grid-cols-4 text-xs divide-y sm:divide-y-0 sm:divide-x divide-slate-900 items-stretch">
         {/* Col 1: Created by */}
-        <div className="p-3 sm:p-4 flex flex-col justify-center bg-white">
-          <span className="text-[11px] sm:text-xs font-bold text-slate-900 block uppercase tracking-wide">
+        <div className="p-2.5 sm:p-3 flex flex-col justify-center bg-white">
+          <span className="text-[10px] sm:text-[11px] font-bold text-slate-900 block uppercase tracking-wide">
             Created by:
           </span>
-          <span className="text-xs sm:text-sm font-semibold text-slate-800 mt-1">
+          <span className="text-xs sm:text-sm font-semibold text-slate-800 mt-0.5">
             {creator}
           </span>
         </div>
 
-        {/* Col 2: Approved by */}
-        <div className="p-3 sm:p-4 flex flex-col justify-center bg-white">
-          <span className="text-[11px] sm:text-xs font-bold text-slate-900 block uppercase tracking-wide">
+        {/* Col 2: Creation date (in between Created by and Approved by!) */}
+        <div className="p-2.5 sm:p-3 flex flex-col justify-center bg-white">
+          <span className="text-[10px] sm:text-[11px] font-bold text-slate-900 block uppercase tracking-wide">
+            Creation date:
+          </span>
+          <span className="text-xs sm:text-sm font-semibold text-slate-800 mt-0.5 font-mono">
+            {creationDate}
+          </span>
+        </div>
+
+        {/* Col 3: Approved by */}
+        <div className="p-2.5 sm:p-3 flex flex-col justify-center bg-white">
+          <span className="text-[10px] sm:text-[11px] font-bold text-slate-900 block uppercase tracking-wide">
             Approved by:
           </span>
           <span
-            className={`text-xs sm:text-sm mt-1 ${
+            className={`text-xs sm:text-sm mt-0.5 ${
               isApproved ? 'font-semibold text-slate-800' : 'font-medium text-slate-500 italic'
             }`}
           >
@@ -406,13 +453,13 @@ export const DocumentFooterTable: React.FC<{
           </span>
         </div>
 
-        {/* Col 3: Approved Date */}
-        <div className="p-3 sm:p-4 flex flex-col justify-center bg-white">
-          <span className="text-[11px] sm:text-xs font-bold text-slate-900 block uppercase tracking-wide">
+        {/* Col 4: Approved Date */}
+        <div className="p-2.5 sm:p-3 flex flex-col justify-center bg-white">
+          <span className="text-[10px] sm:text-[11px] font-bold text-slate-900 block uppercase tracking-wide">
             Approved Date:
           </span>
           <span
-            className={`text-xs sm:text-sm mt-1 font-mono ${
+            className={`text-xs sm:text-sm mt-0.5 font-mono ${
               isApproved ? 'font-semibold text-slate-800' : 'font-medium text-slate-500 italic'
             }`}
           >

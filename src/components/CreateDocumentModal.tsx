@@ -36,6 +36,7 @@ export const CreateDocumentModal: React.FC<CreateDocumentModalProps> = ({
   const [department, setDepartment] = useState('All Department');
   const [confidentiality, setConfidentiality] = useState<ConfidentialityLevel | ''>(ConfidentialityLevel.PUBLIC);
   const [acknowledgementRequired, setAcknowledgementRequired] = useState(true);
+  const [creationDate, setCreationDate] = useState(new Date().toISOString().split('T')[0]);
   const [effectiveFrom, setEffectiveFrom] = useState(new Date().toISOString().split('T')[0]);
   const [reviewDueDate, setReviewDueDate] = useState(() => {
     const d = new Date();
@@ -115,6 +116,7 @@ export const CreateDocumentModal: React.FC<CreateDocumentModalProps> = ({
     setDepartment('All Department');
     const todayStr = new Date().toISOString().split('T')[0];
     const nextYearStr = new Date(Date.now() + 365 * 86400000).toISOString().split('T')[0];
+    setCreationDate(todayStr);
     setEffectiveFrom(todayStr);
     setReviewDueDate(nextYearStr);
     if (type === 'remote') {
@@ -211,6 +213,8 @@ Employees should notify their immediate manager via the HR self-service portal a
             documentTitle: docTitle,
             versionNumber: '1.0',
             effectiveDate: effectiveFrom || new Date().toISOString().split('T')[0],
+            reReviewDate: reviewDueDate,
+            creationDate: creationDate || new Date().toISOString().split('T')[0],
             createdByName: currentUser.name,
             approvedByName: 'Not yet approved',
             approvedDate: 'Not yet approved',
@@ -228,6 +232,8 @@ Employees should notify their immediate manager via the HR self-service portal a
             documentTitle: docTitle,
             versionNumber: '1.0',
             effectiveDate: effectiveFrom || new Date().toISOString().split('T')[0],
+            reReviewDate: reviewDueDate,
+            creationDate: creationDate || new Date().toISOString().split('T')[0],
             createdByName: currentUser.name,
             approvedByName: 'Not yet approved',
             approvedDate: 'Not yet approved',
@@ -269,6 +275,10 @@ Employees should notify their immediate manager via the HR self-service portal a
       setError('Please select a specific department (e.g., Content, Human Resources, Operations) when Confidentiality is set to "Specific Department".');
       return;
     }
+    if (!creationDate || !creationDate.trim()) {
+      setError('Creation date is mandatory. Please select a creation date.');
+      return;
+    }
     if (!effectiveFrom || !effectiveFrom.trim()) {
       setError('Effective from Date is mandatory. Please select an effective date.');
       return;
@@ -297,6 +307,7 @@ Employees should notify their immediate manager via the HR self-service portal a
         processOwnerName: currentUser.name,
         confidentiality: confidentiality as ConfidentialityLevel,
         acknowledgementRequired: confidentiality === ConfidentialityLevel.INTERNAL ? false : acknowledgementRequired,
+        creationDate: creationDate.trim(),
         effectiveFrom: effectiveFrom.trim(),
         reviewDueDate,
         description,
@@ -528,40 +539,61 @@ Employees should notify their immediate manager via the HR self-service portal a
             </div>
           </div>
 
-          {/* EFFECTIVE DATE */}
-          <div>
-            <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5" htmlFor="input-effective-from">
-              Effective From Date <span className="text-[#FA7014]">*</span>
-            </label>
-            <input
-              id="input-effective-from"
-              type="date"
-              value={effectiveFrom}
-              onChange={(e) => handleEffectiveFromChange(e.target.value)}
-              className="w-full text-sm p-2.5 bg-slate-50 border border-slate-200 text-slate-900 rounded-xl focus:outline-hidden focus:ring-2 focus:ring-[#FA7014] focus:bg-white cursor-pointer"
-              required
-            />
-            <p className="text-[11px] text-slate-500 mt-1">
-              Date on which this document officially becomes binding across the organization.
-            </p>
-          </div>
+          {/* DATES: CREATION DATE, EFFECTIVE FROM DATE, RE-REVIEW DATE (ALL THREE IN ONE LINE) */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            {/* CREATION DATE */}
+            <div>
+              <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5" htmlFor="input-creation-date">
+                Creation Date <span className="text-[#FA7014]">*</span>
+              </label>
+              <input
+                id="input-creation-date"
+                type="date"
+                value={creationDate}
+                onChange={(e) => setCreationDate(e.target.value)}
+                className="w-full text-sm p-2.5 bg-slate-50 border border-slate-200 text-slate-900 rounded-xl focus:outline-hidden focus:ring-2 focus:ring-[#FA7014] focus:bg-white cursor-pointer"
+                required
+              />
+              <p className="text-[11px] text-slate-500 mt-1">
+                Official creation date (remains intact).
+              </p>
+            </div>
 
-          {/* RE-REVIEW DATE (JUST BELOW EFFECTIVE FROM DATE) */}
-          <div>
-            <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5" htmlFor="input-review-due-date">
-              Re-review Date <span className="text-[#FA7014]">*</span>
-            </label>
-            <input
-              id="input-review-due-date"
-              type="date"
-              value={reviewDueDate}
-              onChange={(e) => setReviewDueDate(e.target.value)}
-              className="w-full text-sm p-2.5 bg-slate-50 border border-slate-200 text-slate-900 rounded-xl focus:outline-hidden focus:ring-2 focus:ring-[#FA7014] focus:bg-white cursor-pointer"
-              required
-            />
-            <p className="text-[11px] text-slate-500 mt-1">
-              Scheduled date by which this document must undergo mandatory compliance re-review and revision.
-            </p>
+            {/* EFFECTIVE FROM DATE */}
+            <div>
+              <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5" htmlFor="input-effective-from">
+                Effective From Date <span className="text-[#FA7014]">*</span>
+              </label>
+              <input
+                id="input-effective-from"
+                type="date"
+                value={effectiveFrom}
+                onChange={(e) => handleEffectiveFromChange(e.target.value)}
+                className="w-full text-sm p-2.5 bg-slate-50 border border-slate-200 text-slate-900 rounded-xl focus:outline-hidden focus:ring-2 focus:ring-[#FA7014] focus:bg-white cursor-pointer"
+                required
+              />
+              <p className="text-[11px] text-slate-500 mt-1">
+                Date binding across organization.
+              </p>
+            </div>
+
+            {/* RE-REVIEW DATE */}
+            <div>
+              <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5" htmlFor="input-review-due-date">
+                Re-review Date <span className="text-[#FA7014]">*</span>
+              </label>
+              <input
+                id="input-review-due-date"
+                type="date"
+                value={reviewDueDate}
+                onChange={(e) => setReviewDueDate(e.target.value)}
+                className="w-full text-sm p-2.5 bg-slate-50 border border-slate-200 text-slate-900 rounded-xl focus:outline-hidden focus:ring-2 focus:ring-[#FA7014] focus:bg-white cursor-pointer"
+                required
+              />
+              <p className="text-[11px] text-slate-500 mt-1">
+                Mandatory compliance re-review.
+              </p>
+            </div>
           </div>
 
           {/* DESCRIPTION */}
@@ -653,6 +685,8 @@ Employees should notify their immediate manager via the HR self-service portal a
                       documentTitle: title.trim() || fileName.replace(/\.[^/.]+$/, ''),
                       versionNumber: '1.0',
                       effectiveDate: effectiveFrom || new Date().toISOString().split('T')[0],
+                      reReviewDate: reviewDueDate,
+                      creationDate: creationDate || new Date().toISOString().split('T')[0],
                       createdByName: currentUser.name,
                       approvedByName: 'Not yet approved',
                       approvedDate: 'Not yet approved',

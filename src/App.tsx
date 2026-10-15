@@ -917,6 +917,8 @@ export default function App() {
                       documentTitle: readerVersion.documentTitle,
                       versionNumber: readerVersion.versionNumber,
                       effectiveDate: formatDDMMYYYY(readerVersion.effectiveFrom || readerVersion.createdAt),
+                      reReviewDate: formatDDMMYYYY(readerVersion.reviewDueDate, ''),
+                      creationDate: formatDDMMYYYY(readerVersion.createdAt),
                       createdByName: readerVersion.createdByName || 'Amee Shah',
                       approvedByName:
                         readerVersion.status === VersionStatus.PUBLISHED
@@ -960,6 +962,8 @@ export default function App() {
                   documentTitle: readerVersion.documentTitle,
                   versionNumber: readerVersion.versionNumber,
                   effectiveDate: formatDDMMYYYY(readerVersion.effectiveFrom || readerVersion.createdAt),
+                  reReviewDate: formatDDMMYYYY(readerVersion.reviewDueDate, ''),
+                  creationDate: formatDDMMYYYY(readerVersion.createdAt),
                   createdByName: readerVersion.createdByName || 'Amee Shah',
                   approvedByName:
                     readerVersion.status === VersionStatus.PUBLISHED

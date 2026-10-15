@@ -32,7 +32,9 @@ export interface HeaderFooterMetadata {
   documentTitle: string;
   versionNumber: string;
   effectiveDate: string;
+  reReviewDate?: string;
   createdByName?: string;
+  creationDate?: string;
   approvedByName?: string;
   approvedDate?: string;
   companyName?: string;
@@ -42,7 +44,9 @@ export interface CorporateDocxOptions {
   documentTitle: string;
   versionNumber: string;
   effectiveDate: string;
+  reReviewDate?: string;
   createdByName?: string;
+  creationDate?: string;
   approvedByName?: string;
   approvedDate?: string;
   companyName?: string;
@@ -656,9 +660,11 @@ function buildNativeHeaderXml(meta: {
   title: string;
   version: string;
   effectiveDate: string;
+  reReviewDate?: string;
 }): string {
   return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <w:hdr xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+  <w:p><w:pPr><w:spacing w:before="140" w:after="80" w:line="180" w:lineRule="auto"/><w:rPr><w:sz w:val="2"/></w:rPr></w:pPr></w:p>
   <w:tbl>
     <w:tblPr>
       <w:tblW w:w="5000" w:type="pct"/>
@@ -672,61 +678,74 @@ function buildNativeHeaderXml(meta: {
       </w:tblBorders>
       <w:tblCellMar>
         <w:top w:w="40" w:type="dxa"/>
-        <w:left w:w="100" w:type="dxa"/>
+        <w:left w:w="90" w:type="dxa"/>
         <w:bottom w:w="40" w:type="dxa"/>
-        <w:right w:w="100" w:type="dxa"/>
+        <w:right w:w="90" w:type="dxa"/>
       </w:tblCellMar>
     </w:tblPr>
     <w:tblGrid>
-      <w:gridCol w:w="2434"/>
-      <w:gridCol w:w="3463"/>
-      <w:gridCol w:w="1591"/>
-      <w:gridCol w:w="1872"/>
+      <w:gridCol w:w="2100"/>
+      <w:gridCol w:w="3100"/>
+      <w:gridCol w:w="1300"/>
+      <w:gridCol w:w="1400"/>
+      <w:gridCol w:w="1460"/>
     </w:tblGrid>
     <w:tr>
       <!-- Col 1: Logo -->
       <w:tc>
-        <w:tcPr><w:tcW w:w="1300" w:type="pct"/></w:tcPr>
+        <w:tcPr><w:tcW w:w="1150" w:type="pct"/></w:tcPr>
         <w:p>
           <w:pPr><w:spacing w:before="0" w:after="0" w:line="240" w:lineRule="auto"/></w:pPr>
-          <w:r><w:rPr><w:rFonts w:ascii="Arial" w:hAnsi="Arial"/><w:b/><w:sz w:val="24"/><w:color w:val="181A1E"/></w:rPr><w:t>amaavig</w:t></w:r>
-          <w:r><w:rPr><w:rFonts w:ascii="Arial" w:hAnsi="Arial"/><w:b/><w:sz w:val="24"/><w:color w:val="FA7014"/></w:rPr><w:t>o</w:t></w:r>
+          <w:r><w:rPr><w:rFonts w:ascii="Arial" w:hAnsi="Arial"/><w:b/><w:sz w:val="22"/><w:color w:val="181A1E"/></w:rPr><w:t>amaavig</w:t></w:r>
+          <w:r><w:rPr><w:rFonts w:ascii="Arial" w:hAnsi="Arial"/><w:b/><w:sz w:val="22"/><w:color w:val="FA7014"/></w:rPr><w:t>o</w:t></w:r>
         </w:p>
         <w:p>
           <w:pPr><w:spacing w:before="0" w:after="0" w:line="180" w:lineRule="auto"/></w:pPr>
-          <w:r><w:rPr><w:rFonts w:ascii="Arial" w:hAnsi="Arial"/><w:sz w:val="12"/><w:color w:val="64748B"/></w:rPr><w:t>Where Brand takes Flight</w:t></w:r>
+          <w:r><w:rPr><w:rFonts w:ascii="Arial" w:hAnsi="Arial"/><w:sz w:val="11"/><w:color w:val="64748B"/></w:rPr><w:t>Where Brand takes Flight</w:t></w:r>
         </w:p>
       </w:tc>
       <!-- Col 2: Document Name -->
       <w:tc>
-        <w:tcPr><w:tcW w:w="1850" w:type="pct"/></w:tcPr>
+        <w:tcPr><w:tcW w:w="1650" w:type="pct"/></w:tcPr>
         <w:p>
           <w:pPr><w:spacing w:before="0" w:after="0" w:line="200" w:lineRule="auto"/></w:pPr>
-          <w:r><w:rPr><w:rFonts w:ascii="Arial" w:hAnsi="Arial"/><w:b/><w:sz w:val="14"/><w:color w:val="0F172A"/></w:rPr><w:t>Document Name:</w:t></w:r>
+          <w:r><w:rPr><w:rFonts w:ascii="Arial" w:hAnsi="Arial"/><w:b/><w:sz w:val="13"/><w:color w:val="0F172A"/></w:rPr><w:t>Document Name:</w:t></w:r>
         </w:p>
         <w:p>
           <w:pPr><w:spacing w:before="0" w:after="0" w:line="220" w:lineRule="auto"/></w:pPr>
-          <w:r><w:rPr><w:rFonts w:ascii="Arial" w:hAnsi="Arial"/><w:b/><w:sz w:val="17"/><w:color w:val="1E293B"/></w:rPr><w:t>${escapeXml(meta.title)}</w:t></w:r>
+          <w:r><w:rPr><w:rFonts w:ascii="Arial" w:hAnsi="Arial"/><w:b/><w:sz w:val="16"/><w:color w:val="1E293B"/></w:rPr><w:t>${escapeXml(meta.title)}</w:t></w:r>
         </w:p>
       </w:tc>
       <!-- Col 3: Version -->
       <w:tc>
-        <w:tcPr><w:tcW w:w="850" w:type="pct"/></w:tcPr>
+        <w:tcPr><w:tcW w:w="700" w:type="pct"/></w:tcPr>
         <w:p>
           <w:pPr><w:spacing w:before="10" w:after="0" w:line="240" w:lineRule="auto"/></w:pPr>
-          <w:r><w:rPr><w:rFonts w:ascii="Arial" w:hAnsi="Arial"/><w:b/><w:sz w:val="16"/><w:color w:val="0F172A"/></w:rPr><w:t>Version: ${escapeXml(meta.version)}</w:t></w:r>
+          <w:r><w:rPr><w:rFonts w:ascii="Arial" w:hAnsi="Arial"/><w:b/><w:sz w:val="15"/><w:color w:val="0F172A"/></w:rPr><w:t>Version: ${escapeXml(meta.version)}</w:t></w:r>
         </w:p>
       </w:tc>
       <!-- Col 4: Effective Date -->
       <w:tc>
-        <w:tcPr><w:tcW w:w="1000" w:type="pct"/></w:tcPr>
+        <w:tcPr><w:tcW w:w="750" w:type="pct"/></w:tcPr>
         <w:p>
           <w:pPr><w:spacing w:before="0" w:after="0" w:line="200" w:lineRule="auto"/></w:pPr>
-          <w:r><w:rPr><w:rFonts w:ascii="Arial" w:hAnsi="Arial"/><w:b/><w:sz w:val="14"/><w:color w:val="0F172A"/></w:rPr><w:t>Effective date :</w:t></w:r>
+          <w:r><w:rPr><w:rFonts w:ascii="Arial" w:hAnsi="Arial"/><w:b/><w:sz w:val="13"/><w:color w:val="0F172A"/></w:rPr><w:t>Effective date :</w:t></w:r>
         </w:p>
         <w:p>
           <w:pPr><w:spacing w:before="0" w:after="0" w:line="220" w:lineRule="auto"/></w:pPr>
-          <w:r><w:rPr><w:rFonts w:ascii="Arial" w:hAnsi="Arial"/><w:sz w:val="16"/><w:color w:val="1E293B"/></w:rPr><w:t>${escapeXml(meta.effectiveDate)}</w:t></w:r>
+          <w:r><w:rPr><w:rFonts w:ascii="Arial" w:hAnsi="Arial"/><w:sz w:val="15"/><w:color w:val="1E293B"/></w:rPr><w:t>${escapeXml(meta.effectiveDate)}</w:t></w:r>
+        </w:p>
+      </w:tc>
+      <!-- Col 5: Re-review Date (beside effective date on right!) -->
+      <w:tc>
+        <w:tcPr><w:tcW w:w="750" w:type="pct"/></w:tcPr>
+        <w:p>
+          <w:pPr><w:spacing w:before="0" w:after="0" w:line="200" w:lineRule="auto"/></w:pPr>
+          <w:r><w:rPr><w:rFonts w:ascii="Arial" w:hAnsi="Arial"/><w:b/><w:sz w:val="13"/><w:color w:val="0F172A"/></w:rPr><w:t>Re-review date :</w:t></w:r>
+        </w:p>
+        <w:p>
+          <w:pPr><w:spacing w:before="0" w:after="0" w:line="220" w:lineRule="auto"/></w:pPr>
+          <w:r><w:rPr><w:rFonts w:ascii="Arial" w:hAnsi="Arial"/><w:sz w:val="15"/><w:color w:val="1E293B"/></w:rPr><w:t>${escapeXml(meta.reReviewDate || 'Annual / As req.')}</w:t></w:r>
         </w:p>
       </w:tc>
     </w:tr>
@@ -740,6 +759,7 @@ function buildNativeHeaderXml(meta: {
  */
 function buildNativeFooterXml(meta: {
   creator: string;
+  creationDate?: string;
   approver: string;
   approvedDate: string;
 }): string {
@@ -764,14 +784,15 @@ function buildNativeFooterXml(meta: {
       </w:tblCellMar>
     </w:tblPr>
     <w:tblGrid>
-      <w:gridCol w:w="3120"/>
-      <w:gridCol w:w="3120"/>
-      <w:gridCol w:w="3120"/>
+      <w:gridCol w:w="2340"/>
+      <w:gridCol w:w="2340"/>
+      <w:gridCol w:w="2340"/>
+      <w:gridCol w:w="2340"/>
     </w:tblGrid>
     <w:tr>
       <!-- Col 1: Created by -->
       <w:tc>
-        <w:tcPr><w:tcW w:w="1666" w:type="pct"/></w:tcPr>
+        <w:tcPr><w:tcW w:w="1250" w:type="pct"/></w:tcPr>
         <w:p>
           <w:pPr><w:spacing w:before="0" w:after="0" w:line="180" w:lineRule="auto"/></w:pPr>
           <w:r><w:rPr><w:rFonts w:ascii="Arial" w:hAnsi="Arial"/><w:b/><w:sz w:val="14"/><w:color w:val="0F172A"/></w:rPr><w:t>Created by:</w:t></w:r>
@@ -781,9 +802,21 @@ function buildNativeFooterXml(meta: {
           <w:r><w:rPr><w:rFonts w:ascii="Arial" w:hAnsi="Arial"/><w:sz w:val="16"/><w:color w:val="1E293B"/></w:rPr><w:t>${escapeXml(meta.creator)}</w:t></w:r>
         </w:p>
       </w:tc>
-      <!-- Col 2: Approved by -->
+      <!-- Col 2: Creation date (in between Created by and Approved by!) -->
       <w:tc>
-        <w:tcPr><w:tcW w:w="1667" w:type="pct"/></w:tcPr>
+        <w:tcPr><w:tcW w:w="1250" w:type="pct"/></w:tcPr>
+        <w:p>
+          <w:pPr><w:spacing w:before="0" w:after="0" w:line="180" w:lineRule="auto"/></w:pPr>
+          <w:r><w:rPr><w:rFonts w:ascii="Arial" w:hAnsi="Arial"/><w:b/><w:sz w:val="14"/><w:color w:val="0F172A"/></w:rPr><w:t>Creation date:</w:t></w:r>
+        </w:p>
+        <w:p>
+          <w:pPr><w:spacing w:before="0" w:after="0" w:line="200" w:lineRule="auto"/></w:pPr>
+          <w:r><w:rPr><w:rFonts w:ascii="Arial" w:hAnsi="Arial"/><w:sz w:val="16"/><w:color w:val="1E293B"/></w:rPr><w:t>${escapeXml(meta.creationDate || formatDDMMYYYY(new Date()))}</w:t></w:r>
+        </w:p>
+      </w:tc>
+      <!-- Col 3: Approved by -->
+      <w:tc>
+        <w:tcPr><w:tcW w:w="1250" w:type="pct"/></w:tcPr>
         <w:p>
           <w:pPr><w:spacing w:before="0" w:after="0" w:line="180" w:lineRule="auto"/></w:pPr>
           <w:r><w:rPr><w:rFonts w:ascii="Arial" w:hAnsi="Arial"/><w:b/><w:sz w:val="14"/><w:color w:val="0F172A"/></w:rPr><w:t>Approved by:</w:t></w:r>
@@ -793,9 +826,9 @@ function buildNativeFooterXml(meta: {
           <w:r><w:rPr><w:rFonts w:ascii="Arial" w:hAnsi="Arial"/><w:sz w:val="16"/><w:color w:val="1E293B"/></w:rPr><w:t>${escapeXml(meta.approver)}</w:t></w:r>
         </w:p>
       </w:tc>
-      <!-- Col 3: Approved Date -->
+      <!-- Col 4: Approved Date -->
       <w:tc>
-        <w:tcPr><w:tcW w:w="1667" w:type="pct"/></w:tcPr>
+        <w:tcPr><w:tcW w:w="1250" w:type="pct"/></w:tcPr>
         <w:p>
           <w:pPr><w:spacing w:before="0" w:after="0" w:line="180" w:lineRule="auto"/></w:pPr>
           <w:r><w:rPr><w:rFonts w:ascii="Arial" w:hAnsi="Arial"/><w:b/><w:sz w:val="14"/><w:color w:val="0F172A"/></w:rPr><w:t>Approved Date:</w:t></w:r>
@@ -921,10 +954,12 @@ export async function stampDocxWithHeaderFooter(
   const approver = isDocxApproved ? meta.approvedByName : 'Not yet approved';
   const creator = meta.createdByName || 'HR Author';
   const title = meta.documentTitle || 'Document';
+  const reReview = formatDDMMYYYY(meta.reReviewDate, '');
+  const creationDate = formatDDMMYYYY(meta.creationDate, formatDDMMYYYY(new Date()));
 
   // 1. Generate Header & Footer XML
-  const headerXml = buildNativeHeaderXml({ title, version: cleanVer, effectiveDate: effective });
-  const footerXml = buildNativeFooterXml({ creator, approver, approvedDate: approvedDt });
+  const headerXml = buildNativeHeaderXml({ title, version: cleanVer, effectiveDate: effective, reReviewDate: reReview });
+  const footerXml = buildNativeFooterXml({ creator, creationDate, approver, approvedDate: approvedDt });
 
   const headerPartName = 'header1.xml';
   const footerPartName = 'footer1.xml';
@@ -1008,24 +1043,32 @@ export async function stampDocxWithHeaderFooter(
       if (cleaned.includes('<w:pgMar')) {
         cleaned = cleaned.replace(/<w:pgMar\s+([^>]*)\/>/g, (match, attrs) => {
           let updated = attrs;
-          if (!/w:header=/i.test(updated)) updated += ' w:header="360"';
-          if (!/w:footer=/i.test(updated)) updated += ' w:footer="360"';
-          // Preserve original top margin; only ensure minimum clearance so body doesn't touch header
-          if (/w:top="\d+"/i.test(updated)) {
-            updated = updated.replace(/w:top="(\d+)"/i, (m, val) => (Number(val) < 1100 ? 'w:top="1100"' : m));
+          if (!/w:header=/i.test(updated)) {
+            updated += ' w:header="720"';
           } else {
-            updated += ' w:top="1440"';
+            updated = updated.replace(/w:header="(\d+)"/i, (m, val) => (Number(val) < 720 ? 'w:header="720"' : m));
           }
-          // Preserve original bottom margin; do not artificially inflate to 1800
-          if (/w:bottom="\d+"/i.test(updated)) {
-            updated = updated.replace(/w:bottom="(\d+)"/i, (m, val) => (Number(val) < 1000 ? 'w:bottom="1000"' : m));
+          if (!/w:footer=/i.test(updated)) {
+            updated += ' w:footer="720"';
           } else {
-            updated += ' w:bottom="1200"';
+            updated = updated.replace(/w:footer="(\d+)"/i, (m, val) => (Number(val) < 720 ? 'w:footer="720"' : m));
+          }
+          // Ensure clearance from top so body never touches header and header never cuts on print
+          if (/w:top="\d+"/i.test(updated)) {
+            updated = updated.replace(/w:top="(\d+)"/i, (m, val) => (Number(val) < 1650 ? 'w:top="1650"' : m));
+          } else {
+            updated += ' w:top="1650"';
+          }
+          // Ensure bottom clearance
+          if (/w:bottom="\d+"/i.test(updated)) {
+            updated = updated.replace(/w:bottom="(\d+)"/i, (m, val) => (Number(val) < 1440 ? 'w:bottom="1440"' : m));
+          } else {
+            updated += ' w:bottom="1440"';
           }
           return `<w:pgMar ${updated}/>`;
         });
       } else {
-        cleaned += '<w:pgMar w:top="1440" w:right="1440" w:bottom="1200" w:left="1440" w:header="360" w:footer="360" w:gutter="0"/>';
+        cleaned += '<w:pgMar w:top="1650" w:right="1440" w:bottom="1440" w:left="1440" w:header="720" w:footer="720" w:gutter="0"/>';
       }
 
       // Per OpenXML specification, headerReference and footerReference MUST be placed first inside w:sectPr
@@ -1511,6 +1554,8 @@ function parseHtmlOrMarkdownToDocxChildren(rawContent: string): (Paragraph | Tab
 export async function generateCorporateDocxBlob(options: CorporateDocxOptions): Promise<Blob> {
   const cleanVer = cleanVersionNumber(options.versionNumber);
   const effective = formatDDMMYYYY(options.effectiveDate);
+  const reReview = formatDDMMYYYY(options.reReviewDate, '');
+  const creationDate = formatDDMMYYYY(options.creationDate, formatDDMMYYYY(new Date()));
   const isDocxApproved = Boolean(
     options.approvedByName &&
     options.approvedByName !== 'Not yet approved' &&
@@ -1530,7 +1575,7 @@ export async function generateCorporateDocxBlob(options: CorporateDocxOptions): 
   const borderNone = { style: BorderStyle.NONE, size: 0, color: 'auto' };
   const borderSolid = { style: BorderStyle.SINGLE, size: 8, color: '0F172A' };
 
-  // 1. Native Word Header Table (Repeats on EVERY page automatically)
+  // 1. Native Word Header Table (Repeats on EVERY page automatically with 5 columns)
   const headerTable = new Table({
     width: { size: 100, type: WidthType.PERCENTAGE },
     borders: {
@@ -1546,71 +1591,90 @@ export async function generateCorporateDocxBlob(options: CorporateDocxOptions): 
         children: [
           // Col 1: Logo
           new TableCell({
-            width: { size: 26, type: WidthType.PERCENTAGE },
-            margins: { top: 90, bottom: 90, left: 140, right: 140 },
-            children: [
-              new Paragraph({
-                spacing: { before: 0, after: 20 },
-                children: [
-                  new TextRun({ text: 'amaavig', bold: true, size: 28, color: '181A1E', font: 'Arial' }),
-                  new TextRun({ text: 'o', bold: true, size: 28, color: 'FA7014', font: 'Arial' }),
-                ],
-              }),
-              new Paragraph({
-                spacing: { before: 0, after: 0 },
-                children: [
-                  new TextRun({ text: 'Where Brand takes Flight', size: 13, color: '64748B', font: 'Arial' }),
-                ],
-              }),
-            ],
-          }),
-          // Col 2: Document Name
-          new TableCell({
-            width: { size: 36, type: WidthType.PERCENTAGE },
-            margins: { top: 90, bottom: 90, left: 140, right: 140 },
-            children: [
-              new Paragraph({
-                spacing: { before: 0, after: 20 },
-                children: [
-                  new TextRun({ text: 'Document Name:', bold: true, size: 15, color: '0F172A', font: 'Arial' }),
-                ],
-              }),
-              new Paragraph({
-                spacing: { before: 0, after: 0 },
-                children: [
-                  new TextRun({ text: title, bold: true, size: 19, color: '1E293B', font: 'Arial' }),
-                ],
-              }),
-            ],
-          }),
-          // Col 3: Version
-          new TableCell({
-            width: { size: 16, type: WidthType.PERCENTAGE },
-            margins: { top: 90, bottom: 90, left: 140, right: 140 },
-            children: [
-              new Paragraph({
-                spacing: { before: 60, after: 0 },
-                children: [
-                  new TextRun({ text: `Version: ${cleanVer}`, bold: true, size: 18, color: '0F172A', font: 'Arial' }),
-                ],
-              }),
-            ],
-          }),
-          // Col 4: Effective Date
-          new TableCell({
             width: { size: 22, type: WidthType.PERCENTAGE },
             margins: { top: 90, bottom: 90, left: 140, right: 140 },
             children: [
               new Paragraph({
                 spacing: { before: 0, after: 20 },
                 children: [
-                  new TextRun({ text: 'Effective date :', bold: true, size: 15, color: '0F172A', font: 'Arial' }),
+                  new TextRun({ text: 'amaavig', bold: true, size: 26, color: '181A1E', font: 'Arial' }),
+                  new TextRun({ text: 'o', bold: true, size: 26, color: 'FA7014', font: 'Arial' }),
                 ],
               }),
               new Paragraph({
                 spacing: { before: 0, after: 0 },
                 children: [
-                  new TextRun({ text: effective, size: 18, color: '1E293B', font: 'Arial' }),
+                  new TextRun({ text: 'Where Brand takes Flight', size: 12, color: '64748B', font: 'Arial' }),
+                ],
+              }),
+            ],
+          }),
+          // Col 2: Document Name
+          new TableCell({
+            width: { size: 32, type: WidthType.PERCENTAGE },
+            margins: { top: 90, bottom: 90, left: 140, right: 140 },
+            children: [
+              new Paragraph({
+                spacing: { before: 0, after: 20 },
+                children: [
+                  new TextRun({ text: 'Document Name:', bold: true, size: 14, color: '0F172A', font: 'Arial' }),
+                ],
+              }),
+              new Paragraph({
+                spacing: { before: 0, after: 0 },
+                children: [
+                  new TextRun({ text: title, bold: true, size: 18, color: '1E293B', font: 'Arial' }),
+                ],
+              }),
+            ],
+          }),
+          // Col 3: Version
+          new TableCell({
+            width: { size: 14, type: WidthType.PERCENTAGE },
+            margins: { top: 90, bottom: 90, left: 140, right: 140 },
+            children: [
+              new Paragraph({
+                spacing: { before: 60, after: 0 },
+                children: [
+                  new TextRun({ text: `Version: ${cleanVer}`, bold: true, size: 16, color: '0F172A', font: 'Arial' }),
+                ],
+              }),
+            ],
+          }),
+          // Col 4: Effective Date
+          new TableCell({
+            width: { size: 16, type: WidthType.PERCENTAGE },
+            margins: { top: 90, bottom: 90, left: 140, right: 140 },
+            children: [
+              new Paragraph({
+                spacing: { before: 0, after: 20 },
+                children: [
+                  new TextRun({ text: 'Effective date :', bold: true, size: 14, color: '0F172A', font: 'Arial' }),
+                ],
+              }),
+              new Paragraph({
+                spacing: { before: 0, after: 0 },
+                children: [
+                  new TextRun({ text: effective, size: 16, color: '1E293B', font: 'Arial' }),
+                ],
+              }),
+            ],
+          }),
+          // Col 5: Re-review Date (beside effective date on right!)
+          new TableCell({
+            width: { size: 16, type: WidthType.PERCENTAGE },
+            margins: { top: 90, bottom: 90, left: 140, right: 140 },
+            children: [
+              new Paragraph({
+                spacing: { before: 0, after: 20 },
+                children: [
+                  new TextRun({ text: 'Re-review date :', bold: true, size: 14, color: '0F172A', font: 'Arial' }),
+                ],
+              }),
+              new Paragraph({
+                spacing: { before: 0, after: 0 },
+                children: [
+                  new TextRun({ text: reReview || 'Annual / As req.', size: 16, color: '1E293B', font: 'Arial' }),
                 ],
               }),
             ],
@@ -1620,7 +1684,7 @@ export async function generateCorporateDocxBlob(options: CorporateDocxOptions): 
     ],
   });
 
-  // 2. Native Word Footer Table (Repeats on EVERY page automatically)
+  // 2. Native Word Footer Table (Repeats on EVERY page automatically with 4 columns)
   const footerTable = new Table({
     width: { size: 100, type: WidthType.PERCENTAGE },
     borders: {
@@ -1636,46 +1700,61 @@ export async function generateCorporateDocxBlob(options: CorporateDocxOptions): 
         children: [
           // Col 1: Created by
           new TableCell({
-            width: { size: 33.33, type: WidthType.PERCENTAGE },
+            width: { size: 25, type: WidthType.PERCENTAGE },
             margins: { top: 70, bottom: 70, left: 140, right: 140 },
             children: [
               new Paragraph({
                 spacing: { before: 0, after: 15 },
-                children: [new TextRun({ text: 'Created by:', bold: true, size: 15, color: '0F172A', font: 'Arial' })],
+                children: [new TextRun({ text: 'Created by:', bold: true, size: 14, color: '0F172A', font: 'Arial' })],
               }),
               new Paragraph({
                 spacing: { before: 0, after: 0 },
-                children: [new TextRun({ text: creator, size: 17, color: '1E293B', font: 'Arial' })],
+                children: [new TextRun({ text: creator, size: 16, color: '1E293B', font: 'Arial' })],
               }),
             ],
           }),
-          // Col 2: Approved by
+          // Col 2: Creation date (in between Created by and Approved by!)
           new TableCell({
-            width: { size: 33.33, type: WidthType.PERCENTAGE },
+            width: { size: 25, type: WidthType.PERCENTAGE },
             margins: { top: 70, bottom: 70, left: 140, right: 140 },
             children: [
               new Paragraph({
                 spacing: { before: 0, after: 15 },
-                children: [new TextRun({ text: 'Approved by:', bold: true, size: 15, color: '0F172A', font: 'Arial' })],
+                children: [new TextRun({ text: 'Creation date:', bold: true, size: 14, color: '0F172A', font: 'Arial' })],
               }),
               new Paragraph({
                 spacing: { before: 0, after: 0 },
-                children: [new TextRun({ text: approver, size: 17, color: '1E293B', font: 'Arial' })],
+                children: [new TextRun({ text: creationDate, size: 16, color: '1E293B', font: 'Arial' })],
               }),
             ],
           }),
-          // Col 3: Approved Date
+          // Col 3: Approved by
           new TableCell({
-            width: { size: 33.34, type: WidthType.PERCENTAGE },
+            width: { size: 25, type: WidthType.PERCENTAGE },
             margins: { top: 70, bottom: 70, left: 140, right: 140 },
             children: [
               new Paragraph({
                 spacing: { before: 0, after: 15 },
-                children: [new TextRun({ text: 'Approved Date:', bold: true, size: 15, color: '0F172A', font: 'Arial' })],
+                children: [new TextRun({ text: 'Approved by:', bold: true, size: 14, color: '0F172A', font: 'Arial' })],
               }),
               new Paragraph({
                 spacing: { before: 0, after: 0 },
-                children: [new TextRun({ text: approvedDt, size: 17, color: '1E293B', font: 'Arial' })],
+                children: [new TextRun({ text: approver, size: 16, color: '1E293B', font: 'Arial' })],
+              }),
+            ],
+          }),
+          // Col 4: Approved Date
+          new TableCell({
+            width: { size: 25, type: WidthType.PERCENTAGE },
+            margins: { top: 70, bottom: 70, left: 140, right: 140 },
+            children: [
+              new Paragraph({
+                spacing: { before: 0, after: 15 },
+                children: [new TextRun({ text: 'Approved Date:', bold: true, size: 14, color: '0F172A', font: 'Arial' })],
+              }),
+              new Paragraph({
+                spacing: { before: 0, after: 0 },
+                children: [new TextRun({ text: approvedDt, size: 16, color: '1E293B', font: 'Arial' })],
               }),
             ],
           }),
@@ -1694,12 +1773,12 @@ export async function generateCorporateDocxBlob(options: CorporateDocxOptions): 
         properties: {
           page: {
             margin: {
-              top: 1800,    // 1.25 in (Leaves room for Header table)
+              top: 1950,    // 1.35 in (Leaves room for Header table and avoids cutting)
               bottom: 1600, // 1.11 in (Leaves room for Footer table)
               left: 1440,   // 1.0 in
               right: 1440,  // 1.0 in
-              header: 650,  // 0.45 in
-              footer: 650,  // 0.45 in
+              header: 720,  // 0.5 in standard
+              footer: 720,  // 0.5 in standard
             },
           },
         },
@@ -1731,6 +1810,8 @@ export async function downloadDocumentWithIntactFormat(params: {
   documentTitle?: string;
   versionNumber?: string;
   effectiveDate?: string;
+  reReviewDate?: string;
+  creationDate?: string;
   createdByName?: string;
   approvedByName?: string;
   approvedDate?: string;
@@ -1846,6 +1927,8 @@ export async function downloadDocumentWithIntactFormat(params: {
     documentTitle: params.documentTitle || params.headerFooterData?.documentTitle || originalName.replace(/\.[^/.]+$/, ''),
     versionNumber: params.versionNumber || params.headerFooterData?.versionNumber || '1.0',
     effectiveDate: params.effectiveDate || params.headerFooterData?.effectiveDate || new Date().toISOString(),
+    reReviewDate: params.reReviewDate || params.headerFooterData?.reReviewDate || '',
+    creationDate: params.creationDate || params.headerFooterData?.creationDate || '',
     createdByName: params.createdByName || params.headerFooterData?.createdByName || 'Amee Shah',
     approvedByName: params.approvedByName || params.headerFooterData?.approvedByName || 'Vishal Shah',
     approvedDate: params.approvedDate || params.headerFooterData?.approvedDate || new Date().toISOString(),
@@ -1930,6 +2013,8 @@ export async function downloadDocumentWithIntactFormat(params: {
       documentTitle: meta.documentTitle,
       versionNumber: meta.versionNumber,
       effectiveDate: meta.effectiveDate,
+      reReviewDate: meta.reReviewDate,
+      creationDate: meta.creationDate,
       createdByName: meta.createdByName,
       approvedByName: meta.approvedByName,
       approvedDate: meta.approvedDate,
@@ -1963,6 +2048,8 @@ export async function downloadDocumentWithIntactFormat(params: {
     documentTitle: meta.documentTitle,
     versionNumber: meta.versionNumber,
     effectiveDate: meta.effectiveDate,
+    reReviewDate: meta.reReviewDate,
+    creationDate: meta.creationDate,
     createdByName: meta.createdByName,
     approvedByName: meta.approvedByName,
     approvedDate: meta.approvedDate,

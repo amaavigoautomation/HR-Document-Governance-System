@@ -167,6 +167,8 @@ export const EmployeePortalView: React.FC<EmployeePortalViewProps> = ({
         documentTitle: ver.documentTitle || doc.title,
         versionNumber: ver.versionNumber,
         effectiveDate: formatDDMMYYYY(ver.effectiveFrom || ver.createdAt),
+        reReviewDate: formatDDMMYYYY(ver.reviewDueDate, ''),
+        creationDate: formatDDMMYYYY(doc.createdAt || ver.createdAt),
         createdByName: ver.createdByName || doc.processOwnerName || 'Amee Shah',
         approvedByName:
           ver.status === VersionStatus.PUBLISHED

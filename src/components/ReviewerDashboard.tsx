@@ -109,6 +109,8 @@ export const ReviewerDashboard: React.FC<ReviewerDashboardProps> = ({
         documentTitle: ver.documentTitle || parentMaster?.title,
         versionNumber: ver.versionNumber,
         effectiveDate: formatDDMMYYYY(ver.effectiveFrom || ver.createdAt),
+        reReviewDate: formatDDMMYYYY(ver.reviewDueDate, ''),
+        creationDate: formatDDMMYYYY(parentMaster?.createdAt || ver.createdAt),
         createdByName: creator.name || ver.createdByName || 'Amee Shah',
         approvedByName:
           ver.status === VersionStatus.PUBLISHED

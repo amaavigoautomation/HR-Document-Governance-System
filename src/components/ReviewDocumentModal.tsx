@@ -133,6 +133,8 @@ export const ReviewDocumentModal: React.FC<ReviewDocumentModalProps> = ({
         documentTitle: version.documentTitle || master?.title,
         versionNumber: version.versionNumber,
         effectiveDate: formatDDMMYYYY(version.effectiveFrom || version.createdAt),
+        reReviewDate: formatDDMMYYYY(version.reviewDueDate, ''),
+        creationDate: formatDDMMYYYY(master?.createdAt || version.createdAt),
         createdByName: creator.name || version.createdByName || 'Amee Shah',
         approvedByName:
           version.status === VersionStatus.PUBLISHED
@@ -862,6 +864,8 @@ export const ReviewDocumentModal: React.FC<ReviewDocumentModalProps> = ({
                       documentTitle: version.documentTitle || master?.title || 'Document',
                       versionNumber: version.versionNumber,
                       effectiveDate: formatDDMMYYYY(version.effectiveFrom || new Date()),
+                      reReviewDate: formatDDMMYYYY(version.reviewDueDate, ''),
+                      creationDate: formatDDMMYYYY(master?.createdAt || version.createdAt),
                       createdByName: version.createdByName || master?.createdByName || 'Amee Shah',
                       approvedByName:
                         version.status === VersionStatus.PUBLISHED

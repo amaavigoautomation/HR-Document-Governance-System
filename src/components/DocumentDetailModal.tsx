@@ -58,6 +58,8 @@ export const DocumentDetailModal: React.FC<DocumentDetailModalProps> = ({
         documentTitle: ver.documentTitle || document.title,
         versionNumber: ver.versionNumber,
         effectiveDate: formatDDMMYYYY(ver.effectiveFrom || ver.createdAt),
+        reReviewDate: formatDDMMYYYY(ver.reviewDueDate, ''),
+        creationDate: formatDDMMYYYY(document.createdAt || ver.createdAt),
         createdByName: ver.createdByName || document.createdByName || 'Amee Shah',
         approvedByName:
           ver.status === VersionStatus.PUBLISHED
@@ -467,6 +469,8 @@ export const DocumentDetailModal: React.FC<DocumentDetailModalProps> = ({
                   documentTitle: document.title || activeVersion.documentTitle,
                   versionNumber: activeVersion.versionNumber,
                   effectiveDate: formatDDMMYYYY(activeVersion.effectiveFrom || activeVersion.createdAt),
+                  reReviewDate: formatDDMMYYYY(activeVersion.reviewDueDate, ''),
+                  creationDate: formatDDMMYYYY(document.createdAt || activeVersion.createdAt),
                   createdByName: activeVersion.createdByName || document.createdByName || 'Amee Shah',
                   approvedByName:
                     activeVersion.status === VersionStatus.PUBLISHED
