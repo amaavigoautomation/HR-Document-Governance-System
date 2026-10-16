@@ -35,6 +35,8 @@ import { StatusBadge } from './components/StatusBadge';
 import { HRAgentShell, HRAgentModule } from './components/HRAgentShell';
 import { TalentAcquisitionOverview } from './components/TalentAcquisitionOverview';
 import { TalentAcquisitionHeader } from './components/TalentAcquisitionHeader';
+import { RequisitionsModule } from './components/RequisitionsModule';
+import { isDepartmentHead } from './utils/requisitionPermissions';
 import { hasModulePermission, normalizeAuthorizedModules } from './utils/authorization';
 import { DocumentSuggestion } from './types';
 
@@ -122,6 +124,7 @@ export default function App() {
       if (
         saved === 'talent-acquisition' ||
         saved === 'talent-acquisition-overview' ||
+        saved === 'talent-acquisition-requisitions' ||
         saved === 'document-version-control'
       ) {
         return saved === 'talent-acquisition' ? 'talent-acquisition-overview' : (saved as HRAgentModule);
@@ -152,7 +155,10 @@ export default function App() {
   };
 
   const handleSelectHRAgentModule = (module: HRAgentModule) => {
-    const isTalentModule = module === 'talent-acquisition' || module === 'talent-acquisition-overview';
+    const isTalentModule =
+      module === 'talent-acquisition' ||
+      module === 'talent-acquisition-overview' ||
+      module === 'talent-acquisition-requisitions';
     const hasTalent = hasModulePermission(currentUser, 'talent-acquisition');
     const hasDocGov = hasModulePermission(currentUser, 'document-version-control');
 
@@ -234,6 +240,7 @@ export default function App() {
 
   // Governance Data State
   const [allUsers, setAllUsers] = useState<User[]>([]);
+  const [showHiringRequests, setShowHiringRequests] = useState(false);
   const [documents, setDocuments] = useState<DocumentMaster[]>([]);
   const [versions, setVersions] = useState<DocumentVersion[]>([]);
   const [acknowledgements, setAcknowledgements] = useState<AcknowledgementRecord[]>(() =>
@@ -672,6 +679,23 @@ export default function App() {
             totalDocsCount={employeeTotalDocsCount}
           />
           <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6">
+            {isDepartmentHead(currentUser) && (
+              <div className="mb-6 rounded-2xl border border-slate-200 bg-white">
+                <button
+                  type="button"
+                  onClick={() => setShowHiringRequests((v) => !v)}
+                  className="flex w-full items-center justify-between px-4 py-3 text-left text-sm font-black text-slate-900"
+                >
+                  <span>Hiring requests (department head)</span>
+                  <span className="text-xs font-bold text-[#FA7014]">{showHiringRequests ? 'Hide' : 'Open'}</span>
+                </button>
+                {showHiringRequests && (
+                  <div className="border-t border-slate-100">
+                    <RequisitionsModule currentUser={currentUser} users={allUsers} embedded />
+                  </div>
+                )}
+              </div>
+            )}
             <EmployeePortalView
               currentUser={currentUser}
               documents={documents}
@@ -822,7 +846,24 @@ export default function App() {
                 isSidebarOpen={isSidebarOpen}
                 onToggleSidebar={handleToggleSidebar}
               />
-              <TalentAcquisitionOverview currentUser={currentUser} onLogout={handleLogout} />
+              <TalentAcquisitionOverview
+                currentUser={currentUser}
+                onLogout={handleLogout}
+                onOpenRequisitions={() => handleSelectHRAgentModule('talent-acquisition-requisitions')}
+              />
+            </div>
+          )}
+
+          {/* Module: Talent Acquisition - Hiring Requisitions workflow (HR & Approver) */}
+          {hrAgentModule === 'talent-acquisition-requisitions' && currentUser && (
+            <div className="flex-1 flex flex-col min-w-0">
+              <TalentAcquisitionHeader
+                currentUser={currentUser}
+                onLogout={handleLogout}
+                isSidebarOpen={isSidebarOpen}
+                onToggleSidebar={handleToggleSidebar}
+              />
+              <RequisitionsModule currentUser={currentUser} users={allUsers} />
             </div>
           )}
         </HRAgentShell>

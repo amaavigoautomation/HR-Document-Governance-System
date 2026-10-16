@@ -9,6 +9,7 @@ import { dispatchLiveEmail, getEmailConfigStatus } from './src/services/serverEm
 import { getGoogleSheetsConfigStatus, computeRecruitmentOverview, fetchSheetData } from './src/services/serverSheets';
 import { runCandidateEvaluation, clearEvaluationCache } from './src/services/aiEvaluationService';
 import { UserRole } from './src/types';
+import { generateJobDescription } from './api/_lib/jdGenerator';
 import { generateCorporatePdfBlob } from './src/utils/pdfGenerator';
 import { generateCorporateDocxBlob } from './src/utils/documentStamper';
 
@@ -165,6 +166,21 @@ async function startServer() {
         success: false,
         error: err.message || 'Failed to generate AI candidate evaluation',
       });
+    }
+  });
+
+  // AI Job Description generation for approved hiring requisitions
+  app.post('/api/requisitions/generate-jd', async (req, res) => {
+    try {
+      const body = req.body || {};
+      if (!body.positionTitle || !body.departmentName) {
+        return res.status(400).json({ success: false, error: 'positionTitle and departmentName are required' });
+      }
+      const result = await generateJobDescription(body);
+      res.json({ success: true, ...result });
+    } catch (err: any) {
+      console.error('Error in /api/requisitions/generate-jd:', err);
+      res.status(500).json({ success: false, error: err.message || 'Failed to generate job description' });
     }
   });
 

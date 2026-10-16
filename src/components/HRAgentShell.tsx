@@ -33,7 +33,8 @@ import { governanceEngine } from '../services/governance';
 export type HRAgentModule =
   | 'document-version-control'
   | 'talent-acquisition'
-  | 'talent-acquisition-overview';
+  | 'talent-acquisition-overview'
+  | 'talent-acquisition-requisitions';
 
 interface HRAgentShellProps {
   currentUser: User;
@@ -46,8 +47,6 @@ interface HRAgentShellProps {
   children: React.ReactNode;
 }
 
-const REQUISITION_FORM_URL =
-  'https://puratechautomation.app.n8n.cloud/form/fabf856b-f678-4102-8358-172f40dac767';
 const CANDIDATE_ONBOARDING_FORM_URL =
   'https://puratechautomation.app.n8n.cloud/form/f8ac3400-cd85-46c5-bfca-c3286c01b17f';
 
@@ -82,7 +81,9 @@ export const HRAgentShell: React.FC<HRAgentShellProps> = ({
     if (activeModule === 'document-version-control' && !hasDocGovAccess && hasTalentAccess) {
       onSelectModule('talent-acquisition-overview');
     } else if (
-      (activeModule === 'talent-acquisition' || activeModule === 'talent-acquisition-overview') &&
+      (activeModule === 'talent-acquisition' ||
+        activeModule === 'talent-acquisition-overview' ||
+        activeModule === 'talent-acquisition-requisitions') &&
       !hasTalentAccess &&
       hasDocGovAccess
     ) {
@@ -258,7 +259,7 @@ export const HRAgentShell: React.FC<HRAgentShellProps> = ({
                             Talent Acquisition
                           </span>
                           <span className="text-[10px] text-slate-500 font-medium block">
-                            Overview & 2 Forms
+                            Overview, Requisitions & Onboarding
                           </span>
                         </div>
                       </div>
@@ -311,30 +312,38 @@ export const HRAgentShell: React.FC<HRAgentShellProps> = ({
                           )}
                         </button>
 
-                        {/* Sub-item 2: Requisition Form */}
-                        <a
-                          id="link-requisition-form"
-                          href={REQUISITION_FORM_URL}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          onClick={(e) => {
-                            e.stopPropagation();
+                        {/* Sub-item 2: Requisitions (native hiring workflow) */}
+                        <button
+                          id="nav-submodule-talent-requisitions"
+                          type="button"
+                          onClick={() => {
+                            onSelectModule('talent-acquisition-requisitions');
+                            setIsMobileSidebarOpen(false);
                           }}
-                          className="w-full flex items-center justify-between px-2.5 py-2 rounded-lg text-xs font-semibold text-slate-700 hover:text-[#FA7014] hover:bg-orange-50 active:bg-orange-100/70 transition-all group cursor-pointer"
-                          title="Open Job Requisition Form in a new browser tab"
+                          className={`w-full flex items-center justify-between px-2.5 py-2 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+                            activeModule === 'talent-acquisition-requisitions'
+                              ? 'bg-[#FA7014]/15 text-[#FA7014] font-bold shadow-2xs'
+                              : 'text-slate-700 hover:text-[#FA7014] hover:bg-orange-50'
+                          }`}
+                          title="Hiring requisitions: request, approve and publish new roles"
                         >
                           <div className="flex items-center space-x-2 min-w-0">
-                            <span className="w-1.5 h-1.5 rounded-full bg-slate-300 group-hover:bg-[#FA7014] transition-colors shrink-0" />
-                            <FileSpreadsheet className="w-3.5 h-3.5 text-slate-400 group-hover:text-[#FA7014] shrink-0 transition-colors" />
-                            <span className="truncate">Requisition Form</span>
+                            <span
+                              className={`w-1.5 h-1.5 rounded-full transition-colors shrink-0 ${
+                                activeModule === 'talent-acquisition-requisitions' ? 'bg-[#FA7014]' : 'bg-slate-300'
+                              }`}
+                            />
+                            <FileSpreadsheet
+                              className={`w-3.5 h-3.5 shrink-0 transition-colors ${
+                                activeModule === 'talent-acquisition-requisitions' ? 'text-[#FA7014]' : 'text-slate-400'
+                              }`}
+                            />
+                            <span className="truncate">Requisitions</span>
                           </div>
-                          <div className="flex items-center space-x-1 shrink-0 text-slate-400 group-hover:text-[#FA7014]">
-                            <span className="text-[9px] font-mono font-medium px-1.5 py-0.5 rounded bg-slate-100 group-hover:bg-orange-100/60">
-                              n8n
-                            </span>
-                            <ExternalLink className="w-3.5 h-3.5" />
-                          </div>
-                        </a>
+                          {activeModule === 'talent-acquisition-requisitions' && (
+                            <span className="w-1.5 h-1.5 rounded-full bg-[#FA7014] shrink-0" />
+                          )}
+                        </button>
 
                         {/* Sub-item 3: Candidate Onboarding Form */}
                         <a

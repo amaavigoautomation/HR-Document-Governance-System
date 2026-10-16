@@ -85,6 +85,17 @@ service cloud.firestore {
              (!('status' in data) || (data.status is string && data.status.size() <= 64));
     }
 
+    function isValidRequisition(data) {
+      return data.id is string && data.id.size() <= 128 &&
+             data.reqNo is string && data.reqNo.size() <= 32 &&
+             data.positionTitle is string && data.positionTitle.size() > 0 && data.positionTitle.size() <= 200 &&
+             data.departmentName is string && data.departmentName.size() <= 200 &&
+             data.status is string && data.status in ['PENDING_ASSIGNMENT', 'PENDING_HR', 'PENDING_FOUNDER', 'JD_DRAFT', 'JOB_OPEN', 'REJECTED', 'CLOSED'] &&
+             data.justification is string && data.justification.size() <= 4000 &&
+             data.events is list && data.events.size() <= 200 &&
+             (!('jd' in data) || (data.jd.text is string && data.jd.text.size() <= 20000));
+    }
+
     // 1. Employee Directory & Profiles
     match /employees/{employeeId} {
       allow read: if true;
@@ -143,6 +154,16 @@ service cloud.firestore {
       allow create: if isValidId(suggestionId) && isValidDocumentSuggestion(request.resource.data);
       allow update: if isValidId(suggestionId) && isValidDocumentSuggestion(request.resource.data);
       allow delete: if isValidId(suggestionId);
+    }
+
+    // 8. Hiring Requisitions (request -> HR -> founder -> JD -> job)
+    // NOTE: workflow permissions are enforced in the app layer until authentication is added.
+    match /requisitions/{requisitionId} {
+      allow read: if true;
+      allow create: if isValidId(requisitionId) && isValidRequisition(request.resource.data);
+      allow update: if isValidId(requisitionId) && isValidRequisition(request.resource.data) &&
+                      request.resource.data.id == resource.data.id;
+      allow delete: if false;
     }
   }
 }

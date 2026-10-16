@@ -68,7 +68,21 @@ export enum AuditAction {
   SUGGESTION_SUBMITTED = 'SUGGESTION_SUBMITTED',
   SUGGESTION_REVIEWED = 'SUGGESTION_REVIEWED',
   RE_REVIEW_REMINDER_SENT = 'RE_REVIEW_REMINDER_SENT',
+  REQUISITION_CREATED = 'REQUISITION_CREATED',
+  REQUISITION_ASSIGNED = 'REQUISITION_ASSIGNED',
+  REQUISITION_HR_APPROVED = 'REQUISITION_HR_APPROVED',
+  REQUISITION_HR_REJECTED = 'REQUISITION_HR_REJECTED',
+  REQUISITION_FOUNDER_APPROVED = 'REQUISITION_FOUNDER_APPROVED',
+  REQUISITION_FOUNDER_REJECTED = 'REQUISITION_FOUNDER_REJECTED',
+  JD_GENERATED = 'JD_GENERATED',
+  JD_UPDATED = 'JD_UPDATED',
+  JOB_PUBLISHED = 'JOB_PUBLISHED',
+  REQUISITION_CLOSED = 'REQUISITION_CLOSED',
+  ROLE_CHANGED = 'ROLE_CHANGED',
 }
+
+// HR seniority: HEAD can assign requisitions to STANDARD HRs
+export type HrLevel = 'HEAD' | 'STANDARD';
 
 export interface User {
   id: string;
@@ -79,6 +93,8 @@ export interface User {
   email: string;
   role: UserRole;
   authorizedModules?: string | string[]; // 'ALL' | 'TALENT_ACQUISITION' | 'DOCUMENT_VERSION_CONTROL'
+  hrLevel?: HrLevel; // Only meaningful for HR (CREATOR) users
+  isDepartmentHead?: boolean; // Employees flagged as heads can raise hiring requisitions
   companyId: string;
   companyName: string;
   departmentId: string;
@@ -338,3 +354,89 @@ export interface DocumentSuggestion {
   updatedAt?: string;
 }
 
+
+// ---------------------------------------------------------------------------
+// Hiring Requisitions (Talent Acquisition)
+// ---------------------------------------------------------------------------
+
+export type RequisitionStatus =
+  | 'PENDING_ASSIGNMENT' // Raised, waiting for Head HR to assign an HR owner
+  | 'PENDING_HR' // Assigned HR must approve / reject
+  | 'PENDING_FOUNDER' // HR approved + attached document, founder must decide
+  | 'JD_DRAFT' // Founder approved; HR prepares the JD
+  | 'JOB_OPEN' // JD published as a job
+  | 'REJECTED' // Rejected by HR or founder
+  | 'CLOSED'; // Hiring finished / cancelled
+
+export type RequisitionUrgency = 'LOW' | 'MEDIUM' | 'HIGH';
+
+export interface RequisitionPerson {
+  id: string;
+  name: string;
+  email: string;
+  title?: string;
+}
+
+export interface RequisitionDecision {
+  decision: 'APPROVED' | 'REJECTED';
+  byId: string;
+  byName: string;
+  at: string;
+  comments: string;
+}
+
+export interface RequisitionAttachment {
+  fileName: string;
+  mimeType: string;
+  sizeBytes: number;
+  fileUrl: string; // server URL or inline data URL
+}
+
+export interface RequisitionEvent {
+  at: string;
+  action: string; // human readable e.g. "Assigned to Priya"
+  byId: string;
+  byName: string;
+  note?: string;
+}
+
+export interface RequisitionJD {
+  text: string; // Full editable JD (markdown-ish plain text)
+  generatedBy: 'AI' | 'TEMPLATE' | 'MANUAL';
+  updatedAt: string;
+  updatedByName: string;
+}
+
+export interface Requisition {
+  id: string;
+  reqNo: string; // e.g. REQ-2026-001
+  positionTitle: string;
+  departmentName: string;
+  vacancies: number;
+  employmentType: 'Full-time' | 'Part-time' | 'Contract' | 'Internship';
+  location: string;
+  minExperienceYears: number;
+  maxExperienceYears: number;
+  urgency: RequisitionUrgency;
+  expectedJoiningDate?: string;
+  budgetRange?: string;
+  justification: string;
+  keySkills: string; // free text, comma separated; seeds the JD
+  status: RequisitionStatus;
+  requestedBy: RequisitionPerson; // department head / manager the request is for
+  raisedBy: RequisitionPerson; // who actually submitted it (may be HR on behalf)
+  ownerHr?: RequisitionPerson;
+  assignedById?: string;
+  assignedByName?: string;
+  assignedAt?: string;
+  hrDecision?: RequisitionDecision;
+  hrAttachment?: RequisitionAttachment;
+  founderDecision?: RequisitionDecision;
+  jd?: RequisitionJD;
+  jobId?: string;
+  publishedAt?: string;
+  closedReason?: string;
+  events: RequisitionEvent[];
+  createdAt: string;
+  updatedAt: string;
+}
