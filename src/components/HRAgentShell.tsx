@@ -34,7 +34,8 @@ export type HRAgentModule =
   | 'document-version-control'
   | 'talent-acquisition'
   | 'talent-acquisition-overview'
-  | 'talent-acquisition-requisitions';
+  | 'talent-acquisition-requisitions'
+  | 'talent-acquisition-onboarding';
 
 interface HRAgentShellProps {
   currentUser: User;
@@ -47,8 +48,6 @@ interface HRAgentShellProps {
   children: React.ReactNode;
 }
 
-const CANDIDATE_ONBOARDING_FORM_URL =
-  'https://puratechautomation.app.n8n.cloud/form/f8ac3400-cd85-46c5-bfca-c3286c01b17f';
 
 export const HRAgentShell: React.FC<HRAgentShellProps> = ({
   currentUser,
@@ -345,30 +344,38 @@ export const HRAgentShell: React.FC<HRAgentShellProps> = ({
                           )}
                         </button>
 
-                        {/* Sub-item 3: Candidate Onboarding Form */}
-                        <a
-                          id="link-candidate-onboarding-form"
-                          href={CANDIDATE_ONBOARDING_FORM_URL}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          onClick={(e) => {
-                            e.stopPropagation();
+                        {/* Sub-item 3: Onboarding (native workflow, replaces the n8n form) */}
+                        <button
+                          id="nav-submodule-talent-onboarding"
+                          type="button"
+                          onClick={() => {
+                            onSelectModule('talent-acquisition-onboarding');
+                            setIsMobileSidebarOpen(false);
                           }}
-                          className="w-full flex items-center justify-between px-2.5 py-2 rounded-lg text-xs font-semibold text-slate-700 hover:text-[#FA7014] hover:bg-orange-50 active:bg-orange-100/70 transition-all group cursor-pointer"
-                          title="Open Candidate Onboarding Form in a new browser tab"
+                          className={`w-full flex items-center justify-between px-2.5 py-2 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+                            activeModule === 'talent-acquisition-onboarding'
+                              ? 'bg-[#FA7014]/15 text-[#FA7014] font-bold shadow-2xs'
+                              : 'text-slate-700 hover:text-[#FA7014] hover:bg-orange-50'
+                          }`}
+                          title="Onboard selected candidates"
                         >
                           <div className="flex items-center space-x-2 min-w-0">
-                            <span className="w-1.5 h-1.5 rounded-full bg-slate-300 group-hover:bg-[#FA7014] transition-colors shrink-0" />
-                            <UserCheck className="w-3.5 h-3.5 text-slate-400 group-hover:text-[#FA7014] shrink-0 transition-colors" />
-                            <span className="truncate">Candidate Onboarding Form</span>
+                            <span
+                              className={`w-1.5 h-1.5 rounded-full transition-colors shrink-0 ${
+                                activeModule === 'talent-acquisition-onboarding' ? 'bg-[#FA7014]' : 'bg-slate-300'
+                              }`}
+                            />
+                            <UserCheck
+                              className={`w-3.5 h-3.5 shrink-0 transition-colors ${
+                                activeModule === 'talent-acquisition-onboarding' ? 'text-[#FA7014]' : 'text-slate-400'
+                              }`}
+                            />
+                            <span className="truncate">Onboarding</span>
                           </div>
-                          <div className="flex items-center space-x-1 shrink-0 text-slate-400 group-hover:text-[#FA7014]">
-                            <span className="text-[9px] font-mono font-medium px-1.5 py-0.5 rounded bg-slate-100 group-hover:bg-orange-100/60">
-                              n8n
-                            </span>
-                            <ExternalLink className="w-3.5 h-3.5" />
-                          </div>
-                        </a>
+                          {activeModule === 'talent-acquisition-onboarding' && (
+                            <span className="w-1.5 h-1.5 rounded-full bg-[#FA7014] shrink-0" />
+                          )}
+                        </button>
                       </div>
                     )}
                   </div>

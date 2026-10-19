@@ -146,6 +146,7 @@ interface Application {
   designation: string;
   status: string;
   appliedOn: string;
+  raw: Record<string, any>;
 }
 
 interface Opening {
@@ -242,6 +243,7 @@ async function loadApplications(force = false): Promise<Application[]> {
       designation,
       status,
       appliedOn,
+      raw: a,
       row: [
         id,
         str(a.name),
@@ -356,6 +358,30 @@ export async function fetchSheetData(tabName: string): Promise<SheetRowData> {
     throw new Error(`NOT_FOUND: no applications found for '${tabName}'`);
   }
   return sheet(tabName, matched.map(a => a.row), APPLICATION_HEADERS);
+}
+
+/** Server-side lookup of one application by id (used by the onboarding flow; never sent to the browser as-is). */
+export async function getApplicationRecord(id: string): Promise<{
+  id: string;
+  name: string;
+  email: string;
+  mobile: string;
+  designation: string;
+  status: string;
+  raw: Record<string, any>;
+} | null> {
+  const apps = await loadApplications(true);
+  const a = apps.find(x => x.id === String(id));
+  if (!a) return null;
+  return {
+    id: a.id,
+    name: str(a.raw.name),
+    email: str(a.raw.email),
+    mobile: str(a.raw.mobile),
+    designation: a.designation,
+    status: a.status,
+    raw: a.raw,
+  };
 }
 
 export async function getSpreadsheetTabNames(): Promise<string[]> {

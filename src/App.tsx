@@ -36,6 +36,7 @@ import { HRAgentShell, HRAgentModule } from './components/HRAgentShell';
 import { TalentAcquisitionOverview } from './components/TalentAcquisitionOverview';
 import { TalentAcquisitionHeader } from './components/TalentAcquisitionHeader';
 import { RequisitionsModule } from './components/RequisitionsModule';
+import { OnboardingModule } from './components/OnboardingModule';
 import { isDepartmentHead } from './utils/requisitionPermissions';
 import { hasModulePermission, normalizeAuthorizedModules } from './utils/authorization';
 import { DocumentSuggestion } from './types';
@@ -125,6 +126,7 @@ export default function App() {
         saved === 'talent-acquisition' ||
         saved === 'talent-acquisition-overview' ||
         saved === 'talent-acquisition-requisitions' ||
+        saved === 'talent-acquisition-onboarding' ||
         saved === 'document-version-control'
       ) {
         return saved === 'talent-acquisition' ? 'talent-acquisition-overview' : (saved as HRAgentModule);
@@ -850,6 +852,7 @@ export default function App() {
                 currentUser={currentUser}
                 onLogout={handleLogout}
                 onOpenRequisitions={() => handleSelectHRAgentModule('talent-acquisition-requisitions')}
+                onOpenOnboarding={() => handleSelectHRAgentModule('talent-acquisition-onboarding')}
               />
             </div>
           )}
@@ -864,6 +867,19 @@ export default function App() {
                 onToggleSidebar={handleToggleSidebar}
               />
               <RequisitionsModule currentUser={currentUser} users={allUsers} />
+            </div>
+          )}
+
+          {/* Module: Talent Acquisition - Onboarding (HR) */}
+          {hrAgentModule === 'talent-acquisition-onboarding' && currentUser && (
+            <div className="flex-1 flex flex-col min-w-0">
+              <TalentAcquisitionHeader
+                currentUser={currentUser}
+                onLogout={handleLogout}
+                isSidebarOpen={isSidebarOpen}
+                onToggleSidebar={handleToggleSidebar}
+              />
+              <OnboardingModule currentUser={currentUser} />
             </div>
           )}
         </HRAgentShell>

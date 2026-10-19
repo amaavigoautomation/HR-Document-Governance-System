@@ -11,6 +11,7 @@ import { runCandidateEvaluation, clearEvaluationCache } from './src/services/aiE
 import { UserRole } from './src/types';
 import { generateJobDescription } from './api/_lib/jdGenerator';
 import { handleCareersPublish } from './api/_lib/careersPublisher';
+import { routeOnboarding } from './api/_lib/onboarding';
 import { generateCorporatePdfBlob } from './src/utils/pdfGenerator';
 import { generateCorporateDocxBlob } from './src/utils/documentStamper';
 
@@ -195,6 +196,30 @@ async function startServer() {
       res.status(500).json({ success: false, error: err?.message || 'Failed to publish opening' });
     }
   });
+
+  // Candidate onboarding (replaces the n8n onboarding workflow)
+  const onboardingHandler = async (req: express.Request, res: express.Response) => {
+    try {
+      const proto = (req.headers['x-forwarded-proto'] as string) || req.protocol;
+      const origin = req.headers.host ? `${proto}://${req.headers.host}` : undefined;
+      const isRaw = Buffer.isBuffer(req.body);
+      const { status, json } = await routeOnboarding({
+        method: req.method,
+        action: req.params.action,
+        query: req.query as Record<string, any>,
+        body: isRaw ? {} : req.body,
+        headers: req.headers as Record<string, any>,
+        origin,
+        raw: isRaw ? (req.body as Buffer) : undefined,
+      });
+      res.status(status).json(json);
+    } catch (err: any) {
+      console.error('Error in /api/onboarding:', err);
+      res.status(500).json({ success: false, error: err?.message || 'Onboarding request failed' });
+    }
+  };
+  app.put('/api/onboarding/upload', express.raw({ type: () => true, limit: '6mb' }), onboardingHandler);
+  app.all('/api/onboarding/:action', onboardingHandler);
 
   // Auth Users
   app.get('/api/auth/users', (req, res) => {

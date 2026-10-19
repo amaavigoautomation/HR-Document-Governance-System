@@ -31,7 +31,8 @@ import type {
   AIEvaluationResponse,
   CandidateEvaluationResult,
 } from '../services/aiEvaluationService';
-import { User } from '../types';
+import { User, UserRole } from '../types';
+import { onboardingService, CandidateStatus, STATUS_LABELS } from '../services/onboardingService';
 
 interface CandidateEvaluationSectionProps {
   currentUser: User;
@@ -57,6 +58,61 @@ export const CandidateEvaluationSection: React.FC<CandidateEvaluationSectionProp
   const [showFullJDModal, setShowFullJDModal] = useState<boolean>(false);
   const [selectedCandidateForDeepDive, setSelectedCandidateForDeepDive] =
     useState<CandidateEvaluationResult | null>(null);
+
+  // Candidate status (Pending / On hold / Rejected) + onboarding state, stored server-side
+  const isHr = currentUser.role === UserRole.CREATOR;
+  const [candStatuses, setCandStatuses] = useState<Record<string, CandidateStatus>>({});
+  const [candOnboardings, setCandOnboardings] = useState<Record<string, { id: string; status: string; employeeId: string }>>({});
+  const [onboardTarget, setOnboardTarget] = useState<{ id: string; name: string } | null>(null);
+  const [onboardDate, setOnboardDate] = useState<string>('');
+  const [onboardBusy, setOnboardBusy] = useState<boolean>(false);
+  const [onboardMsg, setOnboardMsg] = useState<string | null>(null);
+
+  const loadCandidateStates = useCallback(async () => {
+    try {
+      const r = await onboardingService.candidateStatuses(currentUser);
+      setCandStatuses(r.statuses || {});
+      setCandOnboardings(r.onboardings || {});
+    } catch (err) {
+      console.warn('Could not load candidate statuses:', err);
+    }
+  }, [currentUser]);
+
+  useEffect(() => {
+    loadCandidateStates();
+  }, [loadCandidateStates, parentRefreshCount]);
+
+  const changeCandidateStatus = async (id: string, status: CandidateStatus) => {
+    const prev = candStatuses[id];
+    setCandStatuses((m) => ({ ...m, [id]: status }));
+    try {
+      await onboardingService.setCandidateStatus(currentUser, id, status);
+    } catch (err: any) {
+      setCandStatuses((m) => ({ ...m, [id]: prev }));
+      setOnboardMsg(err.message || 'Could not update status.');
+    }
+  };
+
+  const confirmOnboard = async () => {
+    if (!onboardTarget || !onboardDate) return;
+    setOnboardBusy(true);
+    setOnboardMsg(null);
+    try {
+      const r = await onboardingService.start(currentUser, onboardTarget.id, onboardDate);
+      setOnboardMsg(
+        r.status === 'PRIOR_EMPLOYEE_REVIEW'
+          ? `${onboardTarget.name} matches an existing record (${r.employeeId}). Open Onboarding to decide whether to continue.`
+          : `Onboarding started for ${onboardTarget.name} (${r.employeeId}). Document request ${r.emailSent ? 'emailed' : 'could not be emailed'}.`
+      );
+      setOnboardTarget(null);
+      await loadCandidateStates();
+    } catch (err: any) {
+      setOnboardMsg(err.message || 'Could not start onboarding.');
+      setOnboardTarget(null);
+    } finally {
+      setOnboardBusy(false);
+    }
+  };
 
   // Search & Filter within candidate matrix
   const [candidateSearch, setCandidateSearch] = useState<string>('');
@@ -416,12 +472,14 @@ export const CandidateEvaluationSection: React.FC<CandidateEvaluationSectionProp
                     <th className="px-4 py-3 min-w-[220px]">Key Verified Strengths</th>
                     <th className="px-4 py-3 min-w-[200px]">Missing / Gaps</th>
                     <th className="px-4 py-3 text-center min-w-[100px]">Action</th>
+                    <th className="px-4 py-3 min-w-[130px]">Status</th>
+                    <th className="px-4 py-3 text-center min-w-[130px]">Onboard</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
                   {filteredCandidates.length === 0 ? (
                     <tr>
-                      <td colSpan={8} className="px-4 py-8 text-center text-slate-500">
+                      <td colSpan={10} className="px-4 py-8 text-center text-slate-500">
                         No candidates match the selected filters.
                       </td>
                     </tr>
@@ -560,6 +618,51 @@ export const CandidateEvaluationSection: React.FC<CandidateEvaluationSectionProp
                             <ChevronRight className="w-3 h-3" />
                           </button>
                         </td>
+
+                        {/* Candidate status */}
+                        <td className="px-4 py-3.5" onClick={(e) => e.stopPropagation()}>
+                          <select
+                            value={candStatuses[cand.id] || 'PENDING'}
+                            disabled={!isHr}
+                            onChange={(e) => changeCandidateStatus(cand.id, e.target.value as CandidateStatus)}
+                            className={`text-[11px] font-bold rounded-lg border px-2 py-1 outline-none ${
+                              (candStatuses[cand.id] || 'PENDING') === 'REJECTED'
+                                ? 'bg-rose-50 text-rose-700 border-rose-200'
+                                : (candStatuses[cand.id] || 'PENDING') === 'ON_HOLD'
+                                ? 'bg-amber-50 text-amber-700 border-amber-200'
+                                : 'bg-slate-100 text-slate-700 border-slate-200'
+                            }`}
+                          >
+                            <option value="PENDING">Pending</option>
+                            <option value="ON_HOLD">On hold</option>
+                            <option value="REJECTED">Rejected</option>
+                          </select>
+                        </td>
+
+                        {/* Onboard */}
+                        <td className="px-4 py-3.5 text-center" onClick={(e) => e.stopPropagation()}>
+                          {candOnboardings[cand.id] ? (
+                            <span
+                              className="inline-block text-[10px] font-bold px-2 py-1 rounded-lg bg-emerald-50 text-emerald-700 border border-emerald-200"
+                              title={STATUS_LABELS[candOnboardings[cand.id].status] || candOnboardings[cand.id].status}
+                            >
+                              {candOnboardings[cand.id].employeeId} · {STATUS_LABELS[candOnboardings[cand.id].status] || candOnboardings[cand.id].status}
+                            </span>
+                          ) : (
+                            <button
+                              type="button"
+                              disabled={!isHr || (candStatuses[cand.id] || 'PENDING') === 'REJECTED'}
+                              onClick={() => {
+                                setOnboardTarget({ id: cand.id, name: cand.name });
+                                setOnboardDate('');
+                              }}
+                              className="inline-flex items-center px-2.5 py-1 rounded-lg bg-[#FA7014] hover:bg-[#E65A05] disabled:bg-slate-200 disabled:text-slate-400 disabled:cursor-not-allowed text-white font-bold text-xs transition-colors cursor-pointer"
+                              title={isHr ? 'Start the onboarding flow' : 'Only HR can onboard'}
+                            >
+                              Onboard
+                            </button>
+                          )}
+                        </td>
                       </tr>
                     ))
                   )}
@@ -581,6 +684,50 @@ export const CandidateEvaluationSection: React.FC<CandidateEvaluationSectionProp
               </span>
             </div>
           </div>
+        </div>
+      )}
+
+      {/* ONBOARD CONFIRM MODAL */}
+      {onboardTarget && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-md p-6 space-y-4">
+            <h3 className="text-base font-bold text-slate-900">Onboard {onboardTarget.name}</h3>
+            <p className="text-xs text-slate-600">
+              An employee ID will be generated, previous employment checked, and the document request emailed to the candidate.
+            </p>
+            <label className="block text-xs font-bold text-slate-700">
+              Onboarding (joining) date
+              <input
+                type="date"
+                value={onboardDate}
+                onChange={(e) => setOnboardDate(e.target.value)}
+                className="mt-1 w-full border border-slate-300 rounded-lg px-3 py-2 text-sm"
+              />
+            </label>
+            <div className="flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setOnboardTarget(null)}
+                className="px-3 py-2 text-xs font-bold rounded-lg bg-slate-100 text-slate-700 cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={!onboardDate || onboardBusy}
+                onClick={confirmOnboard}
+                className="px-3 py-2 text-xs font-bold rounded-lg bg-[#FA7014] text-white disabled:bg-slate-300 cursor-pointer"
+              >
+                {onboardBusy ? 'Starting…' : 'Start onboarding'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {onboardMsg && (
+        <div className="fixed bottom-4 right-4 z-50 max-w-sm bg-slate-900 text-white text-xs rounded-xl px-4 py-3 shadow-lg flex gap-3">
+          <span>{onboardMsg}</span>
+          <button type="button" onClick={() => setOnboardMsg(null)} className="font-bold cursor-pointer">×</button>
         </div>
       )}
 

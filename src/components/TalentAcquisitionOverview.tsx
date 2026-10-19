@@ -35,12 +35,11 @@ interface TalentAcquisitionOverviewProps {
   currentUser: User;
   onLogout?: () => void;
   onOpenRequisitions?: () => void;
+  onOpenOnboarding?: () => void;
 }
 
-const CANDIDATE_ONBOARDING_FORM_URL =
-  'https://puratechautomation.app.n8n.cloud/form/f8ac3400-cd85-46c5-bfca-c3286c01b17f';
 
-export const TalentAcquisitionOverview: React.FC<TalentAcquisitionOverviewProps> = ({ currentUser, onLogout, onOpenRequisitions }) => {
+export const TalentAcquisitionOverview: React.FC<TalentAcquisitionOverviewProps> = ({ currentUser, onLogout, onOpenRequisitions, onOpenOnboarding }) => {
   // Primary State
   const [overviewData, setOverviewData] = useState<RecruitmentOverviewResult | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(true);
@@ -585,17 +584,15 @@ export const TalentAcquisitionOverview: React.FC<TalentAcquisitionOverviewProps>
               <span>Requisitions</span>
             </button>
 
-            <a
-              href={CANDIDATE_ONBOARDING_FORM_URL}
-              target="_blank"
-              rel="noopener noreferrer"
+            <button
+              type="button"
+              onClick={onOpenOnboarding}
               className="inline-flex items-center space-x-1.5 px-3 py-2 rounded-xl text-xs font-semibold text-slate-700 bg-slate-50 hover:bg-orange-50 hover:text-[#FA7014] border border-slate-200 transition-all cursor-pointer"
-              title="Open Candidate Onboarding Form in a new tab"
+              title="Open Onboarding"
             >
-              <UserCheck className="w-3.5 h-3.5 text-slate-400 group-hover:text-[#FA7014]" />
-              <span>Onboarding Form</span>
-              <ExternalLink className="w-3 h-3 opacity-60" />
-            </a>
+              <UserCheck className="w-3.5 h-3.5 text-slate-400" />
+              <span>Onboarding</span>
+            </button>
           </div>
 
           {/* Refresh Button */}
