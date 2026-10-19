@@ -1,0 +1,6 @@
+{
+  "firestore": {
+    "database": "ai-studio-hrdocumentgovern-f71a32a8-1c50-4d39-bfab-6a034be035cc",
+    "rules": "firestore.rules"
+  }
+}
