@@ -19,7 +19,7 @@ export interface JdResult {
   note?: string;
 }
 
-const MODEL = process.env.GEMINI_JD_MODEL || 'gemini-2.5-flash';
+const MODEL = process.env.GEMINI_JD_MODEL || 'gemini-3.8-flash';
 
 function experienceLine(r: JdRequest): string {
   const min = r.minExperienceYears ?? 0;
