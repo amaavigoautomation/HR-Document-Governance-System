@@ -1,8 +1,16 @@
 /**
- * Server-Side Google Sheets Integration Service
- * 
- * Securely accesses the designated Google Sheet without exposing credentials,
- * private API keys, or service-account tokens to the frontend client.
+ * Server-Side Recruitment Data Service
+ *
+ * Reads candidate applications and live openings from the Amaavigo website APIs
+ * (job-applications / current-openings) and exposes them through the same
+ * "tab" interface the Overview page and AI evaluation already use, so the
+ * rest of the app is unchanged. Nothing is read from Google Sheets any more.
+ *
+ * Env (all optional):
+ *   JOB_APPLICATIONS_API_URL   default https://www.amaavigo.com/api/job-applications
+ *   CURRENT_OPENINGS_API_URL   default https://www.amaavigo.com/api/current-openings
+ *   RECRUITMENT_API_KEY        sent if the APIs ever require auth
+ *   RECRUITMENT_API_AUTH_HEADER header name for the key (default Authorization: Bearer)
  */
 
 export interface SheetRowData {
@@ -101,132 +109,213 @@ export interface RecruitmentOverviewResult {
   };
 }
 
-// Fixed or Environment-Configured Spreadsheet ID
-export function getConfiguredSpreadsheetId(): string {
-  const rawId = (
-    process.env.GOOGLE_SHEET_ID ||
-    process.env.GOOGLE_SHEETS_SPREADSHEET_ID ||
-    process.env.RECRUITMENT_SPREADSHEET_ID ||
-    ''
-  ).trim();
+const APPLICATIONS_URL = () =>
+  (process.env.JOB_APPLICATIONS_API_URL || 'https://www.amaavigo.com/api/job-applications').trim();
+const OPENINGS_URL = () =>
+  (process.env.CURRENT_OPENINGS_API_URL || 'https://www.amaavigo.com/api/current-openings').trim();
 
-  // If user pasted a full Google Sheet URL e.g. https://docs.google.com/spreadsheets/d/1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgvE2upms/edit
-  const urlMatch = rawId.match(/\/spreadsheets\/d\/([a-zA-Z0-9-_]+)/);
-  if (urlMatch && urlMatch[1]) {
-    return urlMatch[1];
-  }
+const CACHE_TTL_MS = 60 * 1000;
+const REQUEST_TIMEOUT_MS = 20000;
 
-  // Filter out dummy slash or placeholder
-  if (rawId === '/' || rawId.length < 15) {
-    return '';
-  }
+const ALL_TAB = 'All Applications';
+const JD_TAB = "JD's";
+const CANDIDATE_LOG_TAB = 'Candidate Log';
 
-  return rawId;
+export const APPLICATION_HEADERS = [
+  'ID',
+  'Name',
+  'Email',
+  'Mobile',
+  'City',
+  'Area',
+  'Designation',
+  'Experience',
+  'Notice Period',
+  'Job Preference',
+  'Status',
+  'Interview Date',
+  'Message',
+  'Interview Comment',
+  'Attachment URL',
+  'Applied On',
+];
+
+interface Application {
+  id: string;
+  row: (string | number | boolean)[];
+  designation: string;
+  status: string;
+  appliedOn: string;
 }
 
-export function maskSpreadsheetId(id: string): string {
-  if (!id) return 'Not Configured';
-  if (id.length <= 8) return '****';
-  return `${id.slice(0, 4)}...${id.slice(-4)}`;
+interface Opening {
+  id: string;
+  designation: string;
+  vacancies: number;
+  joiningOn: string;
+  qualification: string;
 }
 
-export function getGoogleSheetsConfigStatus() {
-  const sheetId = getConfiguredSpreadsheetId();
-  const apiKey = (process.env.GOOGLE_SHEETS_API_KEY || '').trim();
+let appsCache: { at: number; data: Application[] } | null = null;
+let openingsCache: { at: number; data: Opening[] } | null = null;
 
+// ---------------------------------------------------------------- helpers
+
+export function getRecruitmentSourceStatus() {
   return {
-    isConfigured: !!sheetId,
-    spreadsheetIdMasked: maskSpreadsheetId(sheetId),
-    hasApiKey: !!apiKey,
-    preferredAuth: apiKey ? 'API_KEY' : 'GOOGLE_VIZ_AUTHENTICATED',
-    expectedTabs: ['Request Data', 'Candidate Log'],
+    applicationsUrl: APPLICATIONS_URL(),
+    openingsUrl: OPENINGS_URL(),
+    hasApiKey: !!(process.env.RECRUITMENT_API_KEY || '').trim(),
   };
 }
 
-/**
- * Parses Google Visualization JSON response (gviz/tq)
- */
-function parseGvizResponse(rawText: string, tabName: string): SheetRowData {
-  // gviz returns: /*O_o*/\ngoogle.visualization.Query.setResponse({...});
-  const jsonStart = rawText.indexOf('{');
-  const jsonEnd = rawText.lastIndexOf('}');
-  if (jsonStart === -1 || jsonEnd === -1) {
-    throw new Error(`Invalid Google Sheets response format for tab '${tabName}'`);
+function str(v: unknown): string {
+  return v === null || v === undefined ? '' : String(v).trim();
+}
+
+function nested(v: any): string {
+  if (v && typeof v === 'object') return str(v.title ?? v.name ?? v.label ?? '');
+  return str(v);
+}
+
+function titleCase(s: string): string {
+  return s
+    .split(/\s+/)
+    .map(w => (w.length > 1 && w === w.toUpperCase() ? w : w ? w.charAt(0).toUpperCase() + w.slice(1).toLowerCase() : w))
+    .join(' ');
+}
+
+function unwrapList(json: any): any[] {
+  if (Array.isArray(json)) return json;
+  if (Array.isArray(json?.data)) return json.data;
+  if (Array.isArray(json?.data?.data)) return json.data.data;
+  if (Array.isArray(json?.results)) return json.results;
+  return [];
+}
+
+async function getJson(url: string): Promise<any> {
+  const headers: Record<string, string> = { Accept: 'application/json' };
+  const key = (process.env.RECRUITMENT_API_KEY || '').trim();
+  if (key) {
+    const name = (process.env.RECRUITMENT_API_AUTH_HEADER || 'Authorization').trim();
+    headers[name] = name.toLowerCase() === 'authorization' ? `Bearer ${key}` : key;
   }
-
-  const jsonStr = rawText.substring(jsonStart, jsonEnd + 1);
-  const data = JSON.parse(jsonStr);
-
-  if (data.status === 'error') {
-    const errorMsg = data.errors?.map((e: any) => e.message || e.detailed_message).join(', ') || 'Unknown Sheets error';
-    throw new Error(`Google Sheets error: ${errorMsg}`);
-  }
-
-  const table = data.table;
-  if (!table) {
-    return {
-      headers: [],
-      rows: [],
-      totalRows: 0,
-      totalColumns: 0,
-      tabName,
-      lastRefreshed: new Date().toISOString(),
-    };
-  }
-
-  // Determine headers
-  let headers: string[] = [];
-  const rawRows: any[] = table.rows || [];
-
-  // Check if table.cols has meaningful labels
-  const colLabels = (table.cols || []).map((c: any) => (c && c.label ? String(c.label).trim() : ''));
-  const hasLabels = colLabels.some((l: string) => l.length > 0);
-
-  let dataRows: any[] = rawRows;
-
-  if (hasLabels) {
-    headers = colLabels;
-  } else if (rawRows.length > 0) {
-    // First row might be header
-    const firstRowValues = (rawRows[0].c || []).map((cell: any) =>
-      cell && (cell.v !== null && cell.v !== undefined) ? String(cell.v).trim() : ''
-    );
-    headers = firstRowValues;
-    dataRows = rawRows.slice(1);
-  }
-
-  // Ensure unique, non-empty header names
-  headers = headers.map((h, idx) => h || `Column_${idx + 1}`);
-
-  // Extract cell values
-  const parsedRows: (string | number | boolean)[][] = [];
-
-  for (const row of dataRows) {
-    if (!row || !row.c) continue;
-    const cells = row.c;
-    const rowValues = headers.map((_, colIdx) => {
-      const cell = cells[colIdx];
-      if (!cell || cell.v === null || cell.v === undefined) {
-        return '';
-      }
-      // If formatted value exists (e.g. currency, formatted date), prioritize or use value
-      if (typeof cell.v === 'number' || typeof cell.v === 'boolean') {
-        return cell.v;
-      }
-      return String(cell.f || cell.v).trim();
-    });
-
-    // Only include rows that have at least one non-empty value
-    const hasValue = rowValues.some(val => val !== '' && val !== null && val !== undefined);
-    if (hasValue) {
-      parsedRows.push(rowValues);
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+  try {
+    const res = await fetch(url, { headers, signal: controller.signal });
+    const text = await res.text();
+    if (!res.ok) {
+      throw new Error(`HTTP ${res.status} from ${new URL(url).pathname}${text ? `: ${text.slice(0, 120)}` : ''}`);
     }
+    try {
+      return text ? JSON.parse(text) : {};
+    } catch {
+      throw new Error(`Non-JSON response from ${new URL(url).pathname}`);
+    }
+  } catch (err: any) {
+    if (err?.name === 'AbortError') throw new Error(`Timed out after ${REQUEST_TIMEOUT_MS / 1000}s calling ${url}`);
+    throw err;
+  } finally {
+    clearTimeout(timer);
   }
+}
 
+// ---------------------------------------------------------------- loaders
+
+async function loadApplications(force = false): Promise<Application[]> {
+  if (!force && appsCache && Date.now() - appsCache.at < CACHE_TTL_MS) return appsCache.data;
+
+  const json = await getJson(APPLICATIONS_URL());
+  if (json && json.success === false) {
+    throw new Error(json.message || json.error || 'job-applications API reported failure');
+  }
+  const list = unwrapList(json);
+
+  const data: Application[] = list.map((a: any, i: number) => {
+    const designation = titleCase(nested(a.designation)) || 'Unspecified';
+    const status = nested(a.interview_status) || 'New Applicant';
+    const appliedOn = str(a.created_at);
+    const id = str(a.id) || String(i + 1);
+    return {
+      id,
+      designation,
+      status,
+      appliedOn,
+      row: [
+        id,
+        str(a.name),
+        str(a.email),
+        str(a.mobile),
+        str(a.city),
+        str(a.area),
+        designation,
+        str(a.experience),
+        str(a.notice_period),
+        nested(a.job_prefrence ?? a.job_preference),
+        status,
+        str(a.telephonic_interview_datetime),
+        str(a.message),
+        str(a.interview_comment),
+        str(a.attachment_url),
+        appliedOn,
+      ],
+    };
+  });
+
+  appsCache = { at: Date.now(), data };
+  return data;
+}
+
+/** Openings are optional enrichment: a failure here must never break the dashboard. */
+async function loadOpenings(force = false): Promise<Opening[] | null> {
+  if (!force && openingsCache && Date.now() - openingsCache.at < CACHE_TTL_MS) return openingsCache.data;
+  try {
+    const json = await getJson(OPENINGS_URL());
+    const list = unwrapList(json);
+    const data: Opening[] = list.map((o: any) => ({
+      id: str(o.id),
+      designation: nested(o.designation),
+      vacancies: Number(o.no_of_opening) > 0 ? Number(o.no_of_opening) : 1,
+      joiningOn: str(o.joining_on),
+      qualification: str(o.qualification),
+    }));
+    openingsCache = { at: Date.now(), data };
+    return data;
+  } catch (err: any) {
+    console.warn('[Recruitment] Could not read current openings:', err?.message || err);
+    return null;
+  }
+}
+
+// ---------------------------------------------------------------- public API (same names as before)
+
+export function getConfiguredSpreadsheetId(): string {
+  return '';
+}
+
+export function maskSpreadsheetId(_id: string): string {
+  return 'Amaavigo careers API';
+}
+
+/** Kept under its old name so existing routes/UI keep working. */
+export function getGoogleSheetsConfigStatus() {
+  const s = getRecruitmentSourceStatus();
+  return {
+    isConfigured: true,
+    source: 'amaavigo-website-api',
+    spreadsheetIdMasked: maskSpreadsheetId(''),
+    hasApiKey: s.hasApiKey,
+    preferredAuth: s.hasApiKey ? 'API_KEY' : 'PUBLIC',
+    expectedTabs: [ALL_TAB],
+  };
+}
+
+function sheet(tabName: string, rows: (string | number | boolean)[][], headers: string[]): SheetRowData {
   return {
     headers,
-    rows: parsedRows,
-    totalRows: parsedRows.length,
+    rows,
+    totalRows: rows.length,
     totalColumns: headers.length,
     tabName,
     lastRefreshed: new Date().toISOString(),
@@ -234,523 +323,120 @@ function parseGvizResponse(rawText: string, tabName: string): SheetRowData {
 }
 
 /**
- * Fetch raw sheet data by tab name
+ * Virtual "tabs":
+ *   All Applications / Candidate Log -> every application
+ *   <Designation>                    -> applications for that designation
+ *   JD's                             -> [designation, JD text] per live opening
+ *   Request Data                     -> empty (no longer a data source)
  */
 export async function fetchSheetData(tabName: string): Promise<SheetRowData> {
-  const spreadsheetId = getConfiguredSpreadsheetId();
-  if (!spreadsheetId) {
-    throw new Error('SPREADSHEET_NOT_CONFIGURED');
+  const wanted = tabName.trim().toLowerCase();
+
+  if (wanted === JD_TAB.toLowerCase()) {
+    const openings = (await loadOpenings()) || [];
+    return sheet(
+      JD_TAB,
+      openings.map(o => [o.designation, o.qualification]),
+      ['Designation', 'Job Description']
+    );
   }
 
-  const apiKey = (process.env.GOOGLE_SHEETS_API_KEY || '').trim();
-
-  // 1. If API key available, try official Google Sheets API v4
-  if (apiKey) {
-    try {
-      const url = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${encodeURIComponent(
-        tabName
-      )}?key=${apiKey}`;
-      const response = await fetch(url, { headers: { Accept: 'application/json' } });
-      if (response.ok) {
-        const json = await response.json();
-        const values: any[][] = json.values || [];
-        if (values.length === 0) {
-          return {
-            headers: [],
-            rows: [],
-            totalRows: 0,
-            totalColumns: 0,
-            tabName,
-            lastRefreshed: new Date().toISOString(),
-          };
-        }
-        const headers = values[0].map((h: any, i: number) => (h ? String(h).trim() : `Column_${i + 1}`));
-        const rows = values.slice(1).map(r =>
-          headers.map((_, i) => (r[i] !== undefined && r[i] !== null ? r[i] : ''))
-        );
-        return {
-          headers,
-          rows,
-          totalRows: rows.length,
-          totalColumns: headers.length,
-          tabName,
-          lastRefreshed: new Date().toISOString(),
-        };
-      }
-    } catch (e) {
-      console.warn(`Sheets API v4 failed for tab ${tabName}, falling back to Visualization API`, e);
-    }
+  if (wanted === 'request data') {
+    return sheet('Request Data', [], []);
   }
 
-  // 2. Fetch via Google Visualization Query Endpoint
-  const gvizUrl = `https://docs.google.com/spreadsheets/d/${spreadsheetId}/gviz/tq?tqx=out:json&sheet=${encodeURIComponent(
-    tabName
-  )}`;
+  const apps = await loadApplications();
 
-  const res = await fetch(gvizUrl, {
-    headers: {
-      'User-Agent': 'Amaavigo-HRAgent/1.0',
-    },
-  });
-
-  if (!res.ok) {
-    if (res.status === 404) {
-      throw new Error(`NOT_FOUND: Google Sheet not found with ID '${spreadsheetId}'. Check your spreadsheet ID.`);
-    }
-    if (res.status === 403 || res.status === 401) {
-      throw new Error(`PERMISSION_DENIED: Access denied to Google Sheet. Ensure the spreadsheet is shared with viewer access or configured properly.`);
-    }
-    throw new Error(`FETCH_FAILED: Server returned HTTP ${res.status}`);
+  if (wanted === ALL_TAB.toLowerCase() || wanted === CANDIDATE_LOG_TAB.toLowerCase()) {
+    return sheet(tabName, apps.map(a => a.row), APPLICATION_HEADERS);
   }
 
-  const rawText = await res.text();
-  return parseGvizResponse(rawText, tabName);
+  const matched = apps.filter(a => a.designation.toLowerCase() === wanted);
+  if (matched.length === 0 && !apps.some(a => a.designation.toLowerCase() === wanted)) {
+    throw new Error(`NOT_FOUND: no applications found for '${tabName}'`);
+  }
+  return sheet(tabName, matched.map(a => a.row), APPLICATION_HEADERS);
 }
 
-/**
- * Fetch list of worksheet tab names
- */
 export async function getSpreadsheetTabNames(): Promise<string[]> {
-  const spreadsheetId = getConfiguredSpreadsheetId();
-  if (!spreadsheetId) return [];
-
-  const apiKey = (process.env.GOOGLE_SHEETS_API_KEY || '').trim();
-
-  // If API key is available, query spreadsheet metadata
-  if (apiKey) {
-    try {
-      const url = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}?key=${apiKey}`;
-      const response = await fetch(url);
-      if (response.ok) {
-        const json = await response.json();
-        if (json.sheets && Array.isArray(json.sheets)) {
-          return json.sheets.map((s: any) => s.properties?.title).filter(Boolean);
-        }
-      }
-    } catch (err) {
-      console.warn('Failed to fetch spreadsheet tabs via API v4:', err);
-    }
-  }
-
-  // Default known tabs specified in the requirement
-  const candidateTabs = [
-    'Candidates',
-    'Lead Generation',
-    'Interviews',
-    'Applications',
-    'Shortlisted',
-    'Employee Tracker',
-    'Request Data',
-    'Candidate Log',
-  ];
-  const verifiedTabs: string[] = [];
-
-  for (const tab of candidateTabs) {
-    try {
-      const data = await fetchSheetData(tab);
-      if (data.headers.length > 0 || data.rows.length > 0) {
-        verifiedTabs.push(tab);
-      }
-    } catch {
-      // Tab doesn't exist
-    }
-  }
-
-  // Fallback to designated base tabs if probe is inconclusive
-  return verifiedTabs.length > 0 ? verifiedTabs : ['Request Data', 'Candidate Log'];
+  const apps = await loadApplications();
+  const designations = Array.from(new Set(apps.map(a => a.designation))).sort();
+  return [ALL_TAB, ...designations, CANDIDATE_LOG_TAB, JD_TAB];
 }
 
-/**
- * Fuzzy column finder
- */
-function findColumnIndex(headers: string[], candidates: string[]): { index: number; name: string | null } {
-  const normalizedHeaders = headers.map(h => h.toLowerCase().trim().replace(/[^a-z0-9]/g, ''));
-
-  // 1. Exact match
-  for (const candidate of candidates) {
-    const normCand = candidate.toLowerCase().replace(/[^a-z0-9]/g, '');
-    const idx = normalizedHeaders.indexOf(normCand);
-    if (idx !== -1) {
-      return { index: idx, name: headers[idx] };
-    }
-  }
-
-  // 2. Partial / substring match
-  for (const candidate of candidates) {
-    const normCand = candidate.toLowerCase().replace(/[^a-z0-9]/g, '');
-    const idx = normalizedHeaders.findIndex(h => h.includes(normCand) || normCand.includes(h));
-    if (idx !== -1) {
-      return { index: idx, name: headers[idx] };
-    }
-  }
-
-  return { index: -1, name: null };
-}
-
-/**
- * Core business calculations for the Overview Dashboard
- */
 export async function computeRecruitmentOverview(): Promise<RecruitmentOverviewResult> {
-  const spreadsheetId = getConfiguredSpreadsheetId();
-
-  if (!spreadsheetId) {
-    return {
-      success: false,
-      status: 'NOT_CONFIGURED',
-      error: 'Google Sheet ID is not yet configured.',
-      message: 'The designated Google Sheet has not been linked. Configure GOOGLE_SHEET_ID in your environment.',
-      requiredConfiguration: {
-        envKey: 'GOOGLE_SHEET_ID',
-        expectedTabs: ['Request Data', 'Candidate Log'],
-        documentation: 'Provide the Google Spreadsheet ID from your Google Drive URL: https://docs.google.com/spreadsheets/d/{SPREADSHEET_ID}/edit',
-      },
-    };
-  }
-
+  const masked = maskSpreadsheetId('');
   try {
-    // 1. Fetch Request Data and Candidate Log with tab name auto-resolution
-    const availableTabs = await getSpreadsheetTabNames();
-    const requestDataTabName = availableTabs.find(t => t.toLowerCase().trim() === 'request data') || 'Request Data';
-    const candidateLogTabName = availableTabs.find(t => t.toLowerCase().trim() === 'candidate log') || 'Candidate Log';
+    const [apps, openings] = await Promise.all([loadApplications(true), loadOpenings(true)]);
 
-    let requestDataSheet: SheetRowData;
-    let requestDataError: string | null = null;
-    try {
-      requestDataSheet = await fetchSheetData(requestDataTabName);
-    } catch (err: any) {
-      requestDataError = err.message || 'Failed to read Request Data';
-      requestDataSheet = {
-        headers: [],
-        rows: [],
-        totalRows: 0,
-        totalColumns: 0,
-        tabName: requestDataTabName,
-        lastRefreshed: new Date().toISOString(),
-      };
+    const byDesignation = new Map<string, number>();
+    const byStage = new Map<string, number>();
+    for (const a of apps) {
+      byDesignation.set(a.designation, (byDesignation.get(a.designation) || 0) + 1);
+      byStage.set(a.status, (byStage.get(a.status) || 0) + 1);
     }
 
-    let candidateLogSheet: SheetRowData;
-    let candidateLogError: string | null = null;
-    try {
-      candidateLogSheet = await fetchSheetData(candidateLogTabName);
-    } catch (err: any) {
-      candidateLogError = err.message || 'Failed to read Candidate Log';
-      candidateLogSheet = {
-        headers: [],
-        rows: [],
-        totalRows: 0,
-        totalColumns: 0,
-        tabName: candidateLogTabName,
-        lastRefreshed: new Date().toISOString(),
-      };
-    }
+    const applicationsByDesignation = Array.from(byDesignation, ([designation, count]) => ({ designation, count })).sort(
+      (a, b) => b.count - a.count
+    );
+    const applicationsByStage = Array.from(byStage, ([stage, count]) => ({ stage, count })).sort(
+      (a, b) => b.count - a.count
+    );
 
-    // If both failed with permission or not found
-    if (requestDataError && candidateLogError) {
-      const isPermission = requestDataError.includes('PERMISSION_DENIED') || candidateLogError.includes('PERMISSION_DENIED');
-      const isNotFound = requestDataError.includes('NOT_FOUND') || candidateLogError.includes('NOT_FOUND');
+    const openPositions = openings ? openings.length : null;
+    const totalVacancies = openings ? openings.reduce((n, o) => n + o.vacancies, 0) : null;
 
-      return {
-        success: false,
-        status: isPermission ? 'PERMISSION_DENIED' : isNotFound ? 'NOT_FOUND' : 'ERROR',
-        spreadsheetIdMasked: maskSpreadsheetId(spreadsheetId),
-        error: requestDataError || candidateLogError,
-        message: isPermission
-          ? 'Permission denied accessing Google Sheet. Please grant Viewer access to automation@amaavigo.com or make the document shareable.'
-          : 'Spreadsheet or worksheets could not be found.',
-      };
-    }
-
-    // --- Column Detection: Request Data (Dynamic Header Matching) ---
-    const reqHeaders = requestDataSheet.headers;
-    const reqIdCol = findColumnIndex(reqHeaders, [
-      'requestid',
-      'request id',
-      'requisition id',
-      'req id',
-      'reqid',
-      'requisitionid',
-      'requisition no',
-      'requisition number',
-      'job id',
-    ]);
-    const vacancyCol = findColumnIndex(reqHeaders, [
-      'number of vacancies',
-      'numberofvacancies',
-      'no of vacancies',
-      'no. of vacancies',
-      'vacancies',
-      'total vacancies',
-      'openings',
-      'headcount',
-      'positions',
-    ]);
-    const deptCol = findColumnIndex(reqHeaders, [
-      'department',
-      'dept',
-      'function',
-      'team',
-      'business unit',
-    ]);
-    const posTitleCol = findColumnIndex(reqHeaders, [
-      'position title',
-      'position',
-      'job title',
-      'role',
-      'title',
-      'designation',
-    ]);
-    const statusCol = findColumnIndex(reqHeaders, [
-      'status',
-      'requisition status',
-      'job status',
-      'req status',
-      'state',
-    ]);
-
-    // --- Column Detection: Candidate Log ---
-    const candHeaders = candidateLogSheet.headers;
-    const candIdCol = findColumnIndex(candHeaders, [
-      'id',
-      'candidate id',
-      'application id',
-      'app id',
-      'applicant id',
-      'candidate_id',
-      'applicant_id',
-      'candidate name',
-      'applicant name',
-      'name',
-      'email',
-    ]);
-    const desigCol = findColumnIndex(candHeaders, [
-      'designation',
-      'position applied',
-      'applied for',
-      'role',
-      'job title',
-      'position',
-    ]);
-    const stageCol = findColumnIndex(candHeaders, [
-      'status',
-      'stage',
-      'current stage',
-      'candidate status',
-      'selection status',
-      'interview stage',
-    ]);
-    const dateCol = findColumnIndex(candHeaders, [
-      'application date',
-      'applied date',
-      'date of application',
-      'date',
-      'created at',
-      'timestamp',
-      'interview_datetime',
-      'synced_at',
-    ]);
-
-    // Build Column Mapping Report
-    const columnMapping: ColumnMappingReport = {
-      requestData: {
-        sheetFound: requestDataSheet.rows.length > 0 || requestDataSheet.headers.length > 0,
-        tabNameUsed: requestDataTabName,
-        positionColumn: posTitleCol.name || reqIdCol.name,
-        requestIdColumn: reqIdCol.name,
-        statusColumn: statusCol.name,
-        vacancyColumn: vacancyCol.name,
-        departmentColumn: deptCol.name,
-        totalRows: requestDataSheet.rows.length,
-        rawHeaders: reqHeaders,
-      },
-      candidateLog: {
-        sheetFound: candidateLogSheet.rows.length > 0 || candidateLogSheet.headers.length > 0,
-        tabNameUsed: candidateLogTabName,
-        candidateColumn: candIdCol.name,
-        designationColumn: desigCol.name,
-        stageColumn: stageCol.name,
-        dateColumn: dateCol.name,
-        totalRows: candidateLogSheet.rows.length,
-        rawHeaders: candHeaders,
-      },
-    };
-
-    // --- KPI 1: Open Positions, KPI 2: Total Vacancies, KPI 3: Hiring Departments ---
-    // User Specification & Exact Logic:
-    // 1. Open Positions: Count unique, non-empty RequestID values. Each valid requisition counts as one open position.
-    // 2. Total Vacancies: Sum the numeric values in the Number of Vacancies column for all valid requisition rows.
-    // 3. Hiring Departments: Count unique, non-empty values in the Department column.
-    // Ensure the calculations dynamically update whenever the Google Sheet data changes and the user clicks Refresh.
-    // Ignore blank rows, trim whitespace, prevent duplicate counting, and use actual sheet headers.
-
-    let openPositions = 0;
-    let totalVacancies = 0;
-    const seenRequestIds = new Set<string>();
-    const uniqueDepartmentMap = new Map<string, string>(); // lowercase key -> canonical display string
-    const departmentBreakdown = new Map<string, { department: string; openPositions: number; vacancies: number }>();
-
-    for (let i = 0; i < requestDataSheet.rows.length; i++) {
-      const row = requestDataSheet.rows[i];
-      if (!row || !Array.isArray(row)) continue;
-
-      // Ignore blank rows (all cells empty or whitespace)
-      const isBlankRow = row.every(cell => cell === null || cell === undefined || String(cell).trim() === '');
-      if (isBlankRow) continue;
-
-      // 1. Open Positions: Count unique, non-empty RequestID values
-      const rawReqId = reqIdCol.index !== -1
-        ? row[reqIdCol.index]
-        : (posTitleCol.index !== -1 ? row[posTitleCol.index] : null);
-
-      const reqId = rawReqId !== null && rawReqId !== undefined ? String(rawReqId).trim() : '';
-      if (!reqId) {
-        // Ignore rows with empty RequestID
-        continue;
-      }
-
-      // Prevent duplicate counting
-      if (seenRequestIds.has(reqId)) {
-        continue;
-      }
-      seenRequestIds.add(reqId);
-      openPositions++;
-
-      // 2. Total Vacancies: Sum the numeric values in the Number of Vacancies column for all valid requisition rows
-      let vacCount = 0;
-      if (vacancyCol.index !== -1) {
-        const rawVac = row[vacancyCol.index];
-        if (rawVac !== null && rawVac !== undefined) {
-          if (typeof rawVac === 'number') {
-            vacCount = Number.isFinite(rawVac) && rawVac > 0 ? rawVac : 0;
-          } else {
-            const trimmedVac = String(rawVac).trim();
-            if (trimmedVac) {
-              const match = trimmedVac.match(/[-+]?[0-9]*\.?[0-9]+/);
-              if (match) {
-                const parsed = parseFloat(match[0]);
-                if (!isNaN(parsed) && parsed > 0 && isFinite(parsed)) {
-                  vacCount = parsed;
-                }
-              }
-            }
-          }
-        }
-      }
-      totalVacancies += vacCount;
-
-      // 3. Hiring Departments: Count unique, non-empty values in the Department column
-      if (deptCol.index !== -1) {
-        const rawDept = row[deptCol.index];
-        const dept = rawDept !== null && rawDept !== undefined ? String(rawDept).trim() : '';
-        if (dept) {
-          const deptKey = dept.toLowerCase();
-          if (!uniqueDepartmentMap.has(deptKey)) {
-            uniqueDepartmentMap.set(deptKey, dept);
-          }
-
-          const existing = departmentBreakdown.get(deptKey) || {
-            department: dept,
-            openPositions: 0,
-            vacancies: 0,
-          };
-          existing.openPositions += 1;
-          existing.vacancies += vacCount;
-          departmentBreakdown.set(deptKey, existing);
-        }
-      }
-    }
-
-    const departmentsCount = uniqueDepartmentMap.size;
-    const positionsByDepartment = Array.from(departmentBreakdown.values())
-      .sort((a, b) => b.vacancies - a.vacancies || b.openPositions - a.openPositions);
-
-    // --- Candidate Log: Total Applications & Breakdown ---
-    let totalApplications = 0;
-    const candidateIdSet = new Set<string>();
-    const designationCountMap = new Map<string, number>();
-    const stageCountMap = new Map<string, number>();
-
-    for (let i = 0; i < candidateLogSheet.rows.length; i++) {
-      const row = candidateLogSheet.rows[i];
-      if (!row || !Array.isArray(row)) continue;
-
-      const isBlankRow = row.every(cell => cell === null || cell === undefined || String(cell).trim() === '');
-      if (isBlankRow) continue;
-
-      // Application identity: prefer ID if available
-      const rawCandId = candIdCol.index !== -1 ? row[candIdCol.index] : null;
-      const candIdVal = rawCandId !== null && rawCandId !== undefined ? String(rawCandId).trim() : '';
-      if (candIdVal) {
-        if (!candidateIdSet.has(candIdVal)) {
-          candidateIdSet.add(candIdVal);
-          totalApplications++;
-        }
-      } else {
-        totalApplications++;
-      }
-
-      // Designation
-      if (desigCol.index !== -1) {
-        const rawDesig = row[desigCol.index];
-        let desig = rawDesig !== null && rawDesig !== undefined ? String(rawDesig).trim() : '';
-        if (desig) {
-          desig = desig
-            .split(' ')
-            .map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
-            .join(' ');
-          designationCountMap.set(desig, (designationCountMap.get(desig) || 0) + 1);
-        }
-      }
-
-      // Stage / Status
-      if (stageCol.index !== -1) {
-        const rawStage = row[stageCol.index];
-        let stage = rawStage !== null && rawStage !== undefined ? String(rawStage).trim() : '';
-        if (stage) {
-          stage = stage.charAt(0).toUpperCase() + stage.slice(1);
-          stageCountMap.set(stage, (stageCountMap.get(stage) || 0) + 1);
-        }
-      }
-    }
-
-    // Sort designations by count descending
-    const applicationsByDesignation = Array.from(designationCountMap.entries())
-      .map(([designation, count]) => ({ designation, count }))
-      .sort((a, b) => b.count - a.count);
-
-    const designations = applicationsByDesignation.map(d => d.designation);
-
-    // Applications by Stage
-    const applicationsByStage = Array.from(stageCountMap.entries())
-      .map(([stage, count]) => ({ stage, count }))
-      .sort((a, b) => b.count - a.count);
+    const availableTabs = [ALL_TAB, ...applicationsByDesignation.map(d => d.designation).sort()];
 
     return {
       success: true,
       status: 'OK',
-      spreadsheetIdMasked: maskSpreadsheetId(spreadsheetId),
+      spreadsheetIdMasked: masked,
       lastRefreshed: new Date().toISOString(),
       kpis: {
         openPositions,
         totalVacancies,
-        totalApplications,
+        totalApplications: apps.length,
         activeRequisitionsCount: openPositions,
-        departmentsCount,
+        // The website APIs carry no department, so this KPI cannot be computed from them.
+        departmentsCount: null,
       },
-      designations,
+      designations: applicationsByDesignation.map(d => d.designation),
       applicationsByDesignation,
-      positionsByDepartment,
+      positionsByDepartment: [],
       applicationsByStage,
       availableTabs,
-      columnMapping,
+      columnMapping: {
+        requestData: {
+          sheetFound: !!openings,
+          tabNameUsed: 'current-openings API',
+          positionColumn: 'designation',
+          requestIdColumn: 'id',
+          statusColumn: null,
+          vacancyColumn: 'no_of_opening',
+          departmentColumn: null,
+          totalRows: openings ? openings.length : 0,
+          rawHeaders: ['id', 'designation', 'minimum_exp', 'maximum_exp', 'no_of_opening', 'joining_on', 'qualification'],
+        },
+        candidateLog: {
+          sheetFound: true,
+          tabNameUsed: 'job-applications API',
+          candidateColumn: 'id',
+          designationColumn: 'designation.title',
+          stageColumn: 'interview_status.name',
+          dateColumn: 'created_at',
+          totalRows: apps.length,
+          rawHeaders: APPLICATION_HEADERS,
+        },
+      },
     };
   } catch (err: any) {
     console.error('Error computing recruitment overview:', err);
     return {
       success: false,
       status: 'ERROR',
-      spreadsheetIdMasked: maskSpreadsheetId(spreadsheetId),
-      error: err.message || 'Unknown error occurred while processing Google Sheets data',
+      spreadsheetIdMasked: masked,
+      error: err?.message || 'Could not read applications from the job-applications API',
     };
   }
 }
