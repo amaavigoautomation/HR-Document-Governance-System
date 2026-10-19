@@ -233,7 +233,7 @@ async function loadApplications(force = false): Promise<Application[]> {
   const list = unwrapList(json);
 
   const data: Application[] = list.map((a: any, i: number) => {
-    const designation = titleCase(nested(a.designation)) || 'Unspecified';
+    const designation = titleCase(nested(a.designation) || str(a.designation_name)) || 'Unspecified';
     const status = nested(a.interview_status) || 'New Applicant';
     const appliedOn = str(a.created_at);
     const id = str(a.id) || String(i + 1);
