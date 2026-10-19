@@ -1,5 +1,4 @@
 import { fetchSheetData, getSpreadsheetTabNames } from './serverSheets.js';
-import { GoogleGenAI, Type } from '@google/genai';
 
 export interface CandidateEvaluationResult {
   id: string;
@@ -54,7 +53,7 @@ export interface AIEvaluationResponse {
   success: boolean;
   timestamp: string;
   designation: string;
-  engineUsed: 'gemini-3.8-flash' | 'enterprise-algorithmic-ai';
+  engineUsed: 'enterprise-algorithmic-ai';
   jdSummary: JDCriteriaSummary;
   totalCandidates: number;
   candidates: CandidateEvaluationResult[];
