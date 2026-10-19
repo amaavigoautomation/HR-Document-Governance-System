@@ -434,6 +434,7 @@ export interface Requisition {
   founderDecision?: RequisitionDecision;
   jd?: RequisitionJD;
   jobId?: string;
+  careersPostingId?: string; // id returned by the public careers API when the job was posted
   publishedAt?: string;
   closedReason?: string;
   events: RequisitionEvent[];

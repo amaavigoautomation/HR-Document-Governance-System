@@ -1,3 +1,5 @@
+import type { Requisition } from '../types';
+
 /**
  * Client-side helper for publishing an opening to the live careers page.
  * Calls our own backend (/api/careers/publish); the careers API key never reaches the browser.
@@ -21,17 +23,14 @@ export interface CareersPublishResponse {
   errors?: string[];
 }
 
-/**
- * Maps a requisition document to the publish input.
- * ADJUST the property names below if your requisition fields are named differently.
- */
-export function requisitionToCareersInput(req: any): CareersPublishInput {
+/** Maps a requisition document to the publish input. */
+export function requisitionToCareersInput(req: Requisition): CareersPublishInput {
   return {
     positionTitle: req.positionTitle,
-    minExperience: req.minExperience ?? req.minExp ?? req.experienceMin,
-    maxExperience: req.maxExperience ?? req.maxExp ?? req.experienceMax,
-    vacancies: req.vacancies ?? req.numberOfVacancies ?? req.openings,
-    expectedJoining: req.expectedJoiningDate ?? req.expectedJoining ?? req.joiningDate,
+    minExperience: req.minExperienceYears,
+    maxExperience: req.maxExperienceYears,
+    vacancies: req.vacancies,
+    expectedJoining: req.expectedJoiningDate ?? '',
     jdText: req.jd?.text ?? '',
   };
 }
@@ -60,4 +59,4 @@ export async function publishToCareers(
   } catch (err: any) {
     return { success: false, error: err?.message || 'Network error while publishing.' };
   }
-}
+}Requisitionservice 

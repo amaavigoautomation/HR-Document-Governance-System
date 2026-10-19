@@ -16,6 +16,7 @@ import {
   UserRole,
 } from '../types';
 import { can, isFounder, isHr } from '../utils/requisitionPermissions';
+import { publishToCareers, requisitionToCareersInput } from './careersService';
 
 const REQUISITIONS_COLLECTION = 'requisitions';
 const EMPLOYEES_COLLECTION = 'employees';
@@ -430,13 +431,28 @@ export async function saveJd(actor: User, req: Requisition, text: string): Promi
 export async function publishJob(actor: User, req: Requisition): Promise<Requisition> {
   assertAllowed(can(actor, 'publish', req), 'only the owning HR can publish, and a JD must exist.');
 
+  // Post to the live careers page first. If that fails we throw, the requisition stays in JD_DRAFT
+  // and HR can simply retry. An id from an earlier successful post is reused so retries never double-post.
+  let careersPostingId = req.careersPostingId;
+  if (!careersPostingId) {
+    const posted = await publishToCareers(requisitionToCareersInput(req), actor.role);
+    if (!posted.success) {
+      throw new Error(`Could not publish to the careers page: ${posted.error || 'unknown error'}`);
+    }
+    careersPostingId = posted.postingId;
+  }
+
   const jobId = `JOB-${req.reqNo.replace(/^REQ-/, '')}`;
   const saved = await persist({
     ...req,
     status: 'JOB_OPEN',
     jobId,
+    careersPostingId,
     publishedAt: nowIso(),
-    events: [...req.events, event(actor, `Published as ${jobId}`)],
+    events: [
+      ...req.events,
+      event(actor, `Published as ${jobId} and posted to the careers page`, careersPostingId ? `Careers opening #${careersPostingId}` : undefined),
+    ],
   });
   audit(AuditAction.JOB_PUBLISHED, actor, saved, `Published ${jobId} for ${summaryLine(saved)}`, jobId);
   notify(

@@ -10,6 +10,7 @@ import { getGoogleSheetsConfigStatus, computeRecruitmentOverview, fetchSheetData
 import { runCandidateEvaluation, clearEvaluationCache } from './src/services/aiEvaluationService';
 import { UserRole } from './src/types';
 import { generateJobDescription } from './api/_lib/jdGenerator';
+import { handleCareersPublish } from './api/_lib/careersPublisher';
 import { generateCorporatePdfBlob } from './src/utils/pdfGenerator';
 import { generateCorporateDocxBlob } from './src/utils/documentStamper';
 
@@ -181,6 +182,17 @@ async function startServer() {
     } catch (err: any) {
       console.error('Error in /api/requisitions/generate-jd:', err);
       res.status(500).json({ success: false, error: err.message || 'Failed to generate job description' });
+    }
+  });
+
+  // Publish an approved requisition to the live careers page
+  app.post('/api/careers/publish', async (req, res) => {
+    try {
+      const { status, json } = await handleCareersPublish(req.body, req.headers['x-user-role'] as string | undefined);
+      res.status(status).json(json);
+    } catch (err: any) {
+      console.error('Error in /api/careers/publish:', err);
+      res.status(500).json({ success: false, error: err?.message || 'Failed to publish opening' });
     }
   });
 
