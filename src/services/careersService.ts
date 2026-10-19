@@ -59,4 +59,4 @@ export async function publishToCareers(
   } catch (err: any) {
     return { success: false, error: err?.message || 'Network error while publishing.' };
   }
-}Requisitionservice 
+}
