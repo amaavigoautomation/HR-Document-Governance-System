@@ -93,7 +93,7 @@ service cloud.firestore {
              data.status is string && data.status in ['PENDING_ASSIGNMENT', 'PENDING_HR', 'PENDING_FOUNDER', 'JD_DRAFT', 'JOB_OPEN', 'REJECTED', 'CLOSED'] &&
              data.justification is string && data.justification.size() <= 4000 &&
              data.events is list && data.events.size() <= 200 &&
-             (!('jd' in data) || (data.jd.text is string && data.jd.text.size() <= 20000));
+             (!('jd' in data) || data.jd == null || (data.jd.text is string && data.jd.text.size() <= 20000));
     }
 
     // 1. Employee Directory & Profiles
