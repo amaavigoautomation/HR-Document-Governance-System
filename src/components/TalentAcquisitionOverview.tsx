@@ -71,7 +71,7 @@ export const TalentAcquisitionOverview: React.FC<TalentAcquisitionOverviewProps>
     if (!overviewData?.availableTabs || overviewData.availableTabs.length === 0) {
       return [];
     }
-    return overviewData.availableTabs.filter((tab) => !isExcludedSheetTab(tab) && tab !== 'All Applications');
+    return overviewData.availableTabs.filter((tab) => !isExcludedSheetTab(tab));
   }, [overviewData?.availableTabs]);
 
   // Diagnostics modal / drawer
@@ -114,7 +114,7 @@ export const TalentAcquisitionOverview: React.FC<TalentAcquisitionOverviewProps>
 
       // Default active tab to first non-excluded available tab
       if (data.availableTabs && data.availableTabs.length > 0) {
-        const allowedTabs = data.availableTabs.filter((t) => !isExcludedSheetTab(t) && t !== 'All Applications');
+        const allowedTabs = data.availableTabs.filter((t) => !isExcludedSheetTab(t));
         if (allowedTabs.length > 0) {
           setActiveSheetTab((prev) => {
             if (!prev || isExcludedSheetTab(prev) || !allowedTabs.includes(prev)) {
