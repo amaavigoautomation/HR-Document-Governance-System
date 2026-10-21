@@ -160,7 +160,8 @@ async function startServer() {
         clearEvaluationCache();
       }
 
-      const evaluation = await runCandidateEvaluation(designation, forceRefresh);
+      const evaluateWithAi = req.query.evaluate === 'true';
+      const evaluation = await runCandidateEvaluation(designation, forceRefresh, evaluateWithAi);
       res.json(evaluation);
     } catch (err: any) {
       console.error('Error in /api/recruitment/ai-evaluation:', err);

@@ -149,6 +149,11 @@ async function fs(): Promise<Firestore> {
   return firestoreDb();
 }
 
+/** Shared with other server modules (AI scoring cache). */
+export async function getServerFirestore(): Promise<Firestore> {
+  return fs();
+}
+
 const col = async (name: string) => collection(await fs(), name);
 const ref = async (name: string, id: string) => doc(await fs(), name, id);
 

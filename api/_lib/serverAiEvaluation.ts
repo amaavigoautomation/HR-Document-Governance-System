@@ -1,4 +1,5 @@
 import { fetchSheetData, getSpreadsheetTabNames } from './serverSheets.js';
+import { applyAiScoring, type AiScoringSummary } from './aiScoring.js';
 
 export interface CandidateEvaluationResult {
   id: string;
@@ -34,6 +35,10 @@ export interface CandidateEvaluationResult {
   
   keyTakeaway: string;
   interviewChecklist: string[];
+
+  /** 'AI' when scored from resume evidence, 'RULES' for the rule-based fallback. */
+  scoringMode?: 'AI' | 'RULES';
+  aiNote?: string;
 }
 
 export interface JDCriteriaSummary {
@@ -75,6 +80,7 @@ export interface AIEvaluationResponse {
     advisoryDisclaimer: string;
   };
   fairnessNote: string;
+  aiScoring?: AiScoringSummary;
 }
 
 // In-memory cache for evaluation results (invalidated on refresh)
@@ -488,11 +494,12 @@ function evaluateCandidateAlgorithmic(
  */
 export async function runCandidateEvaluation(
   designation: string,
-  forceRefresh = false
+  forceRefresh = false,
+  evaluateWithAi = false
 ): Promise<AIEvaluationResponse> {
   const cacheKey = designation.toLowerCase().trim();
   const now = Date.now();
-  if (!forceRefresh && evaluationCache.has(cacheKey)) {
+  if (!forceRefresh && !evaluateWithAi && evaluationCache.has(cacheKey)) {
     const cached = evaluationCache.get(cacheKey)!;
     if (now - cached.timestamp < CACHE_TTL_MS) {
       return cached.data;
@@ -602,6 +609,10 @@ export async function runCandidateEvaluation(
     evaluateCandidateAlgorithmic(cand, jdSummary, parsedCandidates.length)
   );
 
+  // Optional resume-evidence scoring with OpenAI (cached; only runs when HR clicks Evaluate)
+  const aiRun = await applyAiScoring({ jd: jdSummary, results: evaluatedCandidates, evaluate: evaluateWithAi });
+  evaluatedCandidates = aiRun.results;
+
   // Sort by alignment score descending
   evaluatedCandidates.sort((a, b) => b.alignmentScore - a.alignmentScore);
   // Assign ranks
@@ -701,6 +712,7 @@ export async function runCandidateEvaluation(
       poolComparativeInsight,
       advisoryDisclaimer: 'Notice: This evaluation provides objective decision support based strictly on documented evidence in candidate profiles against the job description. It does NOT make the final hiring decision, which remains the sole responsibility of the hiring manager and interview committee.',
     },
+    aiScoring: aiRun.summary,
     fairnessNote: 'Fairness & Compliance: Evaluation conducted exclusively on verified job-related qualifications, skills, experience, and responsibilities. Protected characteristics (gender, age, race, address, contact info) are strictly excluded.',
   };
 

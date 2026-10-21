@@ -137,17 +137,17 @@ export class RecruitmentService {
   /**
    * Retrieves dynamic AI-powered candidate evaluation, JD comparison, and HR recommendations.
    */
-  async getAIEvaluation(designation: string, forceRefresh = false, userRole?: string): Promise<AIEvaluationResponse> {
+  async getAIEvaluation(designation: string, forceRefresh = false, userRole?: string, evaluateWithAi = false): Promise<AIEvaluationResponse> {
     const key = designation.toLowerCase().trim();
     const now = Date.now();
     const cached = this.aiEvalCache.get(key);
-    if (!forceRefresh && cached && now - cached.timestamp < this.CACHE_TTL_MS) {
+    if (!forceRefresh && !evaluateWithAi && cached && now - cached.timestamp < this.CACHE_TTL_MS) {
       return cached.data;
     }
 
     const url = `/api/recruitment/ai-evaluation?designation=${encodeURIComponent(designation)}${
       forceRefresh ? '&refresh=true' : ''
-    }`;
+    }${evaluateWithAi ? '&evaluate=true' : ''}`;
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
     };

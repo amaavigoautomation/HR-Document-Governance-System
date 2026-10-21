@@ -149,6 +149,44 @@ export const CandidateEvaluationSection: React.FC<CandidateEvaluationSectionProp
     [activeDesignation, currentUser.role]
   );
 
+  // AI (resume evidence) scoring: runs only when HR clicks the button, a few candidates per request,
+  // results are cached server-side so each candidate is only ever sent to the model once.
+  const [aiRunning, setAiRunning] = useState<boolean>(false);
+  const [aiMsg, setAiMsg] = useState<string | null>(null);
+
+  const runAiScoring = async () => {
+    if (!activeDesignation || aiRunning) return;
+    setAiRunning(true);
+    setAiMsg(null);
+    let tokensIn = 0;
+    let tokensOut = 0;
+    try {
+      for (let i = 0; i < 15; i++) {
+        const data = await recruitmentService.getAIEvaluation(activeDesignation, false, currentUser.role, true);
+        setEvaluation(data);
+        const sum = data.aiScoring;
+        tokensIn += sum?.tokens?.input || 0;
+        tokensOut += sum?.tokens?.output || 0;
+        if (!sum || !sum.enabled) {
+          setAiMsg(sum?.note || 'AI scoring is not enabled.');
+          break;
+        }
+        if (sum.note && sum.pending > 0) {
+          setAiMsg(sum.note);
+          break;
+        }
+        if (sum.pending === 0) {
+          setAiMsg(`AI scoring finished. About ${(tokensIn + tokensOut).toLocaleString()} tokens used in this run.`);
+          break;
+        }
+      }
+    } catch (err: any) {
+      setAiMsg(err.message || 'AI scoring failed.');
+    } finally {
+      setAiRunning(false);
+    }
+  };
+
   // Re-fetch whenever designation changes or parent refresh triggers
   useEffect(() => {
     fetchEvaluation(false);
@@ -207,17 +245,29 @@ export const CandidateEvaluationSection: React.FC<CandidateEvaluationSectionProp
                 Enterprise AI Evaluation Engine
               </span>
               <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-white/10 text-slate-300 border border-white/10">
-                Live Sheet Grounded
+                Live Applications Data
               </span>
             </div>
             <h2 className="text-xl sm:text-2xl font-black text-white tracking-tight">
               AI Candidate Evaluation &amp; Recommendation
             </h2>
             <p className="text-xs sm:text-sm text-slate-300 max-w-3xl leading-relaxed">
-              Dynamically reads the Job Description from Google Sheets, compares all applicants
-              against required skills and experience thresholds, and provides objective evidence-backed
-              decision support for the hiring team.
+              Reads the live Job Description and applications, compares every applicant against required
+              skills and experience, and provides objective evidence-backed decision support for the
+              hiring team.
             </p>
+            {(aiMsg || evaluation?.aiScoring) && (
+              <p className="text-[11px] text-slate-300">
+                {aiMsg ||
+                  (evaluation?.aiScoring?.enabled
+                    ? `AI-scored ${evaluation.aiScoring.aiScored} of ${evaluation.aiScoring.totalCandidates} candidates${
+                        evaluation.aiScoring.pending > 0
+                          ? ` · ${evaluation.aiScoring.pending} not scored yet (click Evaluate with AI)`
+                          : ''
+                      }. Other rows use rule-based scoring.`
+                    : evaluation?.aiScoring?.note)}
+              </p>
+            )}
           </div>
 
           {/* Role Selector & Refresh Action */}
@@ -248,6 +298,21 @@ export const CandidateEvaluationSection: React.FC<CandidateEvaluationSectionProp
             >
               <RefreshCw className={`w-3.5 h-3.5 ${isRefreshing ? 'animate-spin' : ''}`} />
               <span className="hidden sm:inline">Re-analyze</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={runAiScoring}
+              disabled={aiRunning || isLoading || !isHr || evaluation?.aiScoring?.enabled === false}
+              className="inline-flex items-center space-x-1.5 px-3 py-2 rounded-xl bg-white/10 hover:bg-white/20 text-white text-xs font-bold border border-white/20 transition-all cursor-pointer disabled:opacity-50"
+              title={
+                evaluation?.aiScoring?.enabled === false
+                  ? 'Set OPENAI_API_KEY on the server to enable AI scoring'
+                  : 'Score candidates from their resumes with AI (results are cached; each candidate is only analysed once)'
+              }
+            >
+              <Sparkles className={`w-3.5 h-3.5 ${aiRunning ? 'animate-pulse' : ''}`} />
+              <span>{aiRunning ? 'Scoring…' : 'Evaluate with AI'}</span>
             </button>
           </div>
         </div>
@@ -554,6 +619,12 @@ export const CandidateEvaluationSection: React.FC<CandidateEvaluationSectionProp
                           >
                             {cand.alignmentScore}
                           </span>
+                          <div
+                            className="text-[9px] font-bold uppercase tracking-wide text-slate-400 mt-0.5"
+                            title={cand.aiNote || (cand.scoringMode === 'AI' ? 'Scored from resume evidence' : 'Rule-based score')}
+                          >
+                            {cand.scoringMode === 'AI' ? 'AI' : 'Rules'}
+                          </div>
                         </td>
 
                         {/* Key Verified Strengths */}

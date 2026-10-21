@@ -33,7 +33,8 @@ export default async function handler(req: any, res: any) {
       clearEvaluationCache();
     }
 
-    const evaluation = await runCandidateEvaluation(designation, forceRefresh);
+    const evaluateWithAi = req.query.evaluate === 'true';
+    const evaluation = await runCandidateEvaluation(designation, forceRefresh, evaluateWithAi);
     return res.status(200).json(evaluation);
   } catch (err: any) {
     console.error('[Vercel Serverless API] Error in /api/recruitment/ai-evaluation:', err);
