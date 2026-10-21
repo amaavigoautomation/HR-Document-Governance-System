@@ -8,3 +8,4 @@ coverage/
 !.env.example
 migration-password-links.csv
 *service-account*.json
+hr.json
