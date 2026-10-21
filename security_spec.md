@@ -62,3 +62,18 @@
 - [x] `acknowledgments` forbids downgrade from `ACKNOWLEDGED` to `PENDING`
 - [x] Length and size boundaries enforced on all string fields (preventing Denial-of-Wallet)
 - [x] Frontend seed data isolated and decommissioned; dynamic database hydration enforced
+
+---
+
+## Multi-tenant addendum
+
+- Identity is a Firebase ID token verified server-side (`Authorization: Bearer`); the old `x-user-role`
+  header is gone.
+- Tenant, company status and permissions are custom claims (`cid`, `cs`, `perms`, `adm`, `pa`) written only
+  by the server. Firestore rules require `cs == 'ACTIVE'` and a matching `companyId` for every read/write.
+- `companies`, `employees`, `roles`, `departments` are server-write only. `auditLogs` are append-only.
+- A PENDING or SUSPENDED company has no permissions in its token and cannot read company data.
+- Privilege escalation: roles can only contain permissions the editing user holds; the last company admin
+  cannot be removed.
+- Passwords are never stored in Firestore.
+- Uploaded files are served with HMAC-signed links.

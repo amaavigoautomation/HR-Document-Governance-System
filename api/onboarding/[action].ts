@@ -5,7 +5,7 @@ export default async function handler(req: any, res: any) {
   res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PUT,OPTIONS');
   res.setHeader(
     'Access-Control-Allow-Headers',
-    'X-Requested-With, Accept, Content-Type, Authorization, x-user-role, x-cron-key'
+    'X-Requested-With, Accept, Content-Type, Authorization, x-cron-key'
   );
   if (req.method === 'OPTIONS') return res.status(200).end();
 

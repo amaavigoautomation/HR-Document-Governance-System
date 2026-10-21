@@ -5,7 +5,6 @@ import { subscribeToRequisitions } from '../services/requisitionService';
 import { STATUS_LABEL, can, needsMyAction } from '../utils/requisitionPermissions';
 import { NewRequisitionModal } from './NewRequisitionModal';
 import { RequisitionDetailPanel } from './RequisitionDetailPanel';
-import { RolesPanel } from './RolesPanel';
 
 interface Props {
   currentUser: User;
@@ -83,7 +82,6 @@ export const RequisitionsModule: React.FC<Props> = ({ currentUser, users, embedd
   }, [visible]);
 
   const openReq = openId ? all.find((r) => r.id === openId) || null : null;
-  const showRolesTab = can(currentUser, 'manageRoles');
 
   const chips: { key: Filter; label: string; count?: number }[] = [
     { key: 'MINE', label: 'Needs my action', count: myActionCount },
@@ -109,22 +107,6 @@ export const RequisitionsModule: React.FC<Props> = ({ currentUser, users, embedd
           </p>
         </div>
         <div className="flex items-center gap-2">
-          {showRolesTab && (
-            <div className="inline-flex rounded-xl border border-slate-200 bg-white p-0.5 text-xs font-bold">
-              <button
-                className={`rounded-lg px-3 py-1.5 ${view === 'requests' ? 'bg-[#FA7014] text-white' : 'text-slate-600'}`}
-                onClick={() => setView('requests')}
-              >
-                <ClipboardList className="mr-1 inline w-3.5 h-3.5" /> Requests
-              </button>
-              <button
-                className={`rounded-lg px-3 py-1.5 ${view === 'roles' ? 'bg-[#FA7014] text-white' : 'text-slate-600'}`}
-                onClick={() => setView('roles')}
-              >
-                <Users className="mr-1 inline w-3.5 h-3.5" /> Roles
-              </button>
-            </div>
-          )}
           {can(currentUser, 'create') && (
             <button
               onClick={() => setShowNew(true)}
@@ -136,9 +118,7 @@ export const RequisitionsModule: React.FC<Props> = ({ currentUser, users, embedd
         </div>
       </div>
 
-      {view === 'roles' && showRolesTab ? (
-        <RolesPanel currentUser={currentUser} users={users} />
-      ) : (
+      {(
         <>
           <div className="flex flex-wrap items-center gap-2">
             {chips.map((c) => (

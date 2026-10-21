@@ -12,6 +12,9 @@ import { UserRole } from './src/types';
 import { generateJobDescription } from './api/_lib/jdGenerator';
 import { handleCareersPublish } from './api/_lib/careersPublisher';
 import { routeOnboarding } from './api/_lib/onboarding';
+import { routeTenant } from './api/_lib/tenantAdmin';
+import { authErrorResponse, requireActiveTenant, requireHomeTenantPermission, requirePermission } from './api/_lib/authContext';
+import { signStorageToken, verifyStorageToken } from './api/_lib/storageToken';
 import { generateCorporatePdfBlob } from './src/utils/pdfGenerator';
 import { generateCorporateDocxBlob } from './src/utils/documentStamper';
 
@@ -32,6 +35,74 @@ async function startServer() {
   // Support up to 100MB payload for video and high-resolution document uploads
   app.use(express.json({ limit: '100mb' }));
   app.use(express.urlencoded({ extended: true, limit: '100mb' }));
+
+  // ----------------------------------------------------
+  // MULTI-TENANT AUTH GATE
+  // Every /api route needs a verified Firebase ID token from an ACTIVE company, except the few
+  // that are public by design (health, company signup, candidate upload links, cron, signed file URLs).
+  // ----------------------------------------------------
+  const PUBLIC_API = [
+    /^\/api\/health$/,
+    /^\/api\/tenant\/signup$/,
+    /^\/api\/onboarding\/(public-info|upload|submit|cron)$/,
+    /^\/api\/storage\/(file|download)\//, // protected by an HMAC token in the URL (see storageToken.ts)
+  ];
+  // These routers do their own, finer-grained authentication.
+  const SELF_AUTH_API = [/^\/api\/tenant\//, /^\/api\/onboarding\//];
+
+  app.use('/api', async (req, res, next) => {
+    const p = req.originalUrl.split('?')[0];
+    if (req.method === 'OPTIONS' || PUBLIC_API.some((re) => re.test(p)) || SELF_AUTH_API.some((re) => re.test(p))) {
+      return next();
+    }
+    try {
+      (req as any).auth = await requireActiveTenant(req.headers);
+      next();
+    } catch (err) {
+      const known = authErrorResponse(err);
+      if (known) return res.status(known.status).json(known.json);
+      next(err);
+    }
+  });
+
+  const guard =
+    (check: (headers: any) => Promise<unknown>, skipPrefix?: string) =>
+    async (req: express.Request, res: express.Response, next: express.NextFunction) => {
+      if (skipPrefix && req.path.startsWith(skipPrefix)) return next();
+      try {
+        await check(req.headers);
+        next();
+      } catch (err) {
+        const known = authErrorResponse(err);
+        if (known) return res.status(known.status).json(known.json);
+        next(err);
+      }
+    };
+  // Features still backed by ONE global configuration are limited to HOME_COMPANY_ID (see authContext.ts).
+  app.use('/api/recruitment/ai-evaluation', guard((h) => requireHomeTenantPermission(h, 'candidate.evaluate')));
+  app.use('/api/recruitment', guard((h) => requireHomeTenantPermission(h, 'talent.view'), '/ai-evaluation'));
+  app.use('/api/careers', guard((h) => requireHomeTenantPermission(h, 'req.manage_jd')));
+  app.use('/api/requisitions', guard((h) => requirePermission(h, 'req.manage_jd')));
+
+  // Company signup, approval, users, departments and roles
+  app.all('/api/tenant/:action', async (req, res) => {
+    const proto = (req.headers['x-forwarded-proto'] as string) || req.protocol;
+    const origin = req.headers.host ? `${proto}://${req.headers.host}` : undefined;
+    const { status, json } = await routeTenant({ method: req.method, action: req.params.action, body: req.body, headers: req.headers, origin });
+    res.status(status).json(json);
+  });
+
+  // The original single-company, in-memory document API is switched off: it had no per-company data
+  // separation and nothing in the app uses it any more (the app reads and writes Firestore directly).
+  app.all(
+    [
+      '/api/auth/users', '/api/employees', '/api/employees/*', '/api/database/status',
+      '/api/documents', '/api/documents/*', '/api/versions/*', '/api/review/*',
+      '/api/audit', '/api/notifications', '/api/acknowledgements', '/api/compliance/*',
+      '/api/governance/*', '/api/system/*',
+    ],
+    (_req, res) => res.status(410).json({ success: false, error: 'This endpoint has been retired.' })
+  );
 
   // Safe sync versions to storage if available dynamically from database
   try {
@@ -190,7 +261,7 @@ async function startServer() {
   // Publish an approved requisition to the live careers page
   app.post('/api/careers/publish', async (req, res) => {
     try {
-      const { status, json } = await handleCareersPublish(req.body, req.headers['x-user-role'] as string | undefined);
+      const { status, json } = await handleCareersPublish(req.body, 'CREATOR');
       res.status(status).json(json);
     } catch (err: any) {
       console.error('Error in /api/careers/publish:', err);
@@ -557,7 +628,7 @@ async function startServer() {
       res.status(201).json({
         success: true,
         fileId,
-        fileUrl: `/api/storage/file/${fileId}`,
+        fileUrl: `/api/storage/file/${fileId}?t=${signStorageToken(fileId)}`,
         fileName: safeFileName,
         mimeType,
         sizeBytes: buffer.length,
@@ -571,6 +642,7 @@ async function startServer() {
   // Media Streaming & Retrieval Endpoint (Supports HTML5 video range streaming)
   app.get('/api/storage/file/:fileId', (req, res) => {
     try {
+      if (!verifyStorageToken(path.basename(req.params.fileId), req.query.t)) return res.status(403).json({ error: 'Invalid or missing file link.' });
       const rawFileId = path.basename(req.params.fileId);
       let fileId = rawFileId;
       let filePath = path.join(UPLOADS_DIR, fileId);
@@ -711,6 +783,7 @@ async function startServer() {
   // Storage Download by fileId
   app.get('/api/storage/download/:fileId', (req, res) => {
     try {
+      if (!verifyStorageToken(path.basename(req.params.fileId), req.query.t)) return res.status(403).json({ error: 'Invalid or missing file link.' });
       const rawFileId = path.basename(req.params.fileId);
       let fileId = rawFileId;
       let filePath = path.join(UPLOADS_DIR, fileId);

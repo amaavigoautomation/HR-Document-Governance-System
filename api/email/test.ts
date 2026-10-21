@@ -1,6 +1,7 @@
+import { guarded, anyActiveUser } from '../_lib/guard.js';
 import { dispatchLiveEmail } from '../_lib/serverEmail.js';
 
-export default async function handler(req: any, res: any) {
+async function handler(req: any, res: any) {
   res.setHeader('Access-Control-Allow-Credentials', 'true');
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS,PATCH,DELETE,POST,PUT');
@@ -38,3 +39,5 @@ export default async function handler(req: any, res: any) {
     return res.status(500).json({ success: false, error: err.message || 'Failed to dispatch test email' });
   }
 }
+
+export default guarded(anyActiveUser, handler);

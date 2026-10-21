@@ -18,6 +18,7 @@ import {
   Shield,
   KeyRound,
   Sparkles,
+  Settings2,
 } from 'lucide-react';
 import { User, UserRole } from '../types';
 import { AmaavigoLogo } from './AmaavigoLogo';
@@ -27,15 +28,15 @@ import {
   getAuthorizationBadgeText,
   normalizeAuthorizedModules,
 } from '../utils/authorization';
-import { ManageModuleAuthorizationModal } from './ManageModuleAuthorizationModal';
-import { governanceEngine } from '../services/governance';
+import { hasAnyPerm } from '../../shared/permissions';
 
 export type HRAgentModule =
   | 'document-version-control'
   | 'talent-acquisition'
   | 'talent-acquisition-overview'
   | 'talent-acquisition-requisitions'
-  | 'talent-acquisition-onboarding';
+  | 'talent-acquisition-onboarding'
+  | 'administration';
 
 interface HRAgentShellProps {
   currentUser: User;
@@ -66,8 +67,8 @@ export const HRAgentShell: React.FC<HRAgentShellProps> = ({
   const hasDocGovAccess = hasModulePermission(currentUser, 'document-version-control');
   const authorizedCount = (hasTalentAccess ? 1 : 0) + (hasDocGovAccess ? 1 : 0);
 
-  // Modal to manage authorization for HR and Founder/Approver accounts
-  const [showAuthModal, setShowAuthModal] = useState<boolean>(false);
+  // Company administration (people, departments, roles) is available to anyone holding an admin permission
+  const hasAdminAccess = hasAnyPerm(currentUser.perms, ['users.manage', 'departments.manage', 'roles.manage']);
 
   // Talent Acquisition expanded state in left navigation
   const [isTalentAcquisitionExpanded, setIsTalentAcquisitionExpanded] = useState<boolean>(true);
@@ -77,6 +78,7 @@ export const HRAgentShell: React.FC<HRAgentShellProps> = ({
 
   // Auto-redirect if currently selected module is not permitted
   useEffect(() => {
+    if (activeModule === 'administration') return;
     if (activeModule === 'document-version-control' && !hasDocGovAccess && hasTalentAccess) {
       onSelectModule('talent-acquisition-overview');
     } else if (
@@ -91,8 +93,7 @@ export const HRAgentShell: React.FC<HRAgentShellProps> = ({
   }, [activeModule, hasTalentAccess, hasDocGovAccess, onSelectModule]);
 
   const displayId = currentUser.empId || currentUser.loginId || currentUser.id || '';
-  const authLabel = getAuthorizationLabel(currentUser.authorizedModules);
-  const authBadge = getAuthorizationBadgeText(currentUser.authorizedModules);
+  const authLabel = hasTalentAccess && hasDocGovAccess ? 'All Modules' : hasTalentAccess ? 'Talent Acquisition' : hasDocGovAccess ? 'Document Version Control' : 'Employee Portal';
 
   return (
     <div className="h-screen w-full bg-[#F8FAFC] flex flex-col font-sans text-slate-900 overflow-hidden">
@@ -433,6 +434,46 @@ export const HRAgentShell: React.FC<HRAgentShellProps> = ({
                     )}
                   </button>
                 )}
+
+                {/* ---------------------------------------------------- */}
+                {/* 3. ADMINISTRATION (people, departments, roles)       */}
+                {/* ---------------------------------------------------- */}
+                {hasAdminAccess && (
+                  <button
+                    id="nav-module-administration"
+                    type="button"
+                    onClick={() => {
+                      onSelectModule('administration');
+                      setIsMobileSidebarOpen(false);
+                    }}
+                    className={`w-full px-3 py-2.5 rounded-xl border flex items-center justify-between text-left transition-all cursor-pointer ${
+                      activeModule === 'administration'
+                        ? 'bg-[#FA7014]/10 border-[#FA7014]/40 text-slate-900 shadow-xs'
+                        : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50 hover:border-slate-300'
+                    }`}
+                  >
+                    <div className="flex items-center space-x-2.5 min-w-0">
+                      <div
+                        className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 ${
+                          activeModule === 'administration' ? 'bg-[#FA7014] text-white shadow-xs' : 'bg-slate-100 text-slate-600'
+                        }`}
+                      >
+                        <Settings2 className="w-4 h-4" />
+                      </div>
+                      <div className="truncate">
+                        <span className={`text-xs font-bold block truncate ${activeModule === 'administration' ? 'text-[#FA7014]' : 'text-slate-800'}`}>
+                          Administration
+                        </span>
+                        <span className="text-[10px] text-slate-500 font-medium block truncate">People, departments &amp; roles</span>
+                      </div>
+                    </div>
+                    {activeModule === 'administration' && (
+                      <div className="w-5 h-5 rounded-full bg-[#FA7014] text-white flex items-center justify-center shrink-0 ml-1.5">
+                        <Check className="w-3 h-3 stroke-[3]" />
+                      </div>
+                    )}
+                  </button>
+                )}
               </nav>
             </div>
           </div>
@@ -485,15 +526,6 @@ export const HRAgentShell: React.FC<HRAgentShellProps> = ({
                 </span>
               </div>
 
-              <button
-                type="button"
-                onClick={() => setShowAuthModal(true)}
-                className="text-[9px] font-bold text-[#FA7014] hover:text-[#E65A05] hover:underline flex items-center gap-1 cursor-pointer shrink-0"
-                title="Manage Module Authorization for HR & Founders in Database"
-              >
-                <KeyRound className="w-3 h-3" />
-                <span>Manage</span>
-              </button>
             </div>
 
             {/* Logout Option */}
@@ -527,17 +559,6 @@ export const HRAgentShell: React.FC<HRAgentShellProps> = ({
         </main>
       </div>
 
-      {/* Module Authorization Management Modal */}
-      {showAuthModal && (
-        <ManageModuleAuthorizationModal
-          currentUser={currentUser}
-          users={governanceEngine.getUsers()}
-          onClose={() => setShowAuthModal(false)}
-          onSuccess={() => {
-            if (onRefreshData) onRefreshData();
-          }}
-        />
-      )}
     </div>
   );
 };

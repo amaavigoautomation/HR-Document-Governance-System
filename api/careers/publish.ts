@@ -1,12 +1,13 @@
+import { guarded, withHomePermission } from '../_lib/guard.js';
 import { handleCareersPublish } from '../_lib/careersPublisher.js';
 
-export default async function handler(req: any, res: any) {
+async function handler(req: any, res: any) {
   res.setHeader('Access-Control-Allow-Credentials', 'true');
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'POST,OPTIONS');
   res.setHeader(
     'Access-Control-Allow-Headers',
-    'X-CSRF-Token, X-Requested-With, Accept, Accept-Version, Content-Length, Content-MD5, Content-Type, Date, X-Api-Version, Authorization, x-user-role'
+    'X-CSRF-Token, X-Requested-With, Accept, Accept-Version, Content-Length, Content-MD5, Content-Type, Date, X-Api-Version, Authorization'
   );
 
   if (req.method === 'OPTIONS') {
@@ -18,7 +19,7 @@ export default async function handler(req: any, res: any) {
   }
 
   try {
-    const userRole = req.headers['x-user-role'] as string | undefined;
+    const userRole = 'CREATOR'; // identity and permission already verified by the guard
     const { status, json } = await handleCareersPublish(req.body, userRole);
     return res.status(status).json(json);
   } catch (err: any) {
@@ -26,3 +27,5 @@ export default async function handler(req: any, res: any) {
     return res.status(500).json({ success: false, error: err?.message || 'Failed to publish opening' });
   }
 }
+
+export default guarded(withHomePermission('req.manage_jd'), handler);

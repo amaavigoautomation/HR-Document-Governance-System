@@ -1,4 +1,5 @@
 import { storeMediaInIndexedDb, getMediaFromIndexedDb, findMediaInIndexedDb, getAllMediaFromIndexedDb } from './localMediaDb';
+import { apiFetch } from './apiClient';
 
 export interface MediaUploadResult {
   fileUrl: string;
@@ -24,7 +25,7 @@ export async function uploadMediaToServer(payload: {
   const sizeBytes = Math.round((dataUrl.length * 3) / 4);
 
   try {
-    const res = await fetch('/api/storage/upload', {
+    const res = await apiFetch('/api/storage/upload', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',

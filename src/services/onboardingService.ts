@@ -1,9 +1,10 @@
 /**
  * Client helper for the /api/onboarding/* endpoints.
- * HR calls send the x-user-role header (same stopgap as the other APIs); the candidate
+ * HR calls send the signed-in user's Firebase ID token; the candidate
  * upload calls are public and authorised only by the private token in the link.
  */
 import type { User } from '../types';
+import { apiFetch } from './apiClient';
 
 export type CandidateStatus = 'PENDING' | 'ON_HOLD' | 'REJECTED';
 
@@ -49,13 +50,12 @@ async function call<T = any>(
   init: { method?: string; body?: unknown } = {}
 ): Promise<T> {
   const headers: Record<string, string> = {};
-  if (user) headers['x-user-role'] = user.role;
   let body: BodyInit | undefined;
   if (init.body !== undefined) {
     headers['Content-Type'] = 'application/json';
     body = JSON.stringify(init.body);
   }
-  const res = await fetch(path, { method: init.method || 'GET', headers, body });
+  const res = await apiFetch(path, { method: init.method || 'GET', headers, body });
   const type = res.headers.get('content-type') || '';
   if (!type.includes('application/json')) {
     throw new Error(`Unexpected server response (HTTP ${res.status}).`);
@@ -113,9 +113,7 @@ export const onboardingService = {
 
   /** Fetches a candidate document (needs the HR role header, so it cannot be a plain link) and opens it. */
   async openFile(user: User, onboardingId: string, docKey: string): Promise<void> {
-    const res = await fetch(`/api/onboarding/file?id=${encodeURIComponent(onboardingId)}&key=${encodeURIComponent(docKey)}`, {
-      headers: { 'x-user-role': user.role },
-    });
+    const res = await apiFetch(`/api/onboarding/file?id=${encodeURIComponent(onboardingId)}&key=${encodeURIComponent(docKey)}`);
     if (!res.ok) {
       const j = await res.json().catch(() => ({}));
       throw new Error(j.error || `Could not open the file (HTTP ${res.status}).`);

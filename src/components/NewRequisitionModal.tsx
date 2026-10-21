@@ -22,7 +22,7 @@ export const NewRequisitionModal: React.FC<Props> = ({ currentUser, users, exist
   // HR / founder raise on behalf of a department head (or any active employee if none are flagged yet)
   const requesterOptions = useMemo(() => {
     const employees = users.filter((u) => u.role === UserRole.EMPLOYEE && u.active !== false);
-    const heads = employees.filter((u) => u.isDepartmentHead);
+    const heads = employees.filter((u) => isDepartmentHead(u));
     return (heads.length ? heads : employees).sort((a, b) => a.name.localeCompare(b.name));
   }, [users]);
 
@@ -100,7 +100,7 @@ export const NewRequisitionModal: React.FC<Props> = ({ currentUser, users, exist
                 {requesterOptions.map((u) => (
                   <option key={u.id} value={u.id}>
                     {u.name} - {u.departmentName}
-                    {u.isDepartmentHead ? ' (dept head)' : ''}
+                    {isDepartmentHead(u) ? ' (dept head)' : ''}
                   </option>
                 ))}
               </select>

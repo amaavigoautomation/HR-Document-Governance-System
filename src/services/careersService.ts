@@ -1,4 +1,5 @@
 import type { Requisition } from '../types';
+import { apiFetch } from './apiClient';
 
 /**
  * Client-side helper for publishing an opening to the live careers page.
@@ -40,9 +41,9 @@ export async function publishToCareers(
   userRole: string
 ): Promise<CareersPublishResponse> {
   try {
-    const res = await fetch('/api/careers/publish', {
+    const res = await apiFetch('/api/careers/publish', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'x-user-role': userRole },
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(input),
     });
 

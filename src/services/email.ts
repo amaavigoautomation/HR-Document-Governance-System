@@ -1,4 +1,5 @@
 import { EmailNotification } from '../types';
+import { apiFetch } from './apiClient';
 
 export interface EmailProvider {
   sendEmail(
@@ -56,7 +57,7 @@ export class EnterpriseEmailProvider implements EmailProvider {
 
     // Call server API for live outbound delivery if running in full-stack mode / Vercel Serverless
     try {
-      const response = await fetch('/api/email/send', {
+      const response = await apiFetch('/api/email/send', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

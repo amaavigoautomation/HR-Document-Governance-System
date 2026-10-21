@@ -15,7 +15,11 @@ import { firestoreService } from './services/firestoreService';
 import { HRHeader } from './components/HRHeader';
 import { ApproverHeader } from './components/ApproverHeader';
 import { EmployeeHeader } from './components/EmployeeHeader';
-import { LoginView } from './components/LoginView';
+import { AuthScreen } from './components/AuthScreen';
+import { PendingApprovalView } from './components/PendingApprovalView';
+import { PlatformAdminView } from './components/PlatformAdminView';
+import { AdminModule } from './components/AdminModule';
+import { onSession, reloadSession, signOutUser, type SessionState } from './services/authService';
 import { CreatorDashboard } from './components/CreatorDashboard';
 import { ReviewerDashboard } from './components/ReviewerDashboard';
 import { EmployeePortalView } from './components/EmployeePortalView';
@@ -41,99 +45,19 @@ import { isDepartmentHead } from './utils/requisitionPermissions';
 import { hasModulePermission, normalizeAuthorizedModules } from './utils/authorization';
 import { DocumentSuggestion } from './types';
 
-const CURRENT_USER_STORAGE_KEY = 'amaavigo_current_user_id';
-const CURRENT_USER_DATA_KEY = 'amaavigo_current_user_data';
-const CURRENT_USER_ROLE_KEY = 'amaavigo_current_user_role';
 const ACTIVE_TAB_STORAGE_KEY = 'amaavigo_active_tab';
 const HR_AGENT_MODULE_STORAGE_KEY = 'amaavigo_hr_agent_module';
 
 export default function App() {
-  const [currentUser, setCurrentUser] = useState<User | null>(() => {
-    try {
-      const savedRole = localStorage.getItem(CURRENT_USER_ROLE_KEY);
-      // 1. First priority: restore full cached user object from localStorage
-      const savedUserData = localStorage.getItem(CURRENT_USER_DATA_KEY);
-      if (savedUserData) {
-        const parsed = JSON.parse(savedUserData);
-        if (parsed && (parsed.id || parsed.loginId || parsed.empId)) {
-          if (savedRole && (savedRole === UserRole.CREATOR || savedRole === UserRole.REVIEWER || savedRole === UserRole.EMPLOYEE)) {
-            parsed.role = savedRole as UserRole;
-          }
-          return parsed as User;
-        }
-      }
+  // Who is signed in comes from Firebase Authentication (see authService.ts). Nothing about the user is
+  // read back from localStorage, so editing browser storage cannot change someone's role.
+  const [session, setSession] = useState<SessionState>({ kind: 'loading' });
+  const [currentUser, setCurrentUser] = useState<User | null>(null);
 
-      // 2. Second priority: lookup user strictly by stored unique ID / login ID
-      const savedUserId = localStorage.getItem(CURRENT_USER_STORAGE_KEY);
-      if (savedUserId) {
-        const users = governanceEngine.getUsers();
-        const found = users.find(
-          (u) =>
-            (!savedRole || u.role === savedRole) &&
-            (u.id === savedUserId ||
-              (u.loginId && u.loginId.toUpperCase() === savedUserId.toUpperCase()) ||
-              (u.empId && u.empId.toUpperCase() === savedUserId.toUpperCase()))
-        );
-        if (found) {
-          return savedRole ? { ...found, role: savedRole as UserRole } : found;
-        }
-      }
-    } catch (e) {
-      console.warn('Could not restore user from localStorage', e);
-    }
-    return null;
-  });
-
-  const [activeTab, setActiveTab] = useState<'creator' | 'reviewer' | 'employee' | 'compliance' | 'suggestions' | 'audit' | 'notifications'>(() => {
-    try {
-      const savedTab = localStorage.getItem(ACTIVE_TAB_STORAGE_KEY);
-      const savedRole = localStorage.getItem(CURRENT_USER_ROLE_KEY);
-
-      if (savedRole === UserRole.CREATOR) {
-        if (savedTab && ['creator', 'compliance', 'suggestions', 'audit'].includes(savedTab)) {
-          return savedTab as any;
-        }
-        return 'creator';
-      }
-      if (savedRole === UserRole.REVIEWER) {
-        if (savedTab && ['reviewer', 'compliance', 'suggestions', 'audit'].includes(savedTab)) {
-          return savedTab as any;
-        }
-        return 'reviewer';
-      }
-      if (savedRole === UserRole.EMPLOYEE) {
-        return 'employee';
-      }
-
-      if (savedTab && ['creator', 'reviewer', 'employee', 'compliance', 'suggestions', 'audit', 'notifications'].includes(savedTab)) {
-        return savedTab as any;
-      }
-    } catch (e) {
-      console.warn('Could not read activeTab from localStorage', e);
-    }
-    return 'creator';
-  });
+  const [activeTab, setActiveTab] = useState<'creator' | 'reviewer' | 'employee' | 'compliance' | 'suggestions' | 'audit' | 'notifications'>('creator');
 
   // HR AI Agent Shell Module State (Defaults to 'document-version-control')
-  const [hrAgentModule, setHrAgentModule] = useState<HRAgentModule>(() => {
-    try {
-      const pathname = window.location.pathname;
-      if (pathname.includes('/talent-acquisition')) {
-        return 'talent-acquisition-overview';
-      }
-      const saved = localStorage.getItem(HR_AGENT_MODULE_STORAGE_KEY);
-      if (
-        saved === 'talent-acquisition' ||
-        saved === 'talent-acquisition-overview' ||
-        saved === 'talent-acquisition-requisitions' ||
-        saved === 'talent-acquisition-onboarding' ||
-        saved === 'document-version-control'
-      ) {
-        return saved === 'talent-acquisition' ? 'talent-acquisition-overview' : (saved as HRAgentModule);
-      }
-    } catch (e) {}
-    return 'document-version-control';
-  });
+  const [hrAgentModule, setHrAgentModule] = useState<HRAgentModule>('document-version-control');
 
   // Desktop sidebar collapse/open state with persistent storage
   const [isSidebarOpen, setIsSidebarOpen] = useState<boolean>(() => {
@@ -357,62 +281,22 @@ export default function App() {
   const refreshData = () => {
     const users = [...governanceEngine.getUsers()];
     setAllUsers(users);
+    // Keep the signed-in user's profile fresh, but never change who they are or what they may do:
+    // role, permissions and admin flag come from the verified sign-in token, not from the profile list.
     setCurrentUser((prev) => {
-      const savedRole = localStorage.getItem(CURRENT_USER_ROLE_KEY);
-      if (prev) {
-        const roleToKeep = (prev.role || savedRole || UserRole.EMPLOYEE) as UserRole;
-        // Strictly match users by unique immutable ID (id, loginId, empId). Never match by role-only or shared email!
-        const match = users.find(
-          (u) =>
-            u.role === roleToKeep &&
-            (u.id === prev.id ||
-              (prev.loginId && u.loginId && u.loginId.toUpperCase() === prev.loginId.toUpperCase()) ||
-              (prev.empId && u.empId && u.empId.toUpperCase() === prev.empId.toUpperCase()))
-        );
-        const updated = match ? { ...match, role: roleToKeep } : prev;
-        try {
-          localStorage.setItem(CURRENT_USER_STORAGE_KEY, updated.id);
-          localStorage.setItem(CURRENT_USER_DATA_KEY, JSON.stringify(updated));
-          localStorage.setItem(CURRENT_USER_ROLE_KEY, updated.role);
-        } catch (e) {}
-        return updated;
-      }
-
-      try {
-        const savedUserData = localStorage.getItem(CURRENT_USER_DATA_KEY);
-        if (savedUserData) {
-          const parsed = JSON.parse(savedUserData);
-          if (parsed && (parsed.id || parsed.loginId || parsed.empId)) {
-            const roleToKeep = (savedRole || parsed.role || UserRole.EMPLOYEE) as UserRole;
-            const match = users.find(
-              (u) =>
-                u.role === roleToKeep &&
-                (u.id === parsed.id ||
-                  (parsed.loginId && u.loginId && u.loginId.toUpperCase() === parsed.loginId.toUpperCase()) ||
-                  (parsed.empId && u.empId && u.empId.toUpperCase() === parsed.empId.toUpperCase()))
-            );
-            return match ? { ...match, role: roleToKeep } : parsed;
-          }
-        }
-        const savedUserId = localStorage.getItem(CURRENT_USER_STORAGE_KEY);
-        if (savedUserId) {
-          const roleToKeep = (savedRole || UserRole.EMPLOYEE) as UserRole;
-          const match = users.find(
-            (u) =>
-              (!savedRole || u.role === roleToKeep) &&
-              (u.id === savedUserId ||
-                (u.loginId && u.loginId.toUpperCase() === savedUserId.toUpperCase()) ||
-                (u.empId && u.empId.toUpperCase() === savedUserId.toUpperCase()))
-          );
-          if (match) {
-            const resolved = { ...match, role: roleToKeep };
-            localStorage.setItem(CURRENT_USER_DATA_KEY, JSON.stringify(resolved));
-            if (savedRole) localStorage.setItem(CURRENT_USER_ROLE_KEY, savedRole);
-            return resolved;
-          }
-        }
-      } catch (e) {}
-      return null;
+      if (!prev) return prev;
+      const match = users.find((u) => u.id === prev.id);
+      if (!match) return prev;
+      return {
+        ...match,
+        role: prev.role,
+        perms: prev.perms,
+        isCompanyAdmin: prev.isCompanyAdmin,
+        authUid: prev.authUid,
+        companyId: prev.companyId,
+        companyName: prev.companyName,
+        authorizedModules: prev.authorizedModules,
+      };
     });
     const docs = [...governanceEngine.getDocumentMasters()];
     setDocuments(docs);
@@ -436,23 +320,14 @@ export default function App() {
     setSuggestions([...sugs]);
   };
 
+  // Company data is only loaded once the person is signed in AND their company is approved.
+  const sessionReady = session.kind === 'ready';
   useEffect(() => {
+    if (!sessionReady) return;
     refreshData();
     // Dynamically hydrate from Firestore database
     const hydrateFromFirestore = async () => {
       try {
-        // One-time purge of all policy documents and dummy suggestions per user request
-        if (localStorage.getItem('ama_purged_user_request_v2') !== 'true') {
-          localStorage.setItem('ama_purged_user_request_v2', 'true');
-          localStorage.setItem('ama_docs_cleared', 'true');
-          localStorage.removeItem('ama_governance_suggestions');
-          localStorage.removeItem('ama_governance_acks');
-          localStorage.removeItem('ama_rereview_reminders_sent');
-          localStorage.removeItem('ama_document_versions');
-          await governanceEngine.clearAllDocuments();
-          refreshData();
-        }
-
         const [cloudEmps, cloudDocs, cloudVers, cloudAcks, cloudLogs, cloudSugs] = await Promise.all([
           firestoreService.getEmployees(),
           firestoreService.getDocuments(),
@@ -510,14 +385,14 @@ export default function App() {
     });
 
     const unsubDocs = firestoreService.subscribeToDocuments((cloudDocs) => {
-      if (Array.isArray(cloudDocs) && (cloudDocs.length > 0 || localStorage.getItem('ama_docs_cleared') === 'true')) {
+      if (Array.isArray(cloudDocs)) {
         (governanceEngine as any).documentMasters = cloudDocs;
         refreshData();
       }
     });
 
     const unsubVers = firestoreService.subscribeToVersions((cloudVers) => {
-      if (Array.isArray(cloudVers) && (cloudVers.length > 0 || localStorage.getItem('ama_docs_cleared') === 'true')) {
+      if (Array.isArray(cloudVers)) {
         (governanceEngine as any).documentVersions = cloudVers;
         governanceEngine.syncVersionsToStorage(cloudVers);
         refreshData();
@@ -559,20 +434,7 @@ export default function App() {
       unsubAuditLocal();
       unsubSuggestions();
     };
-  }, []);
-
-  // Synchronize state changes to localStorage
-  useEffect(() => {
-    try {
-      if (currentUser) {
-        localStorage.setItem(CURRENT_USER_STORAGE_KEY, currentUser.id);
-        localStorage.setItem(CURRENT_USER_DATA_KEY, JSON.stringify(currentUser));
-        localStorage.setItem(CURRENT_USER_ROLE_KEY, currentUser.role);
-      }
-    } catch (e) {
-      console.warn('Error saving user to localStorage:', e);
-    }
-  }, [currentUser]);
+  }, [sessionReady]);
 
   useEffect(() => {
     try {
@@ -584,46 +446,40 @@ export default function App() {
     }
   }, [activeTab]);
 
-  const handleLogin = (user: User) => {
+  // Land the person on the right screen the first time their session becomes ready.
+  const applySessionUser = (user: User) => {
     setCurrentUser(user);
-    try {
-      localStorage.setItem(CURRENT_USER_STORAGE_KEY, user.id);
-      localStorage.setItem(CURRENT_USER_DATA_KEY, JSON.stringify(user));
-      localStorage.setItem(CURRENT_USER_ROLE_KEY, user.role);
-    } catch (e) {}
-    let targetTab: 'creator' | 'reviewer' | 'employee' | 'compliance' | 'suggestions' | 'audit' = 'creator';
-    if (user.role === UserRole.CREATOR) {
-      targetTab = 'creator';
-    } else if (user.role === UserRole.REVIEWER) {
-      targetTab = 'reviewer';
-    } else if (user.role === UserRole.EMPLOYEE) {
-      targetTab = 'employee';
-    }
+    const targetTab = user.role === UserRole.REVIEWER ? 'reviewer' : user.role === UserRole.EMPLOYEE ? 'employee' : 'creator';
     setActiveTab(targetTab);
-    // Determine default landing module based on user's authorization
     const hasTalent = hasModulePermission(user, 'talent-acquisition');
     const hasDocGov = hasModulePermission(user, 'document-version-control');
     let defaultModule: HRAgentModule = 'document-version-control';
-    if (!hasDocGov && hasTalent) {
-      defaultModule = 'talent-acquisition-overview';
-    }
+    if (!hasDocGov && hasTalent) defaultModule = 'talent-acquisition-overview';
+    else if (!hasDocGov && !hasTalent) defaultModule = 'administration';
     setHrAgentModule(defaultModule);
-    try {
-      localStorage.setItem(ACTIVE_TAB_STORAGE_KEY, targetTab);
-      localStorage.setItem(HR_AGENT_MODULE_STORAGE_KEY, defaultModule);
-    } catch (e) {}
   };
 
-  const handleLogout = () => {
-    setCurrentUser(null);
-    setHrAgentModule('document-version-control');
-    try {
-      localStorage.removeItem(CURRENT_USER_STORAGE_KEY);
-      localStorage.removeItem(CURRENT_USER_DATA_KEY);
-      localStorage.removeItem(CURRENT_USER_ROLE_KEY);
-      localStorage.removeItem(ACTIVE_TAB_STORAGE_KEY);
-      localStorage.removeItem(HR_AGENT_MODULE_STORAGE_KEY);
-    } catch (e) {}
+  useEffect(() => {
+    return onSession((state) => {
+      setSession(state);
+      if (state.kind === 'ready') {
+        setCurrentUser((prev) => {
+          if (prev && prev.id === state.user.id) return { ...prev, perms: state.user.perms, isCompanyAdmin: state.user.isCompanyAdmin };
+          applySessionUser(state.user);
+          return state.user;
+        });
+      } else {
+        setCurrentUser(null);
+      }
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const handleLogout = async () => {
+    await signOutUser();
+    // A full reload drops every in-memory cache (the governance engine is a singleton) so the next
+    // person to sign in on this browser can never see the previous company's data.
+    window.location.assign('/login');
   };
 
   const handleResetSeed = async () => {
@@ -662,13 +518,30 @@ export default function App() {
 
   return (
     <>
-      {!currentUser ? (
-        /* 1. Unauthenticated Login Screen */
-        <div className="h-screen max-h-screen overflow-hidden bg-[#F8FAFC] flex flex-col font-sans text-slate-900">
-          <main className="flex-1 w-full h-full p-0 flex flex-col overflow-hidden">
-            <LoginView users={allUsers} onSelectUser={handleLogin} />
-          </main>
+      {session.kind === 'loading' ? (
+        <div className="h-screen flex items-center justify-center bg-[#F8FAFC] text-sm font-bold text-slate-400">Loading…</div>
+      ) : session.kind === 'platformAdmin' ? (
+        <PlatformAdminView email={session.email} onLogout={handleLogout} />
+      ) : session.kind === 'pending' || session.kind === 'suspended' ? (
+        <PendingApprovalView
+          company={session.company}
+          email={session.email}
+          suspended={session.kind === 'suspended'}
+          onLogout={handleLogout}
+          onCheckAgain={async () => {
+            const next = await reloadSession();
+            setSession(next);
+            // The listener only fires on sign-in changes, so promote the user here once approved.
+            if (next.kind === 'ready') applySessionUser(next.user);
+          }}
+        />
+      ) : session.kind === 'error' ? (
+        <div className="h-screen flex flex-col items-center justify-center gap-4 bg-[#F8FAFC] px-6 text-center">
+          <p className="max-w-md text-sm font-bold text-slate-700">{session.message}</p>
+          <button onClick={handleLogout} className="rounded-xl bg-slate-900 px-5 py-2 text-xs font-black text-white">Sign out</button>
         </div>
+      ) : !currentUser || session.kind === 'signedOut' ? (
+        <AuthScreen />
       ) : currentUser.role === UserRole.EMPLOYEE ? (
         /* 2. Employee Portal: Remained 100% untouched as required */
         <div className="min-h-screen bg-[#F8FAFC] bg-[radial-gradient(ellipse_80%_80%_at_50%_-20%,rgba(250,112,20,0.05),rgba(255,255,255,0))] flex flex-col font-sans text-slate-900">
@@ -720,6 +593,10 @@ export default function App() {
           onLogout={handleLogout}
           onRefreshData={refreshData}
         >
+          {hrAgentModule === 'administration' && (
+            <AdminModule currentUser={currentUser} company={session.kind === 'ready' ? session.company : (null as any)} />
+          )}
+
           {/* Selected Module: Document Version Control (Default) */}
           {hrAgentModule === 'document-version-control' && (
             <div className="flex-1 flex flex-col min-w-0">

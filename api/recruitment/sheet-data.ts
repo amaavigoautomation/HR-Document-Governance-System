@@ -1,3 +1,4 @@
+import { guarded, withHomePermission } from '../_lib/guard.js';
 import { fetchSheetData } from '../_lib/serverSheets.js';
 
 enum UserRole {
@@ -6,13 +7,13 @@ enum UserRole {
   EMPLOYEE = 'EMPLOYEE',
 }
 
-export default async function handler(req: any, res: any) {
+async function handler(req: any, res: any) {
   res.setHeader('Access-Control-Allow-Credentials', 'true');
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS');
   res.setHeader(
     'Access-Control-Allow-Headers',
-    'X-CSRF-Token, X-Requested-With, Accept, Accept-Version, Content-Length, Content-MD5, Content-Type, Date, X-Api-Version, Authorization, x-user-role'
+    'X-CSRF-Token, X-Requested-With, Accept, Accept-Version, Content-Length, Content-MD5, Content-Type, Date, X-Api-Version, Authorization'
   );
 
   if (req.method === 'OPTIONS') {
@@ -48,3 +49,5 @@ export default async function handler(req: any, res: any) {
     return res.status(status).json({ error: err.message || 'Failed to fetch worksheet data' });
   }
 }
+
+export default guarded(withHomePermission('talent.view'), handler);

@@ -44,6 +44,7 @@ import {
 } from 'firebase/firestore';
 import { dispatchLiveEmail } from './serverEmail.js';
 import { getApplicationRecord } from './serverSheets.js';
+import { authErrorResponse, requireHomeTenantPermission } from './authContext.js';
 
 // ------------------------------------------------------------------ constants
 
@@ -777,7 +778,6 @@ export interface OnboardingRequest {
 export async function routeOnboarding(r: OnboardingRequest): Promise<Result> {
   try {
     const action = r.action;
-    const role = s(r.headers['x-user-role']);
     const body = r.body && typeof r.body === 'object' && !Buffer.isBuffer(r.body) ? r.body : {};
 
     // ---- public, token based
@@ -802,9 +802,15 @@ export async function routeOnboarding(r: OnboardingRequest): Promise<Result> {
       return await runOnboardingCron();
     }
 
-    // ---- HR only (header-based role check, same stopgap as the other routes)
-    if (role !== HR_ROLE && !(action === 'candidate-statuses' && role === 'REVIEWER')) {
-      return fail(403, 'Access denied: only HR can use onboarding.');
+    // ---- HR only: verified Firebase identity + permission, limited to the home company
+    //      (onboarding still reads one global Google Sheet and one set of collections).
+    try {
+      if (action === 'candidate-statuses') await requireHomeTenantPermission(r.headers, 'onboarding.manage', 'talent.view');
+      else await requireHomeTenantPermission(r.headers, 'onboarding.manage');
+    } catch (authErr) {
+      const known = authErrorResponse(authErr);
+      if (known) return { status: known.status, json: known.json } as Result;
+      throw authErr;
     }
 
     if (action === 'candidate-statuses' && r.method === 'GET') return await candidateStatuses();
