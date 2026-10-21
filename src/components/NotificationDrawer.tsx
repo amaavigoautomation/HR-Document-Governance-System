@@ -13,6 +13,7 @@ import {
 import { EmailNotification } from '../types';
 import { defaultEmailProvider } from '../services/email';
 import { formatIST, formatISTTime } from '../utils/dateFormat';
+import { apiFetch } from '../services/apiClient';
 
 interface NotificationDrawerProps {
   isOpen: boolean;
@@ -34,7 +35,7 @@ export const NotificationDrawer: React.FC<NotificationDrawerProps> = ({ isOpen, 
 
   const loadData = () => {
     setNotifications(defaultEmailProvider.getNotifications());
-    fetch('/api/email/config')
+    apiFetch('/api/email/config')
       .then((r) => r.json())
       .then((data) => setProviderConfig(data))
       .catch((e) => console.warn('Could not fetch email config:', e));
@@ -53,7 +54,7 @@ export const NotificationDrawer: React.FC<NotificationDrawerProps> = ({ isOpen, 
     setIsSendingTest(true);
     setTestResult(null);
     try {
-      const response = await fetch('/api/email/test', {
+      const response = await apiFetch('/api/email/test', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

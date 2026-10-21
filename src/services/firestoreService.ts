@@ -12,6 +12,7 @@ import {
   onSnapshot,
 } from 'firebase/firestore';
 import { db } from './firebase';
+import { getCompanyId, tryGetCompanyId } from './tenant';
 import { ensurePersistentMedia } from './mediaStorage';
 import { normalizeAuthorizedModules, ModuleAuthorizationCode } from '../utils/authorization';
 import {
@@ -35,21 +36,34 @@ const NOTIFS_COLLECTION = 'notifications';
 const SUGGESTIONS_COLLECTION = 'documentSuggestions';
 
 // Helper to strip undefined values so Firestore does not reject writes
-function cleanFirestoreData<T>(obj: T): T {
+function cleanDeep<T>(obj: T): T {
   if (obj === null || obj === undefined) return obj;
   if (Array.isArray(obj)) {
-    return obj.map(cleanFirestoreData) as unknown as T;
+    return obj.map(cleanDeep) as unknown as T;
   }
   if (typeof obj === 'object') {
     const cleaned: any = {};
     for (const [key, value] of Object.entries(obj)) {
       if (value !== undefined) {
-        cleaned[key] = cleanFirestoreData(value);
+        cleaned[key] = cleanDeep(value);
       }
     }
     return cleaned;
   }
   return obj;
+}
+
+/** Strips undefined values and stamps the signed-in user's company on the top-level record. */
+function cleanFirestoreData<T>(obj: T): T {
+  const out: any = cleanDeep(obj);
+  const companyId = tryGetCompanyId();
+  if (companyId && out && typeof out === 'object' && !Array.isArray(out)) out.companyId = companyId;
+  return out;
+}
+
+/** Every list/subscribe query is limited to the signed-in user's company (the Firestore rules require it). */
+function scoped(name: string) {
+  return query(collection(db, name), where('companyId', '==', getCompanyId()));
 }
 
 export const firestoreService = {
@@ -145,8 +159,7 @@ export const firestoreService = {
         (role === UserRole.CREATOR || role === UserRole.REVIEWER
           ? 'Human Resources'
           : 'Operations'),
-      companyName: data.companyName || 'Amaavigo Group',
-      password: data.password !== undefined && data.password !== null ? String(data.password) : '',
+      companyName: data.companyName || '',
       active: isActive,
       avatar: data.avatar || data.avatarUrl,
     } as User;
@@ -155,7 +168,7 @@ export const firestoreService = {
   // Employees & Users Directory & Records
   async getEmployees(): Promise<User[]> {
     try {
-      const empSnap = await getDocs(collection(db, EMPLOYEES_COLLECTION));
+      const empSnap = await getDocs(scoped(EMPLOYEES_COLLECTION));
       const seen = new Set<string>();
       const users: User[] = [];
 
@@ -198,13 +211,13 @@ export const firestoreService = {
       }
 
       // 2. Query by empId
-      const empQ = query(collection(db, EMPLOYEES_COLLECTION), where('empId', '==', cleanId));
+      const empQ = query(scoped(EMPLOYEES_COLLECTION), where('empId', '==', cleanId));
       const empSnap = await getDocs(empQ);
       if (!empSnap.empty) {
         return this.parseEmployeeDoc(empSnap.docs[0]);
       }
       if (upperId !== cleanId) {
-        const upperEmpQ = query(collection(db, EMPLOYEES_COLLECTION), where('empId', '==', upperId));
+        const upperEmpQ = query(scoped(EMPLOYEES_COLLECTION), where('empId', '==', upperId));
         const upperEmpSnap = await getDocs(upperEmpQ);
         if (!upperEmpSnap.empty) {
           return this.parseEmployeeDoc(upperEmpSnap.docs[0]);
@@ -212,13 +225,13 @@ export const firestoreService = {
       }
 
       // 3. Query by loginId
-      const loginQ = query(collection(db, EMPLOYEES_COLLECTION), where('loginId', '==', cleanId));
+      const loginQ = query(scoped(EMPLOYEES_COLLECTION), where('loginId', '==', cleanId));
       const loginSnap = await getDocs(loginQ);
       if (!loginSnap.empty) {
         return this.parseEmployeeDoc(loginSnap.docs[0]);
       }
       if (upperId !== cleanId) {
-        const upperLoginQ = query(collection(db, EMPLOYEES_COLLECTION), where('loginId', '==', upperId));
+        const upperLoginQ = query(scoped(EMPLOYEES_COLLECTION), where('loginId', '==', upperId));
         const upperLoginSnap = await getDocs(upperLoginQ);
         if (!upperLoginSnap.empty) {
           return this.parseEmployeeDoc(upperLoginSnap.docs[0]);
@@ -226,14 +239,14 @@ export const firestoreService = {
       }
 
       // 4. Query by email
-      const emailQ = query(collection(db, EMPLOYEES_COLLECTION), where('email', '==', lowerId));
+      const emailQ = query(scoped(EMPLOYEES_COLLECTION), where('email', '==', lowerId));
       const emailSnap = await getDocs(emailQ);
       if (!emailSnap.empty) {
         return this.parseEmployeeDoc(emailSnap.docs[0]);
       }
 
       // 5. Query-scan fallback for any field case-insensitively
-      const allSnap = await getDocs(collection(db, EMPLOYEES_COLLECTION));
+      const allSnap = await getDocs(scoped(EMPLOYEES_COLLECTION));
       for (const d of allSnap.docs) {
         const user = this.parseEmployeeDoc(d);
         if (
@@ -280,7 +293,7 @@ export const firestoreService = {
   // Document Masters
   async getDocuments(): Promise<DocumentMaster[]> {
     try {
-      const snap = await getDocs(collection(db, DOCS_COLLECTION));
+      const snap = await getDocs(scoped(DOCS_COLLECTION));
       const docs = snap.docs.map((d) => d.data() as DocumentMaster);
       return docs.sort((a, b) => {
         const aTime = Math.max(new Date(a.updatedAt || 0).getTime(), new Date(a.createdAt || 0).getTime());
@@ -304,7 +317,7 @@ export const firestoreService = {
   // Versions
   async getVersions(): Promise<DocumentVersion[]> {
     try {
-      const snap = await getDocs(collection(db, VERSIONS_COLLECTION));
+      const snap = await getDocs(scoped(VERSIONS_COLLECTION));
       const vers = snap.docs.map((d) => d.data() as DocumentVersion);
       return vers.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
     } catch (e) {
@@ -367,7 +380,7 @@ export const firestoreService = {
   // Audit Logs
   async getAuditLogs(): Promise<AuditLogEntry[]> {
     try {
-      const snap = await getDocs(collection(db, AUDIT_COLLECTION));
+      const snap = await getDocs(scoped(AUDIT_COLLECTION));
       return snap.docs.map((d) => d.data() as AuditLogEntry);
     } catch (e) {
       console.warn('[Firestore] Error getting audit logs (using local cache):', e);
@@ -386,7 +399,7 @@ export const firestoreService = {
   // Acknowledgments
   async getAcknowledgements(): Promise<AcknowledgementRecord[]> {
     try {
-      const snap = await getDocs(collection(db, ACKS_COLLECTION));
+      const snap = await getDocs(scoped(ACKS_COLLECTION));
       const items = snap.docs.map((d) => ({ ...d.data(), id: d.id }) as AcknowledgementRecord);
       // Deduplicate in case multiple records exist for (docId, ver, empId)
       const canonicalMap = new Map<string, AcknowledgementRecord>();
@@ -440,7 +453,7 @@ export const firestoreService = {
   // Document Suggestions
   async getSuggestions(): Promise<DocumentSuggestion[]> {
     try {
-      const snap = await getDocs(collection(db, SUGGESTIONS_COLLECTION));
+      const snap = await getDocs(scoped(SUGGESTIONS_COLLECTION));
       const suggestions = snap.docs.map((d) => ({ ...d.data(), id: d.id }) as DocumentSuggestion);
       return suggestions.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
     } catch (e) {
@@ -471,7 +484,7 @@ export const firestoreService = {
       const targetLower = documentId.toLowerCase().trim();
 
       // 1. Delete document master (by ID or matching documentId)
-      const dSnap = await getDocs(collection(db, DOCS_COLLECTION));
+      const dSnap = await getDocs(scoped(DOCS_COLLECTION));
       let logicalDocId = documentId;
       for (const d of dSnap.docs) {
         const data = d.data() as any;
@@ -492,7 +505,7 @@ export const firestoreService = {
       const logicalLower = logicalDocId.toLowerCase().trim();
 
       // 2. Delete all matching versions
-      const vSnap = await getDocs(collection(db, VERSIONS_COLLECTION));
+      const vSnap = await getDocs(scoped(VERSIONS_COLLECTION));
       for (const d of vSnap.docs) {
         const data = d.data() as DocumentVersion;
         const vDocIdLower = (data.documentId || '').toLowerCase().trim();
@@ -512,7 +525,7 @@ export const firestoreService = {
       }
 
       // 3. Delete all matching acknowledgments
-      const aSnap = await getDocs(collection(db, ACKS_COLLECTION));
+      const aSnap = await getDocs(scoped(ACKS_COLLECTION));
       for (const d of aSnap.docs) {
         const data = d.data() as AcknowledgementRecord;
         const aDocIdLower = (data.documentId || '').toLowerCase().trim();
@@ -522,7 +535,7 @@ export const firestoreService = {
       }
 
       // 4. Delete all matching employee suggestions from documentSuggestions
-      const sSnap = await getDocs(collection(db, SUGGESTIONS_COLLECTION));
+      const sSnap = await getDocs(scoped(SUGGESTIONS_COLLECTION));
       for (const d of sSnap.docs) {
         const data = d.data() as DocumentSuggestion;
         const sDocId = (data.documentId || '').toLowerCase().trim();
@@ -550,22 +563,22 @@ export const firestoreService = {
   async clearAllDocuments(): Promise<void> {
     try {
       console.log('[Firestore] Clearing all documents, versions, acknowledgements, and suggestions...');
-      const dSnap = await getDocs(collection(db, DOCS_COLLECTION));
+      const dSnap = await getDocs(scoped(DOCS_COLLECTION));
       for (const d of dSnap.docs) {
         await deleteDoc(doc(db, DOCS_COLLECTION, d.id));
       }
 
-      const vSnap = await getDocs(collection(db, VERSIONS_COLLECTION));
+      const vSnap = await getDocs(scoped(VERSIONS_COLLECTION));
       for (const d of vSnap.docs) {
         await deleteDoc(doc(db, VERSIONS_COLLECTION, d.id));
       }
 
-      const aSnap = await getDocs(collection(db, ACKS_COLLECTION));
+      const aSnap = await getDocs(scoped(ACKS_COLLECTION));
       for (const d of aSnap.docs) {
         await deleteDoc(doc(db, ACKS_COLLECTION, d.id));
       }
 
-      const sSnap = await getDocs(collection(db, SUGGESTIONS_COLLECTION));
+      const sSnap = await getDocs(scoped(SUGGESTIONS_COLLECTION));
       for (const d of sSnap.docs) {
         await deleteDoc(doc(db, SUGGESTIONS_COLLECTION, d.id));
       }
@@ -579,7 +592,7 @@ export const firestoreService = {
   // Real-time listener for employees and users
   subscribeToEmployees(callback: (employees: User[]) => void) {
     return onSnapshot(
-      collection(db, EMPLOYEES_COLLECTION),
+      scoped(EMPLOYEES_COLLECTION),
       (snap) => {
         const items = snap.docs.map((d) => {
           const data = d.data() as any;
@@ -658,8 +671,7 @@ export const firestoreService = {
               (role === UserRole.CREATOR || role === UserRole.REVIEWER
                 ? 'Human Resources'
                 : 'Operations'),
-            companyName: data.companyName || 'Amaavigo Group',
-            password: data.password !== undefined && data.password !== null ? String(data.password) : '',
+            companyName: data.companyName || '',
             active: data.active !== false && data.status !== 'INACTIVE',
             avatar: data.avatar || data.avatarUrl,
             ...data,
@@ -676,7 +688,7 @@ export const firestoreService = {
   // Real-time listener for document changes
   subscribeToDocuments(callback: (docs: DocumentMaster[]) => void) {
     return onSnapshot(
-      collection(db, DOCS_COLLECTION),
+      scoped(DOCS_COLLECTION),
       (snap) => {
         const items = snap.docs.map((d) => d.data() as DocumentMaster);
         callback(items);
@@ -690,7 +702,7 @@ export const firestoreService = {
   // Real-time listener for versions
   subscribeToVersions(callback: (versions: DocumentVersion[]) => void) {
     return onSnapshot(
-      collection(db, VERSIONS_COLLECTION),
+      scoped(VERSIONS_COLLECTION),
       (snap) => {
         const items = snap.docs.map((d) => d.data() as DocumentVersion);
         callback(items);
@@ -704,7 +716,7 @@ export const firestoreService = {
   // Real-time listener for acknowledgments
   subscribeToAcknowledgements(callback: (acks: AcknowledgementRecord[]) => void) {
     return onSnapshot(
-      collection(db, ACKS_COLLECTION),
+      scoped(ACKS_COLLECTION),
       (snap) => {
         const items = snap.docs.map((d) => ({ ...d.data(), id: d.id }) as AcknowledgementRecord);
         const canonicalMap = new Map<string, AcknowledgementRecord>();
@@ -729,7 +741,7 @@ export const firestoreService = {
   // Real-time listener for audit logs
   subscribeToAuditLogs(callback: (logs: AuditLogEntry[]) => void) {
     return onSnapshot(
-      collection(db, AUDIT_COLLECTION),
+      scoped(AUDIT_COLLECTION),
       (snap) => {
         const items = snap.docs.map((d) => d.data() as AuditLogEntry);
         callback(items);
@@ -743,7 +755,7 @@ export const firestoreService = {
   // Real-time listener for document suggestions
   subscribeToSuggestions(callback: (suggestions: DocumentSuggestion[]) => void) {
     return onSnapshot(
-      collection(db, SUGGESTIONS_COLLECTION),
+      scoped(SUGGESTIONS_COLLECTION),
       (snap) => {
         const items = snap.docs.map((d) => ({ ...d.data(), id: d.id }) as DocumentSuggestion);
         items.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());

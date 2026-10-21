@@ -23,8 +23,8 @@ export interface EmailDispatchResult {
 }
 
 export function getEmailConfigStatus() {
-  const smtpUser = (process.env.SMTP_USER || 'automation@amaavigo.com').trim().replace(/['"]/g, '');
-  const smtpPass = (process.env.SMTP_PASS || 'zpdblvybnzydtpii').replace(/\s+/g, '').replace(/['"]/g, '');
+  const smtpUser = (process.env.SMTP_USER || '').trim().replace(/['"]/g, '');
+  const smtpPass = (process.env.SMTP_PASS || '').replace(/\s+/g, '').replace(/['"]/g, '');
   const hasSmtp = !!(smtpUser && smtpPass);
 
   return {
@@ -130,8 +130,8 @@ function convertBodyToOutlookHtml(raw: string): string {
 export async function dispatchLiveEmail(payload: EmailDispatchPayload): Promise<EmailDispatchResult> {
   const { to, recipientName, subject, body, metadata } = payload;
   
-  const smtpUser = (process.env.SMTP_USER || 'automation@amaavigo.com').trim().replace(/['"]/g, '');
-  const smtpPass = (process.env.SMTP_PASS || 'zpdblvybnzydtpii').replace(/\s+/g, '').replace(/['"]/g, '');
+  const smtpUser = (process.env.SMTP_USER || '').trim().replace(/['"]/g, '');
+  const smtpPass = (process.env.SMTP_PASS || '').replace(/\s+/g, '').replace(/['"]/g, '');
   const smtpHost = (process.env.SMTP_HOST || 'smtp.gmail.com').trim();
   const emailFrom = process.env.EMAIL_FROM || `Amaavigo HR Compliance <${smtpUser}>`;
 

@@ -7,6 +7,7 @@
 
 import { RecruitmentOverviewResult, SheetRowData } from './serverSheets';
 import type { AIEvaluationResponse } from './aiEvaluationService';
+import { apiFetch } from './apiClient';
 
 export class RecruitmentService {
   private overviewCache: { data: RecruitmentOverviewResult; timestamp: number } | null = null;
@@ -21,7 +22,7 @@ export class RecruitmentService {
     let lastError: Error | null = null;
     for (let attempt = 0; attempt <= retries; attempt++) {
       try {
-        const res = await fetch(url, { headers });
+        const res = await apiFetch(url, { headers });
         const contentType = res.headers.get('content-type') || '';
         const isJson = contentType.includes('application/json');
 

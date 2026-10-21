@@ -1,12 +1,13 @@
+import { guarded, withPermission } from '../_lib/guard.js';
 import { generateJobDescription } from '../_lib/jdGenerator.js';
 
-export default async function handler(req: any, res: any) {
+async function handler(req: any, res: any) {
   res.setHeader('Access-Control-Allow-Credentials', 'true');
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'POST,OPTIONS');
   res.setHeader(
     'Access-Control-Allow-Headers',
-    'X-CSRF-Token, X-Requested-With, Accept, Accept-Version, Content-Length, Content-MD5, Content-Type, Date, X-Api-Version, Authorization, x-user-role'
+    'X-CSRF-Token, X-Requested-With, Accept, Accept-Version, Content-Length, Content-MD5, Content-Type, Date, X-Api-Version, Authorization'
   );
 
   if (req.method === 'OPTIONS') {
@@ -28,3 +29,5 @@ export default async function handler(req: any, res: any) {
     return res.status(500).json({ success: false, error: err.message || 'Failed to generate job description' });
   }
 }
+
+export default guarded(withPermission('req.manage_jd'), handler);

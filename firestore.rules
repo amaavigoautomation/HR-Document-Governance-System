@@ -14,6 +14,28 @@ service cloud.firestore {
         && request.auth.token.email == 'onboarding-server@amaavigo.app';
     }
 
+    // ---------------------------------------------------------------------------------------------
+    // Multi-tenant access control.
+    // Every record carries a companyId. A signed-in user's company, status and permissions are custom
+    // claims on their ID token, written only by the server (api/_lib/tenantAdmin.ts). Users cannot edit
+    // their own claims, so these checks cannot be bypassed from the browser.
+    //   cid = company id, cs = company status, perms = permission keys, pa = platform admin
+    // A company that is still PENDING (or suspended) has cs != 'ACTIVE', so it can read nothing.
+    // ---------------------------------------------------------------------------------------------
+    function signedIn() { return request.auth != null; }
+    function claim(name) { return request.auth.token[name]; }
+    function myCompany() { return request.auth.token.get('cid', ''); }
+    function isActive() {
+      return signedIn() && myCompany() != '' && request.auth.token.get('cs', '') == 'ACTIVE';
+    }
+    function has(p) { return isActive() && (p in request.auth.token.get('perms', [])); }
+    function hasAny(list) { return isActive() && request.auth.token.get('perms', []).hasAny(list); }
+    function isPlatformAdmin() { return signedIn() && request.auth.token.get('pa', false) == true; }
+
+    function inMyCompany() { return isActive() && resource.data.companyId == myCompany(); }
+    function createsInMyCompany() { return isActive() && request.resource.data.companyId == myCompany(); }
+    function keepsCompany() { return request.resource.data.companyId == resource.data.companyId; }
+
     // Helper functions for validation
     function isValidId(id) {
       return id is string
@@ -67,13 +89,6 @@ service cloud.firestore {
             && data.authorizedModules.size() <= 128
           )
           || data.authorizedModules is list
-        )
-        && (
-          !('password' in data)
-          || (
-            data.password is string
-            && data.password.size() <= 128
-          )
         );
     }
 
@@ -296,115 +311,153 @@ service cloud.firestore {
         );
     }
 
-    // 1. Employee Directory & Profiles
-    match /employees/{employeeId} {
-      allow read: if true;
-
-      allow create: if isValidId(employeeId)
-        && isValidEmployee(request.resource.data);
-
-      allow update: if isValidId(employeeId)
-        && isValidEmployee(request.resource.data)
-        && request.resource.data.id == resource.data.id;
-
-      allow delete: if isValidId(employeeId);
+    // 0. Companies: a member can read their own company (this is how the app learns it is still pending).
+    // All writes (sign-up, approval, suspension, modules) go through the server.
+    match /companies/{companyId} {
+      allow read: if signedIn() && (myCompany() == companyId || isPlatformAdmin());
+      allow write: if false;
     }
 
-    // 2. Document Master Records
+    // 1. Employee directory & profiles. Written only by the server (user creation sets Auth + claims too).
+    match /employees/{employeeId} {
+      allow get: if signedIn() && (request.auth.uid == employeeId || inMyCompany());
+      allow list: if isActive() && resource.data.companyId == myCompany();
+      allow write: if false;
+    }
+
+    // 1b. Departments and roles: everyone in the company can read; only the server writes.
+    match /departments/{id} {
+      allow read: if inMyCompany();
+      allow write: if false;
+    }
+
+    match /roles/{id} {
+      allow read: if inMyCompany();
+      allow write: if false;
+    }
+
+    // 2. Document master records
     match /documents/{docId} {
-      allow read: if true;
+      allow read: if inMyCompany();
 
       allow create: if isValidId(docId)
+        && has('doc.create')
+        && createsInMyCompany()
         && isValidDocument(request.resource.data);
 
       allow update: if isValidId(docId)
+        && inMyCompany()
+        && hasAny(['doc.create', 'doc.review', 'doc.publish'])
+        && keepsCompany()
         && isValidDocument(request.resource.data)
         && request.resource.data.id == resource.data.id;
 
-      allow delete: if isValidId(docId);
+      allow delete: if inMyCompany() && has('doc.delete');
     }
 
-    // 3. Document Versions
+    // 3. Document versions
     match /versions/{versionId} {
-      allow read: if true;
+      allow read: if inMyCompany();
 
       allow create: if isValidId(versionId)
+        && has('doc.create')
+        && createsInMyCompany()
         && isValidVersion(request.resource.data);
 
       allow update: if isValidId(versionId)
+        && inMyCompany()
+        && hasAny(['doc.create', 'doc.review', 'doc.publish'])
+        && keepsCompany()
         && isValidVersion(request.resource.data)
         && request.resource.data.id == resource.data.id;
 
-      allow delete: if isValidId(versionId);
+      allow delete: if inMyCompany() && hasAny(['doc.delete', 'doc.create']);
     }
 
-    // 4. Immutable Audit Logs
-    // Write-once: updates and deletes are prohibited.
+    // 4. Immutable audit logs: write-once, readable inside the company.
     match /auditLogs/{logId} {
-      allow read: if true;
+      allow read: if inMyCompany();
 
       allow create: if isValidId(logId)
+        && createsInMyCompany()
         && isValidAuditLog(request.resource.data);
 
       allow update: if false;
       allow delete: if false;
     }
 
-    // 5. Policy Acknowledgments
-    // Prevents changing ACKNOWLEDGED back to PENDING.
+    // 5. Policy acknowledgments. Cannot be moved from ACKNOWLEDGED back to PENDING.
     match /acknowledgments/{ackId} {
-      allow read: if true;
+      allow read: if inMyCompany();
 
       allow create: if isValidId(ackId)
+        && hasAny(['doc.acknowledge', 'doc.create', 'doc.publish', 'doc.review'])
+        && createsInMyCompany()
         && isValidAcknowledgment(request.resource.data);
 
       allow update: if isValidId(ackId)
+        && inMyCompany()
+        && hasAny(['doc.acknowledge', 'doc.create', 'doc.publish', 'doc.review'])
+        && keepsCompany()
         && isValidAcknowledgment(request.resource.data)
         && !(
           resource.data.status == 'ACKNOWLEDGED'
           && request.resource.data.status == 'PENDING'
         );
 
-      allow delete: if isValidId(ackId);
+      allow delete: if inMyCompany() && hasAny(['doc.delete', 'doc.create']);
     }
 
-    // 6. System Notifications
+    // 6. In-app notifications (created on behalf of other people, so any active member may write them).
     match /notifications/{notifId} {
-      allow read: if true;
+      allow read: if inMyCompany();
 
       allow create: if isValidId(notifId)
+        && createsInMyCompany()
         && isValidNotification(request.resource.data);
 
       allow update: if isValidId(notifId)
+        && inMyCompany()
+        && keepsCompany()
         && isValidNotification(request.resource.data);
 
-      allow delete: if isValidId(notifId);
+      allow delete: if inMyCompany();
     }
 
-    // 7. Employee Document Suggestions
+    // 7. Employee document suggestions
     match /documentSuggestions/{suggestionId} {
-      allow read: if true;
+      allow read: if inMyCompany();
 
       allow create: if isValidId(suggestionId)
+        && has('doc.suggest')
+        && createsInMyCompany()
         && isValidDocumentSuggestion(request.resource.data);
 
       allow update: if isValidId(suggestionId)
+        && inMyCompany()
+        && hasAny(['doc.review', 'doc.create', 'doc.publish'])
+        && keepsCompany()
         && isValidDocumentSuggestion(request.resource.data);
 
-      allow delete: if isValidId(suggestionId);
+      allow delete: if inMyCompany() && hasAny(['doc.review', 'doc.create', 'doc.delete']);
     }
 
-    // 8. Hiring Requisitions
-    // Request -> HR -> Founder -> JD -> Job
-    // Workflow permissions are currently enforced in the app layer.
-    // Add authentication-based permissions before production deployment.
+    // 8. Hiring requisitions: Request -> HR -> Founder -> JD -> Job.
+    // Rules check tenant + that the person holds some hiring permission; the step-by-step workflow rules
+    // (who may approve at which status) are enforced in the app layer (src/utils/requisitionPermissions.ts).
     match /requisitions/{requisitionId} {
-      allow read: if true;
+      allow read: if inMyCompany()
+        && hasAny(['req.create', 'req.view_all', 'req.assign', 'req.hr_decide', 'req.founder_decide', 'req.manage_jd']);
 
       allow create: if isValidId(requisitionId)
+        && has('req.create')
+        && createsInMyCompany()
         && isValidRequisition(request.resource.data);
 
       allow update: if isValidId(requisitionId)
+        && inMyCompany()
+        && hasAny(['req.create', 'req.assign', 'req.hr_decide', 'req.founder_decide', 'req.manage_jd'])
+        && keepsCompany()
         && isValidRequisition(request.resource.data)
         && request.resource.data.id == resource.data.id;
 

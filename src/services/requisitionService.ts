@@ -1,5 +1,7 @@
-import { collection, doc, onSnapshot, setDoc } from 'firebase/firestore';
+import { collection, doc, onSnapshot, query, setDoc, where } from 'firebase/firestore';
 import { db } from './firebase';
+import { getCompanyId, tryGetCompanyId } from './tenant';
+import { apiFetch } from './apiClient';
 import { auditService } from './audit';
 import { defaultEmailProvider } from './email';
 import { governanceEngine } from './governance';
@@ -15,7 +17,7 @@ import {
   User,
   UserRole,
 } from '../types';
-import { can, isFounder, isHr } from '../utils/requisitionPermissions';
+import { can, canAssign, isFounder, isHr } from '../utils/requisitionPermissions';
 import { publishToCareers, requisitionToCareersInput } from './careersService';
 
 const REQUISITIONS_COLLECTION = 'requisitions';
@@ -57,7 +59,7 @@ function assertAllowed(allowed: boolean, message: string): void {
 async function persist(req: Requisition): Promise<Requisition> {
   const next = { ...req, updatedAt: nowIso() };
   // Surface Firestore errors (e.g. security rules not deployed) to the UI instead of swallowing them.
-  await setDoc(doc(db, REQUISITIONS_COLLECTION, next.id), clean(next));
+  await setDoc(doc(db, REQUISITIONS_COLLECTION, next.id), clean({ ...next, companyId: tryGetCompanyId() || getCompanyId() }));
   return next;
 }
 
@@ -97,7 +99,7 @@ const summaryLine = (r: Requisition) =>
 
 export function subscribeToRequisitions(callback: (items: Requisition[]) => void): () => void {
   return onSnapshot(
-    collection(db, REQUISITIONS_COLLECTION),
+    query(collection(db, REQUISITIONS_COLLECTION), where('companyId', '==', getCompanyId())),
     (snap) => {
       const items = snap.docs.map((d) => ({ ...(d.data() as Requisition), id: d.id }));
       items.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
@@ -189,7 +191,7 @@ export async function createRequisition(
   audit(AuditAction.REQUISITION_CREATED, actor, saved, `Raised ${summaryLine(saved)}${onBehalf ? ` on behalf of ${requester.name}` : ''}`);
 
   // Tell every Head HR (fall back to the founder if none is configured yet)
-  const headHrs = governanceEngine.getUsers().filter((u) => u.active !== false && isHr(u) && u.hrLevel === 'HEAD');
+  const headHrs = governanceEngine.getUsers().filter((u) => u.active !== false && isHr(u) && canAssign(u));
   const founders = governanceEngine.getUsers().filter((u) => u.active !== false && isFounder(u));
   const recipients = headHrs.length ? headHrs : founders;
   for (const r of recipients) {
@@ -384,7 +386,7 @@ export async function founderDecide(
 export async function generateJd(actor: User, req: Requisition): Promise<Requisition> {
   assertAllowed(can(actor, 'editJd', req) && req.status === 'JD_DRAFT', 'only the owning HR can generate the JD while it is in draft.');
 
-  const res = await fetch('/api/requisitions/generate-jd', {
+  const res = await apiFetch('/api/requisitions/generate-jd', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
@@ -475,47 +477,4 @@ export async function closeRequisition(actor: User, req: Requisition, reason: st
   });
   audit(AuditAction.REQUISITION_CLOSED, actor, saved, `Closed ${summaryLine(saved)}: ${reason.trim()}`);
   return saved;
-}
-
-// ---------------------------------------------------------------------------
-// Role assignment (Head HR / department heads)
-// ---------------------------------------------------------------------------
-
-async function patchEmployee(userId: string, patch: Partial<User>): Promise<void> {
-  // merge:true keeps every other field; id is included so the security rule's required-field check passes
-  await setDoc(doc(db, EMPLOYEES_COLLECTION, userId), clean({ id: userId, ...patch, updatedAt: nowIso() }), { merge: true });
-  // Mirror into the in-memory directory so the UI reflects it immediately
-  const target = governanceEngine.getUserById(userId);
-  if (target) Object.assign(target, patch);
-}
-
-export async function setHrLevel(actor: User, target: User, level: HrLevel, allUsers: User[]): Promise<void> {
-  // Appointing or removing a Head HR is a founder-level decision
-  assertAllowed(isFounder(actor), 'only the founder can appoint or change a Head HR.');
-  assertAllowed(isHr(target), 'HR level can only be set on HR users.');
-
-  const wasHead = target.hrLevel === 'HEAD';
-  if (wasHead && level !== 'HEAD') {
-    const otherHeads = allUsers.filter((u) => isHr(u) && u.hrLevel === 'HEAD' && u.active !== false && u.id !== target.id);
-    if (otherHeads.length === 0) throw new Error('There must always be at least one Head HR. Appoint another before demoting.');
-  }
-
-  await patchEmployee(target.id, { hrLevel: level });
-  auditService.logEvent(AuditAction.ROLE_CHANGED, actor, {
-    reason: `${target.name} HR level changed from ${target.hrLevel || 'STANDARD'} to ${level}`,
-    newValue: level,
-    source: 'HIRING_REQUISITION',
-  });
-}
-
-export async function setDepartmentHead(actor: User, target: User, isHead: boolean): Promise<void> {
-  assertAllowed(can(actor, 'manageRoles'), 'only the founder or Head HR can assign department heads.');
-  assertAllowed(target.role === UserRole.EMPLOYEE, 'only employees can be department heads.');
-
-  await patchEmployee(target.id, { isDepartmentHead: isHead });
-  auditService.logEvent(AuditAction.ROLE_CHANGED, actor, {
-    reason: `${target.name} ${isHead ? 'appointed head of' : 'removed as head of'} ${target.departmentName}`,
-    newValue: isHead ? 'DEPARTMENT_HEAD' : 'EMPLOYEE',
-    source: 'HIRING_REQUISITION',
-  });
 }

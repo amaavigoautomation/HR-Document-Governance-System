@@ -86,15 +86,26 @@ export type HrLevel = 'HEAD' | 'STANDARD';
 
 export interface User {
   id: string;
+  /** Firebase Auth uid. Set for every user created through the multi-company system. */
+  authUid?: string;
   loginId?: string;
   empId?: string;
-  password?: string;
   name: string;
   email: string;
+  /** Portal the user lands in (HR / Approver / Employee). Derived from their roles on the server. */
   role: UserRole;
+  /** Ids and names of the company roles assigned to this user. */
+  roleIds?: string[];
+  roleNames?: string[];
+  /** Effective permission keys (see shared/permissions.ts). The token claims are the source of truth. */
+  perms?: string[];
+  /** True when the user holds the Company Admin role (full access, from the sign-in token). */
+  isCompanyAdmin?: boolean;
   authorizedModules?: string | string[]; // 'ALL' | 'TALENT_ACQUISITION' | 'DOCUMENT_VERSION_CONTROL'
-  hrLevel?: HrLevel; // Only meaningful for HR (CREATOR) users
-  isDepartmentHead?: boolean; // Employees flagged as heads can raise hiring requisitions
+  /** @deprecated replaced by permissions; kept so old records still type-check */
+  hrLevel?: HrLevel;
+  /** @deprecated replaced by permissions; kept so old records still type-check */
+  isDepartmentHead?: boolean;
   companyId: string;
   companyName: string;
   departmentId: string;
@@ -102,6 +113,32 @@ export interface User {
   title: string;
   avatar?: string;
   active: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type CompanyStatus = 'PENDING' | 'ACTIVE' | 'SUSPENDED';
+
+export interface Company {
+  id: string;
+  name: string;
+  slug: string;
+  status: CompanyStatus;
+  modules: string[];
+  plan: string;
+  adminEmail: string;
+  employeeIdPrefix: string;
+  createdAt: string;
+  updatedAt: string;
+  approvedAt?: string;
+  approvedBy?: string;
+}
+
+export interface Department {
+  id: string;
+  companyId: string;
+  name: string;
+  headUserId?: string;
   createdAt: string;
   updatedAt: string;
 }

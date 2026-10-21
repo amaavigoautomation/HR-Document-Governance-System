@@ -23,7 +23,7 @@ import {
   readAttachment,
   saveJd,
 } from '../services/requisitionService';
-import { STATUS_LABEL, can, isFounder, isHr } from '../utils/requisitionPermissions';
+import { STATUS_LABEL, can, canAssign, isFounder, isHr } from '../utils/requisitionPermissions';
 
 interface Props {
   req: Requisition;
@@ -204,7 +204,7 @@ export const RequisitionDetailPanel: React.FC<Props> = ({ req, currentUser, user
                   {hrOptions.map((u) => (
                     <option key={u.id} value={u.id} disabled={u.id === req.ownerHr?.id}>
                       {u.name}
-                      {u.hrLevel === 'HEAD' ? ' (Head HR)' : ''} - {workload.get(u.id) || 0} open
+                      {canAssign(u) ? ' (can assign)' : ''} - {workload.get(u.id) || 0} open
                     </option>
                   ))}
                 </select>

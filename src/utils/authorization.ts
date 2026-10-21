@@ -1,4 +1,5 @@
 import { User, UserRole } from '../types';
+import { modulesForPerms } from '../../shared/permissions';
 
 export type AuthorizedModuleType = 'talent-acquisition' | 'document-version-control';
 
@@ -63,30 +64,17 @@ export function normalizeAuthorizedModules(
 }
 
 /**
- * Checks if a given user is authorized to access a specific module
+ * Whether a user can open a module. Driven by the permissions on their company roles (see
+ * shared/permissions.ts): a module is available when they hold at least one permission that belongs to it.
+ * Employees use the Employee Portal rather than these modules.
  */
 export function hasModulePermission(
   user: User | null | undefined,
   module: 'talent-acquisition' | 'document-version-control'
 ): boolean {
   if (!user) return false;
-  // Employees only access Employee Portal
-  if (user.role === UserRole.EMPLOYEE) {
-    return false;
-  }
-
-  const code = normalizeAuthorizedModules(user.authorizedModules);
-  if (code === 'ALL') return true;
-
-  if (module === 'talent-acquisition') {
-    return code === 'TALENT_ACQUISITION';
-  }
-
-  if (module === 'document-version-control') {
-    return code === 'DOCUMENT_VERSION_CONTROL';
-  }
-
-  return false;
+  if (user.role === UserRole.EMPLOYEE) return false;
+  return modulesForPerms(user.perms).includes(module);
 }
 
 /**
@@ -96,18 +84,7 @@ export function getAuthorizedModulesList(
   user: User | null | undefined
 ): AuthorizedModuleType[] {
   if (!user || user.role === UserRole.EMPLOYEE) return [];
-  const code = normalizeAuthorizedModules(user.authorizedModules);
-
-  if (code === 'ALL') {
-    return ['talent-acquisition', 'document-version-control'];
-  }
-  if (code === 'TALENT_ACQUISITION') {
-    return ['talent-acquisition'];
-  }
-  if (code === 'DOCUMENT_VERSION_CONTROL') {
-    return ['document-version-control'];
-  }
-  return ['talent-acquisition', 'document-version-control'];
+  return modulesForPerms(user.perms);
 }
 
 /**

@@ -18,6 +18,7 @@ import {
   VersionType,
 } from '../types';
 import { auditService } from './audit';
+import { getCompanyName, tryGetCompanyId } from './tenant';
 import { compareDocumentTexts } from './comparison';
 import { defaultEmailProvider } from './email';
 import { calculateSha256, defaultStorageProvider } from './storage';
@@ -433,8 +434,7 @@ export class DocumentGovernanceEngine {
         departmentName:
           emp.departmentName ||
           (role === UserRole.CREATOR || role === UserRole.REVIEWER ? 'Human Resources' : 'Operations'),
-        companyName: emp.companyName || 'Amaavigo Group',
-        password: emp.password !== undefined && emp.password !== null ? String(emp.password) : '',
+        companyName: emp.companyName || '',
         active: isActive,
         avatar: emp.avatar || (emp as any).avatarUrl,
       };
@@ -2492,8 +2492,8 @@ export class DocumentGovernanceEngine {
       id: 'hr-admin',
       name: 'HR Compliance Officer',
       role: UserRole.CREATOR,
-      companyId: 'ama-corp',
-      companyName: 'Amaavigo Group',
+      companyId: tryGetCompanyId() || '',
+      companyName: getCompanyName(),
       departmentId: 'hr-dept',
       departmentName: 'Human Resources',
       title: 'HR Compliance Officer',
@@ -2543,8 +2543,8 @@ export class DocumentGovernanceEngine {
       id: 'hr-admin',
       name: 'HR Compliance Officer',
       role: UserRole.CREATOR,
-      companyId: 'ama-corp',
-      companyName: 'Amaavigo Group',
+      companyId: tryGetCompanyId() || '',
+      companyName: getCompanyName(),
       departmentId: 'hr-dept',
       departmentName: 'Human Resources',
       title: 'HR Compliance Officer',
