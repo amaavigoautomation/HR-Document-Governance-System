@@ -11,7 +11,7 @@
  */
 import { randomBytes } from 'node:crypto';
 import { FieldValue, type DocumentReference, type Firestore } from 'firebase-admin/firestore';
-import { adminAuth, adminDb, isAdminConfigured } from './firebaseAdmin.js';
+import { adminApp, adminAuth, adminDb, isAdminConfigured } from './firebaseAdmin.js';
 import { authenticate, requirePermission, requirePlatformAdmin, authErrorResponse, AuthError, type AuthContext } from './authContext.js';
 import { dispatchLiveEmail } from './serverEmail.js';
 import {
@@ -662,8 +662,50 @@ async function me(headers: Record<string, any>): Promise<TenantResult> {
 
 // ------------------------------------------------------------------ router
 
+/**
+ * Temporary setup check: GET /api/tenant/diagnose. Reports whether the Firebase service account works from
+ * this deployment (booleans and short error text only - never secrets). Remove once sign-up works.
+ */
+async function diagnose(): Promise<TenantResult> {
+  const withTimeout = <T,>(p: Promise<T>, ms = 7000) =>
+    Promise.race<T>([p, new Promise<T>((_, rej) => setTimeout(() => rej(new Error(`timed out after ${ms / 1000}s`)), ms))]);
+  const brief = (e: any) => String(e?.code ? `${e.code}: ${e.message}` : e?.message || e).slice(0, 300);
+  const out: Record<string, any> = {
+    serviceAccountSet: isAdminConfigured(),
+    projectIdEnv: process.env.FIREBASE_PROJECT_ID || null,
+    databaseIdEnv: process.env.FIREBASE_DATABASE_ID || null,
+    homeCompanyIdSet: !!process.env.HOME_COMPANY_ID,
+    node: process.version,
+  };
+  try {
+    const app = adminApp();
+    out.keyParses = true;
+    out.projectId = app.options.projectId;
+  } catch (e) {
+    out.keyParses = false;
+    out.keyError = brief(e);
+    return { status: 200, json: out };
+  }
+  try {
+    await withTimeout(adminAuth().listUsers(1));
+    out.authOk = true;
+  } catch (e) {
+    out.authOk = false;
+    out.authError = brief(e);
+  }
+  try {
+    await withTimeout(db().collection('companies').limit(1).get());
+    out.firestoreOk = true;
+  } catch (e) {
+    out.firestoreOk = false;
+    out.firestoreError = brief(e);
+  }
+  return { status: 200, json: out };
+}
+
 export async function routeTenant(r: TenantRequest): Promise<TenantResult> {
   try {
+    if (r.method === 'GET' && r.action === 'diagnose') return await diagnose();
     if (!isAdminConfigured()) {
       return fail(503, 'Server is not configured for multi-company mode (FIREBASE_SERVICE_ACCOUNT_JSON is missing).');
     }
