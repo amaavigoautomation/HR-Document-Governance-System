@@ -68,7 +68,8 @@ export function adminAuth(): Auth {
 }
 
 export function adminDb(): Firestore {
-  const databaseId = (process.env.FIREBASE_DATABASE_ID || fileConfig.firestoreDatabaseId || '').toString().trim();
+  // A FIREBASE_PROJECT_ID override means a different project: use its default database unless one is named.
+  const databaseId = (process.env.FIREBASE_PROJECT_ID ? process.env.FIREBASE_DATABASE_ID || '' : process.env.FIREBASE_DATABASE_ID || fileConfig.firestoreDatabaseId || '').toString().trim();
   return databaseId && databaseId !== '(default)' ? getFirestore(adminApp(), databaseId) : getFirestore(adminApp());
 }
 

@@ -26,6 +26,14 @@ custom roles. Built on Vite + React, Express / Vercel functions, Firestore and F
    `npx tsx scripts/make-platform-admin.ts you@example.com --create 'a-strong-password'`
 5. `npm install && npm run dev` (or deploy to Vercel with the same env vars).
 
+### Running one branch on its own Firebase project
+
+`firebase-applet-config.json` is the default (original) project. To point a single Vercel deployment, such
+as the `sahil-3` branch, at a different project without changing the code, add the `FIREBASE_*` and
+`VITE_FIREBASE_*` variables from `.env.example` in Vercel > Settings > Environment Variables, scoped to
+**Preview > Git branch `sahil-3`**. Other branches do not see them and keep using the original database.
+If you do not set `*_DATABASE_ID`, the new project's `(default)` database is used.
+
 ### Migrating the existing single company
 
 `npx tsx scripts/migrate-to-multitenant.ts --company "Amaavigo Group" --admin admin@yourco.com`

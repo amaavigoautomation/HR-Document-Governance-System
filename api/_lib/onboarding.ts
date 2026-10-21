@@ -122,7 +122,8 @@ function firebaseApp(): FirebaseApp {
 
 function firestoreDb(): Firestore {
   if (fsInstance) return fsInstance;
-  const databaseId = cfg('FIREBASE_DATABASE_ID', 'firestoreDatabaseId') || undefined;
+  const databaseId =
+    (process.env.FIREBASE_PROJECT_ID ? (process.env.FIREBASE_DATABASE_ID || '').trim() : cfg('FIREBASE_DATABASE_ID', 'firestoreDatabaseId')) || undefined;
   try {
     fsInstance = initializeFirestore(firebaseApp(), { experimentalAutoDetectLongPolling: true }, databaseId);
   } catch {
