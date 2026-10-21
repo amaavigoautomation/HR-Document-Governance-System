@@ -138,7 +138,7 @@ export const onboardingService = {
 
   async uploadDocument(token: string, docKey: string, file: File): Promise<void> {
     const url = `/api/onboarding/upload?token=${encodeURIComponent(token)}&docKey=${encodeURIComponent(docKey)}&fileName=${encodeURIComponent(file.name)}`;
-    const res = await fetch(url, { method: 'PUT', headers: { 'Content-Type': file.type || 'application/octet-stream' }, body: file });
+    const res = await fetch(url, { method: 'PUT', headers: { 'Content-Type': 'application/octet-stream' }, body: file });
     const json = await res.json().catch(() => ({}));
     if (!res.ok || json.success === false) throw new Error(json.error || `Upload failed (HTTP ${res.status}).`);
   },

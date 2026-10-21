@@ -633,6 +633,13 @@ async function publicInfo(token: string): Promise<Result> {
   });
 }
 
+function sniffMime(b: Buffer): string | null {
+  if (b.length >= 4 && b.slice(0, 4).toString('latin1') === '%PDF') return 'application/pdf';
+  if (b.length >= 3 && b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff) return 'image/jpeg';
+  if (b.length >= 8 && b[0] === 0x89 && b.slice(1, 4).toString('latin1') === 'PNG') return 'image/png';
+  return null;
+}
+
 export async function handleCandidateUpload(
   token: string,
   docKey: string,
@@ -646,8 +653,10 @@ export async function handleCandidateUpload(
   if (!ONBOARDING_DOCUMENTS.some((d) => d.key === docKey)) return fail(400, 'Unknown document type.');
   if (!data || !Buffer.isBuffer(data) || data.length === 0) return fail(400, 'No file received.');
   if (data.length > MAX_FILE_BYTES) return fail(413, 'File is larger than 4 MB.');
-  const type = mime.split(';')[0].trim().toLowerCase();
-  if (!ALLOWED_MIME.includes(type)) return fail(415, 'Only PDF, JPG or PNG files are allowed.');
+  // The browser sends application/octet-stream (Vercel only hands us a raw Buffer for that type),
+  // so the real type is detected from the file's first bytes.
+  const type = sniffMime(data);
+  if (!type || !ALLOWED_MIME.includes(type)) return fail(415, 'Only PDF, JPG or PNG files are allowed.');
 
   // Store the file as base64 chunks in Firestore (1 MiB doc limit), replacing any earlier upload.
   const fileId = `${rec.id}_${docKey}_${Date.now()}`;
