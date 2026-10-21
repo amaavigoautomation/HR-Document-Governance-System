@@ -67,9 +67,24 @@ export function adminAuth(): Auth {
   return getAuth(adminApp());
 }
 
+/**
+ * Which Firestore database to use.
+ *  - FIREBASE_DATABASE_ID wins when set ('(default)' means the project's default database).
+ *  - Otherwise, if the service account belongs to a different project than firebase-applet-config.json
+ *    (i.e. this deployment uses its own Firebase project), use that project's default database: the named
+ *    database from the config file only exists in the original project.
+ */
+export function resolveDatabaseId(): string {
+  const explicit = (process.env.FIREBASE_DATABASE_ID || '').trim();
+  if (explicit) return explicit;
+  const projectId = (adminApp().options.projectId || '').toString();
+  const configProject = (fileConfig.projectId || '').toString();
+  if (process.env.FIREBASE_PROJECT_ID || (configProject && projectId && projectId !== configProject)) return '';
+  return (fileConfig.firestoreDatabaseId || '').toString().trim();
+}
+
 export function adminDb(): Firestore {
-  // A FIREBASE_PROJECT_ID override means a different project: use its default database unless one is named.
-  const databaseId = (process.env.FIREBASE_PROJECT_ID ? process.env.FIREBASE_DATABASE_ID || '' : process.env.FIREBASE_DATABASE_ID || fileConfig.firestoreDatabaseId || '').toString().trim();
+  const databaseId = resolveDatabaseId();
   return databaseId && databaseId !== '(default)' ? getFirestore(adminApp(), databaseId) : getFirestore(adminApp());
 }
 

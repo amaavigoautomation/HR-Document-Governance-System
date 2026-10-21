@@ -11,7 +11,7 @@
  */
 import { randomBytes } from 'node:crypto';
 import { FieldValue, type DocumentReference, type Firestore } from 'firebase-admin/firestore';
-import { adminApp, adminAuth, adminDb, isAdminConfigured } from './firebaseAdmin.js';
+import { adminApp, adminAuth, adminDb, isAdminConfigured, resolveDatabaseId } from './firebaseAdmin.js';
 import { authenticate, requirePermission, requirePlatformAdmin, authErrorResponse, AuthError, type AuthContext } from './authContext.js';
 import { dispatchLiveEmail } from './serverEmail.js';
 import {
@@ -681,6 +681,7 @@ async function diagnose(): Promise<TenantResult> {
     const app = adminApp();
     out.keyParses = true;
     out.projectId = app.options.projectId;
+    out.databaseUsed = resolveDatabaseId() || '(default)';
   } catch (e) {
     out.keyParses = false;
     out.keyError = brief(e);
