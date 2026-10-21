@@ -111,6 +111,20 @@ export const onboardingService = {
   updateDate: (user: User, onboardingId: string, onboardingDate: string) =>
     call('/api/onboarding/update-date', user, { method: 'POST', body: { onboardingId, onboardingDate, ...hr(user) } }),
 
+  /** Fetches a candidate document (needs the HR role header, so it cannot be a plain link) and opens it. */
+  async openFile(user: User, onboardingId: string, docKey: string): Promise<void> {
+    const res = await fetch(`/api/onboarding/file?id=${encodeURIComponent(onboardingId)}&key=${encodeURIComponent(docKey)}`, {
+      headers: { 'x-user-role': user.role },
+    });
+    if (!res.ok) {
+      const j = await res.json().catch(() => ({}));
+      throw new Error(j.error || `Could not open the file (HTTP ${res.status}).`);
+    }
+    const url = URL.createObjectURL(await res.blob());
+    window.open(url, '_blank', 'noopener');
+    setTimeout(() => URL.revokeObjectURL(url), 60_000);
+  },
+
   // ---- candidate (public)
   publicInfo: (token: string) =>
     call<{

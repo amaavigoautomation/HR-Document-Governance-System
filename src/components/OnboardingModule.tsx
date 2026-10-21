@@ -247,13 +247,15 @@ export const OnboardingModule: React.FC<{ currentUser: User }> = ({ currentUser 
                         {!def.required && <span className="text-slate-400"> (optional)</span>}
                       </span>
                       {f ? (
-                        f.url ? (
-                          <a href={f.url} target="_blank" rel="noopener noreferrer" className="text-[#FA7014] font-bold inline-flex items-center gap-1">
-                            {f.fileName} <ExternalLink className="w-3 h-3" />
-                          </a>
-                        ) : (
-                          <span>{f.fileName}</span>
-                        )
+                        <button
+                          type="button"
+                          onClick={() =>
+                            onboardingService.openFile(currentUser, d.id, def.key).catch((e) => setNote(e.message))
+                          }
+                          className="text-[#FA7014] font-bold inline-flex items-center gap-1 cursor-pointer"
+                        >
+                          {f.fileName} <ExternalLink className="w-3 h-3" />
+                        </button>
                       ) : (
                         <span className="text-slate-400 italic">not uploaded</span>
                       )}

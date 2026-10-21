@@ -14,7 +14,7 @@ export default async function handler(req: any, res: any) {
     const proto = (req.headers['x-forwarded-proto'] as string) || 'https';
     const origin = req.headers.host ? `${proto}://${req.headers.host}` : undefined;
     const isRaw = Buffer.isBuffer(req.body);
-    const { status, json } = await routeOnboarding({
+    const { status, json, file } = await routeOnboarding({
       method: req.method,
       action,
       query: req.query || {},
@@ -23,6 +23,11 @@ export default async function handler(req: any, res: any) {
       origin,
       raw: isRaw ? req.body : undefined,
     });
+    if (file) {
+      res.setHeader('Content-Type', file.mime);
+      res.setHeader('Content-Disposition', `inline; filename="${file.name.replace(/[^\w.\- ]/g, '_')}"`);
+      return res.status(status).send(file.data);
+    }
     return res.status(status).json(json);
   } catch (err: any) {
     console.error('[Vercel Serverless API] Error in /api/onboarding:', err);

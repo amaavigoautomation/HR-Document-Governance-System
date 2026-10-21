@@ -203,7 +203,7 @@ async function startServer() {
       const proto = (req.headers['x-forwarded-proto'] as string) || req.protocol;
       const origin = req.headers.host ? `${proto}://${req.headers.host}` : undefined;
       const isRaw = Buffer.isBuffer(req.body);
-      const { status, json } = await routeOnboarding({
+      const { status, json, file } = await routeOnboarding({
         method: req.method,
         action: req.params.action,
         query: req.query as Record<string, any>,
@@ -212,6 +212,11 @@ async function startServer() {
         origin,
         raw: isRaw ? (req.body as Buffer) : undefined,
       });
+      if (file) {
+        res.setHeader('Content-Type', file.mime);
+        res.setHeader('Content-Disposition', `inline; filename="${file.name.replace(/[^\w.\- ]/g, '_')}"`);
+        return res.status(status).send(file.data);
+      }
       res.status(status).json(json);
     } catch (err: any) {
       console.error('Error in /api/onboarding:', err);
