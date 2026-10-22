@@ -91,7 +91,12 @@ export function assertHomeTenant(ctx: AuthContext): void {
   if (ctx.isPlatformAdmin) return;
   const home = (process.env.HOME_COMPANY_ID || '').trim();
   if (!home || ctx.companyId !== home) {
-    throw new AuthError(403, 'This feature is not enabled for your company yet.');
+    throw new AuthError(
+      403,
+      home
+        ? 'This feature is not connected for your company yet. It runs on shared integrations (candidate source, onboarding, careers) that are only set up for the main company.'
+        : 'This feature is not set up on the server yet: HOME_COMPANY_ID is empty. Set it to the id of the company that owns the shared integrations, then restart.'
+    );
   }
 }
 
