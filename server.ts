@@ -1,6 +1,7 @@
 import express from 'express';
 import path from 'path';
 import fs from 'fs';
+import 'dotenv/config';
 import { governanceEngine } from './src/services/governance';
 import { auditService } from './src/services/audit';
 import { defaultStorageProvider } from './src/services/storage';
