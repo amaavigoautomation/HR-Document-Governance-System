@@ -481,6 +481,16 @@ service cloud.firestore {
       allow read, write: if isOnboardingServer();
     }
 
+    // 11. Skill assessments (server-only). The question bank holds the correct answers, so browsers get no access at all;
+    // HR screens, candidate links and results are all served by /api/assess with the Admin SDK.
+    match /assessmentQuestions/{id} {
+      allow read, write: if false;
+    }
+
+    match /assessments/{id} {
+      allow read, write: if false;
+    }
+
     // 10. Cached AI resume scoring (server-only)
     match /candidateEvaluations/{id} {
       allow read, write: if isOnboardingServer();

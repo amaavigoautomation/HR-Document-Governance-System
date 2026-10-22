@@ -14,6 +14,7 @@ import { generateJobDescription } from './api/_lib/jdGenerator';
 import { handleCareersPublish } from './api/_lib/careersPublisher';
 import { routeOnboarding } from './api/_lib/onboarding';
 import { routeTenant } from './api/_lib/tenantAdmin';
+import { routeAssess } from './api/_lib/assessments';
 import { authErrorResponse, requireActiveTenant, requireHomeTenantPermission, requirePermission } from './api/_lib/authContext';
 import { signStorageToken, verifyStorageToken } from './api/_lib/storageToken';
 import { generateCorporatePdfBlob } from './src/utils/pdfGenerator';
@@ -46,10 +47,11 @@ async function startServer() {
     /^\/api\/health$/,
     /^\/api\/tenant\/signup$/,
     /^\/api\/onboarding\/(public-info|upload|submit|cron)$/,
+    /^\/api\/assess\/(public-info|start|submit)$/, // candidate test links; these check the private token themselves
     /^\/api\/storage\/(file|download)\//, // protected by an HMAC token in the URL (see storageToken.ts)
   ];
   // These routers do their own, finer-grained authentication.
-  const SELF_AUTH_API = [/^\/api\/tenant\//, /^\/api\/onboarding\//];
+  const SELF_AUTH_API = [/^\/api\/tenant\//, /^\/api\/onboarding\//, /^\/api\/assess\//];
 
   app.use('/api', async (req, res, next) => {
     const p = req.originalUrl.split('?')[0];
@@ -91,6 +93,26 @@ async function startServer() {
     const origin = req.headers.host ? `${proto}://${req.headers.host}` : undefined;
     const { status, json } = await routeTenant({ method: req.method, action: req.params.action, body: req.body, headers: req.headers, origin });
     res.status(status).json(json);
+  });
+
+  // Skill assessments (HR screens, candidate test links, employee results). Does its own authentication.
+  app.all('/api/assess/:action', async (req, res) => {
+    try {
+      const proto = (req.headers['x-forwarded-proto'] as string) || req.protocol;
+      const origin = req.headers.host ? `${proto}://${req.headers.host}` : undefined;
+      const { status, json } = await routeAssess({
+        method: req.method,
+        action: req.params.action,
+        query: req.query as Record<string, any>,
+        body: req.body,
+        headers: req.headers as Record<string, any>,
+        origin,
+      });
+      res.status(status).json(json);
+    } catch (err: any) {
+      console.error('Error in /api/assess:', err);
+      res.status(500).json({ success: false, error: err?.message || 'Assessment request failed' });
+    }
   });
 
   // The original single-company, in-memory document API is switched off: it had no per-company data

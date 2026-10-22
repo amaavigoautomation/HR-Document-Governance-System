@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { RefreshCw, UserCheck, ExternalLink, X } from 'lucide-react';
 import { User, UserRole } from '../types';
+import { OnboardingAssessmentCard } from './assessment/OnboardingAssessmentCard';
 import {
   onboardingService,
   OnboardingListItem,
@@ -305,6 +306,14 @@ export const OnboardingModule: React.FC<{ currentUser: User }> = ({ currentUser 
                 <p className="mt-2 text-xs text-rose-700">Rejected: {d.rejectionReason}</p>
               )}
             </div>
+          )}
+
+          {/* Skill assessment (does not block joining) */}
+          {['DOCS_REQUESTED', 'DOCS_SUBMITTED', 'ACCOUNTS_PENDING', 'READY_FOR_JOINING', 'ONBOARDED'].includes(d.status) && (
+            <OnboardingAssessmentCard
+              currentUser={currentUser}
+              onboarding={{ id: d.id, name: d.name, email: d.email, designation: d.designation }}
+            />
           )}
 
           {/* Accounts checklist */}

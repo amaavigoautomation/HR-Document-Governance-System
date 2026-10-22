@@ -41,6 +41,8 @@ import { TalentAcquisitionOverview } from './components/TalentAcquisitionOvervie
 import { TalentAcquisitionHeader } from './components/TalentAcquisitionHeader';
 import { RequisitionsModule } from './components/RequisitionsModule';
 import { OnboardingModule } from './components/OnboardingModule';
+import { AssessmentsModule } from './components/assessment/AssessmentsModule';
+import { EmployeeAssessments } from './components/assessment/EmployeeAssessments';
 import { isDepartmentHead } from './utils/requisitionPermissions';
 import { hasModulePermission, normalizeAuthorizedModules } from './utils/authorization';
 import { DocumentSuggestion } from './types';
@@ -84,7 +86,8 @@ export default function App() {
     const isTalentModule =
       module === 'talent-acquisition' ||
       module === 'talent-acquisition-overview' ||
-      module === 'talent-acquisition-requisitions';
+      module === 'talent-acquisition-requisitions' ||
+      module === 'talent-acquisition-assessments';
     const hasTalent = hasModulePermission(currentUser, 'talent-acquisition');
     const hasDocGov = hasModulePermission(currentUser, 'document-version-control');
 
@@ -571,6 +574,7 @@ export default function App() {
                 )}
               </div>
             )}
+            <EmployeeAssessments />
             <EmployeePortalView
               currentUser={currentUser}
               documents={documents}
@@ -757,6 +761,19 @@ export default function App() {
                 onToggleSidebar={handleToggleSidebar}
               />
               <OnboardingModule currentUser={currentUser} />
+            </div>
+          )}
+
+          {/* Module: Talent Acquisition - Skill assessments (HR) */}
+          {hrAgentModule === 'talent-acquisition-assessments' && currentUser && (
+            <div className="flex-1 flex flex-col min-w-0">
+              <TalentAcquisitionHeader
+                currentUser={currentUser}
+                onLogout={handleLogout}
+                isSidebarOpen={isSidebarOpen}
+                onToggleSidebar={handleToggleSidebar}
+              />
+              <AssessmentsModule currentUser={currentUser} users={allUsers} />
             </div>
           )}
         </HRAgentShell>

@@ -37,6 +37,8 @@ export const PERMISSIONS: PermissionDef[] = [
   { key: 'talent.view', label: 'View talent acquisition overview', group: 'Hiring', module: 'talent-acquisition' },
   { key: 'candidate.evaluate', label: 'Run AI candidate evaluation', group: 'Hiring', module: 'talent-acquisition' },
   { key: 'onboarding.manage', label: 'Run candidate onboarding', group: 'Hiring', module: 'talent-acquisition' },
+  { key: 'assess.manage', label: 'Create, send and retest skill assessments', group: 'Hiring', module: 'talent-acquisition' },
+  { key: 'assess.view', label: 'View skill assessment results', group: 'Hiring', module: 'talent-acquisition' },
 
   // Administration
   { key: 'users.manage', label: 'Add, edit and deactivate users', group: 'Administration' },
@@ -95,7 +97,7 @@ export const DEFAULT_ROLE_TEMPLATES: RoleTemplate[] = [
     permissions: [
       'doc.create', 'doc.publish', 'doc.delete', 'compliance.view', 'audit.view',
       'req.create', 'req.view_all', 'req.assign', 'req.hr_decide', 'req.manage_jd',
-      'talent.view', 'candidate.evaluate', 'onboarding.manage',
+      'talent.view', 'candidate.evaluate', 'onboarding.manage', 'assess.manage', 'assess.view',
       'users.manage', 'departments.manage', 'doc.acknowledge', 'doc.suggest',
     ],
   },
@@ -107,7 +109,7 @@ export const DEFAULT_ROLE_TEMPLATES: RoleTemplate[] = [
     permissions: [
       'doc.create', 'compliance.view',
       'req.create', 'req.hr_decide', 'req.manage_jd',
-      'talent.view', 'candidate.evaluate', 'onboarding.manage',
+      'talent.view', 'candidate.evaluate', 'onboarding.manage', 'assess.manage', 'assess.view',
       'doc.acknowledge', 'doc.suggest',
     ],
   },
@@ -118,7 +120,7 @@ export const DEFAULT_ROLE_TEMPLATES: RoleTemplate[] = [
     portal: 'REVIEWER',
     permissions: [
       'doc.review', 'doc.publish', 'compliance.view', 'audit.view',
-      'req.view_all', 'req.assign', 'req.founder_decide', 'talent.view',
+      'req.view_all', 'req.assign', 'req.founder_decide', 'talent.view', 'assess.view',
       'doc.acknowledge', 'doc.suggest',
     ],
   },

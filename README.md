@@ -31,6 +31,22 @@ custom roles. Built on Vite + React, Express / Vercel functions, Firestore and F
 `npx tsx scripts/migrate-to-multitenant.ts --company "Amaavigo Group" --admin admin@yourco.com`
 (add `--dry-run` first). It prints the company id: set it as `HOME_COMPANY_ID`.
 
+## Skill assessments
+
+AI-written multiple-choice tests with a percentage score per skill (Talent Acquisition > Skill assessments).
+
+- **Onboarding test:** on a candidate's onboarding screen, HR clicks "Send skill test", types any skills (technical or
+  not) and the candidate gets a private link (`/assessment?token=...`). The result is saved as their baseline.
+- **Retest:** HR picks an employee and clicks "Retest". The new test has the same skills and difficulty mix with
+  different questions, and the report shows the change per skill in percentage points.
+- Questions are written by OpenAI the first time a skill is tested and then reused from the company's question bank
+  (HR can switch off any question). Needs `OPENAI_API_KEY`; optional `OPENAI_ASSESSMENT_MODEL`.
+- Permissions: `assess.manage` (create, resend, cancel, retest, edit bank) and `assess.view` (read results). Company
+  admins get both automatically; add them to other roles in Administration > Roles.
+- Everything is stored per company in `assessments` and `assessmentQuestions`, readable only through the server
+  (`/api/assess/*`), so correct answers never reach the browser. Deploy the updated `firestore.rules`.
+- On Vercel the `/api/assess` function is allowed 60 seconds because the first test for a new skill waits for the AI.
+
 ## Known limits
 
 - Google Sheet, careers API, onboarding and AI candidate evaluation use one global configuration, so they

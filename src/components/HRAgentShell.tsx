@@ -19,6 +19,7 @@ import {
   KeyRound,
   Sparkles,
   Settings2,
+  ClipboardCheck,
 } from 'lucide-react';
 import { User, UserRole } from '../types';
 import { AmaavigoLogo } from './AmaavigoLogo';
@@ -36,6 +37,7 @@ export type HRAgentModule =
   | 'talent-acquisition-overview'
   | 'talent-acquisition-requisitions'
   | 'talent-acquisition-onboarding'
+  | 'talent-acquisition-assessments'
   | 'administration';
 
 interface HRAgentShellProps {
@@ -66,6 +68,9 @@ export const HRAgentShell: React.FC<HRAgentShellProps> = ({
   const hasTalentAccess = hasModulePermission(currentUser, 'talent-acquisition');
   const hasDocGovAccess = hasModulePermission(currentUser, 'document-version-control');
   const authorizedCount = (hasTalentAccess ? 1 : 0) + (hasDocGovAccess ? 1 : 0);
+
+  // Skill assessments sit inside Talent Acquisition and have their own permissions
+  const hasAssessAccess = hasTalentAccess && hasAnyPerm(currentUser.perms, ['assess.view', 'assess.manage']);
 
   // Company administration (people, departments, roles) is available to anyone holding an admin permission
   const hasAdminAccess = hasAnyPerm(currentUser.perms, ['users.manage', 'departments.manage', 'roles.manage']);
@@ -377,6 +382,41 @@ export const HRAgentShell: React.FC<HRAgentShellProps> = ({
                             <span className="w-1.5 h-1.5 rounded-full bg-[#FA7014] shrink-0" />
                           )}
                         </button>
+
+                        {/* Sub-item 4: Skill assessments (AI-written MCQ tests, per-skill percentages, retests) */}
+                        {hasAssessAccess && (
+                          <button
+                            id="nav-submodule-talent-assessments"
+                            type="button"
+                            onClick={() => {
+                              onSelectModule('talent-acquisition-assessments');
+                              setIsMobileSidebarOpen(false);
+                            }}
+                            className={`w-full flex items-center justify-between px-2.5 py-2 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+                              activeModule === 'talent-acquisition-assessments'
+                                ? 'bg-[#FA7014]/15 text-[#FA7014] font-bold shadow-2xs'
+                                : 'text-slate-700 hover:text-[#FA7014] hover:bg-orange-50'
+                            }`}
+                            title="Skill tests and retests"
+                          >
+                            <div className="flex items-center space-x-2 min-w-0">
+                              <span
+                                className={`w-1.5 h-1.5 rounded-full transition-colors shrink-0 ${
+                                  activeModule === 'talent-acquisition-assessments' ? 'bg-[#FA7014]' : 'bg-slate-300'
+                                }`}
+                              />
+                              <ClipboardCheck
+                                className={`w-3.5 h-3.5 shrink-0 transition-colors ${
+                                  activeModule === 'talent-acquisition-assessments' ? 'text-[#FA7014]' : 'text-slate-400'
+                                }`}
+                              />
+                              <span className="truncate">Skill assessments</span>
+                            </div>
+                            {activeModule === 'talent-acquisition-assessments' && (
+                              <span className="w-1.5 h-1.5 rounded-full bg-[#FA7014] shrink-0" />
+                            )}
+                          </button>
+                        )}
                       </div>
                     )}
                   </div>
