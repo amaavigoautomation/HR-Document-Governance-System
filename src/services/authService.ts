@@ -134,22 +134,84 @@ async function loadSession(fb: FirebaseUser): Promise<SessionState> {
   return { kind: 'ready', user, company };
 }
 
-/** Subscribes to sign-in state. The callback receives every change (sign-in, sign-out, refresh). */
+/** A short fingerprint of what the session lets the person do, used to tell whether a refresh changed anything. */
+function sessionFingerprint(state: SessionState): string {
+  if (state.kind !== 'ready') return state.kind;
+  return JSON.stringify([
+    state.company.status,
+    [...(state.company.modules || [])].sort(),
+    [...(state.user.perms || [])].sort(),
+    state.user.isCompanyAdmin === true,
+    state.user.active,
+  ]);
+}
+
+const FOCUS_REFRESH_MIN_GAP_MS = 60_000;
+
+/**
+ * Subscribes to sign-in state. The callback receives every change (sign-in, sign-out, refresh).
+ *
+ * Permissions live on the ID token, so when a platform admin changes a company's modules or a company admin
+ * edits a role, the person would otherwise keep their old access until they sign out and in. To avoid that,
+ * whenever the tab regains focus (at most once a minute) the claims are re-read, and the callback fires again
+ * only if what the person may do actually changed.
+ */
 export function onSession(callback: (state: SessionState) => void): () => void {
+  let lastFingerprint = '';
+  let lastRefreshAt = 0;
+  let refreshing = false;
+
+  const emit = (state: SessionState) => {
+    lastFingerprint = sessionFingerprint(state);
+    lastRefreshAt = Date.now();
+    callback(state);
+  };
+
   callback({ kind: 'loading' });
-  return onAuthStateChanged(auth, async (fb) => {
+
+  const stopAuthListener = onAuthStateChanged(auth, async (fb) => {
     if (!fb) {
       setTenant(null);
-      callback({ kind: 'signedOut' });
+      emit({ kind: 'signedOut' });
       return;
     }
     try {
-      callback(await loadSession(fb));
+      emit(await loadSession(fb));
     } catch (err: any) {
       console.warn('[auth] could not load session:', err);
-      callback({ kind: 'error', message: err?.message || 'Could not load your account.' });
+      emit({ kind: 'error', message: err?.message || 'Could not load your account.' });
     }
   });
+
+  const refreshOnFocus = async () => {
+    if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
+    const fb = auth.currentUser;
+    if (!fb || refreshing || Date.now() - lastRefreshAt < FOCUS_REFRESH_MIN_GAP_MS) return;
+    refreshing = true;
+    try {
+      const next = await loadSession(fb);
+      lastRefreshAt = Date.now();
+      if (sessionFingerprint(next) !== lastFingerprint) emit(next);
+    } catch (err) {
+      // A failed background refresh must never log the person out or show an error; the next focus retries.
+      console.warn('[auth] background refresh skipped:', err);
+    } finally {
+      refreshing = false;
+    }
+  };
+
+  if (typeof window !== 'undefined') {
+    window.addEventListener('focus', refreshOnFocus);
+    document.addEventListener('visibilitychange', refreshOnFocus);
+  }
+
+  return () => {
+    stopAuthListener();
+    if (typeof window !== 'undefined') {
+      window.removeEventListener('focus', refreshOnFocus);
+      document.removeEventListener('visibilitychange', refreshOnFocus);
+    }
+  };
 }
 
 /** Re-reads claims + company status (used by the "check again" button on the pending-approval screen). */
