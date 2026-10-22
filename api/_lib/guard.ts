@@ -1,4 +1,4 @@
-import { authErrorResponse, requireActiveTenant, requireHomeTenantPermission, requirePermission } from './authContext.js';
+import { authErrorResponse, requireActiveTenant, requirePermission } from './authContext.js';
 
 type Handler = (req: any, res: any) => any;
 
@@ -20,4 +20,3 @@ export function guarded(check: (headers: Record<string, any>) => Promise<unknown
 
 export const anyActiveUser = (h: Record<string, any>) => requireActiveTenant(h);
 export const withPermission = (...perms: string[]) => (h: Record<string, any>) => requirePermission(h, ...perms);
-export const withHomePermission = (...perms: string[]) => (h: Record<string, any>) => requireHomeTenantPermission(h, ...perms);

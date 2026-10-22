@@ -18,8 +18,8 @@
  */
 import { createHash } from 'node:crypto';
 import JSZip from 'jszip';
-import { doc, getDoc, setDoc } from 'firebase/firestore';
-import { getServerFirestore } from './onboarding.js';
+import { adminDb } from './firebaseAdmin.js';
+import { fetchPublic } from './safeFetch.js';
 
 type Status = 'MET' | 'PARTIAL' | 'NOT_EVIDENCED';
 
@@ -42,17 +42,8 @@ export interface ScorableCandidate {
   aiNote?: string;
 }
 
-export interface AiScoringSummary {
-  enabled: boolean;
-  model?: string;
-  totalCandidates: number;
-  aiScored: number;
-  fromCache: number;
-  pending: number;
-  failed: number;
-  note?: string;
-  tokens?: { input: number; output: number };
-}
+import type { AiScoringSummary } from '../../shared/evaluationTypes.js';
+export type { AiScoringSummary };
 
 interface Evidence {
   skills: { status: Status; evidence: string }[];
@@ -161,14 +152,21 @@ export async function readResume(url: string): Promise<{ text?: string; error?: 
   } catch {
     return { error: 'Resume link is not a valid URL.' };
   }
-  if (!hostAllowed(u)) return { error: `Resume host ${u.hostname} is not allowed (RESUME_ALLOWED_HOSTS).` };
+  // Hosts in RESUME_ALLOWED_HOSTS are trusted (the Amaavigo website). Any other link, such as one sent by a
+  // company's own site through the application webhook, is fetched only if it is a public https address.
+  const trusted = hostAllowed(u);
+  if (!trusted && u.protocol !== 'https:') return { error: 'Resume links must use https.' };
 
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 15000);
   try {
-    const res = await fetch(u, { signal: controller.signal, headers: { Accept: '*/*' } });
+    const res = trusted
+      ? await fetch(u, { signal: controller.signal, headers: { Accept: '*/*' } })
+      : await fetchPublic(u.toString(), { signal: controller.signal, headers: { Accept: '*/*' } });
     if (!res.ok) return { error: `Resume download failed (HTTP ${res.status}).` };
-    if (!hostAllowed(new URL(res.url || u.toString()))) return { error: 'Resume redirected to a disallowed host.' };
+    if (trusted && !hostAllowed(new URL(res.url || u.toString()))) return { error: 'Resume redirected to a disallowed host.' };
+    const declared = Number(res.headers.get('content-length') || 0);
+    if (declared > 6 * 1024 * 1024) return { error: 'Resume file is larger than 6 MB.' };
     const buf = Buffer.from(await res.arrayBuffer());
     if (buf.length > 6 * 1024 * 1024) return { error: 'Resume file is larger than 6 MB.' };
 
@@ -299,20 +297,20 @@ async function callOpenAi(
 
 // ------------------------------------------------------------------ cache
 
-function cacheKey(candidateId: string, resumeUrl: string, jd: { requiredSkills: string[]; coreResponsibilities: string[] }) {
+function cacheKey(companyId: string, candidateId: string, resumeUrl: string, jd: { requiredSkills: string[]; coreResponsibilities: string[] }) {
   const h = createHash('sha256')
     .update(JSON.stringify([resumeUrl, jd.requiredSkills, jd.coreResponsibilities, modelName()]))
     .digest('hex')
     .slice(0, 24);
-  return `${candidateId}_${h}`.replace(/[^a-zA-Z0-9_-]/g, '_');
+  return `${companyId}_${candidateId}_${h}`.replace(/[^a-zA-Z0-9_-]/g, '_');
 }
 
 async function cacheGet(key: string): Promise<CacheEntry | null> {
   const mem = memoryCache.get(key);
   if (mem) return mem;
   try {
-    const snap = await getDoc(doc(await getServerFirestore(), 'candidateEvaluations', key));
-    if (snap.exists()) {
+    const snap = await adminDb().collection('candidateEvaluations').doc(key).get();
+    if (snap.exists) {
       const entry = snap.data() as CacheEntry;
       memoryCache.set(key, entry);
       return entry;
@@ -326,7 +324,7 @@ async function cacheGet(key: string): Promise<CacheEntry | null> {
 async function cacheSet(key: string, entry: CacheEntry, extra: Record<string, unknown> = {}) {
   memoryCache.set(key, entry);
   try {
-    await setDoc(doc(await getServerFirestore(), 'candidateEvaluations', key), { ...entry, ...extra });
+    await adminDb().collection('candidateEvaluations').doc(key).set({ ...entry, ...extra });
   } catch (err: any) {
     console.warn('[AI scoring] cache write failed (is the rules block published?):', err?.message || err);
   }
@@ -408,6 +406,7 @@ function applyEvidence<C extends ScorableCandidate>(
 // ------------------------------------------------------------------ entry point
 
 export async function applyAiScoring<C extends ScorableCandidate>(args: {
+  companyId: string;
   jd: { requiredSkills: string[]; coreResponsibilities: string[] };
   results: C[];
   evaluate: boolean;
@@ -447,7 +446,7 @@ export async function applyAiScoring<C extends ScorableCandidate>(args: {
       continue;
     }
 
-    const key = cacheKey(cand.id, cand.resumeUrl, jd);
+    const key = cacheKey(args.companyId, cand.id, cand.resumeUrl, jd);
     const cached = await cacheGet(key);
 
     if (usable(cached)) {
@@ -471,7 +470,7 @@ export async function applyAiScoring<C extends ScorableCandidate>(args: {
     const resume = await readResume(cand.resumeUrl);
     if (!resume.text) {
       const entry: CacheEntry = { ok: false, error: resume.error, createdAt: new Date().toISOString() };
-      await cacheSet(key, entry, { candidateId: cand.id });
+      await cacheSet(key, entry, { candidateId: cand.id, companyId: args.companyId });
       cand.aiNote = resume.error;
       summary.failed++;
       continue;
@@ -489,7 +488,7 @@ export async function applyAiScoring<C extends ScorableCandidate>(args: {
     tokens.input += out.usage?.input || 0;
     tokens.output += out.usage?.output || 0;
     const entry: CacheEntry = { ok: true, evidence: out.evidence, createdAt: new Date().toISOString() };
-    await cacheSet(key, entry, { candidateId: cand.id, model: modelName(), tokens: out.usage || null });
+    await cacheSet(key, entry, { candidateId: cand.id, companyId: args.companyId, model: modelName(), tokens: out.usage || null });
     results[idx] = applyEvidence(cand, jd, out.evidence);
     summary.aiScored++;
   }

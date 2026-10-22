@@ -3,6 +3,8 @@ import nodemailer from 'nodemailer';
 export interface EmailDispatchPayload {
   to: string;
   recipientName: string;
+  /** Sender display name, e.g. the company the message is sent on behalf of. The mailbox itself stays the shared SMTP account. */
+  fromName?: string;
   subject: string;
   body: string;
   html?: string;
@@ -133,7 +135,10 @@ export async function dispatchLiveEmail(payload: EmailDispatchPayload): Promise<
   const smtpUser = (process.env.SMTP_USER || '').trim().replace(/['"]/g, '');
   const smtpPass = (process.env.SMTP_PASS || '').replace(/\s+/g, '').replace(/['"]/g, '');
   const smtpHost = (process.env.SMTP_HOST || 'smtp.gmail.com').trim();
-  const emailFrom = process.env.EMAIL_FROM || `Amaavigo HR Compliance <${smtpUser}>`;
+  const configuredFrom = process.env.EMAIL_FROM || `Amaavigo HR Compliance <${smtpUser}>`;
+  const fromAddress = (configuredFrom.match(/<([^>]+)>/)?.[1] || configuredFrom).trim();
+  const safeFromName = (payload.fromName || '').replace(/["<>\r\n]/g, '').trim().slice(0, 80);
+  const emailFrom = safeFromName ? `"${safeFromName}" <${fromAddress}>` : configuredFrom;
 
   // Sanitize body: Never expose raw data URLs or base64 binary chunks in emails
   const cleanBody = (body || '')

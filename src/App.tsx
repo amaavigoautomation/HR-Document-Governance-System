@@ -41,6 +41,7 @@ import { TalentAcquisitionOverview } from './components/TalentAcquisitionOvervie
 import { TalentAcquisitionHeader } from './components/TalentAcquisitionHeader';
 import { RequisitionsModule } from './components/RequisitionsModule';
 import { OnboardingModule } from './components/OnboardingModule';
+import { ApplicationsModule } from './components/ApplicationsModule';
 import { isDepartmentHead } from './utils/requisitionPermissions';
 import { hasModulePermission, normalizeAuthorizedModules } from './utils/authorization';
 import { DocumentSuggestion } from './types';
@@ -84,7 +85,9 @@ export default function App() {
     const isTalentModule =
       module === 'talent-acquisition' ||
       module === 'talent-acquisition-overview' ||
-      module === 'talent-acquisition-requisitions';
+      module === 'talent-acquisition-requisitions' ||
+      module === 'talent-acquisition-applications' ||
+      module === 'talent-acquisition-onboarding';
     const hasTalent = hasModulePermission(currentUser, 'talent-acquisition');
     const hasDocGov = hasModulePermission(currentUser, 'document-version-control');
 
@@ -744,6 +747,19 @@ export default function App() {
                 onToggleSidebar={handleToggleSidebar}
               />
               <RequisitionsModule currentUser={currentUser} users={allUsers} />
+            </div>
+          )}
+
+          {/* Module: Talent Acquisition - Applications (per company) */}
+          {hrAgentModule === 'talent-acquisition-applications' && currentUser && (
+            <div className="flex-1 flex flex-col min-w-0">
+              <TalentAcquisitionHeader
+                currentUser={currentUser}
+                onLogout={handleLogout}
+                isSidebarOpen={isSidebarOpen}
+                onToggleSidebar={handleToggleSidebar}
+              />
+              <ApplicationsModule currentUser={currentUser} />
             </div>
           )}
 

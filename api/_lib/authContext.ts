@@ -81,27 +81,3 @@ export function authErrorResponse(err: unknown): { status: number; json: { succe
   if (err instanceof AuthError) return { status: err.status, json: { success: false, error: err.message } };
   return null;
 }
-
-/**
- * Features backed by ONE global configuration (the Google Sheet, the amaavigo.com careers API,
- * the candidate onboarding collections) are only available to the "home" company until those
- * settings become per-company. Set HOME_COMPANY_ID to the company id that owns them.
- */
-export function assertHomeTenant(ctx: AuthContext): void {
-  if (ctx.isPlatformAdmin) return;
-  const home = (process.env.HOME_COMPANY_ID || '').trim();
-  if (!home || ctx.companyId !== home) {
-    throw new AuthError(
-      403,
-      home
-        ? 'This feature is not connected for your company yet. It runs on shared integrations (candidate source, onboarding, careers) that are only set up for the main company.'
-        : 'This feature is not set up on the server yet: HOME_COMPANY_ID is empty. Set it to the id of the company that owns the shared integrations, then restart.'
-    );
-  }
-}
-
-export async function requireHomeTenantPermission(headers: Record<string, any> | undefined, ...anyOf: string[]): Promise<AuthContext> {
-  const ctx = await requirePermission(headers, ...anyOf);
-  assertHomeTenant(ctx);
-  return ctx;
-}

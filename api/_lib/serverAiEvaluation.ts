@@ -1,94 +1,20 @@
 import { fetchSheetData, getSpreadsheetTabNames } from './serverSheets.js';
-import { applyAiScoring, type AiScoringSummary } from './aiScoring.js';
+import { applyAiScoring } from './aiScoring.js';
 
-export interface CandidateEvaluationResult {
-  id: string;
-  name: string;
-  experience: string;
-  experienceNumeric: number | null;
-  experienceVsJD: {
-    status: 'EXCEEDS' | 'MEETS' | 'BELOW' | 'NOT_EVIDENCED';
-    label: string;
-  };
-  jobPreference: string;
-  noticePeriod: string;
-  resumeUrl: string | null;
-  alignmentScore: number;
-  overallAlignment: 'Strong Evidence' | 'Moderate Evidence' | 'Limited Evidence' | 'Not Evidenced';
-  rank: number;
-  
-  skillsAlignment: {
-    skill: string;
-    status: 'MET' | 'PARTIAL' | 'NOT_EVIDENCED';
-    evidence: string;
-  }[];
-  
-  responsibilitiesAlignment: {
-    responsibility: string;
-    status: 'MET' | 'PARTIAL' | 'NOT_EVIDENCED';
-    evidence: string;
-  }[];
-
-  strengths: string[];
-  gaps: string[];
-  missingOrNotEvidenced: string[];
-  
-  keyTakeaway: string;
-  interviewChecklist: string[];
-
-  /** 'AI' when scored from resume evidence, 'RULES' for the rule-based fallback. */
-  scoringMode?: 'AI' | 'RULES';
-  aiNote?: string;
-}
-
-export interface JDCriteriaSummary {
-  designation: string;
-  department: string;
-  minExperience: string;
-  maxExperience: string;
-  requiredSkills: string[];
-  preferredSkills: string[];
-  coreResponsibilities: string[];
-  requiredTools: string[];
-  proofOfWorkRequirements: string[];
-  rawJDText: string;
-}
-
-export interface AIEvaluationResponse {
-  success: boolean;
-  timestamp: string;
-  designation: string;
-  engineUsed: 'enterprise-algorithmic-ai';
-  jdSummary: JDCriteriaSummary;
-  totalCandidates: number;
-  candidates: CandidateEvaluationResult[];
-  comparativeMatrix: {
-    criteria: string;
-    type: 'EXPERIENCE' | 'SKILL' | 'TOOL' | 'RESPONSIBILITY' | 'PROOF';
-    candidateValues: Record<string, { status: 'MET' | 'PARTIAL' | 'NOT_EVIDENCED'; note: string }>;
-  }[];
-  hrRecommendation: {
-    topCandidate: {
-      id: string;
-      name: string;
-      score: number;
-      alignmentTier: string;
-    } | null;
-    summaryReasoning: string;
-    supportingEvidence: string[];
-    poolComparativeInsight: string;
-    advisoryDisclaimer: string;
-  };
-  fairnessNote: string;
-  aiScoring?: AiScoringSummary;
-}
+export type { CandidateEvaluationResult, JDCriteriaSummary, AIEvaluationResponse } from '../../shared/evaluationTypes.js';
+import type { CandidateEvaluationResult, JDCriteriaSummary, AIEvaluationResponse } from '../../shared/evaluationTypes.js';
 
 // In-memory cache for evaluation results (invalidated on refresh)
 const evaluationCache = new Map<string, { data: AIEvaluationResponse; timestamp: number }>();
 const CACHE_TTL_MS = 60 * 1000;
 
-export function clearEvaluationCache() {
-  evaluationCache.clear();
+/** Clears cached evaluations; with a company id only that company's entries go. */
+export function clearEvaluationCache(companyId?: string) {
+  if (!companyId) {
+    evaluationCache.clear();
+    return;
+  }
+  for (const key of Array.from(evaluationCache.keys())) if (key.startsWith(`${companyId}|`)) evaluationCache.delete(key);
 }
 
 /**
@@ -493,11 +419,13 @@ function evaluateCandidateAlgorithmic(
  * 4. Generates HR recommendation support
  */
 export async function runCandidateEvaluation(
+  companyId: string,
   designation: string,
   forceRefresh = false,
   evaluateWithAi = false
 ): Promise<AIEvaluationResponse> {
-  const cacheKey = designation.toLowerCase().trim();
+  // Evaluations are cached per company: the same job title in two companies must never share a result.
+  const cacheKey = `${companyId}|${designation.toLowerCase().trim()}`;
   const now = Date.now();
   if (!forceRefresh && !evaluateWithAi && evaluationCache.has(cacheKey)) {
     const cached = evaluationCache.get(cacheKey)!;
@@ -509,7 +437,7 @@ export async function runCandidateEvaluation(
   // 1. Fetch JD tab
   let rawJDText = '';
   try {
-    const jdsSheet = await fetchSheetData("JD's");
+    const jdsSheet = await fetchSheetData(companyId, "JD's");
     const matchedRow = jdsSheet.rows.find(r => {
       const tabDesig = String(r[0] || '').toLowerCase().trim();
       const targetDesig = designation.toLowerCase().trim();
@@ -525,7 +453,7 @@ export async function runCandidateEvaluation(
   // Fallback to Request data tab if JD's had no match
   if (!rawJDText) {
     try {
-      const reqDataSheet = await fetchSheetData('Request Data');
+      const reqDataSheet = await fetchSheetData(companyId, 'Request Data');
       const posColIdx = reqDataSheet.headers.findIndex(h => /position|title|designation/i.test(h));
       const jdColIdx = reqDataSheet.headers.findIndex(h => /job description|jd/i.test(h));
       const skillsColIdx = reqDataSheet.headers.findIndex(h => /required skills|skills/i.test(h));
@@ -549,13 +477,13 @@ export async function runCandidateEvaluation(
   let candHeaders: string[] = [];
 
   // Try exact tab name
-  const allTabs = await getSpreadsheetTabNames();
+  const allTabs = await getSpreadsheetTabNames(companyId);
   const matchedTab = allTabs.find(t => t.toLowerCase().trim() === designation.toLowerCase().trim()) ||
     allTabs.find(t => t.toLowerCase().includes(designation.toLowerCase()) || designation.toLowerCase().includes(t.toLowerCase()));
 
   if (matchedTab) {
     try {
-      const sheet = await fetchSheetData(matchedTab);
+      const sheet = await fetchSheetData(companyId, matchedTab);
       candHeaders = sheet.headers;
       candidateRows = sheet.rows;
     } catch (e) {
@@ -566,7 +494,7 @@ export async function runCandidateEvaluation(
   // Fallback to Candidate Log if specific tab is empty
   if (candidateRows.length === 0) {
     try {
-      const logSheet = await fetchSheetData('Candidate Log');
+      const logSheet = await fetchSheetData(companyId, 'Candidate Log');
       candHeaders = logSheet.headers;
       const desigIdx = logSheet.headers.findIndex(h => /designation|role|position/i.test(h));
       if (desigIdx !== -1) {
@@ -610,7 +538,7 @@ export async function runCandidateEvaluation(
   );
 
   // Optional resume-evidence scoring with OpenAI (cached; only runs when HR clicks Evaluate)
-  const aiRun = await applyAiScoring({ jd: jdSummary, results: evaluatedCandidates, evaluate: evaluateWithAi });
+  const aiRun = await applyAiScoring({ companyId, jd: jdSummary, results: evaluatedCandidates, evaluate: evaluateWithAi });
   evaluatedCandidates = aiRun.results;
 
   // Sort by alignment score descending

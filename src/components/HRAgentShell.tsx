@@ -35,6 +35,7 @@ export type HRAgentModule =
   | 'talent-acquisition'
   | 'talent-acquisition-overview'
   | 'talent-acquisition-requisitions'
+  | 'talent-acquisition-applications'
   | 'talent-acquisition-onboarding'
   | 'administration';
 
@@ -84,7 +85,9 @@ export const HRAgentShell: React.FC<HRAgentShellProps> = ({
     } else if (
       (activeModule === 'talent-acquisition' ||
         activeModule === 'talent-acquisition-overview' ||
-        activeModule === 'talent-acquisition-requisitions') &&
+        activeModule === 'talent-acquisition-requisitions' ||
+        activeModule === 'talent-acquisition-applications' ||
+        activeModule === 'talent-acquisition-onboarding') &&
       !hasTalentAccess &&
       hasDocGovAccess
     ) {
@@ -343,6 +346,36 @@ export const HRAgentShell: React.FC<HRAgentShellProps> = ({
                           {activeModule === 'talent-acquisition-requisitions' && (
                             <span className="w-1.5 h-1.5 rounded-full bg-[#FA7014] shrink-0" />
                           )}
+                        </button>
+
+                        {/* Sub-item: Applications (webhook, manual add, CSV import) */}
+                        <button
+                          id="nav-submodule-talent-applications"
+                          type="button"
+                          onClick={() => {
+                            onSelectModule('talent-acquisition-applications');
+                            setIsMobileSidebarOpen(false);
+                          }}
+                          className={`w-full flex items-center justify-between px-2.5 py-2 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+                            activeModule === 'talent-acquisition-applications'
+                              ? 'bg-[#FA7014]/15 text-[#FA7014] font-bold shadow-2xs'
+                              : 'text-slate-700 hover:text-[#FA7014] hover:bg-orange-50'
+                          }`}
+                          title="Candidate applications: webhook, manual entry and CSV import"
+                        >
+                          <div className="flex items-center space-x-2 min-w-0">
+                            <span
+                              className={`w-1.5 h-1.5 rounded-full transition-colors shrink-0 ${
+                                activeModule === 'talent-acquisition-applications' ? 'bg-[#FA7014]' : 'bg-slate-300'
+                              }`}
+                            />
+                            <UserCheck
+                              className={`w-3.5 h-3.5 shrink-0 transition-colors ${
+                                activeModule === 'talent-acquisition-applications' ? 'text-[#FA7014]' : 'text-slate-400'
+                              }`}
+                            />
+                            <span className="truncate">Applications</span>
+                          </div>
                         </button>
 
                         {/* Sub-item 3: Onboarding (native workflow, replaces the n8n form) */}

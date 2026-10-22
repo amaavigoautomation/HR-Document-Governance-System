@@ -37,6 +37,7 @@ export const PERMISSIONS: PermissionDef[] = [
   { key: 'talent.view', label: 'View talent acquisition overview', group: 'Hiring', module: 'talent-acquisition' },
   { key: 'candidate.evaluate', label: 'Run AI candidate evaluation', group: 'Hiring', module: 'talent-acquisition' },
   { key: 'onboarding.manage', label: 'Run candidate onboarding', group: 'Hiring', module: 'talent-acquisition' },
+  { key: 'app.manage', label: 'Manage candidate applications and the application webhook', group: 'Hiring', module: 'talent-acquisition' },
 
   // Administration
   { key: 'users.manage', label: 'Add, edit and deactivate users', group: 'Administration' },
@@ -95,7 +96,7 @@ export const DEFAULT_ROLE_TEMPLATES: RoleTemplate[] = [
     permissions: [
       'doc.create', 'doc.publish', 'doc.delete', 'compliance.view', 'audit.view',
       'req.create', 'req.view_all', 'req.assign', 'req.hr_decide', 'req.manage_jd',
-      'talent.view', 'candidate.evaluate', 'onboarding.manage',
+      'talent.view', 'candidate.evaluate', 'onboarding.manage', 'app.manage',
       'users.manage', 'departments.manage', 'doc.acknowledge', 'doc.suggest',
     ],
   },
@@ -107,7 +108,7 @@ export const DEFAULT_ROLE_TEMPLATES: RoleTemplate[] = [
     permissions: [
       'doc.create', 'compliance.view',
       'req.create', 'req.hr_decide', 'req.manage_jd',
-      'talent.view', 'candidate.evaluate', 'onboarding.manage',
+      'talent.view', 'candidate.evaluate', 'onboarding.manage', 'app.manage',
       'doc.acknowledge', 'doc.suggest',
     ],
   },

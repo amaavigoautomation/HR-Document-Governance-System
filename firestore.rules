@@ -7,13 +7,6 @@ service cloud.firestore {
       allow read, write: if false;
     }
 
-    // Server-only access for the onboarding backend (it signs in as this Firebase Auth user).
-    // Browsers never sign in as this user, so these collections are unreachable from the client.
-    function isOnboardingServer() {
-      return request.auth != null
-        && request.auth.token.email == 'onboarding-server@amaavigo.app';
-    }
-
     // ---------------------------------------------------------------------------------------------
     // Multi-tenant access control.
     // Every record carries a companyId. A signed-in user's company, status and permissions are custom
@@ -464,26 +457,15 @@ service cloud.firestore {
       allow delete: if false;
     }
 
-    // 9. Candidate onboarding (server-only)
-    match /onboardings/{id} {
-      allow read, write: if isOnboardingServer();
-    }
-
-    match /onboardingFiles/{id} {
-      allow read, write: if isOnboardingServer();
-    }
-
-    match /candidateStatuses/{id} {
-      allow read, write: if isOnboardingServer();
-    }
-
-    match /counters/{id} {
-      allow read, write: if isOnboardingServer();
-    }
-
-    // 10. Cached AI resume scoring (server-only)
-    match /candidateEvaluations/{id} {
-      allow read, write: if isOnboardingServer();
-    }
+    // 9. Server-only collections. The backend uses the Admin SDK (which bypasses these rules), and
+    //    browsers must never read or write them directly: they hold candidate data, documents, the
+    //    webhook key hashes and cached AI scoring. Every record carries a companyId.
+    match /onboardings/{id} { allow read, write: if false; }
+    match /onboardingFiles/{id} { allow read, write: if false; }
+    match /candidateStatuses/{id} { allow read, write: if false; }
+    match /counters/{id} { allow read, write: if false; }
+    match /candidateEvaluations/{id} { allow read, write: if false; }
+    match /applications/{id} { allow read, write: if false; }
+    match /recruitmentSettings/{id} { allow read, write: if false; }
   }
 }

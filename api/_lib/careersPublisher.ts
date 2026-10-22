@@ -1,3 +1,5 @@
+import { authErrorResponse, requirePermission } from './authContext.js';
+import { usesLegacySource } from './recruitmentData.js';
 /**
  * Careers page publisher.
  *
@@ -205,4 +207,26 @@ export async function handleCareersPublish(
 
   const result = await publishToCareersPage(payload);
   return { status: result.success ? 200 : 502, json: result };
+}
+
+/**
+ * Publish for the signed-in user's company. Only the company that still runs on the Amaavigo website posts to its
+ * external careers API; every other company's job is simply open inside the portal, and its own website reads it from
+ * the public jobs feed (GET /api/apply/<webhook id>).
+ */
+export async function publishForCompany(
+  headers: Record<string, any>,
+  body: unknown
+): Promise<{ status: number; json: any }> {
+  try {
+    const ctx = await requirePermission(headers, 'req.manage_jd');
+    if (!usesLegacySource(ctx.companyId)) {
+      return { status: 200, json: { success: true, internal: true } };
+    }
+    return await handleCareersPublish(body, 'CREATOR');
+  } catch (err) {
+    const known = authErrorResponse(err);
+    if (known) return { status: known.status, json: known.json };
+    throw err;
+  }
 }

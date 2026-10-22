@@ -1,10 +1,10 @@
 /**
  * Server-Side Recruitment Data Service
  *
- * Reads candidate applications and live openings from the Amaavigo website APIs
- * (job-applications / current-openings) and exposes them through the same
- * "tab" interface the Overview page and AI evaluation already use, so the
- * rest of the app is unchanged. Nothing is read from Google Sheets any more.
+ * Exposes candidate applications and open jobs through the "tab" interface the Overview page and AI
+ * evaluation already use. Every function takes the company id and answers from that company's data only:
+ *   - the HOME_COMPANY_ID company keeps reading the Amaavigo website APIs (job-applications / current-openings);
+ *   - every other company reads its own stored applications and published requisitions (recruitmentData.ts).
  *
  * Env (all optional):
  *   JOB_APPLICATIONS_API_URL   default https://www.amaavigo.com/api/job-applications
@@ -13,101 +13,11 @@
  *   RECRUITMENT_API_AUTH_HEADER header name for the key (default Authorization: Bearer)
  */
 
-export interface SheetRowData {
-  headers: string[];
-  rows: (string | number | boolean)[][];
-  totalRows: number;
-  totalColumns: number;
-  tabName: string;
-  lastRefreshed: string;
-}
+import { listApplications, listOpenings, usesLegacySource, type ApplicationDoc } from './recruitmentData.js';
 
-export interface RecruitmentKPIs {
-  openPositions: number | null;
-  totalVacancies: number | null;
-  totalApplications: number | null;
-  activeRequisitionsCount: number | null;
-  departmentsCount: number | null;
-}
-
-/**
- * Filter out administrative/raw sheets from the Explore Sheet Data tab filter:
- * - request data
- * - budget band
- * - HR data
- * - JD's
- * - Workflow tracker
- * - candidate log
- */
-export function isExcludedSheetTab(tabName: string): boolean {
-  if (!tabName) return false;
-  const clean = tabName.toLowerCase().trim().replace(/['’"`\s_-]/g, '');
-  const excluded = [
-    'requestdata',
-    'budgetband',
-    'hrdata',
-    'jds',
-    'jd',
-    'workflowtracker',
-    'candidatelog',
-  ];
-  if (excluded.includes(clean)) return true;
-
-  // Handle common prefixes/variants like "workflowtracker...", "budgetband..."
-  const prefixes = [
-    'requestdata',
-    'budgetband',
-    'hrdata',
-    'workflowtracker',
-    'candidatelog',
-  ];
-  return prefixes.some(p => clean.startsWith(p));
-}
-
-export interface ColumnMappingReport {
-  requestData: {
-    sheetFound: boolean;
-    tabNameUsed: string;
-    positionColumn: string | null;
-    requestIdColumn?: string | null;
-    statusColumn: string | null;
-    vacancyColumn: string | null;
-    departmentColumn: string | null;
-    totalRows: number;
-    rawHeaders: string[];
-  };
-  candidateLog: {
-    sheetFound: boolean;
-    tabNameUsed: string;
-    candidateColumn: string | null;
-    designationColumn: string | null;
-    stageColumn: string | null;
-    dateColumn: string | null;
-    totalRows: number;
-    rawHeaders: string[];
-  };
-}
-
-export interface RecruitmentOverviewResult {
-  success: boolean;
-  status: 'OK' | 'NOT_CONFIGURED' | 'PERMISSION_DENIED' | 'NOT_FOUND' | 'SHEET_MISSING' | 'ERROR';
-  spreadsheetIdMasked?: string;
-  lastRefreshed?: string;
-  kpis?: RecruitmentKPIs;
-  designations?: string[];
-  applicationsByDesignation?: { designation: string; count: number }[];
-  positionsByDepartment?: { department: string; openPositions: number; vacancies: number }[];
-  applicationsByStage?: { stage: string; count: number }[];
-  availableTabs?: string[];
-  columnMapping?: ColumnMappingReport;
-  error?: string;
-  message?: string;
-  requiredConfiguration?: {
-    envKey: string;
-    expectedTabs: string[];
-    documentation: string;
-  };
-}
+import type { SheetRowData, RecruitmentOverviewResult, ColumnMappingReport, RecruitmentKPIs } from '../../shared/recruitmentTypes.js';
+export { isExcludedSheetTab } from '../../shared/recruitmentTypes.js';
+export type { SheetRowData, RecruitmentOverviewResult, ColumnMappingReport, RecruitmentKPIs } from '../../shared/recruitmentTypes.js';
 
 const APPLICATIONS_URL = () =>
   (process.env.JOB_APPLICATIONS_API_URL || 'https://www.amaavigo.com/api/job-applications').trim();
@@ -155,6 +65,7 @@ interface Opening {
   vacancies: number;
   joiningOn: string;
   qualification: string;
+  department?: string;
 }
 
 let appsCache: { at: number; data: Application[] } | null = null;
@@ -224,16 +135,9 @@ async function getJson(url: string): Promise<any> {
 
 // ---------------------------------------------------------------- loaders
 
-async function loadApplications(force = false): Promise<Application[]> {
-  if (!force && appsCache && Date.now() - appsCache.at < CACHE_TTL_MS) return appsCache.data;
-
-  const json = await getJson(APPLICATIONS_URL());
-  if (json && json.success === false) {
-    throw new Error(json.message || json.error || 'job-applications API reported failure');
-  }
-  const list = unwrapList(json);
-
-  const data: Application[] = list.map((a: any, i: number) => {
+/** Maps one application (in the website API's shape) to the row layout the tabs use. */
+function mapApplication(a: any, i: number): Application {
+  {
     const designation = titleCase(nested(a.designation) || str(a.designation_name)) || 'Unspecified';
     const status = nested(a.interview_status) || 'New Applicant';
     const appliedOn = str(a.created_at);
@@ -263,14 +167,65 @@ async function loadApplications(force = false): Promise<Application[]> {
         appliedOn,
       ],
     };
-  });
+  }
+}
 
+/** A stored application, written in the same shape as the website API so one mapper serves both sources. */
+function fromStored(d: ApplicationDoc): any {
+  return {
+    id: d.id,
+    name: d.name,
+    email: d.email,
+    mobile: d.mobile,
+    city: d.city,
+    area: d.area,
+    designation: d.designation,
+    experience: d.experience,
+    notice_period: d.noticePeriod,
+    job_prefrence: d.jobPreference,
+    interview_status: d.status,
+    telephonic_interview_datetime: d.interviewDate,
+    message: d.message,
+    interview_comment: d.interviewComment,
+    attachment_url: d.resumeUrl,
+    created_at: d.createdAt,
+  };
+}
+
+async function loadLegacyApplications(force: boolean): Promise<Application[]> {
+  if (!force && appsCache && Date.now() - appsCache.at < CACHE_TTL_MS) return appsCache.data;
+
+  const json = await getJson(APPLICATIONS_URL());
+  if (json && json.success === false) {
+    throw new Error(json.message || json.error || 'job-applications API reported failure');
+  }
+  const data: Application[] = unwrapList(json).map(mapApplication);
   appsCache = { at: Date.now(), data };
   return data;
 }
 
+async function loadApplications(companyId: string, force = false): Promise<Application[]> {
+  if (usesLegacySource(companyId)) return loadLegacyApplications(force);
+  return (await listApplications(companyId)).map((d, i) => mapApplication(fromStored(d), i));
+}
+
 /** Openings are optional enrichment: a failure here must never break the dashboard. */
-async function loadOpenings(force = false): Promise<Opening[] | null> {
+async function loadOpenings(companyId: string, force = false): Promise<Opening[] | null> {
+  if (!usesLegacySource(companyId)) {
+    try {
+      return (await listOpenings(companyId)).map((o) => ({
+        id: o.id,
+        designation: o.designation,
+        vacancies: o.vacancies,
+        joiningOn: o.joiningOn,
+        qualification: o.qualification,
+        department: o.department,
+      }));
+    } catch (err: any) {
+      console.warn('[Recruitment] Could not read open jobs:', err?.message || err);
+      return null;
+    }
+  }
   if (!force && openingsCache && Date.now() - openingsCache.at < CACHE_TTL_MS) return openingsCache.data;
   try {
     const json = await getJson(OPENINGS_URL());
@@ -301,7 +256,17 @@ export function maskSpreadsheetId(_id: string): string {
 }
 
 /** Kept under its old name so existing routes/UI keep working. */
-export function getGoogleSheetsConfigStatus() {
+export function getGoogleSheetsConfigStatus(companyId?: string | null) {
+  if (companyId && !usesLegacySource(companyId)) {
+    return {
+      isConfigured: true,
+      source: 'built-in',
+      spreadsheetIdMasked: 'Built-in applications',
+      hasApiKey: false,
+      preferredAuth: 'BUILT_IN',
+      expectedTabs: [ALL_TAB],
+    };
+  }
   const s = getRecruitmentSourceStatus();
   return {
     isConfigured: true,
@@ -331,11 +296,11 @@ function sheet(tabName: string, rows: (string | number | boolean)[][], headers: 
  *   JD's                             -> [designation, JD text] per live opening
  *   Request Data                     -> empty (no longer a data source)
  */
-export async function fetchSheetData(tabName: string): Promise<SheetRowData> {
+export async function fetchSheetData(companyId: string, tabName: string): Promise<SheetRowData> {
   const wanted = tabName.trim().toLowerCase();
 
   if (wanted === JD_TAB.toLowerCase()) {
-    const openings = (await loadOpenings()) || [];
+    const openings = (await loadOpenings(companyId)) || [];
     return sheet(
       JD_TAB,
       openings.map(o => [o.designation, o.qualification]),
@@ -347,7 +312,7 @@ export async function fetchSheetData(tabName: string): Promise<SheetRowData> {
     return sheet('Request Data', [], []);
   }
 
-  const apps = await loadApplications();
+  const apps = await loadApplications(companyId);
 
   if (wanted === ALL_TAB.toLowerCase() || wanted === CANDIDATE_LOG_TAB.toLowerCase()) {
     return sheet(tabName, apps.map(a => a.row), APPLICATION_HEADERS);
@@ -361,7 +326,7 @@ export async function fetchSheetData(tabName: string): Promise<SheetRowData> {
 }
 
 /** Server-side lookup of one application by id (used by the onboarding flow; never sent to the browser as-is). */
-export async function getApplicationRecord(id: string): Promise<{
+export async function getApplicationRecord(companyId: string, id: string): Promise<{
   id: string;
   name: string;
   email: string;
@@ -370,7 +335,7 @@ export async function getApplicationRecord(id: string): Promise<{
   status: string;
   raw: Record<string, any>;
 } | null> {
-  const apps = await loadApplications(true);
+  const apps = await loadApplications(companyId, true);
   const a = apps.find(x => x.id === String(id));
   if (!a) return null;
   return {
@@ -384,16 +349,17 @@ export async function getApplicationRecord(id: string): Promise<{
   };
 }
 
-export async function getSpreadsheetTabNames(): Promise<string[]> {
-  const apps = await loadApplications();
+export async function getSpreadsheetTabNames(companyId: string): Promise<string[]> {
+  const apps = await loadApplications(companyId);
   const designations = Array.from(new Set(apps.map(a => a.designation))).sort();
   return [ALL_TAB, ...designations, CANDIDATE_LOG_TAB, JD_TAB];
 }
 
-export async function computeRecruitmentOverview(): Promise<RecruitmentOverviewResult> {
-  const masked = maskSpreadsheetId('');
+export async function computeRecruitmentOverview(companyId: string): Promise<RecruitmentOverviewResult> {
+  const legacy = usesLegacySource(companyId);
+  const masked = legacy ? maskSpreadsheetId('') : 'Built-in applications';
   try {
-    const [apps, openings] = await Promise.all([loadApplications(true), loadOpenings(true)]);
+    const [apps, openings] = await Promise.all([loadApplications(companyId, true), loadOpenings(companyId, true)]);
 
     const byDesignation = new Map<string, number>();
     const byStage = new Map<string, number>();
@@ -414,6 +380,17 @@ export async function computeRecruitmentOverview(): Promise<RecruitmentOverviewR
 
     const availableTabs = [ALL_TAB, ...applicationsByDesignation.map(d => d.designation).sort()];
 
+    // Built-in jobs know their department; the website API does not.
+    const byDept = new Map<string, { openPositions: number; vacancies: number }>();
+    for (const o of openings || []) {
+      if (!o.department) continue;
+      const e = byDept.get(o.department) || { openPositions: 0, vacancies: 0 };
+      e.openPositions += 1;
+      e.vacancies += o.vacancies;
+      byDept.set(o.department, e);
+    }
+    const positionsByDepartment = Array.from(byDept, ([department, v]) => ({ department, ...v }));
+
     return {
       success: true,
       status: 'OK',
@@ -424,18 +401,18 @@ export async function computeRecruitmentOverview(): Promise<RecruitmentOverviewR
         totalVacancies,
         totalApplications: apps.length,
         activeRequisitionsCount: openPositions,
-        // The website APIs carry no department, so this KPI cannot be computed from them.
-        departmentsCount: null,
+        // The website APIs carry no department, so this KPI is only available for built-in jobs.
+        departmentsCount: legacy ? null : byDept.size,
       },
       designations: applicationsByDesignation.map(d => d.designation),
       applicationsByDesignation,
-      positionsByDepartment: [],
+      positionsByDepartment,
       applicationsByStage,
       availableTabs,
       columnMapping: {
         requestData: {
           sheetFound: !!openings,
-          tabNameUsed: 'current-openings API',
+          tabNameUsed: legacy ? 'current-openings API' : 'Open jobs',
           positionColumn: 'designation',
           requestIdColumn: 'id',
           statusColumn: null,
@@ -446,7 +423,7 @@ export async function computeRecruitmentOverview(): Promise<RecruitmentOverviewR
         },
         candidateLog: {
           sheetFound: true,
-          tabNameUsed: 'job-applications API',
+          tabNameUsed: legacy ? 'job-applications API' : 'Applications',
           candidateColumn: 'id',
           designationColumn: 'designation.title',
           stageColumn: 'interview_status.name',

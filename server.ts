@@ -7,14 +7,14 @@ import { auditService } from './src/services/audit';
 import { defaultStorageProvider } from './src/services/storage';
 import { defaultEmailProvider } from './src/services/email';
 import { dispatchLiveEmail, getEmailConfigStatus } from './src/services/serverEmail';
-import { getGoogleSheetsConfigStatus, computeRecruitmentOverview, fetchSheetData } from './src/services/serverSheets';
-import { runCandidateEvaluation, clearEvaluationCache } from './src/services/aiEvaluationService';
+import { routeRecruitment } from './api/_lib/recruitmentApi';
+import { routeApplications, routeApply } from './api/_lib/applicationsApi';
 import { UserRole } from './src/types';
 import { generateJobDescription } from './api/_lib/jdGenerator';
-import { handleCareersPublish } from './api/_lib/careersPublisher';
+import { publishForCompany } from './api/_lib/careersPublisher';
 import { routeOnboarding } from './api/_lib/onboarding';
 import { routeTenant } from './api/_lib/tenantAdmin';
-import { authErrorResponse, requireActiveTenant, requireHomeTenantPermission, requirePermission } from './api/_lib/authContext';
+import { authErrorResponse, requireActiveTenant, requirePermission } from './api/_lib/authContext';
 import { signStorageToken, verifyStorageToken } from './api/_lib/storageToken';
 import { generateCorporatePdfBlob } from './src/utils/pdfGenerator';
 import { generateCorporateDocxBlob } from './src/utils/documentStamper';
@@ -33,6 +33,9 @@ async function startServer() {
   const app = express();
   const PORT = 3000;
 
+  // The public application webhook takes small JSON or form posts only (parsed before the large-upload parsers below).
+  app.use('/api/apply', express.json({ limit: '200kb' }), express.urlencoded({ extended: true, limit: '200kb' }));
+
   // Support up to 100MB payload for video and high-resolution document uploads
   app.use(express.json({ limit: '100mb' }));
   app.use(express.urlencoded({ extended: true, limit: '100mb' }));
@@ -46,10 +49,11 @@ async function startServer() {
     /^\/api\/health$/,
     /^\/api\/tenant\/signup$/,
     /^\/api\/onboarding\/(public-info|upload|submit|cron)$/,
+    /^\/api\/apply\/[a-f0-9]+$/, // each company's own website posts applications here; the router checks the key
     /^\/api\/storage\/(file|download)\//, // protected by an HMAC token in the URL (see storageToken.ts)
   ];
   // These routers do their own, finer-grained authentication.
-  const SELF_AUTH_API = [/^\/api\/tenant\//, /^\/api\/onboarding\//];
+  const SELF_AUTH_API = [/^\/api\/tenant\//, /^\/api\/onboarding\//, /^\/api\/recruitment\//, /^\/api\/applications\//, /^\/api\/careers\//];
 
   app.use('/api', async (req, res, next) => {
     const p = req.originalUrl.split('?')[0];
@@ -79,10 +83,6 @@ async function startServer() {
         next(err);
       }
     };
-  // Features still backed by ONE global configuration are limited to HOME_COMPANY_ID (see authContext.ts).
-  app.use('/api/recruitment/ai-evaluation', guard((h) => requireHomeTenantPermission(h, 'candidate.evaluate')));
-  app.use('/api/recruitment', guard((h) => requireHomeTenantPermission(h, 'talent.view'), '/ai-evaluation'));
-  app.use('/api/careers', guard((h) => requireHomeTenantPermission(h, 'req.manage_jd')));
   app.use('/api/requisitions', guard((h) => requirePermission(h, 'req.manage_jd')));
 
   // Company signup, approval, users, departments and roles
@@ -159,88 +159,57 @@ async function startServer() {
   // TALENT ACQUISITION: GOOGLE SHEETS OVERVIEW API
   // ----------------------------------------------------
 
-  // Configuration status check (Safe, never exposes raw API keys)
-  app.get('/api/recruitment/config', (req, res) => {
-    res.json(getGoogleSheetsConfigStatus());
-  });
-
-  // Recruitment Overview (KPIs, Designation metrics, Pipeline charts)
-  app.get('/api/recruitment/overview', async (req, res) => {
+  // Recruitment Overview, built-in data tabs and AI candidate evaluation. Answered from the caller's own company only.
+  app.get('/api/recruitment/:action', async (req, res) => {
     try {
-      const userRole = req.headers['x-user-role'] as string;
-      // Protect sensitive recruitment data: allow HR (CREATOR) or Approver (REVIEWER)
-      if (userRole === UserRole.EMPLOYEE) {
-        return res.status(403).json({
-          success: false,
-          error: 'Access denied: Employee role is not authorized to access recruitment data.',
-        });
-      }
-
-      const result = await computeRecruitmentOverview();
-      res.json(result);
-    } catch (err: any) {
-      console.error('Error in /api/recruitment/overview:', err);
-      res.status(500).json({ success: false, error: err.message || 'Failed to compute recruitment overview' });
-    }
-  });
-
-  // Sheet Explorer Table Data (Fetch complete selected worksheet)
-  app.get('/api/recruitment/sheet-data', async (req, res) => {
-    try {
-      const userRole = req.headers['x-user-role'] as string;
-      if (userRole === UserRole.EMPLOYEE) {
-        return res.status(403).json({
-          error: 'Access denied: Employee role is not authorized to access worksheet tables.',
-        });
-      }
-
-      const tabName = (req.query.tabName as string || '').trim();
-      if (!tabName) {
-        return res.status(400).json({ error: 'Worksheet tab name parameter is required' });
-      }
-
-      // Security validation on tabName
-      if (tabName.length > 100 || /[<>{}\\]/.test(tabName)) {
-        return res.status(400).json({ error: 'Invalid worksheet tab name format' });
-      }
-
-      const sheetData = await fetchSheetData(tabName);
-      res.json(sheetData);
-    } catch (err: any) {
-      console.error('Error in /api/recruitment/sheet-data:', err);
-      const isNotFound = err.message?.includes('NOT_FOUND');
-      const isPermission = err.message?.includes('PERMISSION_DENIED');
-      const isNotConfigured = err.message?.includes('SPREADSHEET_NOT_CONFIGURED');
-      const status = isNotFound ? 404 : isPermission ? 403 : isNotConfigured ? 400 : 500;
-      res.status(status).json({ error: err.message || 'Failed to fetch worksheet data' });
-    }
-  });
-
-  // AI-Powered Candidate Evaluation & Recommendation API
-  app.get('/api/recruitment/ai-evaluation', async (req, res) => {
-    try {
-      const userRole = req.headers['x-user-role'] as string;
-      if (userRole === UserRole.EMPLOYEE) {
-        return res.status(403).json({
-          error: 'Access denied: Employee role is not authorized to access candidate evaluations.',
-        });
-      }
-
-      const designation = (req.query.designation as string || 'Performance Marketing Expert').trim();
-      const forceRefresh = req.query.refresh === 'true' || req.query.force === 'true';
-      if (forceRefresh) {
-        clearEvaluationCache();
-      }
-
-      const evaluateWithAi = req.query.evaluate === 'true';
-      const evaluation = await runCandidateEvaluation(designation, forceRefresh, evaluateWithAi);
-      res.json(evaluation);
-    } catch (err: any) {
-      console.error('Error in /api/recruitment/ai-evaluation:', err);
-      res.status(500).json({
-        success: false,
-        error: err.message || 'Failed to generate AI candidate evaluation',
+      const { status, json } = await routeRecruitment({
+        method: req.method,
+        action: req.params.action,
+        query: req.query as Record<string, any>,
+        headers: req.headers as Record<string, any>,
       });
+      res.status(status).json(json);
+    } catch (err: any) {
+      console.error('Error in /api/recruitment:', err);
+      res.status(500).json({ success: false, error: err?.message || 'Recruitment request failed' });
+    }
+  });
+
+  // Candidate applications (HR screens) and the public application webhook / jobs feed of each company
+  app.all('/api/applications/:action', async (req, res) => {
+    try {
+      const proto = (req.headers['x-forwarded-proto'] as string) || req.protocol;
+      const origin = req.headers.host ? `${proto}://${req.headers.host}` : undefined;
+      const { status, json } = await routeApplications({
+        method: req.method,
+        action: req.params.action,
+        query: req.query as Record<string, any>,
+        body: req.body,
+        headers: req.headers as Record<string, any>,
+        origin,
+      });
+      res.status(status).json(json);
+    } catch (err: any) {
+      console.error('Error in /api/applications:', err);
+      res.status(500).json({ success: false, error: err?.message || 'Applications request failed' });
+    }
+  });
+
+  app.all('/api/apply/:webhookId', async (req, res) => {
+    try {
+      const { status, json, headers } = await routeApply({
+        method: req.method,
+        webhookId: req.params.webhookId,
+        body: req.body,
+        headers: req.headers as Record<string, any>,
+        ip: req.ip,
+      });
+      for (const [k, v] of Object.entries(headers || {})) res.setHeader(k, v);
+      if (json === null) return res.status(status).end();
+      res.status(status).json(json);
+    } catch (err: any) {
+      console.error('Error in /api/apply:', err);
+      res.status(500).json({ success: false, error: 'Could not save the application.' });
     }
   });
 
@@ -259,10 +228,10 @@ async function startServer() {
     }
   });
 
-  // Publish an approved requisition to the live careers page
+  // Publish an approved requisition (the Amaavigo website company posts to its careers API; others are open inside the portal)
   app.post('/api/careers/publish', async (req, res) => {
     try {
-      const { status, json } = await handleCareersPublish(req.body, 'CREATOR');
+      const { status, json } = await publishForCompany(req.headers as Record<string, any>, req.body);
       res.status(status).json(json);
     } catch (err: any) {
       console.error('Error in /api/careers/publish:', err);

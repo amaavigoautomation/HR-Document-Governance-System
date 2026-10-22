@@ -1,50 +1,32 @@
 /**
- * Candidate onboarding flow (replaces the n8n "Candidate Onboarding Form" workflow).
+ * Candidate onboarding flow, one set of records per company (multi-tenant).
  *
  * Steps
- *  1. Employee ID (AM001, AM002 ...) is generated when HR clicks "Onboard".
- *  2. Firestore is checked for a previous employee/onboarding with the same email or mobile.
+ *  1. Employee ID (e.g. AM001, ACM001 ...) is generated when HR clicks "Onboard". Each company has its own
+ *     prefix and counter.
+ *  2. Firestore is checked for a previous employee/onboarding with the same email or mobile in the same company.
  *     Match -> HR must decide (PROCEED / STOP). No match -> continue automatically.
  *  3. Candidate gets an email with the document list + a private upload link.
  *  4. HR is notified when the candidate submits.
  *  5. HR verifies the documents or rejects the candidate.
  *  6. HR gets the accounts checklist (Microsoft, HRMS, assets, system) + an email; HR fills in the details.
  *  7. A cron job (cronjob.org, 09:00 IST) sends the welcome email and then the credentials email
- *     on the onboarding date.
+ *     on the onboarding date, for every company.
  *
  * Shared by server.ts (Express) and api/onboarding/[action].ts (Vercel).
  *
- * NO SERVICE-ACCOUNT KEY NEEDED: the server uses the normal Firebase web SDK and signs in as one
- * dedicated Firebase Auth user (ONBOARDING_SERVER_EMAIL / ONBOARDING_SERVER_PASSWORD). The Firestore
- * rules only allow that user to touch the onboarding collections, so browsers cannot read them.
- * Candidate documents are stored in Firestore (chunked) instead of Firebase Storage, so no Storage
- * bucket or billing plan is required.
+ * Every record carries `companyId`. The server uses the Firebase Admin SDK (the collections are closed to
+ * browsers by the Firestore rules). Records created before multi-company support have no companyId; they are
+ * treated as belonging to the home company (HOME_COMPANY_ID), see scripts/backfill-onboarding-company.ts.
+ * Candidate documents are stored in Firestore (chunked) instead of Firebase Storage.
  */
 import { randomBytes } from 'node:crypto';
-import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
-import { getApp, getApps, initializeApp, type FirebaseApp } from 'firebase/app';
-import { getAuth, signInWithEmailAndPassword } from 'firebase/auth';
-import {
-  arrayUnion,
-  collection,
-  doc,
-  getDoc,
-  getDocs,
-  getFirestore,
-  initializeFirestore,
-  query,
-  runTransaction,
-  setDoc,
-  updateDoc,
-  where,
-  writeBatch,
-  type Firestore,
-  type QuerySnapshot,
-} from 'firebase/firestore';
+import { FieldValue } from 'firebase-admin/firestore';
+import { adminDb } from './firebaseAdmin.js';
 import { dispatchLiveEmail } from './serverEmail.js';
 import { getApplicationRecord } from './serverSheets.js';
-import { authErrorResponse, requireHomeTenantPermission } from './authContext.js';
+import { authErrorResponse, requirePermission } from './authContext.js';
+import { getCompanyName, getSettings, defaultPrefix, cleanPrefix, usesLegacySource } from './recruitmentData.js';
 
 // ------------------------------------------------------------------ constants
 
@@ -82,81 +64,28 @@ const CHUNK_CHARS = 700_000; // base64 chars per Firestore doc (1 MiB doc limit)
 const ALLOWED_MIME = ['application/pdf', 'image/jpeg', 'image/png'];
 const HR_ROLE = 'CREATOR';
 
-// ------------------------------------------------------------------ firebase (web SDK, signed in as the server user)
+// ------------------------------------------------------------------ firestore (Admin SDK)
 
-/** Optional local fallback: firebase-applet-config.json in the project root (env vars win). */
-const fileConfig: Record<string, any> = (() => {
-  try {
-    return JSON.parse(readFileSync(join(process.cwd(), 'firebase-applet-config.json'), 'utf8'));
-  } catch {
-    return {};
+const db = () => adminDb();
+const col = (name: string) => db().collection(name);
+
+/** Records made before multi-company support have no companyId and belong to the home company. */
+function inCompany(data: any, cid: string): boolean {
+  const own = s(data?.companyId);
+  return own ? own === cid : usesLegacySource(cid);
+}
+
+/** All documents of a collection that belong to a company (home company also gets the legacy, untagged ones). */
+async function companyDocs(name: string, cid: string) {
+  if (usesLegacySource(cid)) {
+    const all = await col(name).get();
+    return all.docs.filter((d) => inCompany(d.data(), cid));
   }
-})();
-
-let appInstance: FirebaseApp | null = null;
-let fsInstance: Firestore | null = null;
-let signIn: Promise<void> | null = null;
-
-function cfg(envKey: string, fileKey: string): string {
-  return (process.env[envKey] || fileConfig[fileKey] || '').toString().trim();
+  return (await col(name).where('companyId', '==', cid).get()).docs;
 }
 
-function firebaseApp(): FirebaseApp {
-  if (appInstance) return appInstance;
-  // Use a named app so we never clash with any other Firebase app in the same process.
-  const name = 'onboarding-server';
-  const existing = getApps().find((a) => a.name === name);
-  appInstance = existing
-    ? getApp(name)
-    : initializeApp(
-        {
-          apiKey: cfg('FIREBASE_API_KEY', 'apiKey'),
-          authDomain: cfg('FIREBASE_AUTH_DOMAIN', 'authDomain'),
-          projectId: cfg('FIREBASE_PROJECT_ID', 'projectId'),
-          appId: cfg('FIREBASE_APP_ID', 'appId'),
-        },
-        name
-      );
-  return appInstance;
-}
-
-function firestoreDb(): Firestore {
-  if (fsInstance) return fsInstance;
-  const databaseId = cfg('FIREBASE_DATABASE_ID', 'firestoreDatabaseId') || undefined;
-  try {
-    fsInstance = initializeFirestore(firebaseApp(), { experimentalAutoDetectLongPolling: true }, databaseId);
-  } catch {
-    fsInstance = getFirestore(firebaseApp(), databaseId);
-  }
-  return fsInstance;
-}
-
-/** Signs in once per server instance as the dedicated onboarding user and returns Firestore. */
-async function fs(): Promise<Firestore> {
-  if (!signIn) {
-    const email = (process.env.ONBOARDING_SERVER_EMAIL || 'onboarding-server@amaavigo.app').trim();
-    const password = (process.env.ONBOARDING_SERVER_PASSWORD || '').trim();
-    if (!password) {
-      throw new Error('ONBOARDING_SERVER_PASSWORD is not configured.');
-    }
-    signIn = signInWithEmailAndPassword(getAuth(firebaseApp()), email, password)
-      .then(() => undefined)
-      .catch((err) => {
-        signIn = null;
-        throw new Error(`Could not sign in the onboarding server user: ${err?.code || err?.message || err}`);
-      });
-  }
-  await signIn;
-  return firestoreDb();
-}
-
-/** Shared with other server modules (AI scoring cache). */
-export async function getServerFirestore(): Promise<Firestore> {
-  return fs();
-}
-
-const col = async (name: string) => collection(await fs(), name);
-const ref = async (name: string, id: string) => doc(await fs(), name, id);
+/** Candidate-status documents: legacy id for the home company, company-prefixed id for everyone else. */
+const statusDocId = (cid: string, applicationId: string) => (usesLegacySource(cid) ? applicationId : `${cid}__${applicationId}`);
 
 // ------------------------------------------------------------------ helpers
 
@@ -192,15 +121,19 @@ function event(message: string, by = 'System') {
 }
 
 function hrRecipients(rec: any): string[] {
-  const list = [rec.hrEmail, ...(process.env.HR_NOTIFY_EMAIL || '').split(',')]
+  // HR_NOTIFY_EMAIL is the home company's shared inbox; other companies are only notified at the HR address given when onboarding started.
+  const shared = usesLegacySource(s(rec.companyId) || '') || !s(rec.companyId) ? (process.env.HR_NOTIFY_EMAIL || '').split(',') : [];
+  const list = [rec.hrEmail, ...shared]
     .map((x: string) => s(x).toLowerCase())
     .filter(Boolean);
   return Array.from(new Set(list));
 }
 
-async function mail(to: string, recipientName: string, subject: string, body: string) {
+const companyLabel = (rec: any) => s(rec?.companyName) || 'Amaavigo';
+
+async function mail(to: string, recipientName: string, subject: string, body: string, fromName?: string) {
   try {
-    const r = await dispatchLiveEmail({ to, recipientName, subject, body });
+    const r = await dispatchLiveEmail({ to, recipientName, subject, body, fromName });
     if (!r.success) console.warn('[Onboarding] email not sent:', r.error || r.note);
     return r.success;
   } catch (err: any) {
@@ -215,7 +148,7 @@ async function mailHr(rec: any, subject: string, body: string) {
     console.warn('[Onboarding] no HR email to notify (set hrEmail or HR_NOTIFY_EMAIL).');
     return;
   }
-  await Promise.all(to.map((t) => mail(t, 'HR Team', subject, body)));
+  await Promise.all(to.map((t) => mail(t, 'HR Team', subject, body, companyLabel(rec))));
 }
 
 function appBase(origin?: string): string {
@@ -228,43 +161,53 @@ function uploadLink(rec: any, origin?: string): string {
 
 // ------------------------------------------------------------------ employee id
 
-async function seedLast(): Promise<number> {
+/** Employee-ID prefix: AM for the home company, otherwise the company's saved prefix (or one made from its name). */
+async function employeePrefix(cid: string, companyName: string): Promise<string> {
+  if (usesLegacySource(cid)) return 'AM';
+  const saved = cleanPrefix((await getSettings(cid))?.employeeIdPrefix);
+  return saved || cleanPrefix(defaultPrefix(companyName)) || 'EMP';
+}
+
+async function seedLast(cid: string, prefix: string): Promise<number> {
   let max = 0;
+  const re = new RegExp(`^${prefix}(\\d+)$`, 'i');
   const scan = (v: unknown) => {
-    const m = /^AM(\d+)$/i.exec(s(v));
+    const m = re.exec(s(v));
     if (m) max = Math.max(max, parseInt(m[1], 10));
   };
-  (await getDocs(await col('employees'))).forEach((d) => {
+  (await companyDocs('employees', cid)).forEach((d) => {
     scan(d.get('empId'));
     scan(d.get('id'));
   });
-  (await getDocs(await col('onboardings'))).forEach((d) => scan(d.get('employeeId')));
+  (await companyDocs('onboardings', cid)).forEach((d) => scan(d.get('employeeId')));
   return max;
 }
 
-async function nextEmployeeId(): Promise<string> {
-  const counterRef = await ref('counters', 'employeeId');
-  const seed = await seedLast();
-  const n = await runTransaction(await fs(), async (tx) => {
+async function nextEmployeeId(cid: string, companyName: string): Promise<string> {
+  const prefix = await employeePrefix(cid, companyName);
+  // The home company keeps its original counter document so numbering continues unbroken.
+  const counterRef = col('counters').doc(usesLegacySource(cid) ? 'employeeId' : `employeeId_${cid}`);
+  const seed = await seedLast(cid, prefix);
+  const n = await db().runTransaction(async (tx) => {
     const snap = await tx.get(counterRef);
-    const stored = snap.exists() ? Number(snap.get('last')) : 0;
+    const stored = snap.exists ? Number(snap.get('last')) : 0;
     const next = Math.max(stored, seed) + 1;
-    tx.set(counterRef, { last: next, updatedAt: new Date().toISOString() });
+    tx.set(counterRef, { last: next, companyId: cid, prefix, updatedAt: new Date().toISOString() });
     return next;
   });
-  return `AM${String(n).padStart(3, '0')}`;
+  return `${prefix}${String(n).padStart(3, '0')}`;
 }
 
 // ------------------------------------------------------------------ prior employee check
 
-async function findPriorMatches(email: string, mobile: string, selfId: string) {
+async function findPriorMatches(cid: string, email: string, mobile: string, selfId: string) {
   const matches: { source: string; id: string; name: string; email: string; detail: string }[] = [];
   const lower = email.toLowerCase();
 
   const seen = new Set<string>();
   const empQueries = [email, lower].filter((v, i, a) => v && a.indexOf(v) === i);
   for (const e of empQueries) {
-    const snap = await getDocs(query(await col('employees'), where('email', '==', e)));
+    const snap = await col('employees').where('companyId', '==', cid).where('email', '==', e).get();
     snap.forEach((d) => {
       if (seen.has(`emp:${d.id}`)) return;
       seen.add(`emp:${d.id}`);
@@ -278,20 +221,20 @@ async function findPriorMatches(email: string, mobile: string, selfId: string) {
     });
   }
 
-  const addOnboardings = (snap: QuerySnapshot) =>
-    snap.forEach((d) => {
-      if (d.id === selfId || seen.has(`on:${d.id}`)) return;
-      seen.add(`on:${d.id}`);
-      matches.push({
-        source: 'Previous onboarding',
-        id: s(d.get('employeeId')),
-        name: s(d.get('name')),
-        email: s(d.get('email')),
-        detail: `Status ${s(d.get('status'))} · onboarding date ${s(d.get('onboardingDate'))}`,
-      });
+  for (const d of await companyDocs('onboardings', cid)) {
+    if (d.id === selfId || seen.has(`on:${d.id}`)) continue;
+    const sameEmail = !!lower && s(d.get('emailLower')) === lower;
+    const sameMobile = !!mobile && s(d.get('mobile')) === mobile;
+    if (!sameEmail && !sameMobile) continue;
+    seen.add(`on:${d.id}`);
+    matches.push({
+      source: 'Previous onboarding',
+      id: s(d.get('employeeId')),
+      name: s(d.get('name')),
+      email: s(d.get('email')),
+      detail: `Status ${s(d.get('status'))} · onboarding date ${s(d.get('onboardingDate'))}`,
     });
-  if (lower) addOnboardings(await getDocs(query(await col('onboardings'), where('emailLower', '==', lower))));
-  if (mobile) addOnboardings(await getDocs(query(await col('onboardings'), where('mobile', '==', mobile))));
+  }
 
   return matches;
 }
@@ -305,7 +248,7 @@ async function sendDocsRequest(rec: any, origin?: string) {
   const body = [
     `Dear ${rec.name},`,
     '',
-    `Welcome to Amaavigo! We are pleased to move forward with your onboarding for the role of ${rec.designation}.`,
+    `Welcome to ${companyLabel(rec)}! We are pleased to move forward with your onboarding for the role of ${rec.designation}.`,
     `Your Employee ID is ${rec.employeeId}.`,
     '',
     'DOCUMENT DETAILS',
@@ -320,14 +263,14 @@ async function sendDocsRequest(rec: any, origin?: string) {
     '',
     'Please keep this link private. It is created only for you.',
   ].join('\n');
-  return mail(rec.email, rec.name, `Action required: upload your onboarding documents (${rec.employeeId})`, body);
+  return mail(rec.email, rec.name, `Action required: upload your onboarding documents (${rec.employeeId})`, body, companyLabel(rec));
 }
 
 async function sendWelcome(rec: any) {
   const body = [
     `Dear ${rec.name},`,
     '',
-    `Welcome to Amaavigo! Today is your first day as ${rec.designation}, and we are delighted to have you with us.`,
+    `Welcome to ${companyLabel(rec)}! Today is your first day as ${rec.designation}, and we are delighted to have you with us.`,
     `Your Employee ID is ${rec.employeeId}.`,
     '',
     'You will receive a separate email shortly with your account credentials.',
@@ -335,7 +278,7 @@ async function sendWelcome(rec: any) {
     '',
     'We wish you a great start.',
   ].join('\n');
-  return mail(rec.email, rec.name, `Welcome to Amaavigo, ${rec.name.split(' ')[0]}!`, body);
+  return mail(rec.email, rec.name, `Welcome to ${companyLabel(rec)}, ${rec.name.split(' ')[0]}!`, body, companyLabel(rec));
 }
 
 function accountsText(accounts: any): string {
@@ -358,7 +301,7 @@ async function sendCredentials(rec: any) {
     accountsText(rec.accounts),
     'Do not share these credentials with anyone.',
   ].join('\n');
-  return mail(rec.email, rec.name, `Your Amaavigo account credentials (${rec.employeeId})`, body);
+  return mail(rec.email, rec.name, `Your ${companyLabel(rec)} account credentials (${rec.employeeId})`, body, companyLabel(rec));
 }
 
 function accountsComplete(accounts: any): boolean {
@@ -392,47 +335,52 @@ function listView(rec: any) {
   };
 }
 
-async function getRec(id: string) {
+/** Loads an onboarding record, but only if it belongs to the given company. */
+async function getRec(cid: string, id: string) {
   if (!id) return null;
-  const snap = await getDoc(await ref('onboardings', id));
-  return snap.exists() ? { id: snap.id, ...(snap.data() as any) } : null;
+  const snap = await col('onboardings').doc(id).get();
+  if (!snap.exists || !inCompany(snap.data(), cid)) return null;
+  return { id: snap.id, ...(snap.data() as any) };
 }
 
 async function saveRec(id: string, patch: Record<string, any>, ev?: any) {
   const upd: Record<string, any> = { ...patch, updatedAt: new Date().toISOString() };
-  if (ev) upd.events = arrayUnion(ev);
-  await setDoc(await ref('onboardings', id), upd, { merge: true });
+  if (ev) upd.events = FieldValue.arrayUnion(ev);
+  await col('onboardings').doc(id).set(upd, { merge: true });
 }
 
 // ------------------------------------------------------------------ HR actions
 
-async function startOnboarding(body: any, origin?: string): Promise<Result> {
+async function startOnboarding(cid: string, body: any, origin?: string): Promise<Result> {
   const applicationId = s(body.applicationId);
   const onboardingDate = s(body.onboardingDate);
   if (!applicationId) return fail(400, 'applicationId is required.');
   if (!isIsoDate(onboardingDate)) return fail(400, 'A valid onboarding date is required.');
 
-  const cs = await getDoc(await ref('candidateStatuses', applicationId));
-  if (cs.exists() && cs.get('status') === 'REJECTED') {
+  const cs = await col('candidateStatuses').doc(statusDocId(cid, applicationId)).get();
+  if (cs.exists && cs.get('status') === 'REJECTED') {
     return fail(409, 'This candidate is marked Rejected. Change the status before onboarding.');
   }
 
-  const dup = await getDocs(query(await col('onboardings'), where('applicationId', '==', applicationId)));
-  const active = dup.docs.find((d) => !['HR_STOPPED', 'REJECTED'].includes(d.get('status')));
+  const dup = await companyDocs('onboardings', cid);
+  const active = dup.find((d) => d.get('applicationId') === applicationId && !['HR_STOPPED', 'REJECTED'].includes(d.get('status')));
   if (active) return fail(409, `Onboarding already exists for this candidate (${active.get('employeeId')}).`, { onboardingId: active.id });
 
-  const app = await getApplicationRecord(applicationId);
-  if (!app) return fail(404, 'Candidate application not found in the job-applications API.');
+  const app = await getApplicationRecord(cid, applicationId);
+  if (!app) return fail(404, 'Candidate application not found.');
   if (!app.email) return fail(400, 'This candidate has no email address, so documents cannot be requested.');
 
-  const employeeId = await nextEmployeeId(); // step 1
-  const id = doc(await col('onboardings')).id;
+  const companyName = await getCompanyName(cid);
+  const employeeId = await nextEmployeeId(cid, companyName); // step 1
+  const id = col('onboardings').doc().id;
   const now = new Date().toISOString();
   const emailLower = app.email.toLowerCase();
 
-  const matches = await findPriorMatches(app.email, app.mobile, id); // step 2
+  const matches = await findPriorMatches(cid, app.email, app.mobile, id); // step 2
   const rec: any = {
     id,
+    companyId: cid,
+    companyName,
     applicationId,
     employeeId,
     name: app.name || 'Candidate',
@@ -453,13 +401,13 @@ async function startOnboarding(body: any, origin?: string): Promise<Result> {
     updatedAt: now,
     events: [event(`Onboarding started by ${s(body.hrName) || 'HR'}. Employee ID ${employeeId} generated.`, s(body.hrName) || 'HR')],
   };
-  await setDoc(await ref('onboardings', id), rec);
+  await col('onboardings').doc(id).set(rec);
 
   if (matches.length > 0) {
     await saveRec(id, {}, event(`Possible previous employee found (${matches.length} match${matches.length > 1 ? 'es' : ''}). Waiting for HR decision.`));
     await mailHr(
       rec,
-      `Decision needed: ${rec.name} may have worked at Amaavigo before`,
+      `Decision needed: ${rec.name} may have worked at ${companyName} before`,
       `${rec.name} (${rec.designation}) has been matched against ${matches.length} existing record(s).\n\nOpen Onboarding in the HR portal to review the candidate's data and choose whether to move forward.`
     );
     return ok({ onboardingId: id, employeeId, status: 'PRIOR_EMPLOYEE_REVIEW', priorMatches: matches });
@@ -470,8 +418,8 @@ async function startOnboarding(body: any, origin?: string): Promise<Result> {
   return ok({ onboardingId: id, employeeId, status: 'DOCS_REQUESTED', emailSent: sent });
 }
 
-async function decidePrior(body: any, origin?: string): Promise<Result> {
-  const rec: any = await getRec(s(body.onboardingId));
+async function decidePrior(cid: string, body: any, origin?: string): Promise<Result> {
+  const rec: any = await getRec(cid, s(body.onboardingId));
   if (!rec) return fail(404, 'Onboarding not found.');
   if (rec.status !== 'PRIOR_EMPLOYEE_REVIEW') return fail(409, 'This onboarding is not waiting for a decision.');
   const by = s(body.hrName) || 'HR';
@@ -486,8 +434,8 @@ async function decidePrior(body: any, origin?: string): Promise<Result> {
   return ok({ status: 'DOCS_REQUESTED', emailSent: sent });
 }
 
-async function resendDocs(body: any, origin?: string): Promise<Result> {
-  const rec: any = await getRec(s(body.onboardingId));
+async function resendDocs(cid: string, body: any, origin?: string): Promise<Result> {
+  const rec: any = await getRec(cid, s(body.onboardingId));
   if (!rec) return fail(404, 'Onboarding not found.');
   if (rec.status !== 'DOCS_REQUESTED') return fail(409, 'Documents are not currently being requested.');
   const sent = await sendDocsRequest(rec, origin);
@@ -495,8 +443,8 @@ async function resendDocs(body: any, origin?: string): Promise<Result> {
   return ok({ emailSent: sent });
 }
 
-async function reviewDocs(body: any): Promise<Result> {
-  const rec: any = await getRec(s(body.onboardingId));
+async function reviewDocs(cid: string, body: any): Promise<Result> {
+  const rec: any = await getRec(cid, s(body.onboardingId));
   if (!rec) return fail(404, 'Onboarding not found.');
   if (rec.status !== 'DOCS_SUBMITTED') return fail(409, 'Documents have not been submitted yet.');
   const by = s(body.hrName) || 'HR';
@@ -504,11 +452,9 @@ async function reviewDocs(body: any): Promise<Result> {
   if (s(body.decision) === 'REJECT') {
     const reason = s(body.reason);
     await saveRec(rec.id, { status: 'REJECTED', rejectionReason: reason }, event(`Document verification failed. Candidate rejected${reason ? `: ${reason}` : ''}.`, by));
-    await setDoc(
-      await ref('candidateStatuses', rec.applicationId),
-      { status: 'REJECTED', updatedBy: by, updatedAt: new Date().toISOString() },
-      { merge: true }
-    );
+    await col('candidateStatuses')
+      .doc(statusDocId(cid, rec.applicationId))
+      .set({ companyId: cid, status: 'REJECTED', updatedBy: by, updatedAt: new Date().toISOString() }, { merge: true });
     return ok({ status: 'REJECTED' });
   }
   if (s(body.decision) !== 'VERIFY') return fail(400, 'decision must be VERIFY or REJECT.');
@@ -533,8 +479,8 @@ async function reviewDocs(body: any): Promise<Result> {
   return ok({ status: 'ACCOUNTS_PENDING' });
 }
 
-async function saveAccounts(body: any): Promise<Result> {
-  const rec: any = await getRec(s(body.onboardingId));
+async function saveAccounts(cid: string, body: any): Promise<Result> {
+  const rec: any = await getRec(cid, s(body.onboardingId));
   if (!rec) return fail(404, 'Onboarding not found.');
   if (!['ACCOUNTS_PENDING', 'READY_FOR_JOINING'].includes(rec.status)) {
     return fail(409, 'Accounts can only be edited after documents are verified and before the welcome email is sent.');
@@ -556,8 +502,8 @@ async function saveAccounts(body: any): Promise<Result> {
   return ok({ status: newStatus, complete });
 }
 
-async function updateDate(body: any): Promise<Result> {
-  const rec: any = await getRec(s(body.onboardingId));
+async function updateDate(cid: string, body: any): Promise<Result> {
+  const rec: any = await getRec(cid, s(body.onboardingId));
   if (!rec) return fail(404, 'Onboarding not found.');
   if (rec.status === 'ONBOARDED') return fail(409, 'Already onboarded.');
   const d = s(body.onboardingDate);
@@ -566,24 +512,26 @@ async function updateDate(body: any): Promise<Result> {
   return ok({});
 }
 
-async function setCandidateStatus(body: any): Promise<Result> {
+async function setCandidateStatus(cid: string, body: any): Promise<Result> {
   const applicationId = s(body.applicationId);
   const status = s(body.status) as CandidateStatus;
   if (!applicationId) return fail(400, 'applicationId is required.');
   if (!['PENDING', 'ON_HOLD', 'REJECTED'].includes(status)) return fail(400, 'Invalid status.');
-  await setDoc(
-    await ref('candidateStatuses', applicationId),
-    { status, updatedBy: s(body.hrName) || 'HR', updatedAt: new Date().toISOString() },
-    { merge: true }
-  );
+  await col('candidateStatuses')
+    .doc(statusDocId(cid, applicationId))
+    .set({ companyId: cid, status, updatedBy: s(body.hrName) || 'HR', updatedAt: new Date().toISOString() }, { merge: true });
   return ok({ status });
 }
 
-async function candidateStatuses(): Promise<Result> {
+async function candidateStatuses(cid: string): Promise<Result> {
   const statuses: Record<string, string> = {};
-  (await getDocs(await col('candidateStatuses'))).forEach((d) => (statuses[d.id] = s(d.get('status'))));
+  const prefix = usesLegacySource(cid) ? '' : `${cid}__`;
+  (await companyDocs('candidateStatuses', cid)).forEach((d) => {
+    const key = prefix && d.id.startsWith(prefix) ? d.id.slice(prefix.length) : d.id;
+    statuses[key] = s(d.get('status'));
+  });
   const onboardings: Record<string, any> = {};
-  (await getDocs(await col('onboardings'))).forEach((d) => {
+  (await companyDocs('onboardings', cid)).forEach((d) => {
     const st = s(d.get('status'));
     if (st === 'HR_STOPPED') return;
     onboardings[s(d.get('applicationId'))] = { id: d.id, status: st, employeeId: s(d.get('employeeId')) };
@@ -591,22 +539,21 @@ async function candidateStatuses(): Promise<Result> {
   return ok({ statuses, onboardings });
 }
 
-async function listOnboardings(): Promise<Result> {
-  const snap = await getDocs(await col('onboardings'));
-  const items = snap.docs.map((d) => listView({ id: d.id, ...(d.data() as any) }));
+async function listOnboardings(cid: string): Promise<Result> {
+  const docs = await companyDocs('onboardings', cid);
+  const items = docs.map((d) => listView({ id: d.id, ...(d.data() as any) }));
   items.sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)));
   return ok({ items, documents: ONBOARDING_DOCUMENTS, accountItems: ACCOUNT_ITEMS });
 }
 
-async function readFile(onboardingId: string, docKey: string): Promise<Result> {
-  const rec: any = await getRec(onboardingId);
+async function readFile(cid: string, onboardingId: string, docKey: string): Promise<Result> {
+  const rec: any = await getRec(cid, onboardingId);
   const meta = rec?.docs?.[docKey];
   if (!meta?.fileId) return fail(404, 'File not found.');
-  const store = await fs();
   const parts: string[] = [];
   for (let i = 0; i < (meta.chunks || 0); i++) {
-    const snap = await getDoc(doc(store, 'onboardingFiles', `${meta.fileId}_${i}`));
-    if (!snap.exists()) return fail(500, 'File is incomplete.');
+    const snap = await col('onboardingFiles').doc(`${meta.fileId}_${i}`).get();
+    if (!snap.exists) return fail(500, 'File is incomplete.');
     parts.push(String(snap.get('data')));
   }
   return { status: 200, json: {}, file: { data: Buffer.from(parts.join(''), 'base64'), mime: meta.mime, name: meta.fileName } };
@@ -616,7 +563,7 @@ async function readFile(onboardingId: string, docKey: string): Promise<Result> {
 
 async function recByToken(token: string): Promise<any | null> {
   if (!/^[a-f0-9]{48}$/.test(token)) return null;
-  const snap = await getDocs(query(await col('onboardings'), where('token', '==', token)));
+  const snap = await col('onboardings').where('token', '==', token).limit(1).get();
   if (snap.empty) return null;
   return { id: snap.docs[0].id, ...(snap.docs[0].data() as any) };
 }
@@ -669,13 +616,12 @@ export async function handleCandidateUpload(
   const b64 = data.toString('base64');
   const chunks: string[] = [];
   for (let i = 0; i < b64.length; i += CHUNK_CHARS) chunks.push(b64.slice(i, i + CHUNK_CHARS));
-  const store = await fs();
-  const batch = writeBatch(store);
-  chunks.forEach((c, i) => batch.set(doc(store, 'onboardingFiles', `${fileId}_${i}`), { data: c }));
+  const batch = db().batch();
+  chunks.forEach((c, i) => batch.set(col('onboardingFiles').doc(`${fileId}_${i}`), { companyId: s(rec.companyId) || null, data: c }));
   await batch.commit();
 
   const old = rec.docs?.[docKey];
-  await updateDoc(await ref('onboardings', rec.id), {
+  await col('onboardings').doc(rec.id).update({
     [`docs.${docKey}`]: {
       fileName: s(fileName).slice(0, 120),
       fileId,
@@ -687,8 +633,8 @@ export async function handleCandidateUpload(
     updatedAt: new Date().toISOString(),
   });
   if (old?.fileId) {
-    const del = writeBatch(store);
-    for (let i = 0; i < (old.chunks || 0); i++) del.delete(doc(store, 'onboardingFiles', `${old.fileId}_${i}`));
+    const del = db().batch();
+    for (let i = 0; i < (old.chunks || 0); i++) del.delete(col('onboardingFiles').doc(`${old.fileId}_${i}`));
     del.commit().catch(() => undefined);
   }
   return ok({ key: docKey });
@@ -714,7 +660,8 @@ async function candidateSubmit(token: string): Promise<Result> {
 
 export async function runOnboardingCron(): Promise<Result> {
   const today = istToday();
-  const snap = await getDocs(query(await col('onboardings'), where('onboardingDate', '<=', today)));
+  // Every company's records are processed together; each record carries its own company name for the emails.
+  const snap = await col('onboardings').where('onboardingDate', '<=', today).get();
   let welcomed = 0;
   let reminded = 0;
   const problems: string[] = [];
@@ -802,34 +749,38 @@ export async function routeOnboarding(r: OnboardingRequest): Promise<Result> {
       return await runOnboardingCron();
     }
 
-    // ---- HR only: verified Firebase identity + permission, limited to the home company
-    //      (onboarding still reads one global Google Sheet and one set of collections).
+    // ---- HR only: verified Firebase identity + permission; everything is limited to the caller's company.
+    let cid = '';
     try {
-      if (action === 'candidate-statuses') await requireHomeTenantPermission(r.headers, 'onboarding.manage', 'talent.view');
-      else await requireHomeTenantPermission(r.headers, 'onboarding.manage');
+      const ctx =
+        action === 'candidate-statuses'
+          ? await requirePermission(r.headers, 'onboarding.manage', 'talent.view')
+          : await requirePermission(r.headers, 'onboarding.manage');
+      cid = s(ctx.companyId);
+      if (!cid) return fail(403, 'Your account is not linked to a company.');
     } catch (authErr) {
       const known = authErrorResponse(authErr);
       if (known) return { status: known.status, json: known.json } as Result;
       throw authErr;
     }
 
-    if (action === 'candidate-statuses' && r.method === 'GET') return await candidateStatuses();
-    if (action === 'list' && r.method === 'GET') return await listOnboardings();
-    if (action === 'file' && r.method === 'GET') return await readFile(s(r.query.id), s(r.query.key));
+    if (action === 'candidate-statuses' && r.method === 'GET') return await candidateStatuses(cid);
+    if (action === 'list' && r.method === 'GET') return await listOnboardings(cid);
+    if (action === 'file' && r.method === 'GET') return await readFile(cid, s(r.query.id), s(r.query.key));
     if (action === 'get' && r.method === 'GET') {
-      const rec = await getRec(s(r.query.id));
+      const rec = await getRec(cid, s(r.query.id));
       return rec ? ok({ item: await hrView(rec) }) : fail(404, 'Onboarding not found.');
     }
     if (r.method !== 'POST') return fail(405, 'Method not allowed.');
 
     switch (action) {
-      case 'start': return await startOnboarding(body, r.origin);
-      case 'decide-prior': return await decidePrior(body, r.origin);
-      case 'resend-docs': return await resendDocs(body, r.origin);
-      case 'review-docs': return await reviewDocs(body);
-      case 'save-accounts': return await saveAccounts(body);
-      case 'update-date': return await updateDate(body);
-      case 'set-status': return await setCandidateStatus(body);
+      case 'start': return await startOnboarding(cid, body, r.origin);
+      case 'decide-prior': return await decidePrior(cid, body, r.origin);
+      case 'resend-docs': return await resendDocs(cid, body, r.origin);
+      case 'review-docs': return await reviewDocs(cid, body);
+      case 'save-accounts': return await saveAccounts(cid, body);
+      case 'update-date': return await updateDate(cid, body);
+      case 'set-status': return await setCandidateStatus(cid, body);
       default: return fail(404, `Unknown onboarding action '${action}'.`);
     }
   } catch (err: any) {

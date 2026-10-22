@@ -33,8 +33,13 @@ custom roles. Built on Vite + React, Express / Vercel functions, Firestore and F
 
 ## Known limits
 
-- Google Sheet, careers API, onboarding and AI candidate evaluation use one global configuration, so they
-  are limited to the `HOME_COMPANY_ID` company.
+- Talent Acquisition, onboarding and AI candidate evaluation are per company. Companies other than
+  `HOME_COMPANY_ID` take applications through their own webhook (`/api/apply/<id>`), manual entry or CSV import,
+  and open jobs come from their requisitions. The home company keeps the original website and Google Sheet
+  sources. Leave `HOME_COMPANY_ID` empty only if every company should use the built-in data.
+- Webhook candidates give a resume link (no file upload). The webhook rate limit is per server instance.
+- Onboarding records created before multi-company support have no `companyId`; they are treated as the home
+  company's. Run `npx tsx scripts/backfill-onboarding-company.ts --company <id>` to tag them.
 - Email is sent from one shared SMTP account for all companies.
 - Some screens and document stamps still say "Amaavigo".
 - Old uploaded-file links have no signature; set `LEGACY_OPEN_STORAGE=true` while migrating, then off.
