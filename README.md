@@ -31,6 +31,25 @@ custom roles. Built on Vite + React, Express / Vercel functions, Firestore and F
 `npx tsx scripts/migrate-to-multitenant.ts --company "Amaavigo Group" --admin admin@yourco.com`
 (add `--dry-run` first). It prints the company id: set it as `HOME_COMPANY_ID`.
 
+## Leave & Attendance
+
+Sidebar item "Leave & Attendance" (and a tab in the employee portal). Everyone can apply for leave, check in/out
+and see their own balances; managers approve their team; HR (`leave.manage`) sets everything up; `leave.report`
+gives read-only company reports. Existing roles need `leave.manage` / `leave.report` added in Administration.
+
+- Setup (HR): leave year (calendar or financial or any start month, per leave type if needed), locations with
+  weekly offs and holidays (CSV import), leave types, policies (quota, accrual, carry-forward), shift and late rules,
+  people (location, policy, manager, join date; CSV import) and opening balances (CSV import).
+- Balances are a ledger (credits and debits), so every change is traceable. Daily accrual and the year-end
+  carry-forward/lapse are idempotent. Schedule `GET /api/leave/cron?key=$CRON_SECRET` daily (cronjob.org, early
+  morning IST); HR can also press "Run accrual now".
+- Approvals: manager, or manager then HR, per leave type; reminders to the HR mailboxes in Setup.
+- Attendance: web check-in/out (optional IP allow-list), shifts with grace, late marks, missed-swipe corrections
+  approved by the manager, monthly report with loss-of-pay days (CSV export). No payroll integration yet.
+- Statutory defaults (maternity 26 weeks, state minimums) are starting points; confirm with a labour-law advisor.
+- Collections: `leaveSettings`, `leaveProfiles`, `leaveLedger`, `leaveRequests`, `leaveAttendance`,
+  `leaveRegularizations` (server-only; deploy the updated `firestore.rules`).
+
 ## Known limits
 
 - Talent Acquisition, onboarding and AI candidate evaluation are per company. Companies other than
@@ -41,6 +60,8 @@ custom roles. Built on Vite + React, Express / Vercel functions, Firestore and F
 - Onboarding records created before multi-company support have no `companyId`; they are treated as the home
   company's. Run `npx tsx scripts/backfill-onboarding-company.ts --company <id>` to tag them.
 - Email is sent from one shared SMTP account for all companies.
+- Leave: festival holidays must be added or imported each year; leave years anchored to each person's joining date,
+  hourly leave, and days-worked earned leave are not built yet.
 - Some screens and document stamps still say "Amaavigo".
 - Old uploaded-file links have no signature; set `LEGACY_OPEN_STORAGE=true` while migrating, then off.
 - Requisition step-by-step workflow rules are enforced in the app; the Firestore rules enforce tenant and

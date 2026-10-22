@@ -63,7 +63,14 @@ export function adminApp(): App {
   return appInstance;
 }
 
+/** Test hook: lets tests run the API against an in-memory database and a fake token verifier. */
+let fake: { db?: any; auth?: any } | null = null;
+export function __useFakeAdmin(f: { db?: any; auth?: any } | null) {
+  fake = f;
+}
+
 export function adminAuth(): Auth {
+  if (fake?.auth) return fake.auth;
   return getAuth(adminApp());
 }
 
@@ -84,6 +91,7 @@ export function resolveDatabaseId(): string {
 }
 
 export function adminDb(): Firestore {
+  if (fake?.db) return fake.db;
   const databaseId = resolveDatabaseId();
   return databaseId && databaseId !== '(default)' ? getFirestore(adminApp(), databaseId) : getFirestore(adminApp());
 }

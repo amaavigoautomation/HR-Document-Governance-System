@@ -42,6 +42,7 @@ import { TalentAcquisitionHeader } from './components/TalentAcquisitionHeader';
 import { RequisitionsModule } from './components/RequisitionsModule';
 import { OnboardingModule } from './components/OnboardingModule';
 import { ApplicationsModule } from './components/ApplicationsModule';
+import { LeaveModule } from './components/LeaveModule';
 import { isDepartmentHead } from './utils/requisitionPermissions';
 import { hasModulePermission, normalizeAuthorizedModules } from './utils/authorization';
 import { DocumentSuggestion } from './types';
@@ -190,6 +191,7 @@ export default function App() {
   const [isNotifDrawerOpen, setIsNotifDrawerOpen] = useState(false);
   const [readerVersion, setReaderVersion] = useState<DocumentVersion | null>(null);
   const [employeeTab, setEmployeeTab] = useState<'acknowledgements' | 'all-documents'>('acknowledgements');
+  const [employeeSection, setEmployeeSection] = useState<'policies' | 'leave'>('policies');
 
   // Pending compliance documents count for logged in Employee
   const employeePendingCount = useMemo(() => {
@@ -458,7 +460,10 @@ export default function App() {
     const hasDocGov = hasModulePermission(user, 'document-version-control');
     let defaultModule: HRAgentModule = 'document-version-control';
     if (!hasDocGov && hasTalent) defaultModule = 'talent-acquisition-overview';
-    else if (!hasDocGov && !hasTalent) defaultModule = 'administration';
+    else if (!hasDocGov && !hasTalent) {
+      const canAdmin = (user.perms || []).some((p) => ['users.manage', 'departments.manage', 'roles.manage'].includes(p));
+      defaultModule = canAdmin ? 'administration' : 'leave-management';
+    }
     setHrAgentModule(defaultModule);
   };
 
@@ -574,6 +579,21 @@ export default function App() {
                 )}
               </div>
             )}
+            <div className="mb-5 inline-flex rounded-xl border border-slate-200 bg-white p-1 text-xs font-bold">
+              {([['policies', 'Policies'], ['leave', 'Leave & Attendance']] as const).map(([k, label]) => (
+                <button
+                  key={k}
+                  type="button"
+                  onClick={() => setEmployeeSection(k)}
+                  className={`px-4 py-2 rounded-lg transition-colors ${employeeSection === k ? 'bg-[#FA7014] text-white' : 'text-slate-600 hover:bg-slate-50'}`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+            {employeeSection === 'leave' ? (
+              <LeaveModule currentUser={currentUser} />
+            ) : (
             <EmployeePortalView
               currentUser={currentUser}
               documents={documents}
@@ -583,6 +603,7 @@ export default function App() {
               activeTab={employeeTab}
               onTabChange={setEmployeeTab}
             />
+            )}
           </main>
         </div>
       ) : (
@@ -596,6 +617,12 @@ export default function App() {
           onLogout={handleLogout}
           onRefreshData={refreshData}
         >
+          {hrAgentModule === 'leave-management' && currentUser && (
+            <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
+              <LeaveModule currentUser={currentUser} />
+            </div>
+          )}
+
           {hrAgentModule === 'administration' && (
             <AdminModule currentUser={currentUser} company={session.kind === 'ready' ? session.company : (null as any)} />
           )}

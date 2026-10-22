@@ -19,6 +19,7 @@ import {
   KeyRound,
   Sparkles,
   Settings2,
+  CalendarDays,
 } from 'lucide-react';
 import { User, UserRole } from '../types';
 import { AmaavigoLogo } from './AmaavigoLogo';
@@ -37,6 +38,7 @@ export type HRAgentModule =
   | 'talent-acquisition-requisitions'
   | 'talent-acquisition-applications'
   | 'talent-acquisition-onboarding'
+  | 'leave-management'
   | 'administration';
 
 interface HRAgentShellProps {
@@ -79,7 +81,7 @@ export const HRAgentShell: React.FC<HRAgentShellProps> = ({
 
   // Auto-redirect if currently selected module is not permitted
   useEffect(() => {
-    if (activeModule === 'administration') return;
+    if (activeModule === 'administration' || activeModule === 'leave-management') return;
     if (activeModule === 'document-version-control' && !hasDocGovAccess && hasTalentAccess) {
       onSelectModule('talent-acquisition-overview');
     } else if (
@@ -467,6 +469,44 @@ export const HRAgentShell: React.FC<HRAgentShellProps> = ({
                     )}
                   </button>
                 )}
+
+                {/* ---------------------------------------------------- */}
+                {/* LEAVE & ATTENDANCE (every role)                      */}
+                {/* ---------------------------------------------------- */}
+                <button
+                  id="nav-module-leave-management"
+                  type="button"
+                  onClick={() => {
+                    onSelectModule('leave-management');
+                    setIsMobileSidebarOpen(false);
+                  }}
+                  className={`w-full px-3 py-2.5 rounded-xl border flex items-center justify-between text-left transition-all cursor-pointer ${
+                    activeModule === 'leave-management'
+                      ? 'bg-[#FA7014]/10 border-[#FA7014]/40 text-slate-900 shadow-xs'
+                      : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50 hover:border-slate-300'
+                  }`}
+                >
+                  <div className="flex items-center space-x-2.5 min-w-0">
+                    <div
+                      className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 ${
+                        activeModule === 'leave-management' ? 'bg-[#FA7014] text-white shadow-xs' : 'bg-slate-100 text-slate-600'
+                      }`}
+                    >
+                      <CalendarDays className="w-4 h-4" />
+                    </div>
+                    <div className="truncate">
+                      <span className={`text-xs font-bold block truncate ${activeModule === 'leave-management' ? 'text-[#FA7014]' : 'text-slate-800'}`}>
+                        Leave &amp; Attendance
+                      </span>
+                      <span className="text-[10px] text-slate-500 font-medium block truncate">Leave, holidays, attendance &amp; approvals</span>
+                    </div>
+                  </div>
+                  {activeModule === 'leave-management' && (
+                    <div className="w-5 h-5 rounded-full bg-[#FA7014] text-white flex items-center justify-center shrink-0 ml-1.5">
+                      <Check className="w-3 h-3 stroke-[3]" />
+                    </div>
+                  )}
+                </button>
 
                 {/* ---------------------------------------------------- */}
                 {/* 3. ADMINISTRATION (people, departments, roles)       */}

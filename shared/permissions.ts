@@ -39,6 +39,10 @@ export const PERMISSIONS: PermissionDef[] = [
   { key: 'onboarding.manage', label: 'Run candidate onboarding', group: 'Hiring', module: 'talent-acquisition' },
   { key: 'app.manage', label: 'Manage candidate applications and the application webhook', group: 'Hiring', module: 'talent-acquisition' },
 
+  // Leave and attendance (everyone can apply for leave and mark attendance; managers approve their own team)
+  { key: 'leave.manage', label: 'Manage leave and attendance: policies, holidays, balances, all requests', group: 'Leave & Attendance' },
+  { key: 'leave.report', label: 'View leave and attendance reports for everyone', group: 'Leave & Attendance' },
+
   // Administration
   { key: 'users.manage', label: 'Add, edit and deactivate users', group: 'Administration' },
   { key: 'departments.manage', label: 'Manage departments', group: 'Administration' },
@@ -98,6 +102,7 @@ export const DEFAULT_ROLE_TEMPLATES: RoleTemplate[] = [
       'req.create', 'req.view_all', 'req.assign', 'req.hr_decide', 'req.manage_jd',
       'talent.view', 'candidate.evaluate', 'onboarding.manage', 'app.manage',
       'users.manage', 'departments.manage', 'doc.acknowledge', 'doc.suggest',
+      'leave.manage', 'leave.report',
     ],
   },
   {
@@ -109,7 +114,7 @@ export const DEFAULT_ROLE_TEMPLATES: RoleTemplate[] = [
       'doc.create', 'compliance.view',
       'req.create', 'req.hr_decide', 'req.manage_jd',
       'talent.view', 'candidate.evaluate', 'onboarding.manage', 'app.manage',
-      'doc.acknowledge', 'doc.suggest',
+      'doc.acknowledge', 'doc.suggest', 'leave.manage', 'leave.report',
     ],
   },
   {
@@ -120,7 +125,7 @@ export const DEFAULT_ROLE_TEMPLATES: RoleTemplate[] = [
     permissions: [
       'doc.review', 'doc.publish', 'compliance.view', 'audit.view',
       'req.view_all', 'req.assign', 'req.founder_decide', 'talent.view',
-      'doc.acknowledge', 'doc.suggest',
+      'doc.acknowledge', 'doc.suggest', 'leave.report',
     ],
   },
   {

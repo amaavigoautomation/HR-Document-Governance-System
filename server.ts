@@ -9,6 +9,7 @@ import { defaultEmailProvider } from './src/services/email';
 import { dispatchLiveEmail, getEmailConfigStatus } from './src/services/serverEmail';
 import { routeRecruitment } from './api/_lib/recruitmentApi';
 import { routeApplications, routeApply } from './api/_lib/applicationsApi';
+import { routeLeave } from './api/_lib/leaveApi';
 import { UserRole } from './src/types';
 import { generateJobDescription } from './api/_lib/jdGenerator';
 import { publishForCompany } from './api/_lib/careersPublisher';
@@ -49,11 +50,12 @@ async function startServer() {
     /^\/api\/health$/,
     /^\/api\/tenant\/signup$/,
     /^\/api\/onboarding\/(public-info|upload|submit|cron)$/,
+    /^\/api\/leave\/cron$/,
     /^\/api\/apply\/[a-f0-9]+$/, // each company's own website posts applications here; the router checks the key
     /^\/api\/storage\/(file|download)\//, // protected by an HMAC token in the URL (see storageToken.ts)
   ];
   // These routers do their own, finer-grained authentication.
-  const SELF_AUTH_API = [/^\/api\/tenant\//, /^\/api\/onboarding\//, /^\/api\/recruitment\//, /^\/api\/applications\//, /^\/api\/careers\//];
+  const SELF_AUTH_API = [/^\/api\/tenant\//, /^\/api\/onboarding\//, /^\/api\/recruitment\//, /^\/api\/applications\//, /^\/api\/careers\//, /^\/api\/leave\//];
 
   app.use('/api', async (req, res, next) => {
     const p = req.originalUrl.split('?')[0];
@@ -172,6 +174,25 @@ async function startServer() {
     } catch (err: any) {
       console.error('Error in /api/recruitment:', err);
       res.status(500).json({ success: false, error: err?.message || 'Recruitment request failed' });
+    }
+  });
+
+  // Leave and attendance (all roles; the router checks identity and permissions)
+  app.all('/api/leave/:action', async (req, res) => {
+    try {
+      const ip = String(req.headers['x-forwarded-for'] || req.socket.remoteAddress || '').split(',')[0].trim();
+      const { status, json } = await routeLeave({
+        method: req.method,
+        action: req.params.action,
+        query: req.query as Record<string, any>,
+        body: req.body,
+        headers: req.headers as Record<string, any>,
+        ip,
+      });
+      res.status(status).json(json);
+    } catch (err: any) {
+      console.error('Error in /api/leave:', err);
+      res.status(500).json({ success: false, error: err?.message || 'Leave request failed' });
     }
   });
 
