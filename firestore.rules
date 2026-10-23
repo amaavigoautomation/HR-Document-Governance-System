@@ -480,5 +480,10 @@ service cloud.firestore {
     match /payrollLoans/{id} { allow read, write: if false; }
     match /payrollRuns/{id} { allow read, write: if false; }
     match /payrollRunLines/{id} { allow read, write: if false; }
+    match /payrollRevisions/{id} { allow read, write: if false; }
+    match /payrollClaims/{id} { allow read, write: if false; }
+    match /payrollClaimFiles/{id} { allow read, write: if false; }
+    match /payrollSettlements/{id} { allow read, write: if false; }
+    match /payrollDeclarations/{id} { allow read, write: if false; }
   }
 }

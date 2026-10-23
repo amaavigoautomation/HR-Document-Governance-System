@@ -3,13 +3,17 @@ import { User } from '../types';
 import { payrollService } from '../services/payrollService';
 import { Notice } from './leave/ui';
 import { AdjustmentsTab } from './payroll/AdjustmentsTab';
+import { ClaimApprovals, MyClaims } from './payroll/ClaimsTab';
+import { RevisionsTab } from './payroll/RevisionsTab';
+import { SettlementsTab } from './payroll/SettlementsTab';
+import { MyTax, TaxAdmin } from './payroll/TaxTab';
 import { InputsTab } from './payroll/InputsTab';
 import { MyPayslips } from './payroll/MyPayslips';
 import { PayrollSetup } from './payroll/PayrollSetup';
 import { RunTab } from './payroll/RunTab';
 import { Salaries } from './payroll/Salaries';
 
-type Tab = 'payslips' | 'run' | 'inputs' | 'adjustments' | 'salaries' | 'setup';
+type Tab = 'payslips' | 'claims' | 'tax' | 'run' | 'inputs' | 'adjustments' | 'salaries' | 'revisions' | 'approvals' | 'settlements' | 'taxadmin' | 'setup';
 
 /** Payroll for every role: everyone sees their payslips; people with payroll access get the rest. */
 export const PayrollModule: React.FC<{ currentUser: User }> = () => {
@@ -25,10 +29,16 @@ export const PayrollModule: React.FC<{ currentUser: User }> = () => {
 
   const tabs: { key: Tab; label: string; show: boolean }[] = [
     { key: 'payslips', label: 'My payslips', show: true },
+    { key: 'claims', label: 'My claims', show: true },
+    { key: 'tax', label: 'My tax', show: true },
     { key: 'run', label: 'Payroll run', show: me.canView },
     { key: 'inputs', label: 'Attendance inputs', show: me.canView },
     { key: 'adjustments', label: 'Adjustments & loans', show: me.canView },
     { key: 'salaries', label: 'Salaries', show: me.canView },
+    { key: 'revisions', label: 'Revisions', show: me.canView },
+    { key: 'approvals', label: 'Claim approvals', show: me.canView || me.isManager },
+    { key: 'settlements', label: 'Full & final', show: me.canView },
+    { key: 'taxadmin', label: 'Tax declarations', show: me.canView },
     { key: 'setup', label: 'Setup', show: me.canView },
   ];
   const visible = tabs.filter((t) => t.show);
@@ -53,10 +63,16 @@ export const PayrollModule: React.FC<{ currentUser: User }> = () => {
           </div>
         )}
         {active === 'payslips' && <MyPayslips />}
+        {active === 'claims' && <MyClaims />}
+        {active === 'tax' && <MyTax />}
         {active === 'run' && <RunTab canManage={me.canManage} />}
         {active === 'inputs' && <InputsTab />}
         {active === 'adjustments' && <AdjustmentsTab canManage={me.canManage} />}
         {active === 'salaries' && <Salaries canManage={me.canManage} />}
+        {active === 'revisions' && <RevisionsTab canManage={me.canManage} />}
+        {active === 'approvals' && <ClaimApprovals canManage={me.canManage} />}
+        {active === 'settlements' && <SettlementsTab canManage={me.canManage} />}
+        {active === 'taxadmin' && <TaxAdmin canManage={me.canManage} />}
         {active === 'setup' && <PayrollSetup canManage={me.canManage} onChanged={reload} />}
       </div>
     </div>

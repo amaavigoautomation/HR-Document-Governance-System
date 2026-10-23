@@ -118,7 +118,7 @@ export const RunTab: React.FC<{ canManage: boolean }> = ({ canManage }) => {
       </Card>
 
       {t && (
-        <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-2">
+        <div className="grid grid-cols-2 md:grid-cols-5 lg:grid-cols-5 gap-2">
           <Stat label="People" value={String(t.headcount)} />
           <Stat label="Gross" value={inr(t.gross)} />
           <Stat label="Deductions" value={inr(t.deductions)} />
@@ -126,6 +126,8 @@ export const RunTab: React.FC<{ canManage: boolean }> = ({ canManage }) => {
           <Stat label="PF (employee)" value={inr(t.pfEmployee)} />
           <Stat label="ESIC (employee)" value={inr(t.esicEmployee)} />
           <Stat label="Professional tax" value={inr(t.pt)} />
+          <Stat label="Income tax (TDS)" value={inr(t.tds || 0)} />
+          <Stat label="Reimbursements" value={inr(t.reimbursements || 0)} />
           <Stat label="Employer cost" value={inr(t.employerCost)} />
         </div>
       )}
@@ -133,7 +135,7 @@ export const RunTab: React.FC<{ canManage: boolean }> = ({ canManage }) => {
       {lines.length > 0 && (
         <Card title={`Payslips in this run (${lines.length})`} right={status !== 'DRAFT' && status !== 'NONE' ? (
           <div className="flex flex-wrap gap-1.5">
-            {([['bank', 'Bank transfer'], ['register', 'Salary register'], ['pf', 'PF'], ['esic', 'ESIC'], ['pt', 'Prof. tax']] as const).map(([k, l]) => (
+            {([['bank', 'Bank transfer'], ['register', 'Salary register'], ['pf', 'PF'], ['esic', 'ESIC'], ['pt', 'Prof. tax'], ['tds', 'TDS']] as const).map(([k, l]) => (
               <button key={k} className={btnGhost} disabled={busy} onClick={() => exportKind(k, k)}>{l} CSV</button>
             ))}
           </div>) : undefined}>

@@ -18,6 +18,7 @@ export const PayrollSetup: React.FC<{ canManage: boolean; onChanged: () => void 
   const [data, setData] = useState<any | null>(null);
   const [s, setS] = useState<any | null>(null);
   const [ptState, setPtState] = useState('');
+  const [catText, setCatText] = useState<string | null>(null);
   const { busy, note, run } = useRunner();
 
   const load = useCallback(async () => {
@@ -47,7 +48,10 @@ export const PayrollSetup: React.FC<{ canManage: boolean; onChanged: () => void 
   const patchIn = (key: string, p: any) => setS({ ...s, [key]: { ...s[key], ...p } });
   const earnings = s.components.filter((c: any) => c.kind === 'EARNING');
   const setComp = (id: string, p: any) => patch({ components: s.components.map((c: any) => (c.id === id ? { ...c, ...p } : c)) });
-  const setBasic = (id: string) => patch({ components: s.components.map((c: any) => ({ ...c, isBasic: c.id === id })) });
+  const setBasic = (id: string) => patch({ components: s.components.map((c: any) => ({ ...c, isBasic: c.kind === 'EARNING' ? c.id === id : c.isBasic })) });
+  const setHra = (id: string) => patch({ components: s.components.map((c: any) => ({ ...c, isHra: c.kind === 'EARNING' ? c.id === id : c.isHra })) });
+  const setTax = (p: any) => patchIn('tax', p);
+  const setRegime = (key: 'new' | 'old', p: any) => setTax({ [key]: { ...s.tax[key], ...p } });
   const addComponent = (kind: 'EARNING' | 'DEDUCTION') => {
     let n = s.components.length + 1;
     let id = `item-${n}`;
@@ -67,6 +71,8 @@ export const PayrollSetup: React.FC<{ canManage: boolean; onChanged: () => void 
         <div className="grid md:grid-cols-3 gap-3">
           <Field label="Company name on payslips"><input className={input} disabled={ro} value={s.company.legalName} onChange={(e) => patchIn('company', { legalName: e.target.value })} /></Field>
           <Field label="Address on payslips"><input className={input} disabled={ro} value={s.company.address} onChange={(e) => patchIn('company', { address: e.target.value })} /></Field>
+          <Field label="Company TAN" hint="Printed on tax statements."><input className={input} disabled={ro} value={s.company.tan || ''} onChange={(e) => patchIn('company', { tan: e.target.value.toUpperCase() })} /></Field>
+          <Field label="Company PAN"><input className={input} disabled={ro} value={s.company.pan || ''} onChange={(e) => patchIn('company', { pan: e.target.value.toUpperCase() })} /></Field>
           <Field label="Days in a month" hint="Calendar: real days. Fixed 30: every month is 30 days.">
             <select className={input} disabled={ro} value={s.daysBasis} onChange={(e) => patch({ daysBasis: e.target.value })}><option value="CALENDAR">Calendar days</option><option value="FIXED_30">Fixed 30 days</option></select>
           </Field>
@@ -81,7 +87,7 @@ export const PayrollSetup: React.FC<{ canManage: boolean; onChanged: () => void 
       <Card title="Salary components" right={canManage && <div className="flex gap-2"><button className={btnGhost} onClick={() => addComponent('EARNING')}>Add earning</button><button className={btnGhost} onClick={() => addComponent('DEDUCTION')}>Add deduction</button></div>}>
         <div className="overflow-x-auto">
           <table className="text-xs min-w-[820px] w-full">
-            <thead className="text-left text-slate-500"><tr><th className="p-1.5">Code</th><th className="p-1.5">Name</th><th className="p-1.5">Type</th><th className="p-1.5">Pro-rated</th><th className="p-1.5">PF wage</th><th className="p-1.5">ESIC wage</th><th className="p-1.5">Basic</th><th className="p-1.5">Active</th><th /></tr></thead>
+            <thead className="text-left text-slate-500"><tr><th className="p-1.5">Code</th><th className="p-1.5">Name</th><th className="p-1.5">Type</th><th className="p-1.5">Pro-rated</th><th className="p-1.5">PF wage</th><th className="p-1.5">ESIC wage</th><th className="p-1.5">Basic</th><th className="p-1.5" title="House rent allowance (earning) or the income tax deduction">HRA / TDS</th><th className="p-1.5">Active</th><th /></tr></thead>
             <tbody>
               {s.components.map((c: any) => (
                 <tr key={c.id} className="border-t border-slate-100">
@@ -92,6 +98,10 @@ export const PayrollSetup: React.FC<{ canManage: boolean; onChanged: () => void 
                   <td className="p-1.5 text-center">{c.kind === 'EARNING' && <input type="checkbox" disabled={ro} checked={c.pfWage} onChange={(e) => setComp(c.id, { pfWage: e.target.checked })} />}</td>
                   <td className="p-1.5 text-center">{c.kind === 'EARNING' && <input type="checkbox" disabled={ro} checked={c.esicWage} onChange={(e) => setComp(c.id, { esicWage: e.target.checked })} />}</td>
                   <td className="p-1.5 text-center">{c.kind === 'EARNING' && <input type="radio" name="basic" disabled={ro} checked={!!c.isBasic} onChange={() => setBasic(c.id)} />}</td>
+                  <td className="p-1.5 text-center">
+                    {c.kind === 'EARNING' && <label className="text-[11px]"><input type="radio" name="hra" disabled={ro} checked={!!c.isHra || (!s.components.some((x: any) => x.isHra) && (c.id === 'hra' || c.code === 'HRA'))} onChange={() => setHra(c.id)} /> HRA</label>}
+                    {c.kind === 'DEDUCTION' && <label className="text-[11px]"><input type="checkbox" disabled={ro} checked={!!c.isTds || c.code === 'TDS'} onChange={(e) => setComp(c.id, { isTds: e.target.checked })} /> TDS</label>}
+                  </td>
                   <td className="p-1.5 text-center"><input type="checkbox" disabled={ro} checked={c.active} onChange={(e) => setComp(c.id, { active: e.target.checked })} /></td>
                   <td className="p-1">{canManage && <button className={btnDanger} onClick={() => patch({ components: s.components.filter((x: any) => x.id !== c.id), ctcTemplate: tpl.filter((r) => r.componentId !== c.id) })}>Remove</button>}</td>
                 </tr>
@@ -99,7 +109,7 @@ export const PayrollSetup: React.FC<{ canManage: boolean; onChanged: () => void 
             </tbody>
           </table>
         </div>
-        <p className="text-[11px] text-slate-400 mt-2">Pro-rated earnings shrink with loss of pay. PF wage and ESIC wage mark which earnings count for those schemes. Income tax (TDS) is not calculated here: keep it as a fixed deduction and enter the monthly amount on each salary.</p>
+        <p className="text-[11px] text-slate-400 mt-2">Pro-rated earnings shrink with loss of pay. PF wage and ESIC wage mark which earnings count for those schemes. Mark which earning is house rent allowance and which deduction is income tax: in automatic tax mode the calculated TDS replaces that deduction.</p>
       </Card>
 
       <Card title="CTC split template" right={canManage && <button className={btnGhost} onClick={() => patch({ ctcTemplate: [...tpl, { componentId: earnings[0]?.id || '', mode: 'FIXED', value: 0 }] })}>Add row</button>}>
@@ -173,6 +183,73 @@ export const PayrollSetup: React.FC<{ canManage: boolean; onChanged: () => void 
         {canManage && <button className={`${btnGhost} mt-2`} onClick={() => setSlabs([...slabs, { from: 0, to: null, amount: 0, gender: 'ANY' }])}>Add slab</button>}
         {slabs.length === 0 && <div className="text-xs text-slate-400 mt-2">No slabs for {ptState}: professional tax is 0 for people in this state until you add them.</div>}
       </Card>
+
+      <Card title="Income tax (TDS)">
+        <div className="grid md:grid-cols-4 gap-3 mb-3">
+          <Field label="How TDS is worked out" hint="Manual: type a fixed monthly amount on each salary. Automatic: calculated every month from the year's projected salary and each person's declaration.">
+            <select className={input} disabled={ro} value={s.tax.mode} onChange={(e) => setTax({ mode: e.target.value })}><option value="MANUAL">Manual (fixed on the salary)</option><option value="AUTO">Automatic</option></select>
+          </Field>
+          <Field label="Regime when someone has not declared"><select className={input} disabled={ro} value={s.tax.defaultRegime} onChange={(e) => setTax({ defaultRegime: e.target.value })}><option value="NEW">New regime</option><option value="OLD">Old regime</option></select></Field>
+          <Num label="Health and education cess %" value={s.tax.cessPct} disabled={ro} onChange={(n) => setTax({ cessPct: n })} />
+        </div>
+        <Notice>These slabs, rebates and limits are starter values for FY 2026-27 and change with every Budget. Your CA must confirm them before automatic TDS is switched on. Not handled: senior citizen slabs, surcharge marginal relief, perquisites, capital gains.</Notice>
+        <div className="grid md:grid-cols-2 gap-4 mt-3">
+          {(['new', 'old'] as const).map((key) => {
+            const r = s.tax[key];
+            const setSlab = (i: number, p: any) => setRegime(key, { slabs: r.slabs.map((x: any, j: number) => (j === i ? { ...x, ...p } : x)) });
+            return (
+              <div key={key} className="border border-slate-200 rounded-lg p-3">
+                <div className="text-xs font-bold text-slate-700 mb-2">{key === 'new' ? 'New regime' : 'Old regime'}</div>
+                <div className="grid grid-cols-2 gap-2 mb-2">
+                  <Num label="Standard deduction (₹)" value={r.standardDeduction} disabled={ro} onChange={(n) => setRegime(key, { standardDeduction: n })} />
+                  <Num label="Rebate up to income (₹)" value={r.rebate.incomeLimit} disabled={ro} onChange={(n) => setRegime(key, { rebate: { ...r.rebate, incomeLimit: n } })} />
+                  <Num label="Maximum rebate (₹)" value={r.rebate.maxRebate} disabled={ro} onChange={(n) => setRegime(key, { rebate: { ...r.rebate, maxRebate: n } })} />
+                  <div className="pt-5"><Check disabled={ro} label="Marginal relief" checked={r.marginalRelief} onChange={(b) => setRegime(key, { marginalRelief: b })} /></div>
+                </div>
+                <table className="text-xs w-full">
+                  <thead className="text-left text-slate-500"><tr><th className="p-1">Slab up to (₹, blank = no limit)</th><th className="p-1">Rate %</th><th /></tr></thead>
+                  <tbody>{r.slabs.map((sl: any, i: number) => (
+                    <tr key={i} className="border-t border-slate-100">
+                      <td className="p-1"><input type="number" className={input} disabled={ro} value={sl.upTo ?? ''} onChange={(e) => setSlab(i, { upTo: e.target.value === '' ? null : Number(e.target.value) })} /></td>
+                      <td className="p-1"><input type="number" className={input} disabled={ro} value={sl.rate} onChange={(e) => setSlab(i, { rate: Number(e.target.value) })} /></td>
+                      <td className="p-1">{canManage && r.slabs.length > 1 && <button className={btnDanger} onClick={() => setRegime(key, { slabs: r.slabs.filter((_: any, j: number) => j !== i) })}>×</button>}</td>
+                    </tr>))}
+                  </tbody>
+                </table>
+                {canManage && <button className={`${btnGhost} mt-2`} onClick={() => setRegime(key, { slabs: [...r.slabs, { upTo: (r.slabs[r.slabs.length - 2]?.upTo ?? 0) + 400000, rate: 0 }] })}>Add slab</button>}
+              </div>
+            );
+          })}
+        </div>
+        <div className="grid grid-cols-2 md:grid-cols-6 gap-3 mt-3">
+          <Num label="80C limit (₹)" value={s.tax.limits.sec80C} disabled={ro} onChange={(n) => setTax({ limits: { ...s.tax.limits, sec80C: n } })} />
+          <Num label="80D limit (₹)" value={s.tax.limits.sec80D} disabled={ro} onChange={(n) => setTax({ limits: { ...s.tax.limits, sec80D: n } })} />
+          <Num label="NPS 80CCD(1B) limit (₹)" value={s.tax.limits.sec80CCD1B} disabled={ro} onChange={(n) => setTax({ limits: { ...s.tax.limits, sec80CCD1B: n } })} />
+          <Num label="Home loan interest limit (₹)" value={s.tax.limits.homeLoanInterest} disabled={ro} onChange={(n) => setTax({ limits: { ...s.tax.limits, homeLoanInterest: n } })} />
+          <Num label="Employer NPS % of basic, new" value={s.tax.limits.nps80CCD2PctNew} disabled={ro} onChange={(n) => setTax({ limits: { ...s.tax.limits, nps80CCD2PctNew: n } })} />
+          <Num label="Employer NPS % of basic, old" value={s.tax.limits.nps80CCD2PctOld} disabled={ro} onChange={(n) => setTax({ limits: { ...s.tax.limits, nps80CCD2PctOld: n } })} />
+        </div>
+      </Card>
+
+      <div className="grid md:grid-cols-2 gap-4">
+        <Card title="Gratuity and notice (full and final settlement)">
+          <Check disabled={ro} label="Pay gratuity" checked={s.gratuity.enabled} onChange={(b) => patchIn('gratuity', { enabled: b })} />
+          <div className="grid grid-cols-2 gap-3 mt-3">
+            <Num label="Minimum years of service" value={s.gratuity.minYears} disabled={ro} onChange={(n) => patchIn('gratuity', { minYears: n })} />
+            <Num label="Days of wages per year" value={s.gratuity.daysPerYear} disabled={ro} onChange={(n) => patchIn('gratuity', { daysPerYear: n })} />
+            <Num label="Divided by" value={s.gratuity.divisor} disabled={ro} onChange={(n) => patchIn('gratuity', { divisor: n })} hint="26 working days a month." />
+            <Num label="Maximum gratuity (₹)" value={s.gratuity.cap} disabled={ro} onChange={(n) => patchIn('gratuity', { cap: n })} hint="0 = no limit." />
+            <Num label="Default notice period (days)" value={s.defaultNoticeDays} disabled={ro} onChange={(n) => patch({ defaultNoticeDays: n })} />
+          </div>
+          <p className="text-[11px] text-slate-400 mt-2">Gratuity = last basic x days / divisor x completed years (over six months rounds up). The labour codes may change who is covered, so confirm with your CA or lawyer.</p>
+        </Card>
+        <Card title="Expense claims">
+          <Field label="Categories (one per line)">
+            <textarea className={`${input} h-28`} disabled={ro} value={catText ?? (s.claims.categories || []).join('\n')} onChange={(e) => { setCatText(e.target.value); patchIn('claims', { categories: e.target.value.split('\n').map((x: string) => x.trim()).filter(Boolean) }); }} />
+          </Field>
+          <div className="mt-3"><Num label="A bill is required above (₹)" value={s.claims.billRequiredAbove} disabled={ro} onChange={(n) => patchIn('claims', { billRequiredAbove: n })} /></div>
+        </Card>
+      </div>
     </div>
   );
 };

@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { inr, monthLabel, payrollService } from '../../services/payrollService';
 import { Card, Notice, btnGhost, btnPrimary } from '../leave/ui';
 import { downloadPayslipPdf, slipRows } from './payslipPdf';
+import { MySettlement } from './SettlementsTab';
 
 /** One payslip on screen. Opens the signed-in person's own payslip, or anyone's for payroll viewers. */
 export const PayslipViewer: React.FC<{ month: string; uid?: string; onClose?: () => void }> = ({ month, uid, onClose }) => {
@@ -16,7 +17,7 @@ export const PayslipViewer: React.FC<{ month: string; uid?: string; onClose?: ()
 
   if (error) return <Notice tone="error">{error}</Notice>;
   if (!slip) return <div className="text-sm text-slate-500">Loading…</div>;
-  const { earn, ded } = slipRows(slip);
+  const { earn, ded, reimb } = slipRows(slip);
   const l = slip.line;
   const e = slip.employee;
   const rows = Math.max(earn.length, ded.length);
@@ -57,6 +58,17 @@ export const PayslipViewer: React.FC<{ month: string; uid?: string; onClose?: ()
         ))}
       </div>
       {rows === 0 && <div className="text-xs text-slate-400 mt-2">This payslip has no lines.</div>}
+      {reimb.length > 0 && (
+        <div className="mt-3 border border-slate-200 rounded-lg overflow-hidden">
+          <div className="bg-slate-50 px-3 py-2 text-xs font-bold text-slate-600">Reimbursements (not taxable, added to net pay)</div>
+          <div className="divide-y divide-slate-100">{reimb.map(([label, amount], i) => <div key={`${label}${i}`} className="px-3 py-1.5 text-xs flex justify-between gap-3"><span>{label}</span><span className="tabular-nums">{inr(amount)}</span></div>)}</div>
+        </div>
+      )}
+      {slip.tax && slip.line.tds > 0 && (
+        <div className="text-[11px] text-slate-500 mt-2">
+          Income tax: estimated tax for the year {inr(slip.tax.annualTax)} under the {slip.tax.regime === 'OLD' ? 'old' : 'new'} regime, {inr(slip.tax.taxDeductedSoFar)} already deducted, the rest spread over {slip.tax.monthsLeft} month(s).
+        </div>
+      )}
       <div className="mt-3 flex items-center justify-between rounded-lg bg-[#FA7014] text-white px-4 py-3">
         <span className="text-sm font-bold">Net pay</span>
         <span className="text-lg font-bold tabular-nums">{inr(l.net)}</span>
@@ -78,7 +90,7 @@ export const MyPayslips: React.FC = () => {
 
   if (error) return <Notice tone="error">{error}</Notice>;
   if (!items) return <div className="text-sm text-slate-500">Loading…</div>;
-  if (items.length === 0) return <Card><div className="text-sm text-slate-500">No payslips yet. They appear here once payroll for a month is finalised.</div></Card>;
+  if (items.length === 0) return <div className="space-y-4"><Card><div className="text-sm text-slate-500">No payslips yet. They appear here once payroll for a month is finalised.</div></Card><MySettlement /></div>;
 
   return (
     <div className="space-y-4">
@@ -100,6 +112,7 @@ export const MyPayslips: React.FC = () => {
         </div>
       </Card>
       {month && <PayslipViewer month={month} />}
+      <MySettlement />
     </div>
   );
 };

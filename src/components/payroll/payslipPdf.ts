@@ -8,6 +8,8 @@ export const num = (n: number | undefined | null) =>
 export interface SlipRows {
   earn: [string, number][];
   ded: [string, number][];
+  /** Expense claims paid with the salary: added to net pay, not taxed. */
+  reimb: [string, number][];
 }
 
 /** The lines of a payslip in the order people expect: salary components, then extras; statutory, then the rest. */
@@ -25,7 +27,8 @@ export function slipRows(slip: any): SlipRows {
   l.deductions.forEach((d: any) => ded.push([d.name, d.amount]));
   (l.adjustments || []).filter((a: any) => a.kind === 'DEDUCTION').forEach((a: any) => ded.push([a.label, a.amount]));
   (l.loans || []).forEach((x: any) => ded.push([x.label, x.amount]));
-  return { earn, ded };
+  const reimb: [string, number][] = (l.reimbursements || []).map((r: any) => [r.label, r.amount]);
+  return { earn, ded, reimb };
 }
 
 export function downloadPayslipPdf(slip: any) {
@@ -66,7 +69,7 @@ export function downloadPayslipPdf(slip: any) {
   y += Math.ceil(pairs.length / 2) * 15 + 10;
 
   // earnings | deductions
-  const { earn, ded } = slipRows(slip);
+  const { earn, ded, reimb } = slipRows(slip);
   const colW = (W - 2 * M - 20) / 2;
   const xL = M;
   const xR = M + colW + 20;
@@ -87,6 +90,14 @@ export function downloadPayslipPdf(slip: any) {
   doc.text('Gross earnings', xL + 6, y + 3).text(num(l.gross), xL + colW - 6, y + 3, { align: 'right' });
   doc.text('Total deductions', xR + 6, y + 3).text(num(l.totalDeductions), xR + colW - 6, y + 3, { align: 'right' });
   y += 30;
+
+  if (reimb.length) {
+    doc.setFont('helvetica', 'bold').setFontSize(10).text('Reimbursements (not taxable)', xL + 6, y);
+    y += 14;
+    doc.setFont('helvetica', 'normal').setFontSize(9.5);
+    reimb.forEach(([label, amount]) => { doc.text(label, xL + 6, y); doc.text(num(amount), xL + colW - 6, y, { align: 'right' }); y += 14; });
+    y += 12;
+  }
 
   doc.setFillColor(250, 112, 20).rect(M, y - 14, W - 2 * M, 28, 'F');
   doc.setTextColor(255).setFontSize(12).text('Net pay', M + 10, y + 4).text(`Rs. ${num(l.net)}`, W - M - 10, y + 4, { align: 'right' });

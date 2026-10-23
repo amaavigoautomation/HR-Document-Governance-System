@@ -39,6 +39,34 @@ export const payrollService = {
   markPaid: (month: string, paidOn?: string, ref?: string) => post('mark-paid', { month, paidOn, ref }),
   deleteRun: (month: string) => post('delete-run', { month }),
   exportRun: (month: string, kind: string) => get('export', { month, kind }),
+  // salary revisions
+  revisions: (uid?: string) => get('revisions', { uid }),
+  saveRevision: (b: unknown) => post('save-revision', b),
+  cancelRevision: (id: string) => post('cancel-revision', { id }),
+  applyRevisions: (month: string, dryRun: boolean) => post('apply-revisions', { month, dryRun }),
+  // reimbursements
+  myClaims: () => get('my-claims'),
+  submitClaim: (b: unknown) => post('submit-claim', b),
+  withdrawClaim: (id: string) => post('withdraw-claim', { id }),
+  claims: (status?: string) => get('claims', { status }),
+  decideClaim: (b: unknown) => post('decide-claim', b),
+  claimBill: (id: string) => get('claim-bill', { id }),
+  // full and final settlement
+  settlements: () => get('settlements'),
+  settlement: (uid?: string) => get('settlement', { uid }),
+  saveSettlement: (b: unknown) => post('save-settlement', b),
+  approveSettlement: (uid: string, expectedNet: number) => post('approve-settlement', { uid, expectedNet }),
+  reopenSettlement: (uid: string) => post('reopen-settlement', { uid }),
+  paySettlement: (uid: string, paidOn?: string, ref?: string) => post('pay-settlement', { uid, paidOn, ref }),
+  deleteSettlement: (uid: string) => post('delete-settlement', { uid }),
+  // income tax
+  taxDeclaration: (fy?: string, uid?: string) => get('tax-declaration', { fy, uid }),
+  saveTaxDeclaration: (b: unknown) => post('save-tax-declaration', b),
+  verifyDeclaration: (b: unknown) => post('verify-declaration', b),
+  taxDeclarations: (fy?: string) => get('tax-declarations', { fy }),
+  taxPreview: (uid?: string) => get('tax-preview', { uid }),
+  taxStatement: (fy?: string, uid?: string) => get('tax-statement', { fy, uid }),
+  tdsRegister: (fy?: string) => get('tds-register', { fy }),
 };
 
 export const inr = (n: number | undefined | null) =>

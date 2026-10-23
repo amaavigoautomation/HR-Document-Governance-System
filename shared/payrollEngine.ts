@@ -2,13 +2,15 @@
  * Payroll engine: pure functions, no database, no clock. Shared by the server and the tests.
  *
  * Scope (India): salary components, proration for loss-of-pay days, leave encashment, PF, ESIC,
- * state professional tax, one-off adjustments and loan recoveries. Income tax (TDS) is NOT calculated:
- * enter it as a fixed deduction component.
+ * state professional tax, one-off adjustments, loan recoveries and reimbursements. Income tax (TDS) is either
+ * a fixed deduction component (MANUAL) or calculated by taxEngine.ts and passed in (AUTO).
  *
  * Statutory rates, ceilings and professional tax slabs below are STARTER VALUES. They change over
  * time (and the new labour codes may change what counts as "wages"), so every one of them is editable
  * in the company's payroll setup. Have an accountant or CA confirm them before paying real salaries.
  */
+
+import { starterTaxSettings, type TaxSettings } from './taxEngine.js';
 
 export const r2 = (n: number) => Math.round((n + Number.EPSILON) * 100) / 100;
 const rInt = (n: number) => Math.round(n + 1e-9);
@@ -32,6 +34,10 @@ export interface PayComponent {
   esicWage: boolean;
   /** The basic salary component (used as the base for percentages and leave encashment). */
   isBasic?: boolean;
+  /** House rent allowance (used for the HRA exemption in the old tax regime). */
+  isHra?: boolean;
+  /** The income tax deduction. In AUTO tax mode this component is replaced by the calculated amount. */
+  isTds?: boolean;
 }
 
 export interface CtcTemplateRow {
@@ -66,7 +72,13 @@ export interface PayrollSettings {
   pf: { enabled: boolean; employeePct: number; employerPct: number; edliPct: number; adminPct: number; wageCeiling: number };
   esic: { enabled: boolean; employeePct: number; employerPct: number; wageCeiling: number };
   pt: { enabled: boolean; defaultState: string; states: Record<string, PtSlab[]> };
-  company: { legalName: string; address: string };
+  company: { legalName: string; address: string; tan: string; pan: string };
+  /** Gratuity for full and final settlements: last basic x daysPerYear / divisor x completed years, up to a cap. */
+  gratuity: { enabled: boolean; minYears: number; daysPerYear: number; divisor: number; cap: number };
+  /** Notice period used when a settlement does not say otherwise. */
+  defaultNoticeDays: number;
+  claims: { categories: string[]; billRequiredAbove: number };
+  tax: TaxSettings;
 }
 
 export interface SalaryStructure {
@@ -97,6 +109,10 @@ export interface LineInput {
   encashDays: number;
   adjustments: Adjustment[];
   loanRecoveries: { id: string; label: string; amount: number }[];
+  /** Approved expense claims paid with this salary. Added to net pay only: not taxable, no PF, ESIC or PT. */
+  reimbursements?: { id: string; label: string; amount: number }[];
+  /** AUTO tax mode: the calculated TDS replaces any TDS component on the salary. Leave undefined for MANUAL. */
+  tds?: number;
 }
 
 export interface LineAmount {
@@ -115,6 +131,10 @@ export interface PayrollLine {
   adjustments: Adjustment[];
   encashment: { days: number; perDay: number; amount: number };
   loans: { id: string; label: string; amount: number }[];
+  reimbursements: { id: string; label: string; amount: number }[];
+  reimbursementTotal: number;
+  /** Income tax deducted this month (also listed among the deductions). */
+  tds: number;
   statutory: {
     pfWage: number;
     pfEmployee: number;
@@ -145,10 +165,10 @@ const C = (p: Partial<PayComponent> & Pick<PayComponent, 'id' | 'code' | 'name' 
 
 export const STARTER_COMPONENTS: PayComponent[] = [
   C({ id: 'basic', code: 'BASIC', name: 'Basic salary', kind: 'EARNING', pfWage: true, isBasic: true }),
-  C({ id: 'hra', code: 'HRA', name: 'House rent allowance', kind: 'EARNING' }),
+  C({ id: 'hra', code: 'HRA', name: 'House rent allowance', kind: 'EARNING', isHra: true }),
   C({ id: 'special', code: 'SPL', name: 'Special allowance', kind: 'EARNING' }),
   C({ id: 'conveyance', code: 'CONV', name: 'Conveyance allowance', kind: 'EARNING' }),
-  C({ id: 'tds', code: 'TDS', name: 'Income tax (TDS)', kind: 'DEDUCTION', prorate: false, esicWage: false }),
+  C({ id: 'tds', code: 'TDS', name: 'Income tax (TDS)', kind: 'DEDUCTION', prorate: false, esicWage: false, isTds: true }),
 ];
 
 export const STARTER_CTC_TEMPLATE: CtcTemplateRow[] = [
@@ -216,9 +236,16 @@ export function starterPayrollSettings(): PayrollSettings {
     pf: { enabled: true, employeePct: 12, employerPct: 12, edliPct: 0.5, adminPct: 0.5, wageCeiling: 15000 },
     esic: { enabled: true, employeePct: 0.75, employerPct: 3.25, wageCeiling: 21000 },
     pt: { enabled: true, defaultState: 'Maharashtra', states: structuredClone(STARTER_PT) },
-    company: { legalName: '', address: '' },
+    company: { legalName: '', address: '', tan: '', pan: '' },
+    gratuity: { enabled: true, minYears: 5, daysPerYear: 15, divisor: 26, cap: 2_000_000 },
+    defaultNoticeDays: 30,
+    claims: { categories: ['Travel', 'Food', 'Fuel', 'Phone and internet', 'Medical', 'Office supplies', 'Other'], billRequiredAbove: 500 },
+    tax: starterTaxSettings(),
   };
 }
+
+export const isTdsComponent = (c: Pick<PayComponent, 'kind' | 'code' | 'isTds'>) => c.kind === 'DEDUCTION' && (c.isTds === true || c.code.toUpperCase() === 'TDS');
+export const isHraComponent = (c: Pick<PayComponent, 'kind' | 'code' | 'id' | 'isHra'>) => c.kind === 'EARNING' && (c.isHra === true || c.id === 'hra' || c.code.toUpperCase() === 'HRA');
 
 export function emptyPayrollSettings(): PayrollSettings {
   return { ...starterPayrollSettings(), components: [], ctcTemplate: [] };
@@ -311,7 +338,8 @@ export function calculateLine(i: LineInput): PayrollLine {
   const factor = payDays > 0 ? paidDays / payDays : 0;
 
   const earningsDef = s.components.filter((c) => c.kind === 'EARNING' && c.active);
-  const deductionsDef = s.components.filter((c) => c.kind === 'DEDUCTION' && c.active);
+  const autoTds = i.tds !== undefined;
+  const deductionsDef = s.components.filter((c) => c.kind === 'DEDUCTION' && c.active && !(autoTds && isTdsComponent(c)));
 
   const earnings: LineAmount[] = earningsDef
     .filter((c) => (st.amounts[c.id] || 0) !== 0)
@@ -325,6 +353,9 @@ export function calculateLine(i: LineInput): PayrollLine {
       const full = r2(st.amounts[c.id] || 0);
       return { id: c.id, code: c.code, name: c.name, full, amount: paidDays > 0 ? full : 0 };
     });
+
+  const tdsAuto = autoTds ? Math.max(0, r2(i.tds || 0)) : 0;
+  if (autoTds && tdsAuto > 0 && paidDays > 0) deductions.push({ id: 'tds-auto', code: 'TDS', name: 'Income tax (TDS)', full: tdsAuto, amount: tdsAuto });
 
   const sumOf = (rows: LineAmount[], pick: (c: PayComponent) => boolean, useFull = false) =>
     r2(rows.filter((r) => pick(s.components.find((c) => c.id === r.id)!)).reduce((n, r) => n + (useFull ? r.full : r.amount), 0));
@@ -367,8 +398,11 @@ export function calculateLine(i: LineInput): PayrollLine {
 
   const loanTotal = r2(i.loanRecoveries.reduce((n, l) => n + l.amount, 0));
   const componentDed = r2(deductions.reduce((n, d) => n + d.amount, 0));
+  const reimbursements = (i.reimbursements || []).filter((r) => r.amount > 0);
+  const reimbursementTotal = r2(reimbursements.reduce((n, r) => n + r.amount, 0));
+  const tds = r2(deductions.filter((d) => d.id === 'tds-auto' || (s.components.find((c) => c.id === d.id) && isTdsComponent(s.components.find((c) => c.id === d.id)!))).reduce((n, d) => n + d.amount, 0));
   const totalDeductions = r2(componentDed + pfEmployee + esicEmployee + pt + adjDed + loanTotal);
-  const rawNet = r2(gross - totalDeductions);
+  const rawNet = r2(gross + reimbursementTotal - totalDeductions);
   const net = Math.max(0, rawNet);
   const shortfall = rawNet < 0 ? r2(-rawNet) : 0;
 
@@ -384,8 +418,9 @@ export function calculateLine(i: LineInput): PayrollLine {
 
   return {
     paidDays, payDays, earnings, deductions, adjustments: i.adjustments, encashment: encash, loans: i.loanRecoveries,
+    reimbursements, reimbursementTotal, tds,
     statutory: { pfWage, pfEmployee, pfEmployer, edli, pfAdmin, esicWage, esicEmployee, esicEmployer, pt },
-    gross, totalDeductions, net, employerCost: r2(gross + pfEmployer + edli + pfAdmin + esicEmployer), shortfall, warnings, blocking,
+    gross, totalDeductions, net, employerCost: r2(gross + reimbursementTotal + pfEmployer + edli + pfAdmin + esicEmployer), shortfall, warnings, blocking,
   };
 }
 
@@ -402,12 +437,15 @@ export interface RunTotals {
   esicEmployer: number;
   pt: number;
   employerCost: number;
+  reimbursements: number;
+  tds: number;
 }
 
-export function totalsOf(lines: Pick<PayrollLine, 'gross' | 'totalDeductions' | 'net' | 'employerCost' | 'statutory'>[]): RunTotals {
-  const t: RunTotals = { headcount: lines.length, gross: 0, deductions: 0, net: 0, pfEmployee: 0, pfEmployer: 0, esicEmployee: 0, esicEmployer: 0, pt: 0, employerCost: 0 };
+export function totalsOf(lines: (Pick<PayrollLine, 'gross' | 'totalDeductions' | 'net' | 'employerCost' | 'statutory'> & Partial<Pick<PayrollLine, 'reimbursementTotal' | 'tds'>>)[]): RunTotals {
+  const t: RunTotals = { headcount: lines.length, gross: 0, deductions: 0, net: 0, pfEmployee: 0, pfEmployer: 0, esicEmployee: 0, esicEmployer: 0, pt: 0, employerCost: 0, reimbursements: 0, tds: 0 };
   for (const l of lines) {
     t.gross += l.gross; t.deductions += l.totalDeductions; t.net += l.net; t.employerCost += l.employerCost;
+    t.reimbursements += l.reimbursementTotal || 0; t.tds += l.tds || 0;
     t.pfEmployee += l.statutory.pfEmployee; t.pfEmployer += l.statutory.pfEmployer;
     t.esicEmployee += l.statutory.esicEmployee; t.esicEmployer += l.statutory.esicEmployer; t.pt += l.statutory.pt;
   }
@@ -416,3 +454,13 @@ export function totalsOf(lines: Pick<PayrollLine, 'gross' | 'totalDeductions' | 
 }
 
 export const maskAccount = (v: string) => (v.length <= 4 ? v : `${'X'.repeat(Math.max(0, v.length - 4))}${v.slice(-4)}`);
+
+/** What a finished line contributes to the year's tax picture. */
+export function lineFacts(line: Pick<PayrollLine, 'gross' | 'earnings' | 'statutory' | 'tds' | 'deductions'>, components: PayComponent[]) {
+  const comp = (id: string) => components.find((c) => c.id === id);
+  const basic = r2(line.earnings.filter((e) => { const c = comp(e.id); return !!c && (c.isBasic || c.pfWage); }).reduce((n, e) => n + e.amount, 0));
+  const hra = r2(line.earnings.filter((e) => { const c = comp(e.id); return !!c && isHraComponent(c); }).reduce((n, e) => n + e.amount, 0));
+  // old lines have no tds field: fall back to the TDS deduction
+  const tds = line.tds !== undefined ? line.tds : r2(line.deductions.filter((d) => d.code.toUpperCase() === 'TDS').reduce((n, d) => n + d.amount, 0));
+  return { gross: line.gross, basic, hra, epf: line.statutory.pfEmployee, pt: line.statutory.pt, tds };
+}
