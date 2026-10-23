@@ -130,6 +130,8 @@ export const TaxAdmin: React.FC<{ canManage: boolean }> = ({ canManage }) => {
   const [data, setData] = useState<any | null>(null);
   const [open, setOpen] = useState<string | null>(null);
   const { busy, note, run } = useRunner();
+  const formRef = React.useRef<HTMLDivElement>(null);
+  useEffect(() => { if (open) setTimeout(() => formRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' }), 50); }, [open]);
   const load = useCallback(async () => setData(await payrollService.taxDeclarations()), []);
   useEffect(() => { load().catch(() => undefined); }, [load]);
   if (!data) return <div className="text-sm text-slate-500">Loading…</div>;
@@ -145,19 +147,25 @@ export const TaxAdmin: React.FC<{ canManage: boolean }> = ({ canManage }) => {
             <thead className="text-left text-slate-500"><tr><th className="p-1.5">Person</th><th className="p-1.5">PAN</th><th className="p-1.5">Regime</th><th className="p-1.5">Declaration</th><th /></tr></thead>
             <tbody>
               {data.rows.map((r: any) => (
-                <tr key={r.uid} className="border-t border-slate-100">
+                <React.Fragment key={r.uid}>
+                <tr className={`border-t border-slate-100 ${open === r.uid ? 'bg-orange-50/40' : ''}`}>
                   <td className="p-1.5"><div className="font-semibold text-slate-800">{r.name}</div><div className="text-slate-400">{r.empId} · {r.department || '-'}</div></td>
                   <td className="p-1.5">{r.pan || <span className="text-amber-600">Missing</span>}</td>
                   <td className="p-1.5">{r.regime === 'OLD' ? 'Old' : 'New'}</td>
                   <td className="p-1.5">{r.status === 'NONE' ? <span className="text-slate-400">Not declared</span> : r.status === 'VERIFIED' ? 'Verified' : 'Submitted'}</td>
                   <td className="p-1.5 text-right"><button className={btnGhost} onClick={() => setOpen(open === r.uid ? null : r.uid)}>{open === r.uid ? 'Close' : canManage ? 'Open / edit' : 'View'}</button></td>
                 </tr>
+                {open === r.uid && (
+                  <tr className="bg-orange-50/40">
+                    <td colSpan={5} className="p-2 pb-4"><div ref={formRef} className="scroll-mt-4"><DeclarationForm uid={r.uid} canManage={canManage} onSaved={() => load()} /></div></td>
+                  </tr>
+                )}
+                </React.Fragment>
               ))}
             </tbody>
           </table>
         </div>
       </Card>
-      {open && <DeclarationForm uid={open} canManage={canManage} onSaved={() => load()} />}
     </div>
   );
 };
