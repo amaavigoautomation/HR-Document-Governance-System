@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { leaveService } from '../../services/leaveService';
-import { Card, Notice, StatusPill, btnDanger, btnGhost, btnPrimary, days, dayName, input, niceDate, range, thisMonth, useRunner } from './ui';
+import { Card, Notice, StatusPill, btnDanger, btnGhost, btnPrimary, days, input, niceDate, range, thisMonth, todayIst, useRunner } from './ui';
 
 export const ApprovalsTab: React.FC<{ reload: () => void }> = ({ reload }) => {
   const [data, setData] = useState<{ leaves: any[]; regularizations: any[] } | null>(null);
@@ -74,61 +74,157 @@ export const ApprovalsTab: React.FC<{ reload: () => void }> = ({ reload }) => {
   );
 };
 
+
+// ------------------------------------------------------------------ team calendar (month grid)
+
+const WEEKDAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+const MAX_CHIPS = 3;
+
+const shiftMonth = (m: string, delta: number) =>
+  new Date(Date.UTC(parseInt(m.slice(0, 4), 10), parseInt(m.slice(5, 7), 10) - 1 + delta, 1)).toISOString().slice(0, 7);
+const monthTitle = (m: string) => `${MONTH_NAMES[parseInt(m.slice(5, 7), 10) - 1]} ${m.slice(0, 4)}`;
+
+const CHIP_STYLE: Record<string, string> = {
+  PENDING: 'bg-orange-100 text-orange-800 border-orange-200',
+  APPROVED: 'bg-sky-100 text-sky-800 border-sky-200',
+};
+
 export const TeamCalendar: React.FC = () => {
   const [month, setMonth] = useState(thisMonth());
   const [data, setData] = useState<any | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [selected, setSelected] = useState<string | null>(null);
+  const today = todayIst();
 
   useEffect(() => {
     const y = parseInt(month.slice(0, 4), 10);
     const m = parseInt(month.slice(5, 7), 10);
     const last = new Date(Date.UTC(y, m, 0)).toISOString().slice(0, 10);
+    let alive = true;
     setError(null);
-    leaveService.teamCalendar(`${month}-01`, last).then(setData).catch((e) => setError(e.message));
+    setLoading(true);
+    setSelected(null);
+    leaveService.teamCalendar(`${month}-01`, last)
+      .then((d) => alive && setData(d))
+      .catch((e) => alive && setError(e.message))
+      .finally(() => alive && setLoading(false));
+    return () => { alive = false; };
   }, [month]);
 
-  const dates: string[] = [];
-  if (data) for (let d = data.from; d <= data.to; d = new Date(new Date(`${d}T00:00:00Z`).getTime() + 86400000).toISOString().slice(0, 10)) dates.push(d);
-  const people: string[] = Array.from(new Set<string>((data?.items || []).map((i: any) => i.name)));
-  const holiday = (d: string) => data?.holidays.find((h: any) => h.date === d);
+  const y = parseInt(month.slice(0, 4), 10);
+  const m = parseInt(month.slice(5, 7), 10);
+  const daysInMonth = new Date(Date.UTC(y, m, 0)).getUTCDate();
+  const offset = (new Date(Date.UTC(y, m - 1, 1)).getUTCDay() + 6) % 7; // Monday first
+  const totalCells = Math.ceil((offset + daysInMonth) / 7) * 7;
+  const iso = (day: number) => `${month}-${String(day).padStart(2, '0')}`;
+
+  const items: any[] = data?.items || [];
+  const holidays: any[] = data?.holidays || [];
+  const leavesOn = (d: string) => items.filter((i) => i.from <= d && i.to >= d);
+  const holidayOn = (d: string) => holidays.find((h) => h.date === d);
+  const awayThisMonth = new Set(items.map((i) => i.uid || i.name)).size;
+
+  const selectedLeaves = selected ? leavesOn(selected) : [];
+  const selectedHoliday = selected ? holidayOn(selected) : undefined;
 
   return (
     <div className="space-y-3">
-      <div className="flex items-center gap-3">
-        <input type="month" className={`${input} max-w-[11rem]`} value={month} onChange={(e) => e.target.value && setMonth(e.target.value)} />
-        <span className="text-xs text-slate-500">Orange = pending, blue = approved. Holidays are shaded.</span>
-      </div>
-      {error && <Notice tone="error">{error}</Notice>}
-      <div className="bg-white border border-slate-200 rounded-xl overflow-x-auto">
-        <table className="text-[10px] border-collapse">
-          <thead>
-            <tr>
-              <th className="p-2 text-left sticky left-0 bg-white min-w-[8rem]">Person</th>
-              {dates.map((d) => (
-                <th key={d} title={holiday(d)?.name} className={`px-1 py-1 w-6 font-semibold ${holiday(d) ? 'bg-violet-50 text-violet-700' : ['Sun'].includes(dayName(d)) ? 'text-slate-300' : 'text-slate-500'}`}>
-                  <div>{d.slice(8)}</div><div className="font-normal">{dayName(d)[0]}</div>
-                </th>
+      <div className="bg-white border border-slate-200 rounded-xl overflow-hidden">
+        {/* header */}
+        <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-3 border-b border-slate-200">
+          <div className="flex items-center gap-2">
+            <button className={btnGhost} aria-label="Previous month" onClick={() => setMonth(shiftMonth(month, -1))}>‹</button>
+            <h3 className="text-base font-bold text-slate-900 min-w-[9.5rem] text-center">{monthTitle(month)}</h3>
+            <button className={btnGhost} aria-label="Next month" onClick={() => setMonth(shiftMonth(month, 1))}>›</button>
+            {month !== thisMonth() && <button className={btnGhost} onClick={() => setMonth(thisMonth())}>Today</button>}
+          </div>
+          <div className="flex flex-wrap items-center gap-3 text-[11px] text-slate-500">
+            <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-sm bg-sky-400" /> Approved</span>
+            <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-sm bg-orange-300" /> Pending</span>
+            <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-sm bg-violet-300" /> Holiday</span>
+          </div>
+        </div>
+
+        {error && <div className="p-3"><Notice tone="error">{error}</Notice></div>}
+
+        <div className={`overflow-x-auto ${loading ? 'opacity-60' : ''} transition-opacity`}>
+          <div className="min-w-[640px]">
+            {/* weekday row */}
+            <div className="grid grid-cols-7 border-b border-slate-200 bg-slate-50">
+              {WEEKDAYS.map((w, i) => (
+                <div key={w} className={`px-2 py-2 text-[11px] font-bold uppercase tracking-wide ${i === 6 ? 'text-slate-400' : 'text-slate-500'}`}>{w}</div>
               ))}
-            </tr>
-          </thead>
-          <tbody>
-            {people.length === 0 && <tr><td className="p-3 text-slate-500" colSpan={dates.length + 1}>No one is away this month.</td></tr>}
-            {people.map((name) => (
-              <tr key={name} className="border-t border-slate-100">
-                <td className="p-2 sticky left-0 bg-white font-semibold text-slate-700">{name}</td>
-                {dates.map((d) => {
-                  const it = data.items.find((i: any) => i.name === name && i.from <= d && i.to >= d);
-                  return (
-                    <td key={d} title={it ? `${it.type || 'On leave'}${it.reason ? ': ' + it.reason : ''}` : undefined}
-                      className={`w-6 h-6 ${it ? (it.status === 'PENDING' ? 'bg-orange-300' : 'bg-sky-400') : holiday(d) ? 'bg-violet-50' : ''}`} />
-                  );
-                })}
-              </tr>
-            ))}
-          </tbody>
-        </table>
+            </div>
+
+            {/* day cells */}
+            <div className="grid grid-cols-7">
+              {Array.from({ length: totalCells }, (_, idx) => {
+                const day = idx - offset + 1;
+                const inMonth = day >= 1 && day <= daysInMonth;
+                const borders = `border-b border-slate-100 ${idx % 7 !== 6 ? 'border-r' : ''}`;
+                if (!inMonth) return <div key={idx} className={`min-h-[6.5rem] bg-slate-50/60 ${borders}`} />;
+
+                const d = iso(day);
+                const leaves = leavesOn(d);
+                const hol = holidayOn(d);
+                const isToday = d === today;
+                const isSel = d === selected;
+                const sunday = idx % 7 === 6;
+                return (
+                  <button
+                    key={idx}
+                    type="button"
+                    onClick={() => setSelected(isSel ? null : d)}
+                    className={`min-h-[6.5rem] p-1.5 text-left align-top flex flex-col gap-1 transition-colors ${borders} ${
+                      isSel ? 'bg-[#FA7014]/5 ring-2 ring-inset ring-[#FA7014]/50' : hol ? 'bg-violet-50/60 hover:bg-violet-50' : sunday ? 'bg-slate-50/60 hover:bg-slate-100/60' : 'hover:bg-slate-50'
+                    }`}
+                  >
+                    <span className={`text-xs font-bold w-6 h-6 flex items-center justify-center rounded-full ${isToday ? 'bg-[#FA7014] text-white' : sunday ? 'text-slate-400' : 'text-slate-700'}`}>{day}</span>
+                    {hol && <span className="text-[10px] leading-tight font-semibold text-violet-700 truncate w-full" title={hol.name}>{hol.name}</span>}
+                    {leaves.slice(0, MAX_CHIPS).map((l, k) => (
+                      <span key={k} title={`${l.name}${l.type ? ' · ' + l.type : ''}${l.status === 'PENDING' ? ' (pending)' : ''}`}
+                        className={`text-[10px] leading-tight font-semibold px-1.5 py-0.5 rounded border truncate w-full ${CHIP_STYLE[l.status] || CHIP_STYLE.APPROVED}`}>
+                        {l.name}{l.halfDay ? ' ½' : ''}
+                      </span>
+                    ))}
+                    {leaves.length > MAX_CHIPS && <span className="text-[10px] font-semibold text-slate-500 px-1">+{leaves.length - MAX_CHIPS} more</span>}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+
+        <div className="px-4 py-2.5 border-t border-slate-200 text-xs text-slate-500 bg-slate-50/60">
+          {items.length === 0 ? 'No one is away this month.' : `${awayThisMonth} ${awayThisMonth === 1 ? 'person is' : 'people are'} away this month.`} Click a day to see details.
+        </div>
       </div>
-      {data?.holidays.length > 0 && <div className="text-xs text-slate-500">Holidays: {data.holidays.map((h: any) => `${niceDate(h.date)} ${h.name}`).join(' · ')}</div>}
+
+      {/* selected day detail */}
+      {selected && (
+        <Card title={niceDate(selected)} right={<button className={btnGhost} onClick={() => setSelected(null)}>Close</button>}>
+          {selectedHoliday && <div className="text-xs font-semibold text-violet-700 mb-2">Holiday: {selectedHoliday.name}{selectedHoliday.optional ? ' (optional)' : ''}</div>}
+          {selectedLeaves.length === 0 ? (
+            <div className="text-sm text-slate-500">Nobody is on leave this day.</div>
+          ) : (
+            <div className="divide-y divide-slate-100">
+              {selectedLeaves.map((l, k) => (
+                <div key={k} className="py-2 flex flex-wrap items-center justify-between gap-2">
+                  <div>
+                    <div className="text-sm font-bold text-slate-800">{l.name}{l.halfDay ? ' · half day' : ''}</div>
+                    <div className="text-xs text-slate-500">
+                      {l.type || 'On leave'} · {range(l.from, l.to)}{l.reason ? ` · “${l.reason}”` : ''}
+                    </div>
+                  </div>
+                  <StatusPill status={l.status} />
+                </div>
+              ))}
+            </div>
+          )}
+        </Card>
+      )}
     </div>
   );
 };
