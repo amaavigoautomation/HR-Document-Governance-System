@@ -64,6 +64,7 @@ export const MyClaims: React.FC = () => {
   const [data, setData] = useState<any | null>(null);
   const [f, setF] = useState({ category: '', amount: '', expenseDate: todayIst(), description: '' });
   const [file, setFile] = useState<File | null>(null);
+  const fileRef = React.useRef<HTMLInputElement>(null);
   const { busy, note, run } = useRunner();
 
   const load = useCallback(async () => {
@@ -87,12 +88,22 @@ export const MyClaims: React.FC = () => {
           <div className="md:col-span-2"><Field label="What was it for?"><input className={input} value={f.description} onChange={(e) => setF({ ...f, description: e.target.value })} /></Field></div>
         </div>
         <div className="flex flex-wrap items-end gap-3 mt-3">
-          <Field label={needBill ? 'Bill (required)' : 'Bill (optional)'}><input type="file" accept="image/*,application/pdf" className="text-xs" onChange={(e) => setFile(e.target.files?.[0] || null)} /></Field>
+          <Field label={needBill ? 'Bill (required)' : 'Bill (optional)'}>
+            <input ref={fileRef} type="file" accept="image/*,application/pdf" className="hidden" onChange={(e) => setFile(e.target.files?.[0] || null)} />
+            <div className="flex items-center gap-2">
+              <button type="button" className={btnGhost} onClick={() => fileRef.current?.click()}>{file ? 'Change bill' : 'Attach bill'}</button>
+              {file ? (
+                <span className="flex items-center gap-1.5 text-xs text-slate-700 min-w-0"><span className="truncate max-w-[10rem]">{file.name}</span>
+                  <button type="button" aria-label="Remove bill" className="text-rose-600 font-bold" onClick={() => { setFile(null); if (fileRef.current) fileRef.current.value = ''; }}>×</button></span>
+              ) : <span className="text-[11px] text-slate-400">JPG, PNG or PDF</span>}
+            </div>
+          </Field>
           <button className={btnPrimary} disabled={busy} onClick={() => run(async () => {
             const bill = file ? await fileToBill(file) : undefined;
             await payrollService.submitClaim({ ...f, amount: Number(f.amount), bill });
             setF({ ...f, amount: '', description: '' });
             setFile(null);
+            if (fileRef.current) fileRef.current.value = '';
             await load();
           }, 'Claim sent for approval.')}>Submit claim</button>
         </div>
