@@ -10,6 +10,7 @@ import { dispatchLiveEmail, getEmailConfigStatus } from './src/services/serverEm
 import { routeRecruitment } from './api/_lib/recruitmentApi';
 import { routeApplications, routeApply } from './api/_lib/applicationsApi';
 import { routeLeave } from './api/_lib/leaveApi';
+import { routePayroll } from './api/_lib/payrollApi';
 import { UserRole } from './src/types';
 import { generateJobDescription } from './api/_lib/jdGenerator';
 import { publishForCompany } from './api/_lib/careersPublisher';
@@ -181,6 +182,13 @@ async function startServer() {
   app.all('/api/leave/:action', async (req, res) => {
     try {
       const ip = String(req.headers['x-forwarded-for'] || req.socket.remoteAddress || '').split(',')[0].trim();
+      if (req.params.action.startsWith('payroll-')) {
+        const out = await routePayroll({
+          method: req.method, action: req.params.action.slice('payroll-'.length), query: req.query as Record<string, any>,
+          body: req.body, headers: req.headers as Record<string, any>,
+        });
+        return res.status(out.status).json(out.json);
+      }
       const { status, json } = await routeLeave({
         method: req.method,
         action: req.params.action,

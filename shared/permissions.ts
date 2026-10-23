@@ -43,6 +43,11 @@ export const PERMISSIONS: PermissionDef[] = [
   { key: 'leave.manage', label: 'Manage leave and attendance: policies, holidays, balances, all requests', group: 'Leave & Attendance' },
   { key: 'leave.report', label: 'View leave and attendance reports for everyone', group: 'Leave & Attendance' },
 
+  // Payroll (everyone can see their own payslips). Not part of any default role except Company Admin:
+  // give these to a role or a person on purpose, because they expose everyone's salary.
+  { key: 'payroll.manage', label: 'Run payroll: salary structures, statutory setup, payroll runs, approve and lock', group: 'Payroll' },
+  { key: 'payroll.view', label: 'View payroll runs, salaries and payslips for everyone (read-only)', group: 'Payroll' },
+
   // Administration
   { key: 'users.manage', label: 'Add, edit and deactivate users', group: 'Administration' },
   { key: 'departments.manage', label: 'Manage departments', group: 'Administration' },

@@ -43,6 +43,7 @@ import { RequisitionsModule } from './components/RequisitionsModule';
 import { OnboardingModule } from './components/OnboardingModule';
 import { ApplicationsModule } from './components/ApplicationsModule';
 import { LeaveModule } from './components/LeaveModule';
+import { PayrollModule } from './components/PayrollModule';
 import { isDepartmentHead } from './utils/requisitionPermissions';
 import { hasModulePermission, normalizeAuthorizedModules } from './utils/authorization';
 import { DocumentSuggestion } from './types';
@@ -191,7 +192,7 @@ export default function App() {
   const [isNotifDrawerOpen, setIsNotifDrawerOpen] = useState(false);
   const [readerVersion, setReaderVersion] = useState<DocumentVersion | null>(null);
   const [employeeTab, setEmployeeTab] = useState<'acknowledgements' | 'all-documents'>('acknowledgements');
-  const [employeeSection, setEmployeeSection] = useState<'policies' | 'leave'>('policies');
+  const [employeeSection, setEmployeeSection] = useState<'policies' | 'leave' | 'payroll'>('policies');
 
   // Pending compliance documents count for logged in Employee
   const employeePendingCount = useMemo(() => {
@@ -580,7 +581,7 @@ export default function App() {
               </div>
             )}
             <div className="mb-5 inline-flex rounded-xl border border-slate-200 bg-white p-1 text-xs font-bold">
-              {([['policies', 'Policies'], ['leave', 'Leave & Attendance']] as const).map(([k, label]) => (
+              {([['policies', 'Policies'], ['leave', 'Leave & Attendance'], ['payroll', 'Payroll']] as const).map(([k, label]) => (
                 <button
                   key={k}
                   type="button"
@@ -593,6 +594,8 @@ export default function App() {
             </div>
             {employeeSection === 'leave' ? (
               <LeaveModule currentUser={currentUser} />
+            ) : employeeSection === 'payroll' ? (
+              <PayrollModule currentUser={currentUser} />
             ) : (
             <EmployeePortalView
               currentUser={currentUser}
@@ -620,6 +623,12 @@ export default function App() {
           {hrAgentModule === 'leave-management' && currentUser && (
             <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
               <LeaveModule currentUser={currentUser} />
+            </div>
+          )}
+
+          {hrAgentModule === 'payroll' && currentUser && (
+            <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
+              <PayrollModule currentUser={currentUser} />
             </div>
           )}
 

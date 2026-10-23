@@ -20,6 +20,7 @@ import {
   Sparkles,
   Settings2,
   CalendarDays,
+  Wallet,
 } from 'lucide-react';
 import { User, UserRole } from '../types';
 import { AmaavigoLogo } from './AmaavigoLogo';
@@ -39,6 +40,7 @@ export type HRAgentModule =
   | 'talent-acquisition-applications'
   | 'talent-acquisition-onboarding'
   | 'leave-management'
+  | 'payroll'
   | 'administration';
 
 interface HRAgentShellProps {
@@ -81,7 +83,7 @@ export const HRAgentShell: React.FC<HRAgentShellProps> = ({
 
   // Auto-redirect if currently selected module is not permitted
   useEffect(() => {
-    if (activeModule === 'administration' || activeModule === 'leave-management') return;
+    if (activeModule === 'administration' || activeModule === 'leave-management' || activeModule === 'payroll') return;
     if (activeModule === 'document-version-control' && !hasDocGovAccess && hasTalentAccess) {
       onSelectModule('talent-acquisition-overview');
     } else if (
@@ -502,6 +504,44 @@ export const HRAgentShell: React.FC<HRAgentShellProps> = ({
                     </div>
                   </div>
                   {activeModule === 'leave-management' && (
+                    <div className="w-5 h-5 rounded-full bg-[#FA7014] text-white flex items-center justify-center shrink-0 ml-1.5">
+                      <Check className="w-3 h-3 stroke-[3]" />
+                    </div>
+                  )}
+                </button>
+
+                {/* ---------------------------------------------------- */}
+                {/* PAYROLL (everyone sees payslips; payroll.* sees more) */}
+                {/* ---------------------------------------------------- */}
+                <button
+                  id="nav-module-payroll"
+                  type="button"
+                  onClick={() => {
+                    onSelectModule('payroll');
+                    setIsMobileSidebarOpen(false);
+                  }}
+                  className={`w-full px-3 py-2.5 rounded-xl border flex items-center justify-between text-left transition-all cursor-pointer ${
+                    activeModule === 'payroll'
+                      ? 'bg-[#FA7014]/10 border-[#FA7014]/40 text-slate-900 shadow-xs'
+                      : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50 hover:border-slate-300'
+                  }`}
+                >
+                  <div className="flex items-center space-x-2.5 min-w-0">
+                    <div
+                      className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 ${
+                        activeModule === 'payroll' ? 'bg-[#FA7014] text-white shadow-xs' : 'bg-slate-100 text-slate-600'
+                      }`}
+                    >
+                      <Wallet className="w-4 h-4" />
+                    </div>
+                    <div className="truncate">
+                      <span className={`text-xs font-bold block truncate ${activeModule === 'payroll' ? 'text-[#FA7014]' : 'text-slate-800'}`}>
+                        Payroll
+                      </span>
+                      <span className="text-[10px] text-slate-500 font-medium block truncate">Payslips, salary runs &amp; statutory setup</span>
+                    </div>
+                  </div>
+                  {activeModule === 'payroll' && (
                     <div className="w-5 h-5 rounded-full bg-[#FA7014] text-white flex items-center justify-center shrink-0 ml-1.5">
                       <Check className="w-3 h-3 stroke-[3]" />
                     </div>

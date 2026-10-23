@@ -212,14 +212,14 @@ async function attendanceOfUser(cid: string, uid: string, month: string): Promis
   return m;
 }
 
-function monthRange(month: string) {
+export function monthRange(month: string) {
   if (!/^\d{4}-\d{2}$/.test(month)) throw new LeaveError(400, 'Choose a valid month.');
   const y = parseInt(month.slice(0, 4), 10);
   const m = parseInt(month.slice(5, 7), 10);
   return { from: `${month}-01`, to: lastDayOfMonth(y, m) };
 }
 
-function buildMonth(settings: LeaveSettings, locId: string, joinDate: string, month: string, records: Map<string, any>, requests: LeaveRequest[]) {
+export function buildMonth(settings: LeaveSettings, locId: string, joinDate: string, month: string, records: Map<string, any>, requests: LeaveRequest[]) {
   const { from, to } = monthRange(month);
   const loc = findLocation(settings, locId);
   const leave = leaveByDate(requests);

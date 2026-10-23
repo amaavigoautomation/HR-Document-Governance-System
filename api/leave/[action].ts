@@ -1,4 +1,5 @@
 import { routeLeave } from '../_lib/leaveApi.js';
+import { routePayroll } from '../_lib/payrollApi.js';
 
 export default async function handler(req: any, res: any) {
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -8,9 +9,17 @@ export default async function handler(req: any, res: any) {
 
   try {
     const ip = String(req.headers['x-forwarded-for'] || req.socket?.remoteAddress || '').split(',')[0].trim();
+    const action = String(req.query?.action || '');
+    // Payroll shares this function (Vercel Hobby allows only 12): /api/leave/payroll-<action>
+    if (action.startsWith('payroll-')) {
+      const { status, json } = await routePayroll({
+        method: req.method, action: action.slice('payroll-'.length), query: req.query || {}, body: req.body, headers: req.headers,
+      });
+      return res.status(status).json(json);
+    }
     const { status, json } = await routeLeave({
       method: req.method,
-      action: String(req.query?.action || ''),
+      action,
       query: req.query || {},
       body: req.body,
       headers: req.headers,
