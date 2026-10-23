@@ -90,10 +90,24 @@ export function resolveDatabaseId(): string {
   return (fileConfig.firestoreDatabaseId || '').toString().trim();
 }
 
+/** Firestore refuses `undefined` anywhere in a document. Optional fields are left undefined all over the code, so tell it to skip them. */
+const configured = new WeakSet<object>();
+function lenient(db: Firestore): Firestore {
+  if (!configured.has(db)) {
+    configured.add(db);
+    try {
+      db.settings({ ignoreUndefinedProperties: true });
+    } catch {
+      /* settings can be applied only once, before the first request; the instance was already set up */
+    }
+  }
+  return db;
+}
+
 export function adminDb(): Firestore {
   if (fake?.db) return fake.db;
   const databaseId = resolveDatabaseId();
-  return databaseId && databaseId !== '(default)' ? getFirestore(adminApp(), databaseId) : getFirestore(adminApp());
+  return lenient(databaseId && databaseId !== '(default)' ? getFirestore(adminApp(), databaseId) : getFirestore(adminApp()));
 }
 
 export { applicationDefault };  
