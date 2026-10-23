@@ -48,6 +48,9 @@ export const PERMISSIONS: PermissionDef[] = [
   { key: 'payroll.manage', label: 'Run payroll: salary structures, statutory setup, payroll runs, approve and lock', group: 'Payroll' },
   { key: 'payroll.view', label: 'View payroll runs, salaries and payslips for everyone (read-only)', group: 'Payroll' },
 
+  // People lifecycle (everyone sees the directory, their own tasks, exit and letters; managers handle their team's exits)
+  { key: 'lifecycle.manage', label: 'Run onboarding tasks, exits and no-dues clearance, and issue letters', group: 'People' },
+
   // Administration
   { key: 'users.manage', label: 'Add, edit and deactivate users', group: 'Administration' },
   { key: 'departments.manage', label: 'Manage departments', group: 'Administration' },
@@ -107,7 +110,7 @@ export const DEFAULT_ROLE_TEMPLATES: RoleTemplate[] = [
       'req.create', 'req.view_all', 'req.assign', 'req.hr_decide', 'req.manage_jd',
       'talent.view', 'candidate.evaluate', 'onboarding.manage', 'app.manage',
       'users.manage', 'departments.manage', 'doc.acknowledge', 'doc.suggest',
-      'leave.manage', 'leave.report',
+      'leave.manage', 'leave.report', 'lifecycle.manage',
     ],
   },
   {
@@ -119,7 +122,7 @@ export const DEFAULT_ROLE_TEMPLATES: RoleTemplate[] = [
       'doc.create', 'compliance.view',
       'req.create', 'req.hr_decide', 'req.manage_jd',
       'talent.view', 'candidate.evaluate', 'onboarding.manage', 'app.manage',
-      'doc.acknowledge', 'doc.suggest', 'leave.manage', 'leave.report',
+      'doc.acknowledge', 'doc.suggest', 'leave.manage', 'leave.report', 'lifecycle.manage',
     ],
   },
   {

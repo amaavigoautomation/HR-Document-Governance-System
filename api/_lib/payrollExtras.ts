@@ -581,9 +581,21 @@ async function settlementOf(who: Who, q: any): Promise<Result> {
   const profile = await profileOf(who.cid, uid);
   const lwd = doc?.input.lastWorkingDay || istToday();
   const balances = who.canView ? await leaveBalances(who.cid, uid, lwd) : [];
+  // an accepted exit in People carries the dates and the no-dues recoveries into the settlement
+  let exitHint: any = null;
+  if (who.canView) {
+    const es = await db().collection('lifecycleExits').doc(`${who.cid}__${uid}`).get();
+    const ex: any = es.exists ? es.data() : null;
+    if (ex && ex.companyId === who.cid && ['APPROVED', 'COMPLETED'].includes(ex.status)) {
+      exitHint = {
+        lastWorkingDay: ex.lastWorkingDay, resignationDate: ex.resignationDate, reason: ({ END_OF_CONTRACT: 'OTHER', ABSCONDING: 'TERMINATION' } as Record<string, string>)[ex.reason] || ex.reason, noticeRequiredDays: ex.noticeRequiredDays, noticeServedDays: ex.noticeServedDays,
+        extras: (ex.clearance || []).filter((c: any) => c.status === 'DUES' && c.dues > 0).map((c: any) => ({ kind: 'DEDUCTION', label: `No-dues: ${String(c.label).slice(0, 60)}`, amount: c.dues })),
+      };
+    }
+  }
   return ok({
     settlement: doc, company: settings.company,
-    defaults: { name: person.name, joinDate: profile?.joinDate || '', noticeDays: settings.defaultNoticeDays, leaveBalances: balances, hasStructure: (await loadStructures(who.cid)).has(uid) },
+    exitHint, defaults: { name: person.name, joinDate: profile?.joinDate || '', noticeDays: settings.defaultNoticeDays, leaveBalances: balances, hasStructure: (await loadStructures(who.cid)).has(uid) },
   });
 }
 

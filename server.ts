@@ -11,6 +11,7 @@ import { routeRecruitment } from './api/_lib/recruitmentApi';
 import { routeApplications, routeApply } from './api/_lib/applicationsApi';
 import { routeLeave } from './api/_lib/leaveApi';
 import { routePayroll } from './api/_lib/payrollApi';
+import { routeLifecycle } from './api/_lib/lifecycleApi';
 import { UserRole } from './src/types';
 import { generateJobDescription } from './api/_lib/jdGenerator';
 import { publishForCompany } from './api/_lib/careersPublisher';
@@ -185,6 +186,13 @@ async function startServer() {
       if (req.params.action.startsWith('payroll-')) {
         const out = await routePayroll({
           method: req.method, action: req.params.action.slice('payroll-'.length), query: req.query as Record<string, any>,
+          body: req.body, headers: req.headers as Record<string, any>,
+        });
+        return res.status(out.status).json(out.json);
+      }
+      if (req.params.action.startsWith('lifecycle-')) {
+        const out = await routeLifecycle({
+          method: req.method, action: req.params.action.slice('lifecycle-'.length), query: req.query as Record<string, any>,
           body: req.body, headers: req.headers as Record<string, any>,
         });
         return res.status(out.status).json(out.json);

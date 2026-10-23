@@ -1,5 +1,6 @@
 import { routeLeave } from '../_lib/leaveApi.js';
 import { routePayroll } from '../_lib/payrollApi.js';
+import { routeLifecycle } from '../_lib/lifecycleApi.js';
 
 export default async function handler(req: any, res: any) {
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -14,6 +15,13 @@ export default async function handler(req: any, res: any) {
     if (action.startsWith('payroll-')) {
       const { status, json } = await routePayroll({
         method: req.method, action: action.slice('payroll-'.length), query: req.query || {}, body: req.body, headers: req.headers,
+      });
+      return res.status(status).json(json);
+    }
+    // People lifecycle (onboarding tasks, exits, letters, directory) shares it too: /api/leave/lifecycle-<action>
+    if (action.startsWith('lifecycle-')) {
+      const { status, json } = await routeLifecycle({
+        method: req.method, action: action.slice('lifecycle-'.length), query: req.query || {}, body: req.body, headers: req.headers,
       });
       return res.status(status).json(json);
     }

@@ -95,6 +95,10 @@ export const SettlementsTab: React.FC<{ canManage: boolean }> = ({ canManage }) 
       noticeRequiredDays: i.noticeRequiredDays ?? '', noticeServedDays: i.noticeServedDays ?? '', recoverNotice: i.recoverNotice,
       encashDays: i.encashDays ?? '', encashTypeId: i.encashTypeId || '', forceGratuity: i.forceGratuity,
       extras: (i.extras || []).map((x: any) => ({ kind: x.kind, label: x.label, amount: String(x.amount) })),
+    } : r.exitHint ? {
+      ...blankForm(), reason: r.exitHint.reason === 'RESIGNATION' || !r.exitHint.reason ? 'RESIGNATION' : r.exitHint.reason, lastWorkingDay: r.exitHint.lastWorkingDay,
+      resignationDate: r.exitHint.resignationDate || '', noticeRequiredDays: r.exitHint.noticeRequiredDays ?? '', noticeServedDays: r.exitHint.noticeServedDays ?? '',
+      extras: (r.exitHint.extras || []).map((x: any) => ({ kind: x.kind, label: x.label, amount: String(x.amount) })),
     } : blankForm());
   }, []);
 
@@ -138,6 +142,7 @@ export const SettlementsTab: React.FC<{ canManage: boolean }> = ({ canManage }) 
 
       {uid && detail && (
         <Card title={`Settlement · ${s?.employee.name || detail.defaults?.name || ''}`} right={s && <Pill status={s.status} />}>
+          {detail.exitHint && !s && <Notice tone="ok">Filled in from the accepted exit in People: dates, notice period and no-dues recoveries. Check them, then calculate.</Notice>}
           {!detail.defaults?.hasStructure && !s && <Notice tone="error">This person has no salary on file yet, so a settlement cannot be worked out.</Notice>}
           {editable && (
             <div className="space-y-3 mb-4">

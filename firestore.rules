@@ -485,5 +485,11 @@ service cloud.firestore {
     match /payrollClaimFiles/{id} { allow read, write: if false; }
     match /payrollSettlements/{id} { allow read, write: if false; }
     match /payrollDeclarations/{id} { allow read, write: if false; }
+    // People lifecycle: server-only.
+    match /lifecycleSettings/{id} { allow read, write: if false; }
+    match /lifecycleTasks/{id} { allow read, write: if false; }
+    match /lifecycleBank/{id} { allow read, write: if false; }
+    match /lifecycleExits/{id} { allow read, write: if false; }
+    match /lifecycleLetters/{id} { allow read, write: if false; }
   }
 }

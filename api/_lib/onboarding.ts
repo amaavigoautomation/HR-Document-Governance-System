@@ -26,6 +26,7 @@ import { adminDb } from './firebaseAdmin.js';
 import { dispatchLiveEmail } from './serverEmail.js';
 import { getApplicationRecord } from './serverSheets.js';
 import { authErrorResponse, requirePermission } from './authContext.js';
+import { startChecklistForEmail } from './lifecycleApi.js';
 import { getCompanyName, getSettings, defaultPrefix, cleanPrefix, usesLegacySource } from './recruitmentData.js';
 
 // ------------------------------------------------------------------ constants
@@ -686,11 +687,13 @@ export async function runOnboardingCron(): Promise<Result> {
           event(c ? 'Welcome and credentials emails sent.' : 'Welcome email sent; credentials email failed (will retry).')
         );
         if (!c) problems.push(`${rec.employeeId}: credentials email failed`);
+        else if (s(rec.companyId)) await startChecklistForEmail(s(rec.companyId), s(rec.email), s(rec.onboardingDate));
         welcomed++;
       } else if (rec.status === 'READY_FOR_JOINING' && rec.welcomeSentAt && !rec.credentialsSentAt) {
         const c = await sendCredentials(rec);
         if (c) {
           await saveRec(rec.id, { credentialsSentAt: new Date().toISOString(), status: 'ONBOARDED' }, event('Credentials email sent.'));
+          if (s(rec.companyId)) await startChecklistForEmail(s(rec.companyId), s(rec.email), s(rec.onboardingDate));
           welcomed++;
         }
       } else if (rec.status === 'ACCOUNTS_PENDING' && rec.accountsReminderOn !== today) {
