@@ -1,6 +1,13 @@
 /** Small in-memory stand-in for the parts of the Firestore Admin API the leave code uses. */
 type Doc = Record<string, any>;
 
+/** Real Firestore refuses undefined values anywhere in a document; the fake does too so such bugs show up in tests. */
+function rejectUndefined(v: any, path = ''): void {
+  if (v === undefined) throw new Error(`Cannot use "undefined" as a Firestore value (found in field "${path}").`);
+  if (Array.isArray(v)) v.forEach((x, i) => rejectUndefined(x, `${path}[${i}]`));
+  else if (v && typeof v === 'object' && Object.getPrototypeOf(v) === Object.prototype) Object.entries(v).forEach(([k, x]) => rejectUndefined(x, path ? `${path}.${k}` : k));
+}
+
 class Snap {
   constructor(public id: string, private d: Doc | undefined, public ref: DocRef) {}
   get exists() { return this.d !== undefined; }
@@ -12,9 +19,11 @@ class DocRef {
   constructor(private store: Map<string, Doc>, public id: string) {}
   async get() { return new Snap(this.id, this.store.get(this.id), this); }
   async set(data: Doc, opts?: { merge?: boolean }) {
+    rejectUndefined(data);
     this.store.set(this.id, opts?.merge ? { ...(this.store.get(this.id) || {}), ...structuredClone(data) } : structuredClone(data));
   }
   async update(data: Doc) {
+    rejectUndefined(data);
     if (!this.store.has(this.id)) throw new Error('NOT_FOUND');
     this.store.set(this.id, { ...this.store.get(this.id)!, ...structuredClone(data) });
   }

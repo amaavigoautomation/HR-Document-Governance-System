@@ -86,7 +86,7 @@ export const lineId = (cid: string, month: string, uid: string) => `${cid}__${mo
 export async function commitChunks(ops: { ref: any; data?: any; del?: boolean }[]) {
   for (let i = 0; i < ops.length; i += 400) {
     const batch = db().batch();
-    ops.slice(i, i + 400).forEach((o) => (o.del ? batch.delete(o.ref) : batch.set(o.ref, o.data)));
+    ops.slice(i, i + 400).forEach((o) => (o.del ? batch.delete(o.ref) : batch.set(o.ref, clean(o.data))));
     await batch.commit();
   }
 }
