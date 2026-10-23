@@ -7,9 +7,10 @@ export const MyLeave: React.FC<{ me: any; reload: () => void }> = ({ me, reload 
   const [typeId, setTypeId] = useState(types[0]?.id || '');
   const [from, setFrom] = useState(todayIst());
   const [to, setTo] = useState(todayIst());
-  const [halfFrom, setHalfFrom] = useState(false);
-  const [halfTo, setHalfTo] = useState(false);
-  const [halfPart, setHalfPart] = useState<'FIRST' | 'SECOND'>('SECOND');
+  // "Leave value" of the first and last day, as in most HR systems: the first day starts from the first or the second half,
+  // the last day ends after the first or the second half. First + Second (the default) means full days.
+  const [fromValue, setFromValue] = useState<'FIRST' | 'SECOND'>('FIRST');
+  const [toValue, setToValue] = useState<'FIRST' | 'SECOND'>('SECOND');
   const [reason, setReason] = useState('');
   const [docUrl, setDocUrl] = useState('');
   const [preview, setPreview] = useState<any | null>(null);
@@ -18,16 +19,23 @@ export const MyLeave: React.FC<{ me: any; reload: () => void }> = ({ me, reload 
   const { busy, note, run } = useRunner();
 
   const type = types.find((t) => t.id === typeId);
+  const single = from === to;
+  const canHalf = !!type?.halfDay;
+  const noDays = single && fromValue === 'SECOND' && toValue === 'FIRST';
+  const halfFrom = canHalf && (single ? !(fromValue === 'FIRST' && toValue === 'SECOND') : fromValue === 'SECOND');
+  const halfTo = canHalf && !single && toValue === 'FIRST';
+  const halfPart: 'FIRST' | 'SECOND' = single && fromValue === 'FIRST' && toValue === 'FIRST' ? 'FIRST' : 'SECOND';
+  const bal = me.balances.find((b: any) => b.typeId === typeId);
   const loadRequests = useCallback(() => leaveService.myRequests().then((r) => setRequests(r.items)).catch(() => undefined), []);
   useEffect(() => { loadRequests(); }, [loadRequests]);
 
   useEffect(() => {
-    if (!typeId || !from || !to || to < from) { setPreview(null); return; }
+    if (!typeId || !from || !to || to < from || noDays) { setPreview(null); return; }
     const t = setTimeout(() => {
       leaveService.calc({ typeId, from, to, halfFrom, halfTo, halfPart, reason, docUrl }).then(setPreview).catch(() => setPreview(null));
     }, 250);
     return () => clearTimeout(t);
-  }, [typeId, from, to, halfFrom, halfTo, halfPart, docUrl, reason]);
+  }, [typeId, from, to, halfFrom, halfTo, halfPart, noDays, docUrl, reason]);
 
   const submit = () =>
     run(async () => {
@@ -65,44 +73,40 @@ export const MyLeave: React.FC<{ me: any; reload: () => void }> = ({ me, reload 
         </div>
 
         <Card title="Apply for leave">
-          <div className="grid sm:grid-cols-3 gap-3">
+          <div className="grid sm:grid-cols-2 gap-x-6 gap-y-3 max-w-3xl">
+            <Field label="Document no"><div className="text-sm text-slate-500 py-2">Given when you send the request</div></Field>
+            <Field label="Date of application"><div className="text-sm font-semibold text-slate-800 py-2">{niceDate(me.today)}</div></Field>
+
             <Field label="Leave type">
               <select className={input} value={typeId} onChange={(e) => setTypeId(e.target.value)}>
                 {me.balances.filter((b: any) => b.eligible).map((b: any) => <option key={b.typeId} value={b.typeId}>{b.name}</option>)}
               </select>
             </Field>
-            <Field label="From"><input type="date" className={input} value={from} onChange={(e) => { setFrom(e.target.value); if (to < e.target.value) setTo(e.target.value); }} /></Field>
-            <Field label="To"><input type="date" className={input} value={to} min={from} onChange={(e) => setTo(e.target.value)} /></Field>
+            <Field label="Available balance">
+              <div className="text-sm font-bold text-slate-900 py-2">{!bal ? '–' : bal.requiresBalance ? `${bal.balance} day(s)` : 'No fixed balance'}</div>
+            </Field>
+
+            <Field label="From date"><input type="date" className={input} value={from} onChange={(e) => { setFrom(e.target.value); if (to < e.target.value) setTo(e.target.value); }} /></Field>
+            <Field label="Leave value" hint={canHalf ? undefined : 'This leave type is taken in full days only'}>
+              <select className={input} disabled={!canHalf} value={canHalf ? fromValue : 'FIRST'} onChange={(e) => setFromValue(e.target.value as 'FIRST' | 'SECOND')}>
+                <option value="FIRST">First Half Day (from the start of the day)</option>
+                <option value="SECOND">Second Half Day (from the afternoon)</option>
+              </select>
+            </Field>
+
+            <Field label="Till date"><input type="date" className={input} value={to} min={from} onChange={(e) => setTo(e.target.value)} /></Field>
+            <Field label="Leave value">
+              <select className={input} disabled={!canHalf} value={canHalf ? toValue : 'SECOND'} onChange={(e) => setToValue(e.target.value as 'FIRST' | 'SECOND')}>
+                <option value="FIRST">First Half Day (until the afternoon)</option>
+                <option value="SECOND">Second Half Day (until the end of the day)</option>
+              </select>
+            </Field>
           </div>
-          {type?.halfDay && (
-            <div className="mt-3 text-xs text-slate-600 space-y-2">
-              {from === to ? (
-                <div className="flex flex-wrap items-center gap-4">
-                  <label className="flex items-center gap-1.5"><input type="checkbox" checked={halfFrom} onChange={(e) => { setHalfFrom(e.target.checked); setHalfTo(false); }} /> Half day only</label>
-                  {halfFrom && (
-                    <>
-                      <label className="flex items-center gap-1.5"><input type="radio" name="halfPart" checked={halfPart === 'FIRST'} onChange={() => setHalfPart('FIRST')} /> First half (morning off)</label>
-                      <label className="flex items-center gap-1.5"><input type="radio" name="halfPart" checked={halfPart === 'SECOND'} onChange={() => setHalfPart('SECOND')} /> Second half (afternoon off)</label>
-                    </>
-                  )}
-                </div>
-              ) : (
-                <div className="flex flex-wrap gap-x-6 gap-y-1.5">
-                  <label className="flex items-center gap-1.5"><input type="checkbox" checked={halfFrom} onChange={(e) => setHalfFrom(e.target.checked)} /> Start from the <b>second half</b> of {niceDate(from)} (I work the morning)</label>
-                  <label className="flex items-center gap-1.5"><input type="checkbox" checked={halfTo} onChange={(e) => setHalfTo(e.target.checked)} /> End after the <b>first half</b> of {niceDate(to)} (I work the afternoon)</label>
-                </div>
-              )}
-              <div>
-                <button type="button" className="text-[#FA7014] font-bold hover:underline" onClick={() => { const t = todayIst(); const n = new Date(Date.parse(`${t}T00:00:00Z`) + 86_400_000).toISOString().slice(0, 10); setFrom(t); setTo(n); setHalfFrom(true); setHalfTo(true); }}>
-                  Quick fill: second half today + first half tomorrow
-                </button>
-              </div>
-            </div>
-          )}
-          <div className="grid sm:grid-cols-2 gap-3 mt-3">
-            <Field label="Reason"><textarea rows={2} className={input} value={reason} onChange={(e) => setReason(e.target.value)} /></Field>
+          {noDays && <div className="mt-3"><Notice tone="error">The leave would end before it starts. Choose First Half Day for the start or Second Half Day for the end.</Notice></div>}
+          <div className="grid sm:grid-cols-2 gap-x-6 gap-y-3 max-w-3xl mt-3">
+            <Field label="Remarks"><textarea rows={3} className={input} placeholder="Remarks" value={reason} onChange={(e) => setReason(e.target.value)} /></Field>
             {type?.docRequiredAfterDays > 0 && (
-              <Field label="Supporting document link" hint={`Needed when longer than ${type.docRequiredAfterDays} day(s)`}>
+              <Field label="Attachment (document link)" hint={`Needed when longer than ${type.docRequiredAfterDays} day(s)`}>
                 <input className={input} placeholder="https://…" value={docUrl} onChange={(e) => setDocUrl(e.target.value)} />
               </Field>
             )}
@@ -117,7 +121,7 @@ export const MyLeave: React.FC<{ me: any; reload: () => void }> = ({ me, reload 
               </Notice>
             )}
             {note && <Notice tone={note.tone === 'ok' ? 'ok' : 'error'}>{note.text}</Notice>}
-            <button className={btnPrimary} disabled={busy || preview?.valid === false} onClick={submit}>Send request</button>
+            <button className={btnPrimary} disabled={busy || noDays || preview?.valid === false} onClick={submit}>Send request</button>
           </div>
         </Card>
 
