@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { csvToObjects } from '../../../shared/csv';
 import { downloadCsv, leaveService } from '../../services/leaveService';
 import { MonthView } from './AttendanceTab';
-import { Card, Field, Notice, StatusPill, btnDanger, btnGhost, btnPrimary, days, input, niceDate, range, thisMonth, todayIst, useRunner } from './ui';
+import { btnDanger, btnGhost, btnPrimary, Card, days, Field, halfNote, input, niceDate, Notice, range, StatusPill, thisMonth, todayIst, useRunner } from './ui';
 
 const readCsv = async (file: File) => csvToObjects(await file.text());
 
@@ -137,7 +137,7 @@ export const HrRequests: React.FC<{ me: any }> = ({ me }) => {
           {items.length === 0 && <div className="text-xs text-slate-500">No requests.</div>}
           {items.map((r) => (
             <div key={r.id} className="py-2 flex flex-wrap justify-between items-center gap-2">
-              <div><div className="text-sm font-semibold text-slate-800">{r.name} · {r.typeName} · {days(r.days)}</div><div className="text-xs text-slate-500">{range(r.from, r.to)}{r.managerName ? ` · manager ${r.managerName}` : ''}{r.reason ? ` · ${r.reason}` : ''}</div></div>
+              <div><div className="text-sm font-semibold text-slate-800">{r.name} · {r.typeName} · {days(r.days)}</div><div className="text-xs text-slate-500">{range(r.from, r.to)}{halfNote(r)}{r.managerName ? ` · manager ${r.managerName}` : ''}{r.reason ? ` · ${r.reason}` : ''}</div></div>
               <div className="flex items-center gap-2"><StatusPill status={r.status} />
                 {['PENDING', 'APPROVED', 'CANCEL_REQUESTED'].includes(r.status) && <button className={btnDanger} disabled={busy} onClick={() => window.confirm('Cancel this leave and restore the balance?') && run(async () => { await leaveService.hrCancel(r.id); await load(); })}>Cancel</button>}
               </div>

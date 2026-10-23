@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { leaveService } from '../../services/leaveService';
-import { Card, Notice, StatusPill, btnDanger, btnGhost, btnPrimary, days, input, niceDate, range, thisMonth, todayIst, useRunner } from './ui';
+import { btnDanger, btnGhost, btnPrimary, Card, days, halfNote, input, niceDate, Notice, range, StatusPill, thisMonth, todayIst, useRunner } from './ui';
 
 export const ApprovalsTab: React.FC<{ reload: () => void }> = ({ reload }) => {
   const [data, setData] = useState<{ leaves: any[]; regularizations: any[] } | null>(null);
@@ -41,7 +41,7 @@ export const ApprovalsTab: React.FC<{ reload: () => void }> = ({ reload }) => {
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <div>
                     <div className="text-sm font-bold text-slate-800">{r.name} · {r.typeName} · {days(r.days)}</div>
-                    <div className="text-xs text-slate-500">{range(r.from, r.to)}{r.reason ? ` · “${r.reason}”` : ''}</div>
+                    <div className="text-xs text-slate-500">{range(r.from, r.to)}{halfNote(r)}{r.reason ? ` · “${r.reason}”` : ''}</div>
                     {r.docUrl && <a className="text-xs text-[#FA7014] underline" href={r.docUrl} target="_blank" rel="noopener noreferrer">Supporting document</a>}
                   </div>
                   <div className="flex items-center gap-2 text-[11px] text-slate-500">

@@ -88,3 +88,10 @@ export function useRunner() {
   }, []);
   return { busy, note, setNote, run };
 }
+
+/** Plain-words note for requests that start or end on a half day, e.g. " · second half only". */
+export const halfNote = (r: { from: string; to: string; halfFrom?: boolean; halfTo?: boolean; halfPart?: string }) => {
+  if (r.from === r.to) return r.halfFrom || r.halfTo ? ` · ${r.halfPart === 'FIRST' ? 'first half (morning)' : 'second half (afternoon)'} only` : '';
+  const parts = [r.halfFrom ? 'from the second half of the first day' : '', r.halfTo ? 'until the first half of the last day' : ''].filter(Boolean);
+  return parts.length ? ` · ${parts.join(', ')}` : '';
+};

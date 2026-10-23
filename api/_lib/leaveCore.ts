@@ -204,6 +204,8 @@ export interface LeaveRequest {
   to: string;
   halfFrom: boolean;
   halfTo: boolean;
+  /** For a single half day: which half is taken. (On a longer leave the first day is always the second half and the last day the first half.) */
+  halfPart?: 'FIRST' | 'SECOND';
   days: number;
   detail: { date: string; value: number }[];
   byCycle: Record<string, number>;
@@ -238,6 +240,7 @@ export interface ApplyInput {
   to: string;
   halfFrom: boolean;
   halfTo: boolean;
+  halfPart: 'FIRST' | 'SECOND';
   reason: string;
   docUrl: string;
 }
@@ -252,6 +255,7 @@ export function parseApplyInput(body: any): ApplyInput {
     from, to,
     halfFrom: body?.halfFrom === true,
     halfTo: body?.halfTo === true,
+    halfPart: body?.halfPart === 'FIRST' ? 'FIRST' : 'SECOND',
     reason: str(body?.reason, 600),
     docUrl: str(body?.docUrl, 500),
   };

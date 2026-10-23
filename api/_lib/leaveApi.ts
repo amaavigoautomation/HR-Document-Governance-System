@@ -318,7 +318,7 @@ async function createRequest(who: Who, c: Ctx, person: Person, body: any, opts: 
   const req: LeaveRequest = {
     id, companyId: who.cid, uid: person.uid, name: person.name, email: person.email, managerUid: prof.managerUid,
     typeId: plan.type.id, typeName: plan.type.name, typeCode: plan.type.code, requiresBalance: plan.type.requiresBalance,
-    from: input.from, to: input.to, halfFrom: input.halfFrom, halfTo: input.halfTo, days: plan.days, detail: plan.detail,
+    from: input.from, to: input.to, halfFrom: input.halfFrom, halfTo: input.halfTo, halfPart: input.halfPart, days: plan.days, detail: plan.detail,
     byCycle: plan.byCycle, reason: input.reason, docUrl: input.docUrl,
     status: opts.onBehalf ? 'APPROVED' : 'PENDING',
     steps: opts.onBehalf

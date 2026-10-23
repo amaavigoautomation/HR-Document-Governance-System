@@ -118,3 +118,10 @@ const inp = parseApplyInput({ typeId: 'cl', from: '2026-10-10', halfFrom: true }
 assert.equal(inp.to, '2026-10-10');
 assert.equal(inp.halfFrom, true);
 console.log('leave api helper tests passed');
+
+// second half of the first day + first half of the last day = one working day
+{
+  const r = countLeaveDays({ from: '2026-10-22', to: '2026-10-23', loc, dayCounting: 'WORKING', sandwich: false, halfFrom: true, halfTo: true });
+  assert.equal(r.days, 1);
+  assert.deepEqual(r.breakdown.map((d) => d.value), [0.5, 0.5]);
+}

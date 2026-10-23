@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { leaveService } from '../../services/leaveService';
-import { Card, Field, Notice, StatusPill, btnDanger, btnGhost, btnPrimary, days, input, niceDate, range, todayIst, useRunner } from './ui';
+import { btnDanger, btnGhost, btnPrimary, Card, days, Field, halfNote, input, niceDate, Notice, range, StatusPill, todayIst, useRunner } from './ui';
 
 export const MyLeave: React.FC<{ me: any; reload: () => void }> = ({ me, reload }) => {
   const types: any[] = me.settings.types;
@@ -9,6 +9,7 @@ export const MyLeave: React.FC<{ me: any; reload: () => void }> = ({ me, reload 
   const [to, setTo] = useState(todayIst());
   const [halfFrom, setHalfFrom] = useState(false);
   const [halfTo, setHalfTo] = useState(false);
+  const [halfPart, setHalfPart] = useState<'FIRST' | 'SECOND'>('SECOND');
   const [reason, setReason] = useState('');
   const [docUrl, setDocUrl] = useState('');
   const [preview, setPreview] = useState<any | null>(null);
@@ -23,14 +24,14 @@ export const MyLeave: React.FC<{ me: any; reload: () => void }> = ({ me, reload 
   useEffect(() => {
     if (!typeId || !from || !to || to < from) { setPreview(null); return; }
     const t = setTimeout(() => {
-      leaveService.calc({ typeId, from, to, halfFrom, halfTo, reason, docUrl }).then(setPreview).catch(() => setPreview(null));
+      leaveService.calc({ typeId, from, to, halfFrom, halfTo, halfPart, reason, docUrl }).then(setPreview).catch(() => setPreview(null));
     }, 250);
     return () => clearTimeout(t);
-  }, [typeId, from, to, halfFrom, halfTo, docUrl, reason]);
+  }, [typeId, from, to, halfFrom, halfTo, halfPart, docUrl, reason]);
 
   const submit = () =>
     run(async () => {
-      await leaveService.apply({ typeId, from, to, halfFrom, halfTo, reason, docUrl });
+      await leaveService.apply({ typeId, from, to, halfFrom, halfTo, halfPart, reason, docUrl });
       setReason(''); setDocUrl('');
       await Promise.all([loadRequests(), reload()]);
     }, 'Leave request sent.');
@@ -74,9 +75,28 @@ export const MyLeave: React.FC<{ me: any; reload: () => void }> = ({ me, reload 
             <Field label="To"><input type="date" className={input} value={to} min={from} onChange={(e) => setTo(e.target.value)} /></Field>
           </div>
           {type?.halfDay && (
-            <div className="flex flex-wrap gap-4 mt-3 text-xs text-slate-600">
-              <label className="flex items-center gap-1.5"><input type="checkbox" checked={halfFrom} onChange={(e) => setHalfFrom(e.target.checked)} /> {from === to ? 'Half day' : 'First day is a half day'}</label>
-              {from !== to && <label className="flex items-center gap-1.5"><input type="checkbox" checked={halfTo} onChange={(e) => setHalfTo(e.target.checked)} /> Last day is a half day</label>}
+            <div className="mt-3 text-xs text-slate-600 space-y-2">
+              {from === to ? (
+                <div className="flex flex-wrap items-center gap-4">
+                  <label className="flex items-center gap-1.5"><input type="checkbox" checked={halfFrom} onChange={(e) => { setHalfFrom(e.target.checked); setHalfTo(false); }} /> Half day only</label>
+                  {halfFrom && (
+                    <>
+                      <label className="flex items-center gap-1.5"><input type="radio" name="halfPart" checked={halfPart === 'FIRST'} onChange={() => setHalfPart('FIRST')} /> First half (morning off)</label>
+                      <label className="flex items-center gap-1.5"><input type="radio" name="halfPart" checked={halfPart === 'SECOND'} onChange={() => setHalfPart('SECOND')} /> Second half (afternoon off)</label>
+                    </>
+                  )}
+                </div>
+              ) : (
+                <div className="flex flex-wrap gap-x-6 gap-y-1.5">
+                  <label className="flex items-center gap-1.5"><input type="checkbox" checked={halfFrom} onChange={(e) => setHalfFrom(e.target.checked)} /> Start from the <b>second half</b> of {niceDate(from)} (I work the morning)</label>
+                  <label className="flex items-center gap-1.5"><input type="checkbox" checked={halfTo} onChange={(e) => setHalfTo(e.target.checked)} /> End after the <b>first half</b> of {niceDate(to)} (I work the afternoon)</label>
+                </div>
+              )}
+              <div>
+                <button type="button" className="text-[#FA7014] font-bold hover:underline" onClick={() => { const t = todayIst(); const n = new Date(Date.parse(`${t}T00:00:00Z`) + 86_400_000).toISOString().slice(0, 10); setFrom(t); setTo(n); setHalfFrom(true); setHalfTo(true); }}>
+                  Quick fill: second half today + first half tomorrow
+                </button>
+              </div>
             </div>
           )}
           <div className="grid sm:grid-cols-2 gap-3 mt-3">
@@ -108,7 +128,7 @@ export const MyLeave: React.FC<{ me: any; reload: () => void }> = ({ me, reload 
                 <div key={r.id} className="py-2.5 flex flex-wrap items-start justify-between gap-2">
                   <div className="min-w-0">
                     <div className="text-sm font-semibold text-slate-800">{r.typeName} · {days(r.days)}</div>
-                    <div className="text-xs text-slate-500">{range(r.from, r.to)}{r.reason ? ` · ${r.reason}` : ''}</div>
+                    <div className="text-xs text-slate-500">{range(r.from, r.to)}{halfNote(r)}{r.reason ? ` · ${r.reason}` : ''}</div>
                     {r.steps?.map((s: any, i: number) => s.comment && <div key={i} className="text-[11px] text-slate-400">{s.byName}: {s.comment}</div>)}
                   </div>
                   <div className="flex items-center gap-2">
