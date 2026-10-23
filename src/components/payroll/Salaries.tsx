@@ -95,6 +95,8 @@ export const Salaries: React.FC<{ canManage: boolean }> = ({ canManage }) => {
   const [q, setQ] = useState('');
   const [importResult, setImportResult] = useState<any | null>(null);
   const { busy, note, run } = useRunner();
+  const editorRef = React.useRef<HTMLDivElement>(null);
+  useEffect(() => { if (open) editorRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }); }, [open]);
 
   const load = useCallback(async () => {
     const [a, b] = await Promise.all([payrollService.structures(), payrollService.settings()]);
@@ -109,6 +111,11 @@ export const Salaries: React.FC<{ canManage: boolean }> = ({ canManage }) => {
 
   return (
     <div className="space-y-4">
+      {open && (
+        <div ref={editorRef} className="scroll-mt-4">
+          <Editor uid={open} name={rows.find((r) => r.uid === open)?.name || ''} settings={data.settings} states={data.states} canManage={canManage} onSaved={() => { load(); }} onClose={() => setOpen(null)} />
+        </div>
+      )}
       <Card title={`Salaries (${rows.length})`} right={canManage && (
         <label className={`${btnGhost} cursor-pointer`}>Import CSV
           <input type="file" accept=".csv" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ''; if (f) run(async () => { setImportResult(await payrollService.importStructures(csvToObjects(await f.text()))); await load(); }, 'Import finished.'); }} />
@@ -128,14 +135,13 @@ export const Salaries: React.FC<{ canManage: boolean }> = ({ canManage }) => {
                   <td className="p-1.5">{r.department || '-'}</td>
                   <td className="p-1.5 text-right tabular-nums">{r.hasStructure ? inr(r.monthlyGross) : <span className="text-amber-600">Not set</span>}</td>
                   <td className="p-1.5">{r.state || '-'}</td>
-                  <td className="p-1.5 text-right"><button className={btnGhost} disabled={busy} onClick={() => setOpen(open === r.uid ? null : r.uid)}>{canManage ? (r.hasStructure ? 'Edit' : 'Set salary') : 'View'}</button></td>
+                  <td className="p-1.5 text-right"><button className={btnGhost} disabled={busy} onClick={() => setOpen(open === r.uid ? null : r.uid)}>{open === r.uid ? 'Close' : canManage ? (r.hasStructure ? 'Edit' : 'Set salary') : 'View'}</button></td>
                 </tr>
               ))}
             </tbody>
           </table>
         </div>
       </Card>
-      {open && <Editor uid={open} name={rows.find((r) => r.uid === open)?.name || ''} settings={data.settings} states={data.states} canManage={canManage} onSaved={() => { load(); }} onClose={() => setOpen(null)} />}
     </div>
   );
 };
