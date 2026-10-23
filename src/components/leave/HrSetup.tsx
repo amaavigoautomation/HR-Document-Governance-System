@@ -41,14 +41,20 @@ export const HrSetup: React.FC<{ onChanged: () => void }> = ({ onChanged }) => {
   const [configured, setConfigured] = useState(true);
   const [loc, setLoc] = useState(0);
   const [newHoliday, setNewHoliday] = useState({ date: '', name: '', optional: false });
+  const [saved, setSaved] = useState('');
   const { busy, note, run } = useRunner();
 
-  const load = () => leaveService.settings().then((r) => { setS(r.settings); setConfigured(r.configured && r.settings.types.length > 0); });
+  const load = () => leaveService.settings().then((r) => { setS(r.settings); setSaved(JSON.stringify(r.settings)); setConfigured(r.configured && r.settings.types.length > 0); });
   useEffect(() => { load(); }, []);
   if (!s) return <div className="text-sm text-slate-500">Loading…</div>;
 
   const patch = (p: any) => setS({ ...s, ...p });
-  const save = () => run(async () => { const r = await leaveService.saveSettings(s); setS(r.settings); setConfigured(true); onChanged(); }, 'Saved.');
+  const dirty = JSON.stringify(s) !== saved;
+  const save = () => run(async () => {
+    const r = await leaveService.saveSettings(s);
+    setS(r.settings); setSaved(JSON.stringify(r.settings)); setConfigured(true); onChanged();
+  }, 'Saved. New rules apply from now on; leave already credited is not changed (use Run accrual / balance adjustments for that).');
+  const discard = () => setS(JSON.parse(saved));
 
   if (!configured) {
     return (
@@ -137,7 +143,7 @@ export const HrSetup: React.FC<{ onChanged: () => void }> = ({ onChanged }) => {
         )}
       </Card>
 
-      <Card title="Leave types" right={<button className={btnGhost} onClick={() => patch({ types: [...s.types, { id: '', code: 'NEW', name: 'New leave type', paid: true, active: true, requiresBalance: true, halfDay: true, dayCounting: 'WORKING', minNoticeDays: 0, maxDaysPerRequest: 0, docRequiredAfterDays: 0, gender: 'ANY', minServiceDays: 0, allowNegative: false, approval: 'MANAGER' }] })}>Add type</button>}>
+      <Card title="Leave types" right={<div className="flex gap-2"><button className={btnGhost} onClick={() => patch({ types: [...s.types, { id: '', code: 'NEW', name: 'New leave type', paid: true, active: true, requiresBalance: true, halfDay: true, dayCounting: 'WORKING', minNoticeDays: 0, maxDaysPerRequest: 0, docRequiredAfterDays: 0, gender: 'ANY', minServiceDays: 0, allowNegative: false, approval: 'MANAGER' }] })}>Add type</button><button className={btnPrimary} disabled={busy || !dirty} onClick={save}>Save changes</button></div>}>
         <div className="overflow-x-auto">
           <table className="text-xs min-w-[1100px] w-full">
             <thead className="text-left text-slate-500"><tr>{['Name', 'Code', 'Paid', 'Has balance', 'Half day', 'Counts', 'Notice', 'Max/request', 'Doc after', 'For', 'Min service', 'Can go negative', 'Approval', 'Year starts', 'Active', ''].map((h) => <th key={h} className="p-1.5 font-semibold">{h}</th>)}</tr></thead>
@@ -168,7 +174,7 @@ export const HrSetup: React.FC<{ onChanged: () => void }> = ({ onChanged }) => {
         <p className="text-[11px] text-slate-400 mt-2">Save after adding a type so it gets an id, then add it to a policy below. Statutory leave such as maternity should be checked with your labour-law advisor.</p>
       </Card>
 
-      <Card title="Leave policies" right={<button className={btnGhost} onClick={() => patch({ policies: [...s.policies, { id: '', name: `Policy ${s.policies.length + 1}`, isDefault: s.policies.length === 0, entries: [] }] })}>Add policy</button>}>
+      <Card title="Leave policies" right={<div className="flex gap-2"><button className={btnGhost} onClick={() => patch({ policies: [...s.policies, { id: '', name: `Policy ${s.policies.length + 1}`, isDefault: s.policies.length === 0, entries: [] }] })}>Add policy</button><button className={btnPrimary} disabled={busy || !dirty} onClick={save}>Save changes</button></div>}>
         <div className="space-y-5">
           {s.policies.map((p: any, pi: number) => (
             <div key={p.id + pi} className="border border-slate-200 rounded-lg p-3">
@@ -204,6 +210,17 @@ export const HrSetup: React.FC<{ onChanged: () => void }> = ({ onChanged }) => {
           ))}
         </div>
       </Card>
+
+      {(dirty || note) && (
+        <div className="sticky bottom-3 z-20">
+          <div className="mx-auto max-w-3xl rounded-xl border border-slate-300 bg-white shadow-lg px-4 py-3 flex flex-wrap items-center gap-3">
+            {dirty ? <span className="text-xs font-bold text-amber-700 flex-1">You have unsaved changes.</span>
+              : note ? <span className={`text-xs flex-1 ${note.tone === 'ok' ? 'text-emerald-700' : 'text-rose-700'}`}>{note.text}</span> : null}
+            {dirty && note && note.tone === 'error' && <span className="text-xs text-rose-700 w-full">{note.text}</span>}
+            {dirty && <><button className={btnGhost} disabled={busy} onClick={discard}>Discard</button><button className={btnPrimary} disabled={busy} onClick={save}>Save changes</button></>}
+          </div>
+        </div>
+      )}
     </div>
   );
 };

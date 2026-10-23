@@ -681,7 +681,9 @@ async function postSettings(who: Who, body: any): Promise<Result> {
   const { settings } = await loadSettings(who.cid);
   const clean = sanitizeSettings(body?.settings, settings);
   await saveSettings(who.cid, clean, c.me.name);
-  return ok({ settings: clean });
+  // Post any credits that are now due under the new rules (months already credited are left as they are).
+  const accrual = await runAccrual(who.cid).catch(() => null);
+  return ok({ settings: clean, accrual });
 }
 
 async function applyStarter(who: Who, body: any): Promise<Result> {

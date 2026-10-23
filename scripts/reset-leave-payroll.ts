@@ -18,7 +18,7 @@
  *        deletes it. There is no undo: export anything you need first.
  *
  * <companyId> is the document ID in the Firestore "companies" collection (starts with "cmp").
- * After a reset, balances start again from the next accrual run (it runs when someone opens Leave, or by the daily job).
+ * After a reset, balances start again from the next accrual run (the daily job, or "Run accrual now" in Leave HR operations; saving the leave setup also runs it).
  */
 import { adminDb } from '../api/_lib/firebaseAdmin.js';
 
