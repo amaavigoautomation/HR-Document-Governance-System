@@ -421,11 +421,31 @@ export async function runAccrual(companyId: string, asOf = istToday()): Promise<
         out.rollovers++;
       }
 
-      for (const c of plannedCredits(entry, cycle, prof.joinDate, asOf)) {
-        const id = `ACC_${person.uid}_${type.id}_${cycle.key}_${c.period}`;
-        if (have.has(id)) continue;
-        writes.push({ id, data: entryData({ companyId, uid: person.uid, typeId: type.id, cycle: cycle.key, delta: c.amount, kind: 'ACCRUAL', date: c.date, ref: c.period, by: 'System' }) });
-        out.credits++;
+      // What the current rules say should have been credited by now, against what the ledger already holds for this year.
+      // Credits are only ever topped up to that figure, so changing the schedule (Monthly <-> Upfront) never credits a year twice.
+      const planned = plannedCredits(entry, cycle, prof.joinDate, asOf);
+      const plannedTotal = r2(planned.reduce((n, c) => n + c.amount, 0));
+      const inCycle = entries.filter((e) => e.typeId === type.id && e.cycle === cycle.key);
+      const accrued = inCycle.filter((e) => e.kind === 'ACCRUAL');
+      const fixId = `FIXDUP_${person.uid}_${type.id}_${cycle.key}`;
+      let credited = r2(accrued.reduce((n, e) => n + e.delta, 0) + inCycle.filter((e) => e.id === fixId).reduce((n, e) => n + e.delta, 0));
+      // A year that was credited both upfront and month by month (from before this check existed): take back the excess once.
+      const mixed = accrued.some((e) => e.ref === 'U' && !e.note) && accrued.some((e) => /^[MQ]/.test(e.ref || ''));
+      if (mixed && !have.has(fixId) && credited - plannedTotal > 0.005) {
+        const over = r2(credited - plannedTotal);
+        writes.push({ id: fixId, data: entryData({ companyId, uid: person.uid, typeId: type.id, cycle: cycle.key, delta: -over, kind: 'ADJUST', date: asOf, by: 'System', note: 'Correction: this year was credited twice after the credit schedule changed' }) });
+        credited = plannedTotal;
+      }
+      const fresh = planned.filter((c) => !have.has(`ACC_${person.uid}_${type.id}_${cycle.key}_${c.period}`));
+      const room = r2(plannedTotal - credited);
+      if (fresh.length > 0 && room > 0.005) {
+        const freshTotal = r2(fresh.reduce((n, c) => n + c.amount, 0));
+        const capped = freshTotal > room + 0.005;
+        const list = capped ? [{ ...fresh[0], amount: room }] : fresh;
+        for (const c of list) {
+          writes.push({ id: `ACC_${person.uid}_${type.id}_${cycle.key}_${c.period}`, data: entryData({ companyId, uid: person.uid, typeId: type.id, cycle: cycle.key, delta: c.amount, kind: 'ACCRUAL', date: c.date, ref: c.period, by: 'System', ...(capped ? { note: 'Topped up to the current schedule (part of this year was already credited)' } : {}) }) });
+          out.credits++;
+        }
       }
     }
   }
