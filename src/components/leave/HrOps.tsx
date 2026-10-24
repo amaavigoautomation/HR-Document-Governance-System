@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { csvToObjects } from '../../../shared/csv';
 import { downloadCsv, leaveService } from '../../services/leaveService';
 import { MonthView } from './AttendanceTab';
-import { btnDanger, btnGhost, btnPrimary, Card, days, Field, halfNote, input, niceDate, Notice, range, StatusPill, thisMonth, todayIst, useRunner } from './ui';
+import { btnDanger, btnGhost, btnPrimary, Card, ConfirmButton, days, EmptyState, Field, halfNote, input, LEDGER_LABEL, niceDate, Notice, range, Segmented, Skeleton, StatusPill, thisMonth, todayIst, useRunner, useToast } from './ui';
 
 const readCsv = async (file: File) => csvToObjects(await file.text());
 
@@ -25,9 +25,9 @@ export const HrPeople: React.FC = () => {
   const edit = (uid: string, patch: any) => setDirty({ ...dirty, [uid]: { ...(dirty[uid] || {}), ...patch } });
   const shown = items.filter((p) => !q || `${p.name} ${p.email} ${p.empId}`.toLowerCase().includes(q.toLowerCase()));
 
-  if (!settings) return <div className="text-sm text-slate-500">Loading…</div>;
+  if (!settings) return <Skeleton rows={5} />;
   return (
-    <Card title={`People (${items.length})`} right={
+    <Card title={`People (${items.length})`} subtitle="Set each person's office, leave policy and who approves their leave." right={
       <div className="flex gap-2">
         <label className={`${btnGhost} cursor-pointer`}>Import CSV
           <input type="file" accept=".csv" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ''; if (f) run(async () => { const r = await leaveService.importProfiles(await readCsv(f)); setImportResult(r); await load(); }, 'Import finished.'); }} />
@@ -43,7 +43,7 @@ export const HrPeople: React.FC = () => {
       <input className={`${input} max-w-xs mb-2`} placeholder="Search name, email, ID" value={q} onChange={(e) => setQ(e.target.value)} />
       <div className="overflow-x-auto">
         <table className="text-xs min-w-[900px] w-full">
-          <thead className="text-left text-slate-500"><tr><th className="p-1.5">Person</th><th className="p-1.5">Location</th><th className="p-1.5">Policy</th><th className="p-1.5">Manager</th><th className="p-1.5">Joined</th><th className="p-1.5">Gender</th></tr></thead>
+          <thead className="text-left text-slate-500"><tr><th className="p-1.5">Person</th><th className="p-1.5">Office</th><th className="p-1.5">Leave policy</th><th className="p-1.5">Approver (manager)</th><th className="p-1.5">Joined</th><th className="p-1.5">Gender</th></tr></thead>
           <tbody>
             {shown.map((p0) => { const p = row(p0); return (
               <tr key={p.uid} className={`border-t border-slate-100 ${p.active ? '' : 'opacity-50'}`}>
@@ -70,19 +70,19 @@ export const HrBalances: React.FC = () => {
   const [form, setForm] = useState({ typeId: '', delta: '', note: '', kind: 'ADJUST' });
   const [res, setRes] = useState<any | null>(null);
   const { busy, note, run } = useRunner();
+  const toast = useToast();
 
   useEffect(() => { Promise.all([leaveService.people(), leaveService.settings()]).then(([p, s]) => { setPeople(p.items); setSettings(s.settings); setForm((f) => ({ ...f, typeId: s.settings.types.find((t: any) => t.requiresBalance && !t.isLop)?.id || '' })); }); }, []);
   const loadLedger = useCallback((u: string) => u ? leaveService.balancesOf(u).then((r) => setRows(r.items)) : setRows([]), []);
   useEffect(() => { loadLedger(uid); }, [uid, loadLedger]);
 
-  if (!settings) return <div className="text-sm text-slate-500">Loading…</div>;
+  if (!settings) return <Skeleton rows={4} />;
   return (
     <div className="space-y-4">
-      <Card title="Accrual and year-end" right={<button className={btnGhost} disabled={busy} onClick={() => run(async () => { const r = await leaveService.runAccrual(); setRes(r); }, 'Accrual run complete.')}>Run accrual now</button>}>
-        <p className="text-xs text-slate-600">Credits are added automatically each day by the scheduled job, and the year-end carry-forward / lapse runs when a new leave year begins. Use this to run it immediately (it never credits the same period twice).</p>
-        {res && <div className="mt-2"><Notice tone="ok">{res.employees} employees · {res.credits} credits added · {res.rollovers} year-end roll-overs</Notice></div>}
+      <Card title="Add due credits now" subtitle="Credits are added automatically every day, and year-end carry forward runs when a new leave year starts. Press this to do it right now. It never adds the same credit twice." right={<button className={btnGhost} disabled={busy} onClick={() => run(async () => { const r = await leaveService.runAccrual(); setRes(r); }, 'Credits are up to date.')}>Run now</button>}>
+        {res && <Notice tone="ok">{res.employees} people checked · {res.credits} credits added · {res.rollovers} year-end carry forwards</Notice>}
       </Card>
-      <Card title="Adjust or encash a balance">
+      <Card title="Change someone's balance" subtitle="Add or take away days, or record encashment. Every change is logged with your note.">
         <div className="grid sm:grid-cols-5 gap-3 items-end">
           <Field label="Employee"><select className={input} value={uid} onChange={(e) => setUid(e.target.value)}><option value="">Choose…</option>{people.filter((p) => p.active).map((p) => <option key={p.uid} value={p.uid}>{p.name}</option>)}</select></Field>
           <Field label="Leave type"><select className={input} value={form.typeId} onChange={(e) => setForm({ ...form, typeId: e.target.value })}>{settings.types.filter((t: any) => t.requiresBalance && !t.isLop).map((t: any) => <option key={t.id} value={t.id}>{t.name}</option>)}</select></Field>
@@ -94,14 +94,19 @@ export const HrBalances: React.FC = () => {
         {note && <div className="mt-2"><Notice tone={note.tone === 'ok' ? 'ok' : 'error'}>{note.text}</Notice></div>}
         {uid && <div className="mt-4 max-h-72 overflow-y-auto divide-y divide-slate-100 border border-slate-100 rounded-lg">
           {rows.length === 0 ? <div className="p-3 text-xs text-slate-500">No entries yet.</div> : rows.map((e) => (
-            <div key={e.id} className="flex justify-between px-3 py-1.5 text-xs"><span>{e.typeName} · {e.kind.toLowerCase().replace('_', ' ')} · {niceDate(e.date)} {e.note && `· ${e.note}`} {e.by && <span className="text-slate-400">({e.by})</span>}</span><b className={e.delta < 0 ? 'text-rose-600' : 'text-emerald-600'}>{e.delta > 0 ? '+' : ''}{e.delta}</b></div>
+            <div key={e.id} className="flex justify-between px-3 py-1.5 text-xs"><span>{e.typeName} · {LEDGER_LABEL[e.kind] || e.kind} · {niceDate(e.date)} {e.note && `· ${e.note}`} {e.by && <span className="text-slate-400">({e.by})</span>}</span><b className={e.delta < 0 ? 'text-rose-600' : 'text-emerald-600'}>{e.delta > 0 ? '+' : ''}{e.delta}</b></div>
           ))}
         </div>}
       </Card>
-      <Card title="Import opening balances">
+      <Card title="Import opening balances" subtitle="Moving from another system? Upload everyone's current balance once.">
         <p className="text-[11px] text-slate-500 mb-2">CSV columns: email, type (code such as CL), balance. Importing again replaces the opening balance for the current leave year.</p>
         <label className={`${btnGhost} cursor-pointer`}>Choose CSV
-          <input type="file" accept=".csv" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ''; if (f) run(async () => { const r = await leaveService.importBalances(await readCsv(f)); setRes(null); setForm((x) => ({ ...x })); alert(`Saved ${r.saved}.${r.errors.length ? ' Problems: ' + r.errors.slice(0, 5).map((x: any) => `row ${x.row}: ${x.error}`).join('; ') : ''}`); }); }} />
+          <input type="file" accept=".csv" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ''; if (f) run(async () => {
+            const r = await leaveService.importBalances(await readCsv(f));
+            setRes(null);
+            if (r.errors.length) throw new Error(`Saved ${r.saved}. Problems: ${r.errors.slice(0, 5).map((x: any) => `row ${x.row}: ${x.error}`).join('; ')}`);
+            toast?.(`Saved ${r.saved} opening balance(s).`);
+          }); }} />
         </label>
       </Card>
     </div>
@@ -114,14 +119,21 @@ export const HrRequests: React.FC<{ me: any }> = ({ me }) => {
   const [status, setStatus] = useState('');
   const [people, setPeople] = useState<any[]>([]);
   const [form, setForm] = useState({ uid: '', typeId: me.settings.types[0]?.id || '', from: todayIst(), to: todayIst(), halfFrom: false, reason: '' });
+  const [showRecord, setShowRecord] = useState(false);
+  const [q, setQ] = useState('');
+  const [loaded, setLoaded] = useState(false);
   const { busy, note, run } = useRunner();
-  const load = useCallback(() => leaveService.allRequests({ status }).then((r) => setItems(r.items)), [status]);
-  useEffect(() => { load().catch(() => undefined); }, [load]);
+  const load = useCallback(() => leaveService.allRequests({ status }).then((r) => { setItems(r.items); setLoaded(true); }), [status]);
+  useEffect(() => { load().catch(() => setLoaded(true)); }, [load]);
   useEffect(() => { leaveService.people().then((p) => setPeople(p.items)).catch(() => undefined); }, []);
+  const shown = items.filter((r) => !q || `${r.name} ${r.typeName}`.toLowerCase().includes(q.toLowerCase()));
 
   return (
     <div className="space-y-4">
-      <Card title="Record leave for someone (approved immediately)">
+      {!showRecord ? (
+        <div className="flex justify-end"><button className={btnGhost} onClick={() => setShowRecord(true)}>+ Record leave for someone</button></div>
+      ) : (
+      <Card title="Record leave for someone" subtitle="For leave agreed offline. It is approved straight away and the person gets an email." right={<button className={btnGhost} onClick={() => setShowRecord(false)}>Close</button>}>
         <div className="grid sm:grid-cols-6 gap-3 items-end">
           <Field label="Employee"><select className={input} value={form.uid} onChange={(e) => setForm({ ...form, uid: e.target.value })}><option value="">Choose…</option>{people.filter((p) => p.active).map((p) => <option key={p.uid} value={p.uid}>{p.name}</option>)}</select></Field>
           <Field label="Type"><select className={input} value={form.typeId} onChange={(e) => setForm({ ...form, typeId: e.target.value })}>{me.settings.types.map((t: any) => <option key={t.id} value={t.id}>{t.name}</option>)}</select></Field>
@@ -132,18 +144,27 @@ export const HrRequests: React.FC<{ me: any }> = ({ me }) => {
         </div>
         {note && <div className="mt-2"><Notice tone={note.tone === 'ok' ? 'ok' : 'error'}>{note.text}</Notice></div>}
       </Card>
-      <Card title="All requests" right={<select className="border border-slate-300 rounded px-2 py-1 text-xs" value={status} onChange={(e) => setStatus(e.target.value)}><option value="">All</option>{['PENDING', 'APPROVED', 'REJECTED', 'CANCELLED', 'CANCEL_REQUESTED'].map((s) => <option key={s}>{s}</option>)}</select>}>
-        <div className="divide-y divide-slate-100">
-          {items.length === 0 && <div className="text-xs text-slate-500">No requests.</div>}
-          {items.map((r) => (
-            <div key={r.id} className="py-2 flex flex-wrap justify-between items-center gap-2">
-              <div><div className="text-sm font-semibold text-slate-800">{r.name} · {r.typeName} · {days(r.days)}</div><div className="text-xs text-slate-500">{range(r.from, r.to)}{halfNote(r)}{r.managerName ? ` · manager ${r.managerName}` : ''}{r.reason ? ` · ${r.reason}` : ''}</div></div>
-              <div className="flex items-center gap-2"><StatusPill status={r.status} />
-                {['PENDING', 'APPROVED', 'CANCEL_REQUESTED'].includes(r.status) && <button className={btnDanger} disabled={busy} onClick={() => window.confirm('Cancel this leave and restore the balance?') && run(async () => { await leaveService.hrCancel(r.id); await load(); })}>Cancel</button>}
-              </div>
-            </div>
-          ))}
+      )}
+      <Card title="All leave requests" right={<input className="border border-slate-300 rounded-lg px-2 py-1 text-xs w-40" placeholder="Search name or type" value={q} onChange={(e) => setQ(e.target.value)} />}>
+        <div className="mb-3 overflow-x-auto">
+          <Segmented size="sm" value={status} onChange={setStatus} options={[
+            { value: '', label: 'All' }, { value: 'PENDING', label: 'Waiting' }, { value: 'APPROVED', label: 'Approved' },
+            { value: 'CANCEL_REQUESTED', label: 'Cancel asked' }, { value: 'REJECTED', label: 'Rejected' }, { value: 'CANCELLED', label: 'Cancelled' },
+          ]} />
         </div>
+        {!showRecord && note && <div className="mb-2"><Notice tone={note.tone === 'ok' ? 'ok' : 'error'}>{note.text}</Notice></div>}
+        {!loaded ? <Skeleton rows={3} /> : shown.length === 0 ? <EmptyState title="No requests here" /> : (
+          <div className="divide-y divide-slate-100">
+            {shown.map((r) => (
+              <div key={r.id} className="py-2.5 flex flex-wrap justify-between items-center gap-2">
+                <div><div className="text-sm font-semibold text-slate-800">{r.name} · {r.typeName} · {days(r.days)}</div><div className="text-xs text-slate-500">{range(r.from, r.to)}{halfNote(r)}{r.managerName ? ` · approver ${r.managerName}` : ''}{r.reason ? ` · ${r.reason}` : ''}</div></div>
+                <div className="flex items-center gap-2"><StatusPill status={r.status} short />
+                  {['PENDING', 'APPROVED', 'CANCEL_REQUESTED'].includes(r.status) && <ConfirmButton disabled={busy} question="Cancel and give days back?" yes="Cancel leave" onConfirm={() => run(async () => { await leaveService.hrCancel(r.id); await load(); }, 'Leave cancelled and balance restored.')}>Cancel</ConfirmButton>}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
       </Card>
     </div>
   );
@@ -175,10 +196,10 @@ export const HrReports: React.FC<{ canManage: boolean }> = ({ canManage }) => {
     <div className="space-y-4">
       <Card title="Monthly attendance" right={<div className="flex gap-2 items-center"><input type="month" className="border border-slate-300 rounded px-2 py-1 text-xs" value={month} onChange={(e) => e.target.value && setMonth(e.target.value)} /><button className={btnGhost} onClick={exportAtt}>Export CSV</button></div>}>
         {error && <Notice tone="error">{error}</Notice>}
-        <p className="text-[11px] text-slate-400 mb-2">Loss of pay = absent days + half of each half day. Click a name to see the days{canManage ? ' and fix them' : ''}.</p>
+        <p className="text-[11px] text-slate-400 mb-2">Unpaid days = absent days + half of each half day. Click a name to see their days{canManage ? ' and fix them' : ''}.</p>
         <div className="overflow-x-auto">
           <table className="text-xs w-full min-w-[800px]">
-            <thead className="text-left text-slate-500"><tr>{['Name', 'Present', 'Late', 'Half', 'Leave', 'Absent', 'No out', 'Loss of pay', 'Suggested late cut'].map((h) => <th key={h} className="p-1.5">{h}</th>)}</tr></thead>
+            <thead className="text-left text-slate-500"><tr>{['Name', 'Present', 'Late', 'Half days', 'Leave', 'Absent', 'Missed check-out', 'Unpaid days', 'Late cut (suggested)'].map((h) => <th key={h} className="p-1.5">{h}</th>)}</tr></thead>
             <tbody>
               {att?.rows.map((r: any) => (
                 <tr key={r.uid} className="border-t border-slate-100 hover:bg-slate-50 cursor-pointer" onClick={() => setOpen(r)}>
