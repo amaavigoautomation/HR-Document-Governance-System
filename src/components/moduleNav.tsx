@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useSyncExternalStore } from 'react';
+import React, { useState, useSyncExternalStore } from 'react';
 import { ChevronDown, ChevronRight } from 'lucide-react';
 
 /**
@@ -65,11 +65,9 @@ const groupItems = (items: NavItem[]) => {
 
 export const ModuleSubNav: React.FC<{ nav: ModuleNav; label: string; variant: 'sidebar' | 'pills'; onNavigate?: () => void; idPrefix?: string }> = ({ nav, label, variant, onNavigate, idPrefix }) => {
   const { section, items } = nav.useNav();
-  const [closed, setClosed] = useState<Record<string, boolean>>({});
+  // Groups start closed and only open when the person clicks their header.
+  const [opened, setOpened] = useState<Record<string, boolean>>({});
   const active = items.length ? nav.resolve(section, items) : '';
-  const activeGroup = items.find((i) => i.key === active)?.group;
-  // Opening a page always opens the group it lives in.
-  useEffect(() => { if (activeGroup) setClosed((c) => (c[activeGroup] ? { ...c, [activeGroup]: false } : c)); }, [activeGroup, active]);
   if (items.length === 0) return null;
   const go = (k: string) => { nav.setSection(k); onNavigate?.(); };
 
@@ -96,13 +94,14 @@ export const ModuleSubNav: React.FC<{ nav: ModuleNav; label: string; variant: 's
   return (
     <div className="pl-4 pr-1 pt-1 space-y-1" role="navigation" aria-label={label}>
       {groups.map((g, gi) => {
-        const isClosed = titled && !!g.title && !!closed[g.title];
+        const isClosed = titled && !!g.title && !opened[g.title];
+        const hasActive = g.items.some((i) => i.key === active);
         const hidden = g.items.reduce((n, i) => n + (i.badge || 0), 0);
         return (
           <div key={g.title || gi} className="space-y-1">
             {titled && g.title && (
-              <button type="button" onClick={() => setClosed((c) => ({ ...c, [g.title!]: !c[g.title!] }))} aria-expanded={!isClosed}
-                className={`w-full flex items-center justify-between px-2.5 rounded-lg text-[10px] font-bold uppercase tracking-wider text-slate-400 hover:text-slate-600 hover:bg-slate-50 cursor-pointer py-1.5 ${gi > 0 ? 'mt-1' : ''}`}>
+              <button type="button" onClick={() => setOpened((o) => ({ ...o, [g.title!]: !o[g.title!] }))} aria-expanded={!isClosed}
+                className={`w-full flex items-center justify-between px-2.5 rounded-lg text-[10px] font-bold uppercase tracking-wider ${isClosed && hasActive ? 'text-[#FA7014]' : 'text-slate-400 hover:text-slate-600'} hover:bg-slate-50 cursor-pointer py-1.5 ${gi > 0 ? 'mt-1' : ''}`}>
                 <span>{g.title}</span>
                 <span className="flex items-center gap-1.5">
                   {isClosed && hidden ? <span className="bg-[#FA7014] text-white rounded-full px-1.5 py-0.5 text-[10px] leading-none font-bold normal-case tracking-normal">{hidden}</span> : null}
