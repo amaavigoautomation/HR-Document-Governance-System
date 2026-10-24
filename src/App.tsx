@@ -594,7 +594,7 @@ export default function App() {
               ))}
             </div>
             {employeeSection === 'leave' ? (
-              <LeaveModule currentUser={currentUser} />
+              <LeaveModule currentUser={currentUser} inlineNav />
             ) : employeeSection === 'payroll' ? (
               <PayrollModule currentUser={currentUser} />
             ) : employeeSection === 'people' ? (

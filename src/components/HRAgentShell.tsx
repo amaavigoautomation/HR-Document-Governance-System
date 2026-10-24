@@ -24,6 +24,7 @@ import {
 } from 'lucide-react';
 import { User, UserRole } from '../types';
 import { AmaavigoLogo } from './AmaavigoLogo';
+import { LeaveSubNav } from './leave/LeaveSubNav';
 import {
   hasModulePermission,
   getAuthorizationLabel,
@@ -510,6 +511,11 @@ export const HRAgentShell: React.FC<HRAgentShellProps> = ({
                     </div>
                   )}
                 </button>
+
+                {/* Leave sections (Today, My leave, Attendance, Team calendar, Approvals, Manage) */}
+                {activeModule === 'leave-management' && (
+                  <LeaveSubNav variant="sidebar" onNavigate={() => setIsMobileSidebarOpen(false)} />
+                )}
 
                 {/* ---------------------------------------------------- */}
                 {/* PAYROLL (everyone sees payslips; payroll.* sees more) */}
