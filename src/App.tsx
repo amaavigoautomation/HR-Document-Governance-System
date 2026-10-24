@@ -596,9 +596,9 @@ export default function App() {
             {employeeSection === 'leave' ? (
               <LeaveModule currentUser={currentUser} inlineNav />
             ) : employeeSection === 'payroll' ? (
-              <PayrollModule currentUser={currentUser} />
+              <PayrollModule currentUser={currentUser} inlineNav />
             ) : employeeSection === 'people' ? (
-              <PeopleModule currentUser={currentUser} />
+              <PeopleModule currentUser={currentUser} inlineNav />
             ) : (
             <EmployeePortalView
               currentUser={currentUser}

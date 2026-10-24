@@ -25,6 +25,9 @@ import {
 import { User, UserRole } from '../types';
 import { AmaavigoLogo } from './AmaavigoLogo';
 import { LeaveSubNav } from './leave/LeaveSubNav';
+import { ModuleSubNav } from './moduleNav';
+import { payrollNav } from './payroll/payrollNav';
+import { peopleNav } from './lifecycle/peopleNav';
 import {
   hasModulePermission,
   getAuthorizationLabel,
@@ -80,6 +83,8 @@ export const HRAgentShell: React.FC<HRAgentShellProps> = ({
   // Talent Acquisition expanded state in left navigation
   const [isTalentAcquisitionExpanded, setIsTalentAcquisitionExpanded] = useState<boolean>(true);
   const [isLeaveExpanded, setIsLeaveExpanded] = useState<boolean>(true);
+  const [isPayrollExpanded, setIsPayrollExpanded] = useState<boolean>(true);
+  const [isPeopleExpanded, setIsPeopleExpanded] = useState<boolean>(true);
 
   // Mobile sidebar drawer state
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState<boolean>(false);
@@ -537,14 +542,16 @@ export const HRAgentShell: React.FC<HRAgentShellProps> = ({
                 {/* ---------------------------------------------------- */}
                 {/* PAYROLL (everyone sees payslips; payroll.* sees more) */}
                 {/* ---------------------------------------------------- */}
+                <div className="relative">
                 <button
                   id="nav-module-payroll"
                   type="button"
                   onClick={() => {
                     onSelectModule('payroll');
+                    setIsPayrollExpanded(true);
                     setIsMobileSidebarOpen(false);
                   }}
-                  className={`w-full px-3 py-2.5 rounded-xl border flex items-center justify-between text-left transition-all cursor-pointer ${
+                  className={`w-full ${activeModule === 'payroll' ? 'pl-3 pr-10' : 'px-3'} py-2.5 rounded-xl border flex items-center justify-between text-left transition-all cursor-pointer ${
                     activeModule === 'payroll'
                       ? 'bg-[#FA7014]/10 border-[#FA7014]/40 text-slate-900 shadow-xs'
                       : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50 hover:border-slate-300'
@@ -571,18 +578,38 @@ export const HRAgentShell: React.FC<HRAgentShellProps> = ({
                     </div>
                   )}
                 </button>
+                {activeModule === 'payroll' && (
+                  <button
+                    id="nav-module-payroll-toggle"
+                    type="button"
+                    onClick={() => setIsPayrollExpanded((v) => !v)}
+                    aria-expanded={isPayrollExpanded}
+                    aria-label={isPayrollExpanded ? 'Hide payroll sections' : 'Show payroll sections'}
+                    title={isPayrollExpanded ? 'Hide sections' : 'Show sections'}
+                    className="absolute right-1.5 top-1/2 -translate-y-1/2 w-7 h-7 rounded-lg flex items-center justify-center text-[#FA7014] hover:bg-[#FA7014]/15 cursor-pointer"
+                  >
+                    {isPayrollExpanded ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
+                  </button>
+                )}
+                </div>
+
+                {activeModule === 'payroll' && isPayrollExpanded && (
+                  <ModuleSubNav nav={payrollNav} label="Payroll sections" variant="sidebar" idPrefix="nav-submodule-payroll" onNavigate={() => setIsMobileSidebarOpen(false)} />
+                )}
 
                 {/* ---------------------------------------------------- */}
                 {/* PEOPLE (directory, joining tasks, exits, letters) */}
                 {/* ---------------------------------------------------- */}
+                <div className="relative">
                 <button
                   id="nav-module-people"
                   type="button"
                   onClick={() => {
                     onSelectModule('people');
+                    setIsPeopleExpanded(true);
                     setIsMobileSidebarOpen(false);
                   }}
-                  className={`w-full px-3 py-2.5 rounded-xl border flex items-center justify-between text-left transition-all cursor-pointer ${
+                  className={`w-full ${activeModule === 'people' ? 'pl-3 pr-10' : 'px-3'} py-2.5 rounded-xl border flex items-center justify-between text-left transition-all cursor-pointer ${
                     activeModule === 'people'
                       ? 'bg-[#FA7014]/10 border-[#FA7014]/40 text-slate-900 shadow-xs'
                       : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50 hover:border-slate-300'
@@ -609,6 +636,24 @@ export const HRAgentShell: React.FC<HRAgentShellProps> = ({
                     </div>
                   )}
                 </button>
+                {activeModule === 'people' && (
+                  <button
+                    id="nav-module-people-toggle"
+                    type="button"
+                    onClick={() => setIsPeopleExpanded((v) => !v)}
+                    aria-expanded={isPeopleExpanded}
+                    aria-label={isPeopleExpanded ? 'Hide people sections' : 'Show people sections'}
+                    title={isPeopleExpanded ? 'Hide sections' : 'Show sections'}
+                    className="absolute right-1.5 top-1/2 -translate-y-1/2 w-7 h-7 rounded-lg flex items-center justify-center text-[#FA7014] hover:bg-[#FA7014]/15 cursor-pointer"
+                  >
+                    {isPeopleExpanded ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
+                  </button>
+                )}
+                </div>
+
+                {activeModule === 'people' && isPeopleExpanded && (
+                  <ModuleSubNav nav={peopleNav} label="People sections" variant="sidebar" idPrefix="nav-submodule-people" onNavigate={() => setIsMobileSidebarOpen(false)} />
+                )}
 
                 {/* ---------------------------------------------------- */}
                 {/* 3. ADMINISTRATION (people, departments, roles)       */}

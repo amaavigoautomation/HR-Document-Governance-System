@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
+import { ChevronRight } from 'lucide-react';
 import { User } from '../types';
 import { payrollService } from '../services/payrollService';
 import { Notice } from './leave/ui';
@@ -12,56 +13,48 @@ import { MyPayslips } from './payroll/MyPayslips';
 import { PayrollSetup } from './payroll/PayrollSetup';
 import { RunTab } from './payroll/RunTab';
 import { Salaries } from './payroll/Salaries';
+import { ModuleSubNav } from './moduleNav';
+import { payrollNav, payrollNavItems } from './payroll/payrollNav';
 
-type Tab = 'payslips' | 'claims' | 'tax' | 'run' | 'inputs' | 'adjustments' | 'salaries' | 'revisions' | 'approvals' | 'settlements' | 'taxadmin' | 'setup';
-
-/** Payroll for every role: everyone sees their payslips; people with payroll access get the rest. */
-export const PayrollModule: React.FC<{ currentUser: User }> = () => {
+/**
+ * Payroll for every role: everyone sees their payslips; people with payroll access get the rest.
+ * The section menu is shown in the app sidebar under "Payroll". Screens without a sidebar (the employee portal)
+ * pass `inlineNav` to show the same menu as pills at the top of the page.
+ */
+export const PayrollModule: React.FC<{ currentUser: User; inlineNav?: boolean }> = ({ inlineNav }) => {
   const [me, setMe] = useState<any | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [tab, setTab] = useState<Tab>('payslips');
+  const { section, items } = payrollNav.useNav();
 
   const reload = useCallback(() => payrollService.me().then((r) => { setMe(r); setError(null); }).catch((e) => setError(e.message)), []);
   useEffect(() => { reload(); }, [reload]);
 
+  // Tell the menu (sidebar or pills) which sections this person may open.
+  useEffect(() => { payrollNav.publish(payrollNavItems(me)); }, [me]);
+  useEffect(() => () => payrollNav.publish([]), []);
+
   if (error) return <div className="p-6"><Notice tone="error">{error}</Notice></div>;
   if (!me) return <div className="p-6 text-sm text-slate-500">Loading…</div>;
 
-  const tabs: { key: Tab; label: string; show: boolean }[] = [
-    { key: 'payslips', label: 'My payslips', show: true },
-    { key: 'claims', label: 'My claims', show: true },
-    { key: 'tax', label: 'My tax', show: true },
-    { key: 'run', label: 'Payroll run', show: me.canView },
-    { key: 'inputs', label: 'Attendance inputs', show: me.canView },
-    { key: 'adjustments', label: 'Adjustments & loans', show: me.canView },
-    { key: 'salaries', label: 'Salaries', show: me.canView },
-    { key: 'revisions', label: 'Revisions', show: me.canView },
-    { key: 'approvals', label: 'Claim approvals', show: me.canView || me.isManager },
-    { key: 'settlements', label: 'Full & final', show: me.canView },
-    { key: 'taxadmin', label: 'Tax declarations', show: me.canView },
-    { key: 'setup', label: 'Setup', show: me.canView },
-  ];
-  const visible = tabs.filter((t) => t.show);
-  const active: Tab = visible.some((t) => t.key === tab) ? tab : 'payslips';
+  const navItems = payrollNavItems(me); // same list the menu shows, computed here so the first paint never lags the store
+  const active = payrollNav.resolve(section, navItems.length ? navItems : items);
+  const activeLabel = navItems.find((i) => i.key === active)?.label || '';
 
   return (
     <div className="flex-1 overflow-y-auto">
       <div className="max-w-7xl mx-auto w-full p-4 md:p-6 space-y-4">
-        <div>
-          <h2 className="text-lg font-bold text-slate-900">Payroll</h2>
-          <p className="text-xs text-slate-500">{me.canManage ? 'You can run payroll.' : me.canView ? 'You can view payroll (read-only).' : 'Your payslips appear here once a month is finalised.'}</p>
-        </div>
-        {me.canView && !me.configured && !me.canManage && <Notice>Payroll has not been set up yet.</Notice>}
-        {visible.length > 1 && (
-          <div className="flex gap-1 overflow-x-auto border-b border-slate-200">
-            {visible.map((t) => (
-              <button key={t.key} onClick={() => setTab(t.key)}
-                className={`px-3 py-2 text-xs font-bold whitespace-nowrap border-b-2 -mb-px ${active === t.key ? 'border-[#FA7014] text-[#FA7014]' : 'border-transparent text-slate-500 hover:text-slate-800'}`}>
-                {t.label}
-              </button>
-            ))}
+        {inlineNav ? (
+          <div>
+            <h2 className="text-lg font-bold text-slate-900">Payroll</h2>
+          </div>
+        ) : (
+          <div className="flex items-center gap-1.5 text-xs font-semibold text-slate-400" aria-label="You are here">
+            <span>Payroll</span><ChevronRight className="w-3.5 h-3.5" /><span className="text-slate-700">{activeLabel}</span>
           </div>
         )}
+        <p className="text-xs text-slate-500 -mt-2">{me.canManage ? 'You can run payroll.' : me.canView ? 'You can view payroll (read-only).' : 'Your payslips appear here once a month is finalised.'}</p>
+        {inlineNav && navItems.length > 1 && <ModuleSubNav nav={payrollNav} label="Payroll sections" variant="pills" />}
+        {me.canView && !me.configured && !me.canManage && <Notice>Payroll has not been set up yet.</Notice>}
         {active === 'payslips' && <MyPayslips />}
         {active === 'claims' && <MyClaims />}
         {active === 'tax' && <MyTax />}
