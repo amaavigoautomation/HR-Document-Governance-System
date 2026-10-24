@@ -241,17 +241,19 @@ export function buildMonth(settings: LeaveSettings, locId: string, joinDate: str
 // ------------------------------------------------------------------ self service
 
 async function me(who: Who): Promise<Result> {
-  const { settings, configured } = await loadSettings(who.cid);
-  const person = await personByUid(who.cid, who.ctx.uid);
+  const [{ settings, configured }, person] = await Promise.all([loadSettings(who.cid), personByUid(who.cid, who.ctx.uid)]);
   const base = { configured: configured && settings.types.length > 0, canManage: who.canManage, canReport: who.canReport };
   if (!person) return ok({ ...base, found: false });
 
-  const [profiles, people, ledger, requests] = await Promise.all([
+  // One round of reads, all at the same time (the approvals count only needs the pending lists, not people's names).
+  const today = istToday();
+  const [profiles, people, ledger, requests, att, inbox] = await Promise.all([
     loadProfiles(who.cid), loadPeople(who.cid), userLedger(who.cid, person.uid), requestsOfUser(who.cid, person.uid),
+    db().collection('leaveAttendance').doc(attendanceId(who.cid, person.uid, today)).get(),
+    inboxFor(who, [], settings),
   ]);
   const prof = effectiveProfile(settings, person, profiles.get(person.uid));
   const isManager = Array.from(profiles.values()).some((p) => p.managerUid === person.uid && p.uid !== person.uid);
-  const today = istToday();
   const loc = findLocation(settings, prof.locationId);
   const policy = findPolicy(settings, prof.policyId);
 
@@ -272,9 +274,7 @@ async function me(who: Who): Promise<Result> {
     }];
   });
 
-  const att = await db().collection('leaveAttendance').doc(attendanceId(who.cid, person.uid, today)).get();
   const rec: any = att.exists ? att.data() : null;
-  const inbox = await inboxFor(who, people);
 
   return ok({
     ...base, found: true, today,
@@ -384,9 +384,13 @@ async function cancel(who: Who, body: any): Promise<Result> {
 
 // ------------------------------------------------------------------ approvals
 
-async function inboxFor(who: Who, people: Person[]) {
-  const snap = await db().collection('leaveRequests').where('companyId', '==', who.cid).where('status', 'in', ['PENDING', 'CANCEL_REQUESTED']).get();
-  const { settings } = await loadSettings(who.cid);
+async function inboxFor(who: Who, people: Person[], loaded?: LeaveSettings) {
+  const [snap, rs, fetched] = await Promise.all([
+    db().collection('leaveRequests').where('companyId', '==', who.cid).where('status', 'in', ['PENDING', 'CANCEL_REQUESTED']).get(),
+    db().collection('leaveRegularizations').where('companyId', '==', who.cid).where('status', '==', 'PENDING').get(),
+    loaded ? Promise.resolve(null) : loadSettings(who.cid),
+  ]);
+  const settings = loaded || fetched!.settings;
   const today = istToday();
   const leaves = snap.docs
     .map((d) => d.data() as LeaveRequest)
@@ -408,7 +412,6 @@ async function inboxFor(who: Who, people: Person[]) {
     })
     .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
 
-  const rs = await db().collection('leaveRegularizations').where('companyId', '==', who.cid).where('status', '==', 'PENDING').get();
   const regularizations = rs.docs
     .map((d) => d.data() as any)
     .filter((r) => (r.uid !== who.ctx.uid || who.ctx.isCompanyAdmin) && (who.canManage || r.managerUid === who.ctx.uid));

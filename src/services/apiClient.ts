@@ -14,7 +14,14 @@ export async function apiFetch(input: string, init: RequestInit = {}): Promise<R
   return fetch(input, { ...init, headers });
 }
 
-export async function apiJson<T = any>(path: string, body?: unknown, method = body === undefined ? 'GET' : 'POST'): Promise<T> {
+// Repeat reads of the Leave / Payroll / People screens are answered from memory for a short while, and identical reads made at the same moment share one request.
+// Any change (a POST) clears everything, so people never see old data after their own action.
+const READ_TTL_MS = 30_000;
+const reads = new Map<string, { at: number; value?: unknown; pending?: Promise<unknown> }>();
+const copy = <T,>(v: T): T => (typeof structuredClone === 'function' ? structuredClone(v) : JSON.parse(JSON.stringify(v)));
+export const clearApiCache = () => reads.clear();
+
+async function request<T>(path: string, body: unknown, method: string): Promise<T> {
   const res = await apiFetch(path, {
     method,
     headers: body === undefined ? {} : { 'Content-Type': 'application/json' },
@@ -30,4 +37,33 @@ export async function apiJson<T = any>(path: string, body?: unknown, method = bo
     throw new Error(json?.error || `Request failed (${res.status})`);
   }
   return json as T;
+}
+
+// Only the Leave / Payroll / People screens (all under /api/leave/) use the read cache. Other endpoints, such as notifications, stay live.
+const cacheable = (path: string) => path.startsWith('/api/leave/');
+
+export async function apiJson<T = any>(path: string, body?: unknown, method = body === undefined ? 'GET' : 'POST'): Promise<T> {
+  if (!cacheable(path)) return request<T>(path, body, method);
+  if (method !== 'GET') {
+    reads.clear();
+    try {
+      return await request<T>(path, body, method);
+    } finally {
+      reads.clear(); // again after the server has saved, in case a read started while it was saving
+    }
+  }
+  const key = `${auth.currentUser?.uid || ''}|${path}`;
+  const hit = reads.get(key);
+  if (hit && hit.pending) return copy((await hit.pending) as T);
+  if (hit && Date.now() - hit.at < READ_TTL_MS) return copy(hit.value as T);
+  const pending = request<T>(path, body, method);
+  reads.set(key, { at: Date.now(), pending });
+  try {
+    const value = await pending;
+    if (reads.get(key)?.pending === pending) reads.set(key, { at: Date.now(), value });
+    return copy(value);
+  } catch (e) {
+    if (reads.get(key)?.pending === pending) reads.delete(key);
+    throw e;
+  }
 }

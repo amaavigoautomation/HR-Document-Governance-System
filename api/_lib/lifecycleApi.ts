@@ -728,9 +728,17 @@ async function setManager(w: Who, body: any): Promise<Result> {
 // ------------------------------------------------------------------ router
 
 async function me(w: Who): Promise<Result> {
-  const [reports, myExit, tasks] = await Promise.all([reportUids(w.cid, w.uid), loadExit(w.cid, w.uid), loadTasks(w.cid)]);
-  const open = tasks.filter((t) => t.status === 'OPEN' && (t.uid === w.uid || t.assigneeUid === w.uid)).length;
-  return ok({ uid: w.uid, canManage: w.canManage, isManager: reports.size > 0, hasExit: isOpen(myExit), openTasks: open });
+  // Only my own data: a one-row check for direct reports, and only the tasks that are mine or assigned to me.
+  const [hasReports, myExit, mine, assigned] = await Promise.all([
+    db().collection('leaveProfiles').where('companyId', '==', w.cid).where('managerUid', '==', w.uid).limit(1).get(),
+    loadExit(w.cid, w.uid),
+    loadTasks(w.cid, w.uid),
+    db().collection('lifecycleTasks').where('companyId', '==', w.cid).where('assigneeUid', '==', w.uid).get(),
+  ]);
+  const ids = new Set<string>();
+  const open = [...mine, ...assigned.docs.map((d: any) => ({ id: d.id, ...(d.data() as TaskDoc) }))]
+    .filter((t) => t.status === 'OPEN' && !ids.has(t.id) && ids.add(t.id)).length;
+  return ok({ uid: w.uid, canManage: w.canManage, isManager: !hasReports.empty, hasExit: isOpen(myExit), openTasks: open });
 }
 
 async function getSettings(w: Who): Promise<Result> {
