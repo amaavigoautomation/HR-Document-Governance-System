@@ -1,4 +1,5 @@
-import React, { useSyncExternalStore } from 'react';
+import React, { useEffect, useState, useSyncExternalStore } from 'react';
+import { ChevronDown, ChevronRight } from 'lucide-react';
 
 /**
  * Section menus for modules (Payroll, People, ...).
@@ -64,8 +65,12 @@ const groupItems = (items: NavItem[]) => {
 
 export const ModuleSubNav: React.FC<{ nav: ModuleNav; label: string; variant: 'sidebar' | 'pills'; onNavigate?: () => void; idPrefix?: string }> = ({ nav, label, variant, onNavigate, idPrefix }) => {
   const { section, items } = nav.useNav();
+  const [closed, setClosed] = useState<Record<string, boolean>>({});
+  const active = items.length ? nav.resolve(section, items) : '';
+  const activeGroup = items.find((i) => i.key === active)?.group;
+  // Opening a page always opens the group it lives in.
+  useEffect(() => { if (activeGroup) setClosed((c) => (c[activeGroup] ? { ...c, [activeGroup]: false } : c)); }, [activeGroup, active]);
   if (items.length === 0) return null;
-  const active = nav.resolve(section, items);
   const go = (k: string) => { nav.setSection(k); onNavigate?.(); };
 
   if (variant === 'pills') {
@@ -90,28 +95,39 @@ export const ModuleSubNav: React.FC<{ nav: ModuleNav; label: string; variant: 's
   const titled = groups.length > 1;
   return (
     <div className="pl-4 pr-1 pt-1 space-y-1" role="navigation" aria-label={label}>
-      {groups.map((g, gi) => (
-        <div key={g.title || gi} className="space-y-1">
-          {titled && g.title && (
-            <div className={`px-2.5 text-[10px] font-bold uppercase tracking-wider text-slate-400 ${gi > 0 ? 'pt-2' : 'pt-0.5'}`}>{g.title}</div>
-          )}
-          {g.items.map(({ key, label: text, badge }) => {
-            const Icon = nav.icons[key];
-            const on = active === key;
-            return (
-              <button key={key} id={idPrefix ? `${idPrefix}-${key}` : undefined} type="button" onClick={() => go(key)} aria-current={on ? 'page' : undefined}
-                className={`w-full flex items-center justify-between px-2.5 py-2 rounded-lg text-xs font-semibold transition-all cursor-pointer ${on ? 'bg-[#FA7014]/15 text-[#FA7014] font-bold shadow-2xs' : 'text-slate-700 hover:text-[#FA7014] hover:bg-orange-50'}`}>
-                <div className="flex items-center space-x-2 min-w-0">
-                  <span className={`w-1.5 h-1.5 rounded-full transition-colors shrink-0 ${on ? 'bg-[#FA7014]' : 'bg-slate-300'}`} />
-                  {Icon && <Icon className={`w-3.5 h-3.5 shrink-0 transition-colors ${on ? 'text-[#FA7014]' : 'text-slate-400'}`} />}
-                  <span className="truncate">{text}</span>
-                </div>
-                {badge ? <span className="bg-[#FA7014] text-white rounded-full px-1.5 py-0.5 text-[10px] leading-none font-bold shrink-0">{badge}</span> : null}
+      {groups.map((g, gi) => {
+        const isClosed = titled && !!g.title && !!closed[g.title];
+        const hidden = g.items.reduce((n, i) => n + (i.badge || 0), 0);
+        return (
+          <div key={g.title || gi} className="space-y-1">
+            {titled && g.title && (
+              <button type="button" onClick={() => setClosed((c) => ({ ...c, [g.title!]: !c[g.title!] }))} aria-expanded={!isClosed}
+                className={`w-full flex items-center justify-between px-2.5 rounded-lg text-[10px] font-bold uppercase tracking-wider text-slate-400 hover:text-slate-600 hover:bg-slate-50 cursor-pointer py-1.5 ${gi > 0 ? 'mt-1' : ''}`}>
+                <span>{g.title}</span>
+                <span className="flex items-center gap-1.5">
+                  {isClosed && hidden ? <span className="bg-[#FA7014] text-white rounded-full px-1.5 py-0.5 text-[10px] leading-none font-bold normal-case tracking-normal">{hidden}</span> : null}
+                  {isClosed ? <ChevronRight className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+                </span>
               </button>
-            );
-          })}
-        </div>
-      ))}
+            )}
+            {!isClosed && g.items.map(({ key, label: text, badge }) => {
+              const Icon = nav.icons[key];
+              const on = active === key;
+              return (
+                <button key={key} id={idPrefix ? `${idPrefix}-${key}` : undefined} type="button" onClick={() => go(key)} aria-current={on ? 'page' : undefined}
+                  className={`w-full flex items-center justify-between px-2.5 py-2 rounded-lg text-xs font-semibold transition-all cursor-pointer ${on ? 'bg-[#FA7014]/15 text-[#FA7014] font-bold shadow-2xs' : 'text-slate-700 hover:text-[#FA7014] hover:bg-orange-50'}`}>
+                  <div className="flex items-center space-x-2 min-w-0">
+                    <span className={`w-1.5 h-1.5 rounded-full transition-colors shrink-0 ${on ? 'bg-[#FA7014]' : 'bg-slate-300'}`} />
+                    {Icon && <Icon className={`w-3.5 h-3.5 shrink-0 transition-colors ${on ? 'text-[#FA7014]' : 'text-slate-400'}`} />}
+                    <span className="truncate">{text}</span>
+                  </div>
+                  {badge ? <span className="bg-[#FA7014] text-white rounded-full px-1.5 py-0.5 text-[10px] leading-none font-bold shrink-0">{badge}</span> : null}
+                </button>
+              );
+            })}
+          </div>
+        );
+      })}
     </div>
   );
 };
