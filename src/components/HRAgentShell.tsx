@@ -79,6 +79,7 @@ export const HRAgentShell: React.FC<HRAgentShellProps> = ({
 
   // Talent Acquisition expanded state in left navigation
   const [isTalentAcquisitionExpanded, setIsTalentAcquisitionExpanded] = useState<boolean>(true);
+  const [isLeaveExpanded, setIsLeaveExpanded] = useState<boolean>(true);
 
   // Mobile sidebar drawer state
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState<boolean>(false);
@@ -477,14 +478,16 @@ export const HRAgentShell: React.FC<HRAgentShellProps> = ({
                 {/* ---------------------------------------------------- */}
                 {/* LEAVE & ATTENDANCE (every role)                      */}
                 {/* ---------------------------------------------------- */}
+                <div className="relative">
                 <button
                   id="nav-module-leave-management"
                   type="button"
                   onClick={() => {
                     onSelectModule('leave-management');
+                    setIsLeaveExpanded(true);
                     setIsMobileSidebarOpen(false);
                   }}
-                  className={`w-full px-3 py-2.5 rounded-xl border flex items-center justify-between text-left transition-all cursor-pointer ${
+                  className={`w-full ${activeModule === 'leave-management' ? 'pl-3 pr-10' : 'px-3'} py-2.5 rounded-xl border flex items-center justify-between text-left transition-all cursor-pointer ${
                     activeModule === 'leave-management'
                       ? 'bg-[#FA7014]/10 border-[#FA7014]/40 text-slate-900 shadow-xs'
                       : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50 hover:border-slate-300'
@@ -511,9 +514,23 @@ export const HRAgentShell: React.FC<HRAgentShellProps> = ({
                     </div>
                   )}
                 </button>
+                {activeModule === 'leave-management' && (
+                  <button
+                    id="nav-module-leave-toggle"
+                    type="button"
+                    onClick={() => setIsLeaveExpanded((v) => !v)}
+                    aria-expanded={isLeaveExpanded}
+                    aria-label={isLeaveExpanded ? 'Hide leave sections' : 'Show leave sections'}
+                    title={isLeaveExpanded ? 'Hide sections' : 'Show sections'}
+                    className="absolute right-1.5 top-1/2 -translate-y-1/2 w-7 h-7 rounded-lg flex items-center justify-center text-[#FA7014] hover:bg-[#FA7014]/15 cursor-pointer"
+                  >
+                    {isLeaveExpanded ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
+                  </button>
+                )}
+                </div>
 
                 {/* Leave sections (Today, My leave, Attendance, Team calendar, Approvals, Manage) */}
-                {activeModule === 'leave-management' && (
+                {activeModule === 'leave-management' && isLeaveExpanded && (
                   <LeaveSubNav variant="sidebar" onNavigate={() => setIsMobileSidebarOpen(false)} />
                 )}
 
