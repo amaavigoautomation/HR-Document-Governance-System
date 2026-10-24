@@ -48,7 +48,7 @@ export const resolveSection = (section: LeaveSection, items: LeaveNavItem[]): Le
 export function leaveNavItems(me: any | null): LeaveNavItem[] {
   if (!me || me.found === false) return [];
   const ok = !!me.configured;
-  const canApprove = ok && (me.isManager || me.canManage || me.approvals > 0);
+  const canApprove = ok && (me.isManager || me.isDelegate || me.canManage || me.approvals > 0);
   const canAdmin = !!(me.canManage || me.canReport);
   const all: (LeaveNavItem & { show: boolean })[] = [
     { key: 'today', label: 'Today', show: ok },

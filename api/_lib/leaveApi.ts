@@ -195,6 +195,30 @@ function needConfigured(c: Ctx) {
 
 const nameOf = (people: Person[], uid: string) => people.find((p) => p.uid === uid)?.name || '';
 
+// ------------------------------------------------------------------ delegation (someone approves while the manager is away)
+
+interface Delegation { companyId: string; managerUid: string; delegateUid: string; from: string; to: string; createdBy: string; createdAt: string }
+const delegationId = (cid: string, managerUid: string) => `${cid}__${managerUid}`;
+const covers = (d: Pick<Delegation, 'from' | 'to'>, date: string) => d.from <= date && date <= d.to;
+
+/** The managers whose approvals this person covers on the given day. */
+async function coveredManagers(cid: string, uid: string, day: string): Promise<Set<string>> {
+  const snap = await db().collection('leaveDelegations').where('companyId', '==', cid).where('delegateUid', '==', uid).get();
+  return new Set(snap.docs.map((d) => d.data() as Delegation).filter((d) => covers(d, day)).map((d) => d.managerUid));
+}
+
+/** Who is away today (has approved leave that covers the whole day) among these people. */
+async function awayOn(cid: string, uids: string[], day: string): Promise<Set<string>> {
+  const out = new Set<string>();
+  await Promise.all(Array.from(new Set(uids.filter(Boolean))).map(async (uid) => {
+    const list = await requestsOfUser(cid, uid);
+    if (list.some((r) => (r.status === 'APPROVED' || r.status === 'CANCEL_REQUESTED') && r.detail.some((x) => x.date === day && x.value >= 1))) out.add(uid);
+  }));
+  return out;
+}
+
+const coverLabel = (name: string, managerName: string) => `${name} (covering for ${managerName || 'the manager'})`;
+
 function leaveByDate(requests: LeaveRequest[]): Map<string, number> {
   const m = new Map<string, number>();
   requests.filter((r) => r.status === 'APPROVED' || r.status === 'CANCEL_REQUESTED').forEach((r) => r.detail.forEach((d) => m.set(d.date, Math.min(1, (m.get(d.date) || 0) + d.value))));
@@ -291,7 +315,7 @@ async function me(who: Who): Promise<Result> {
     holidays: (loc?.holidays || []).filter((h) => h.date >= today.slice(0, 4) + '-01-01').slice(0, 40),
     weeklyOff: loc?.weeklyOff || {},
     attendanceToday: { checkIn: rec?.checkIn ? istParts(rec.checkIn).time : null, checkOut: rec?.checkOut ? istParts(rec.checkOut).time : null },
-    isManager, approvals: inbox.leaves.length + inbox.regularizations.length,
+    isManager, isDelegate: inbox.covered.size > 0, approvals: inbox.leaves.length + inbox.regularizations.length,
   });
 }
 
@@ -341,7 +365,24 @@ async function apply(who: Who, body: any): Promise<Result> {
   const people = await loadPeople(who.cid);
   const mgr = people.find((p) => p.uid === req.managerUid);
   const first = req.steps[0]?.role;
-  await notify(who.cid, first === 'MANAGER' && mgr ? [mgr.email] : c.settings.notifyEmails,
+  let to: string[] = first === 'MANAGER' && mgr ? [mgr.email] : c.settings.notifyEmails;
+  if (first === 'MANAGER' && mgr) {
+    // A manager who is away (covered by a delegate, or on approved leave) must not leave the request waiting.
+    const today = istToday();
+    const dsnap = await db().collection('leaveDelegations').doc(delegationId(who.cid, mgr.uid)).get();
+    const del = dsnap.exists ? (dsnap.data() as Delegation) : null;
+    const delegate = del && (covers(del, today) || covers(del, req.from)) ? people.find((p) => p.uid === del.delegateUid) : undefined;
+    let message = '';
+    if (delegate) {
+      to = [mgr.email, delegate.email];
+      message = `${mgr.name} is away. ${delegate.name} is covering approvals.`;
+    } else if ((await awayOn(who.cid, [mgr.uid], today)).has(mgr.uid) || (await awayOn(who.cid, [mgr.uid], req.from)).has(mgr.uid)) {
+      to = c.settings.notifyEmails;
+      message = `${mgr.name} is on leave and has no delegate. Sent to HR.`;
+    }
+    if (message) await db().collection('leaveRequests').doc(req.id).update({ events: [...req.events, { at: nowIso(), by: 'System', message }] });
+  }
+  await notify(who.cid, to,
     `Leave request: ${req.name}, ${req.typeName}, ${req.from}${req.to !== req.from ? ' to ' + req.to : ''}`,
     `${req.name} has asked for ${req.days} day(s) of ${req.typeName} (${req.from} to ${req.to}).\n${req.reason ? 'Reason: ' + req.reason + '\n' : ''}\nOpen Leave & Attendance > Approvals to approve or reject.`);
   return ok({ id: req.id, status: req.status, days: req.days, steps: req.steps.map((s) => s.role) });
@@ -385,19 +426,20 @@ async function cancel(who: Who, body: any): Promise<Result> {
 // ------------------------------------------------------------------ approvals
 
 async function inboxFor(who: Who, people: Person[], loaded?: LeaveSettings) {
-  const [snap, rs, fetched] = await Promise.all([
+  const today = istToday();
+  const [snap, rs, fetched, covered] = await Promise.all([
     db().collection('leaveRequests').where('companyId', '==', who.cid).where('status', 'in', ['PENDING', 'CANCEL_REQUESTED']).get(),
     db().collection('leaveRegularizations').where('companyId', '==', who.cid).where('status', '==', 'PENDING').get(),
     loaded ? Promise.resolve(null) : loadSettings(who.cid),
+    coveredManagers(who.cid, who.ctx.uid, today),
   ]);
   const settings = loaded || fetched!.settings;
-  const today = istToday();
   const leaves = snap.docs
     .map((d) => d.data() as LeaveRequest)
     .filter((r) => {
       if (r.uid === who.ctx.uid && !who.ctx.isCompanyAdmin) return false;
       if (who.canManage) return true;
-      if (r.managerUid !== who.ctx.uid) return false;
+      if (r.managerUid !== who.ctx.uid && !covered.has(r.managerUid)) return false;
       return r.status === 'CANCEL_REQUESTED' || r.steps[r.stepIndex]?.role === 'MANAGER';
     })
     .map((r) => {
@@ -408,19 +450,24 @@ async function inboxFor(who: Who, people: Person[], loaded?: LeaveSettings) {
         waitingDays,
         escalated: settings.escalateAfterDays > 0 && waitingDays >= settings.escalateAfterDays,
         managerName: nameOf(people, r.managerUid),
+        coveringFor: !who.canManage && r.managerUid !== who.ctx.uid && covered.has(r.managerUid) ? nameOf(people, r.managerUid) : '',
       };
     })
     .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
 
   const regularizations = rs.docs
     .map((d) => d.data() as any)
-    .filter((r) => (r.uid !== who.ctx.uid || who.ctx.isCompanyAdmin) && (who.canManage || r.managerUid === who.ctx.uid));
-  return { leaves, regularizations };
+    .filter((r) => (r.uid !== who.ctx.uid || who.ctx.isCompanyAdmin) && (who.canManage || r.managerUid === who.ctx.uid || covered.has(r.managerUid)))
+    .map((r) => ({ ...r, coveringFor: !who.canManage && r.managerUid !== who.ctx.uid && covered.has(r.managerUid) ? nameOf(people, r.managerUid) : '' }));
+  return { leaves, regularizations, covered };
 }
 
 async function inbox(who: Who): Promise<Result> {
   const people = await loadPeople(who.cid);
-  return ok(await inboxFor(who, people));
+  const { leaves, regularizations } = await inboxFor(who, people);
+  // Tell HR which requests are waiting on a manager who is on leave.
+  const away = await awayOn(who.cid, leaves.map((l) => l.managerUid), istToday());
+  return ok({ leaves: leaves.map((l) => ({ ...l, managerAway: away.has(l.managerUid) })), regularizations });
 }
 
 async function decide(who: Who, body: any): Promise<Result> {
@@ -430,15 +477,18 @@ async function decide(who: Who, body: any): Promise<Result> {
   const comment = str(body?.comment, 400);
   if (decision !== 'APPROVE' && decision !== 'REJECT') return fail(400, 'decision must be APPROVE or REJECT.');
   const ref = db().collection('leaveRequests').doc(id);
-  const approver = c.me.name;
+  let approver = c.me.name;
   let result: LeaveRequest | null = null;
+  const covered = await coveredManagers(who.cid, who.ctx.uid, istToday());
 
   await db().runTransaction(async (tx) => {
     const snap = await tx.get(ref);
     const r = snap.data() as LeaveRequest | undefined;
     if (!r || r.companyId !== who.cid) throw new LeaveError(404, 'Request not found.');
     if (r.status !== 'PENDING' && r.status !== 'CANCEL_REQUESTED') throw new LeaveError(409, 'This request was already handled.');
-    const isMine = r.managerUid === who.ctx.uid;
+    const viaDelegate = r.managerUid !== who.ctx.uid && covered.has(r.managerUid);
+    const isMine = r.managerUid === who.ctx.uid || viaDelegate;
+    approver = viaDelegate && !who.canManage ? coverLabel(c.me.name, (await personByUid(who.cid, r.managerUid))?.name || '') : c.me.name;
     if (r.uid === who.ctx.uid && !who.ctx.isCompanyAdmin) throw new LeaveError(403, 'You cannot approve your own request.');
     const step = r.steps[r.stepIndex];
     const allowed = who.canManage || (isMine && (r.status === 'CANCEL_REQUESTED' || step?.role === 'MANAGER'));
@@ -490,6 +540,69 @@ async function decide(who: Who, body: any): Promise<Result> {
     }
   }
   return ok({ status: r?.status });
+}
+
+// ------------------------------------------------------------------ delegation endpoints
+
+async function isManagerOf(cid: string, uid: string): Promise<boolean> {
+  const snap = await db().collection('leaveProfiles').where('companyId', '==', cid).where('managerUid', '==', uid).limit(1).get();
+  return !snap.empty;
+}
+
+async function getDelegation(who: Who): Promise<Result> {
+  const today = istToday();
+  const [people, mine, asDelegate, all, manager] = await Promise.all([
+    loadPeople(who.cid),
+    db().collection('leaveDelegations').doc(delegationId(who.cid, who.ctx.uid)).get(),
+    db().collection('leaveDelegations').where('companyId', '==', who.cid).where('delegateUid', '==', who.ctx.uid).get(),
+    who.canManage ? db().collection('leaveDelegations').where('companyId', '==', who.cid).get() : Promise.resolve(null),
+    isManagerOf(who.cid, who.ctx.uid),
+  ]);
+  const name = (uid: string) => nameOf(people, uid);
+  const live = (d: Delegation) => d.to >= today;
+  const view = (d: Delegation) => ({ managerUid: d.managerUid, managerName: name(d.managerUid), delegateUid: d.delegateUid, delegateName: name(d.delegateUid), from: d.from, to: d.to });
+  const m = mine.exists ? (mine.data() as Delegation) : null;
+  return ok({
+    canSet: manager || who.canManage,
+    hr: who.canManage,
+    mine: m && live(m) ? view(m) : null,
+    covering: asDelegate.docs.map((d) => d.data() as Delegation).filter(live).map(view),
+    all: all ? all.docs.map((d) => d.data() as Delegation).filter(live).map(view) : [],
+    candidates: people.filter((p) => p.active && p.uid !== who.ctx.uid).map((p) => ({ uid: p.uid, name: p.name })).sort((a, b) => a.name.localeCompare(b.name)),
+  });
+}
+
+async function setDelegation(who: Who, body: any): Promise<Result> {
+  const c = await loadCtx(who);
+  const managerUid = str(body?.managerUid, 128) || who.ctx.uid;
+  if (managerUid !== who.ctx.uid) needManage(who);
+  else if (!who.canManage && !(await isManagerOf(who.cid, who.ctx.uid))) return fail(403, 'Only managers can choose someone to approve for them.');
+  const delegateUid = str(body?.delegateUid, 128);
+  const from = str(body?.from, 10);
+  const to = str(body?.to, 10);
+  const today = istToday();
+  if (!isIsoDate(from) || !isIsoDate(to)) return fail(400, 'Choose the dates.');
+  if (from < today) return fail(400, 'The start date cannot be in the past.');
+  if (to < from) return fail(400, 'The end date must be on or after the start date.');
+  if (daysBetween(from, to) > 90) return fail(400, 'Choose at most 90 days.');
+  if (delegateUid === managerUid) return fail(400, 'Choose someone else.');
+  const [manager, delegate] = await Promise.all([personByUid(who.cid, managerUid), personByUid(who.cid, delegateUid)]);
+  if (!manager) return fail(404, 'Manager not found.');
+  if (!delegate || !delegate.active) return fail(404, 'Choose an active colleague.');
+  const doc: Delegation = { companyId: who.cid, managerUid, delegateUid, from, to, createdBy: who.ctx.uid, createdAt: nowIso() };
+  await db().collection('leaveDelegations').doc(delegationId(who.cid, managerUid)).set(doc);
+  const when = from === to ? from : `${from} to ${to}`;
+  await notify(who.cid, [delegate.email], `You will approve leave for ${manager.name} (${when})`,
+    `${manager.name} is away ${when}. During this time you can approve or reject the leave and attendance requests of their team.\nOpen Leave & Attendance > Approvals.${managerUid !== who.ctx.uid ? `\nSet by ${c.me.name} (HR).` : ''}`);
+  if (managerUid !== who.ctx.uid) await notify(who.cid, [manager.email], `${delegate.name} will approve for you (${when})`, `${c.me.name} (HR) chose ${delegate.name} to approve your team's requests while you are away (${when}).`);
+  return ok({});
+}
+
+async function clearDelegation(who: Who, body: any): Promise<Result> {
+  const managerUid = str(body?.managerUid, 128) || who.ctx.uid;
+  if (managerUid !== who.ctx.uid) needManage(who);
+  await db().collection('leaveDelegations').doc(delegationId(who.cid, managerUid)).delete();
+  return ok({});
 }
 
 async function hrCancel(who: Who, body: any): Promise<Result> {
@@ -631,11 +744,14 @@ async function decideRegularization(who: Who, body: any): Promise<Result> {
   if (!r || r.companyId !== who.cid) return fail(404, 'Request not found.');
   if (r.status !== 'PENDING') return fail(409, 'This was already handled.');
   if (r.uid === who.ctx.uid && !who.ctx.isCompanyAdmin) return fail(403, 'You cannot approve your own request.');
-  if (!who.canManage && r.managerUid !== who.ctx.uid) return fail(403, 'This request is not waiting for you.');
+  const covered = await coveredManagers(who.cid, who.ctx.uid, istToday());
+  const viaDelegate = r.managerUid !== who.ctx.uid && covered.has(r.managerUid);
+  if (!who.canManage && r.managerUid !== who.ctx.uid && !viaDelegate) return fail(403, 'This request is not waiting for you.');
+  const decider = viaDelegate && !who.canManage ? coverLabel(c.me.name, (await personByUid(who.cid, r.managerUid))?.name || '') : c.me.name;
   const approve = str(body?.decision, 10) === 'APPROVE';
   const now = nowIso();
   const batch = db().batch();
-  batch.update(ref, { status: approve ? 'APPROVED' : 'REJECTED', decidedBy: c.me.name, decidedAt: now, comment: str(body?.comment, 300) });
+  batch.update(ref, { status: approve ? 'APPROVED' : 'REJECTED', decidedBy: decider, decidedAt: now, comment: str(body?.comment, 300) });
   if (approve) {
     batch.set(db().collection('leaveAttendance').doc(attendanceId(who.cid, r.uid, r.date)), {
       companyId: who.cid, uid: r.uid, date: r.date, month: r.date.slice(0, 7),
@@ -644,7 +760,7 @@ async function decideRegularization(who: Who, body: any): Promise<Result> {
     });
   }
   await batch.commit();
-  await notify(who.cid, [r.email], `Attendance correction ${approve ? 'approved' : 'rejected'} (${r.date})`, `Your attendance correction for ${r.date} was ${approve ? 'approved' : 'rejected'} by ${c.me.name}.`);
+  await notify(who.cid, [r.email], `Attendance correction ${approve ? 'approved' : 'rejected'} (${r.date})`, `Your attendance correction for ${r.date} was ${approve ? 'approved' : 'rejected'} by ${decider}.`);
   return ok({});
 }
 
@@ -973,6 +1089,9 @@ export async function routeLeave(r: LeaveRequestIn): Promise<Result> {
       case 'my-ledger': if (GET) return await myLedger(who); break;
       case 'cancel': if (POST) return await cancel(who, body); break;
       case 'inbox': if (GET) return await inbox(who); break;
+      case 'delegation': if (GET) return await getDelegation(who); break;
+      case 'set-delegation': if (POST) return await setDelegation(who, body); break;
+      case 'clear-delegation': if (POST) return await clearDelegation(who, body); break;
       case 'decide': if (POST) return await decide(who, body); break;
       case 'team-calendar': if (GET) return await teamCalendar(who, r.query); break;
       case 'check-in': if (POST) return await punch(who, 'in', r.ip); break;

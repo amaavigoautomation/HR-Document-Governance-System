@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { ChevronLeft, ChevronRight, Clock, FileText, PartyPopper, Users } from 'lucide-react';
 import { leaveService } from '../../services/leaveService';
+import { CoverPanel } from './CoverPanel';
 import {
   addDaysIso, btnDanger, btnGhost, btnPrimary, Card, ConfirmButton, days, EmptyState, halfNote, input, niceDate, Notice, range, Segmented,
   shortDate, shortRange, Skeleton, StatusPill, thisMonth, todayIst, useRunner,
@@ -39,7 +40,14 @@ const Decide: React.FC<{ busy: boolean; cancel?: boolean; onDecide: (d: 'APPROVE
   );
 };
 
-export const ApprovalsTab: React.FC<{ reload: () => void }> = ({ reload }) => {
+export const ApprovalsTab: React.FC<{ reload: () => void }> = ({ reload }) => (
+  <div className="space-y-3">
+    <CoverPanel onChanged={reload} />
+    <ApprovalsList reload={reload} />
+  </div>
+);
+
+const ApprovalsList: React.FC<{ reload: () => void }> = ({ reload }) => {
   const [data, setData] = useState<{ leaves: any[]; regularizations: any[] } | null>(null);
   const [overlap, setOverlap] = useState<any[]>([]);
   const [kind, setKind] = useState<'leave' | 'fix'>('leave');
@@ -105,6 +113,8 @@ export const ApprovalsTab: React.FC<{ reload: () => void }> = ({ reload }) => {
               <div className="flex-1 min-w-0">
                 <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
                   <span className="text-sm font-bold text-slate-900">{r.name}</span>
+                  {r.coveringFor && <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-sky-50 text-sky-700 border border-sky-200">Covering for {r.coveringFor}</span>}
+                  {r.managerAway && r.stage === 'MANAGER' && <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-50 text-amber-800 border border-amber-200">{r.managerName || 'Manager'} is on leave</span>}
                   {r.stage === 'CANCEL' && <StatusPill status="CANCEL_REQUESTED" />}
                   {r.stage === 'HR' && <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-100 text-slate-600">HR approval{r.managerName ? ` · ${r.managerName} said yes` : ''}</span>}
                   <span className={`inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full ${r.escalated ? 'bg-rose-50 text-rose-700 border border-rose-200' : 'text-slate-400'}`}>
@@ -132,7 +142,9 @@ export const ApprovalsTab: React.FC<{ reload: () => void }> = ({ reload }) => {
           <div className="flex items-start gap-3">
             <Avatar name={r.name} />
             <div className="flex-1 min-w-0">
-              <div className="text-sm font-bold text-slate-900">{r.name} <span className="font-normal text-slate-500">wants to fix {shortDate(r.date)}</span></div>
+              <div className="text-sm font-bold text-slate-900">{r.name} <span className="font-normal text-slate-500">wants to fix {shortDate(r.date)}</span>
+                {r.coveringFor && <span className="ml-2 align-middle text-[10px] font-bold px-2 py-0.5 rounded-full bg-sky-50 text-sky-700 border border-sky-200">Covering for {r.coveringFor}</span>}
+              </div>
               <div className="mt-1 text-xs text-slate-600">Real times: <b>{r.checkIn}</b> to <b>{r.checkOut}</b></div>
               {r.reason && <div className="mt-1.5 text-xs text-slate-700 bg-slate-50 rounded-lg px-2.5 py-1.5 border border-slate-100">“{r.reason}”</div>}
               <Decide busy={busy} onDecide={(d, c) => act(r.id, d, c, true)} />
