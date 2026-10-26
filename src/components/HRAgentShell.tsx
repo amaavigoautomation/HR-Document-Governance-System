@@ -21,6 +21,9 @@ import {
   Settings2,
   CalendarDays,
   Wallet,
+  Home,
+  FileCheck2,
+  ClipboardList,
 } from 'lucide-react';
 import { User, UserRole } from '../types';
 import { AmaavigoLogo } from './AmaavigoLogo';
@@ -37,6 +40,8 @@ import {
 import { hasAnyPerm } from '../../shared/permissions';
 
 export type HRAgentModule =
+  | 'home'
+  | 'policies'
   | 'document-version-control'
   | 'talent-acquisition'
   | 'talent-acquisition-overview'
@@ -56,6 +61,8 @@ interface HRAgentShellProps {
   onToggleSidebar: () => void;
   onLogout?: () => void;
   onRefreshData?: () => void;
+  /** Policies the person still has to acknowledge (badge on "My policies"). */
+  pendingPolicyCount?: number;
   children: React.ReactNode;
 }
 
@@ -68,6 +75,7 @@ export const HRAgentShell: React.FC<HRAgentShellProps> = ({
   onToggleSidebar,
   onLogout,
   onRefreshData,
+  pendingPolicyCount = 0,
   children,
 }) => {
   const isHR = currentUser.role === UserRole.CREATOR;
@@ -80,6 +88,11 @@ export const HRAgentShell: React.FC<HRAgentShellProps> = ({
   // Company administration (people, departments, roles) is available to anyone holding an admin permission
   const hasAdminAccess = hasAnyPerm(currentUser.perms, ['users.manage', 'departments.manage', 'roles.manage']);
 
+  // Everyone has a Home; the rest of these links follow what the person is allowed to do.
+  const canAcknowledge = hasAnyPerm(currentUser.perms, ['doc.acknowledge']);
+  // Department heads are employees who may raise hiring requests; the full Talent module stays hidden from them.
+  const hasRequestOnlyHiring = currentUser.role === UserRole.EMPLOYEE && hasAnyPerm(currentUser.perms, ['req.create']);
+
   // Talent Acquisition expanded state in left navigation
   const [isTalentAcquisitionExpanded, setIsTalentAcquisitionExpanded] = useState<boolean>(true);
   const [isLeaveExpanded, setIsLeaveExpanded] = useState<boolean>(true);
@@ -91,6 +104,7 @@ export const HRAgentShell: React.FC<HRAgentShellProps> = ({
 
   // Auto-redirect if currently selected module is not permitted
   useEffect(() => {
+    if (activeModule === 'home' || activeModule === 'policies') return;
     if (activeModule === 'administration' || activeModule === 'leave-management' || activeModule === 'payroll' || activeModule === 'people') return;
     if (activeModule === 'document-version-control' && !hasDocGovAccess && hasTalentAccess) {
       onSelectModule('talent-acquisition-overview');
@@ -253,6 +267,37 @@ export const HRAgentShell: React.FC<HRAgentShellProps> = ({
               </div>
 
               <nav className="space-y-1.5 flex-1">
+                {/* HOME: every person's own dashboard */}
+                {([
+                  { id: 'home' as const, label: 'Home', hint: 'What needs you today', icon: Home, show: true, badge: 0 },
+                  { id: 'policies' as const, label: 'My policies', hint: 'Read and acknowledge', icon: FileCheck2, show: canAcknowledge, badge: pendingPolicyCount },
+                  { id: 'talent-acquisition-requisitions' as const, label: 'Hiring requests', hint: 'Ask for a new hire', icon: ClipboardList, show: hasRequestOnlyHiring, badge: 0 },
+                ]).filter((n) => n.show).map((n) => {
+                  const active = activeModule === n.id;
+                  const Icon = n.icon;
+                  return (
+                    <button
+                      key={n.id}
+                      id={`nav-module-${n.id}`}
+                      type="button"
+                      onClick={() => { onSelectModule(n.id); setIsMobileSidebarOpen(false); }}
+                      className={`w-full px-3 py-2.5 rounded-xl border flex items-center justify-between text-left transition-all cursor-pointer ${
+                        active ? 'bg-[#FA7014]/10 border-[#FA7014]/40 shadow-xs' : 'bg-white border-slate-200 hover:bg-slate-50 hover:border-slate-300'
+                      }`}
+                    >
+                      <div className="flex items-center space-x-2.5 min-w-0">
+                        <div className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 ${active ? 'bg-[#FA7014] text-white' : 'bg-slate-100 text-slate-600'}`}>
+                          <Icon className="w-4 h-4" />
+                        </div>
+                        <div className="truncate">
+                          <span className={`text-xs font-bold block truncate ${active ? 'text-[#FA7014]' : 'text-slate-800'}`}>{n.label}</span>
+                          <span className="text-[10px] text-slate-500 font-medium block truncate">{n.hint}</span>
+                        </div>
+                      </div>
+                      {n.badge > 0 && <span className="shrink-0 min-w-5 h-5 px-1.5 rounded-full bg-[#FA7014] text-white text-[10px] font-bold flex items-center justify-center">{n.badge}</span>}
+                    </button>
+                  );
+                })}
                 {/* ---------------------------------------------------- */}
                 {/* 1. TALENT ACQUISITION (Authorized check)             */}
                 {/* ---------------------------------------------------- */}

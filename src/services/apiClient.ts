@@ -40,7 +40,8 @@ async function request<T>(path: string, body: unknown, method: string): Promise<
 }
 
 // Only the Leave / Payroll / People screens (all under /api/leave/) use the read cache. Other endpoints, such as notifications, stay live.
-const cacheable = (path: string) => path.startsWith('/api/leave/');
+// The Home dashboard is excluded: it summarises things that change elsewhere (acknowledging a policy, a decision made on another screen), so it is read fresh each time.
+const cacheable = (path: string) => path.startsWith('/api/leave/') && !path.startsWith('/api/leave/dashboard-');
 
 export async function apiJson<T = any>(path: string, body?: unknown, method = body === undefined ? 'GET' : 'POST'): Promise<T> {
   if (!cacheable(path)) return request<T>(path, body, method);

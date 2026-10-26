@@ -14,7 +14,12 @@ import { defaultEmailProvider } from './services/email';
 import { firestoreService } from './services/firestoreService';
 import { HRHeader } from './components/HRHeader';
 import { ApproverHeader } from './components/ApproverHeader';
-import { EmployeeHeader } from './components/EmployeeHeader';
+import { HomeDashboard } from './components/home/HomeDashboard';
+import { leaveNav } from './components/leave/leaveNav';
+import { payrollNav } from './components/payroll/payrollNav';
+import { peopleNav } from './components/lifecycle/peopleNav';
+import type { WidgetTarget } from '../shared/dashboard';
+import { hasAnyPerm } from '../shared/permissions';
 import { AuthScreen } from './components/AuthScreen';
 import { PendingApprovalView } from './components/PendingApprovalView';
 import { onSession, reloadSession, signOutUser, type SessionState } from './services/authService';
@@ -35,7 +40,6 @@ import { StatusBadge } from './components/StatusBadge';
 import { HRAgentShell, HRAgentModule } from './components/HRAgentShell';
 import { TalentAcquisitionHeader } from './components/TalentAcquisitionHeader';
 import { lazyPage } from './utils/lazyPage';
-import { isDepartmentHead } from './utils/requisitionPermissions';
 import { hasModulePermission, normalizeAuthorizedModules } from './utils/authorization';
 import { DocumentSuggestion } from './types';
 
@@ -63,8 +67,8 @@ export default function App() {
 
   const [activeTab, setActiveTab] = useState<'creator' | 'reviewer' | 'employee' | 'compliance' | 'suggestions' | 'audit' | 'notifications'>('creator');
 
-  // HR AI Agent Shell Module State (Defaults to 'document-version-control')
-  const [hrAgentModule, setHrAgentModule] = useState<HRAgentModule>('document-version-control');
+  // Everyone lands on Home, their own dashboard; the sidebar then shows only the modules they may open.
+  const [hrAgentModule, setHrAgentModule] = useState<HRAgentModule>('home');
 
   // Desktop sidebar collapse/open state with persistent storage
   const [isSidebarOpen, setIsSidebarOpen] = useState<boolean>(() => {
@@ -96,9 +100,11 @@ export default function App() {
       module === 'talent-acquisition-onboarding';
     const hasTalent = hasModulePermission(currentUser, 'talent-acquisition');
     const hasDocGov = hasModulePermission(currentUser, 'document-version-control');
+    // A department head (an employee who may raise hiring requests) gets only the requisitions screen of Talent Acquisition.
+    const requestOnlyHiring = module === 'talent-acquisition-requisitions' && hasAnyPerm(currentUser?.perms, ['req.create']);
 
     // If user is not authorized for Talent Acquisition
-    if (isTalentModule && !hasTalent) {
+    if (isTalentModule && !hasTalent && !requestOnlyHiring) {
       if (hasDocGov) {
         setHrAgentModule('document-version-control');
         try {
@@ -138,13 +144,9 @@ export default function App() {
       } else if (currentUser.role === UserRole.EMPLOYEE) {
         targetPath = '/employee';
       } else if (currentUser.role === UserRole.CREATOR) {
-        if (hrAgentModule === 'talent-acquisition') {
-          targetPath = '/hr/talent-acquisition';
-        } else {
-          targetPath = '/hr/document-version-control';
-        }
+        targetPath = `/hr/${hrAgentModule === 'talent-acquisition' || hrAgentModule.startsWith('talent-acquisition') ? 'talent-acquisition' : hrAgentModule}`;
       } else if (currentUser.role === UserRole.REVIEWER) {
-        targetPath = '/approver/document-version-control';
+        targetPath = `/approver/${hrAgentModule.startsWith('talent-acquisition') ? 'talent-acquisition' : hrAgentModule}`;
       }
 
       if (targetPath && targetPath !== currentPath) {
@@ -175,7 +177,6 @@ export default function App() {
 
   // Governance Data State
   const [allUsers, setAllUsers] = useState<User[]>([]);
-  const [showHiringRequests, setShowHiringRequests] = useState(false);
   const [documents, setDocuments] = useState<DocumentMaster[]>([]);
   const [versions, setVersions] = useState<DocumentVersion[]>([]);
   const [acknowledgements, setAcknowledgements] = useState<AcknowledgementRecord[]>(() =>
@@ -196,11 +197,10 @@ export default function App() {
   const [isNotifDrawerOpen, setIsNotifDrawerOpen] = useState(false);
   const [readerVersion, setReaderVersion] = useState<DocumentVersion | null>(null);
   const [employeeTab, setEmployeeTab] = useState<'acknowledgements' | 'all-documents'>('acknowledgements');
-  const [employeeSection, setEmployeeSection] = useState<'policies' | 'leave' | 'payroll' | 'people'>('policies');
 
   // Pending compliance documents count for logged in Employee
   const employeePendingCount = useMemo(() => {
-    if (!currentUser || currentUser.role !== UserRole.EMPLOYEE) return 0;
+    if (!currentUser || !hasAnyPerm(currentUser.perms, ['doc.acknowledge'])) return 0;
     const userIdentifiers = [currentUser.id, currentUser.empId, currentUser.loginId, currentUser.email]
       .filter(Boolean)
       .map((s) => s!.toLowerCase());
@@ -244,18 +244,6 @@ export default function App() {
       return !ack;
     }).length;
   }, [currentUser, documents, acknowledgements]);
-
-  const employeeTotalDocsCount = useMemo(() => {
-    if (!currentUser || currentUser.role !== UserRole.EMPLOYEE) return 0;
-    return documents.filter((d) => {
-      if (!d.active || d.currentStatus !== VersionStatus.PUBLISHED) return false;
-      if (d.confidentiality === ConfidentialityLevel.PUBLIC) return true;
-      if (d.confidentiality === ConfidentialityLevel.SPECIFIC_DEPARTMENT) {
-        return isEmployeeInDepartment(currentUser, d.departmentName, d.departmentId);
-      }
-      return false;
-    }).length;
-  }, [currentUser, documents]);
 
   // Published document identifiers (strictly for published policies authorized and published by Approver)
   const publishedDocIdentifiers = useMemo(() => {
@@ -461,15 +449,7 @@ export default function App() {
     setCurrentUser(user);
     const targetTab = user.role === UserRole.REVIEWER ? 'reviewer' : user.role === UserRole.EMPLOYEE ? 'employee' : 'creator';
     setActiveTab(targetTab);
-    const hasTalent = hasModulePermission(user, 'talent-acquisition');
-    const hasDocGov = hasModulePermission(user, 'document-version-control');
-    let defaultModule: HRAgentModule = 'document-version-control';
-    if (!hasDocGov && hasTalent) defaultModule = 'talent-acquisition-overview';
-    else if (!hasDocGov && !hasTalent) {
-      const canAdmin = (user.perms || []).some((p) => ['users.manage', 'departments.manage', 'roles.manage'].includes(p));
-      defaultModule = canAdmin ? 'administration' : 'leave-management';
-    }
-    setHrAgentModule(defaultModule);
+    setHrAgentModule('home');
   };
 
   useEffect(() => {
@@ -529,6 +509,24 @@ export default function App() {
     }
   };
 
+  // "Open" on a Home card: go to the module, and to the section or tab inside it.
+  const openDashboardTarget = (t: WidgetTarget) => {
+    if (t.module === 'document-version-control') {
+      if (t.docTab === 'employee') {
+        setEmployeeTab('acknowledgements');
+        handleSelectHRAgentModule('policies');
+        return;
+      }
+      if (t.docTab === 'compliance') setActiveTab('compliance');
+      else if (t.docTab) setActiveTab(currentUser?.role === UserRole.REVIEWER ? 'reviewer' : 'creator');
+    } else if (t.section) {
+      if (t.module === 'leave-management') leaveNav.setSection(t.section as Parameters<typeof leaveNav.setSection>[0]);
+      else if (t.module === 'payroll') payrollNav.setSection(t.section);
+      else if (t.module === 'people') peopleNav.setSection(t.section);
+    }
+    handleSelectHRAgentModule(t.module);
+  };
+
   return (
     <>
       {session.kind === 'loading' ? (
@@ -555,68 +553,8 @@ export default function App() {
         </div>
       ) : !currentUser || session.kind === 'signedOut' ? (
         <AuthScreen />
-      ) : currentUser.role === UserRole.EMPLOYEE ? (
-        /* 2. Employee Portal: Remained 100% untouched as required */
-        <div className="min-h-screen bg-[#F8FAFC] bg-[radial-gradient(ellipse_80%_80%_at_50%_-20%,rgba(250,112,20,0.05),rgba(255,255,255,0))] flex flex-col font-sans text-slate-900">
-          <EmployeeHeader
-            currentUser={currentUser}
-            onLogout={handleLogout}
-            activeTab={employeeTab}
-            onTabChange={setEmployeeTab}
-            pendingCount={employeePendingCount}
-            totalDocsCount={employeeTotalDocsCount}
-          />
-          <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6">
-            {isDepartmentHead(currentUser) && (
-              <div className="mb-6 rounded-2xl border border-slate-200 bg-white">
-                <button
-                  type="button"
-                  onClick={() => setShowHiringRequests((v) => !v)}
-                  className="flex w-full items-center justify-between px-4 py-3 text-left text-sm font-black text-slate-900"
-                >
-                  <span>Hiring requests (department head)</span>
-                  <span className="text-xs font-bold text-[#FA7014]">{showHiringRequests ? 'Hide' : 'Open'}</span>
-                </button>
-                {showHiringRequests && (
-                  <div className="border-t border-slate-100">
-                    <RequisitionsModule currentUser={currentUser} users={allUsers} embedded />
-                  </div>
-                )}
-              </div>
-            )}
-            <div className="mb-5 inline-flex rounded-xl border border-slate-200 bg-white p-1 text-xs font-bold">
-              {([['policies', 'Policies'], ['leave', 'Leave & Attendance'], ['payroll', 'Payroll'], ['people', 'People']] as const).map(([k, label]) => (
-                <button
-                  key={k}
-                  type="button"
-                  onClick={() => setEmployeeSection(k)}
-                  className={`px-4 py-2 rounded-lg transition-colors ${employeeSection === k ? 'bg-[#FA7014] text-white' : 'text-slate-600 hover:bg-slate-50'}`}
-                >
-                  {label}
-                </button>
-              ))}
-            </div>
-            {employeeSection === 'leave' ? (
-              <LeaveModule currentUser={currentUser} inlineNav />
-            ) : employeeSection === 'payroll' ? (
-              <PayrollModule currentUser={currentUser} inlineNav />
-            ) : employeeSection === 'people' ? (
-              <PeopleModule currentUser={currentUser} inlineNav />
-            ) : (
-            <EmployeePortalView
-              currentUser={currentUser}
-              documents={documents}
-              versions={versions}
-              acknowledgements={acknowledgements}
-              onOpenDocumentView={(ver) => setReaderVersion(ver)}
-              activeTab={employeeTab}
-              onTabChange={setEmployeeTab}
-            />
-            )}
-          </main>
-        </div>
       ) : (
-        /* 3. HR AI Agent Platform Shell for HR and Approver roles */
+        /* Every signed-in person uses the same shell; what it shows follows their permissions. */
         <HRAgentShell
           currentUser={currentUser}
           activeModule={hrAgentModule}
@@ -625,7 +563,35 @@ export default function App() {
           onToggleSidebar={handleToggleSidebar}
           onLogout={handleLogout}
           onRefreshData={refreshData}
+          pendingPolicyCount={employeePendingCount}
         >
+          {hrAgentModule === 'home' && (
+            <div className="flex-1 min-w-0 overflow-y-auto">
+              <HomeDashboard fallbackName={currentUser.name} onOpen={openDashboardTarget} />
+            </div>
+          )}
+
+          {hrAgentModule === 'policies' && (
+            <div className="flex-1 min-w-0 overflow-y-auto">
+              <div className="max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6">
+                <div className="mb-5 inline-flex rounded-xl border border-slate-200 bg-white p-1 text-xs font-bold">
+                  {([['acknowledgements', `To acknowledge${employeePendingCount > 0 ? ` (${employeePendingCount})` : ''}`], ['all-documents', 'All documents']] as const).map(([k, label]) => (
+                    <button key={k} type="button" onClick={() => setEmployeeTab(k)} className={`px-4 py-2 rounded-lg transition-colors ${employeeTab === k ? 'bg-[#FA7014] text-white' : 'text-slate-600 hover:bg-slate-50'}`}>{label}</button>
+                  ))}
+                </div>
+                <EmployeePortalView
+                  currentUser={currentUser}
+                  documents={documents}
+                  versions={versions}
+                  acknowledgements={acknowledgements}
+                  onOpenDocumentView={(ver) => setReaderVersion(ver)}
+                  activeTab={employeeTab}
+                  onTabChange={setEmployeeTab}
+                />
+              </div>
+            </div>
+          )}
+
           {hrAgentModule === 'leave-management' && currentUser && (
             <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
               <LeaveModule currentUser={currentUser} />
@@ -788,13 +754,19 @@ export default function App() {
           {/* Module: Talent Acquisition - Hiring Requisitions workflow (HR & Approver) */}
           {hrAgentModule === 'talent-acquisition-requisitions' && currentUser && (
             <div className="flex-1 flex flex-col min-w-0">
-              <TalentAcquisitionHeader
-                currentUser={currentUser}
-                onLogout={handleLogout}
-                isSidebarOpen={isSidebarOpen}
-                onToggleSidebar={handleToggleSidebar}
-              />
-              <RequisitionsModule currentUser={currentUser} users={allUsers} />
+              {hasModulePermission(currentUser, 'talent-acquisition') ? (
+                <>
+                  <TalentAcquisitionHeader
+                    currentUser={currentUser}
+                    onLogout={handleLogout}
+                    isSidebarOpen={isSidebarOpen}
+                    onToggleSidebar={handleToggleSidebar}
+                  />
+                  <RequisitionsModule currentUser={currentUser} users={allUsers} />
+                </>
+              ) : (
+                <div className="flex-1 overflow-y-auto"><RequisitionsModule currentUser={currentUser} users={allUsers} embedded /></div>
+              )}
             </div>
           )}
 
