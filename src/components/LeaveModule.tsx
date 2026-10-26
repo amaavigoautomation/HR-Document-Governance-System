@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { BarChart3, CalendarDays, ChevronRight, ClipboardList, Settings, Users, Wallet } from 'lucide-react';
 import { User } from '../types';
+import { hasPerm } from '../../shared/permissions';
 import { leaveService } from '../services/leaveService';
 import { AttendanceTab, FixDayDrawer } from './leave/AttendanceTab';
 import { ApprovalsTab, TeamCalendar } from './leave/ApprovalsTab';
@@ -28,7 +29,7 @@ export const LeaveModule: React.FC<{ currentUser: User; inlineNav?: boolean }> =
   <ToastProvider><LeaveScreens {...props} /></ToastProvider>
 );
 
-const LeaveScreens: React.FC<{ currentUser: User; inlineNav?: boolean }> = ({ inlineNav }) => {
+const LeaveScreens: React.FC<{ currentUser: User; inlineNav?: boolean }> = ({ currentUser, inlineNav }) => {
   const [me, setMe] = useState<any | null>(null);
   const [error, setError] = useState<string | null>(null);
   const { section, items } = useLeaveNav();
@@ -102,7 +103,7 @@ const LeaveScreens: React.FC<{ currentUser: User; inlineNav?: boolean }> = ({ in
               ))}
             </div>
             {activeAdmin === 'setup' && <HrSetup onChanged={reload} />}
-            {activeAdmin === 'people' && <HrPeople />}
+            {activeAdmin === 'people' && <HrPeople currentUser={currentUser} canAddPeople={hasPerm(currentUser.perms, 'users.manage')} />}
             {activeAdmin === 'balances' && <HrBalances />}
             {activeAdmin === 'requests' && <HrRequests me={me} />}
             {activeAdmin === 'reports' && <HrReports canManage={me.canManage} />}

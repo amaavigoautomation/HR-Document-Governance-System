@@ -2,12 +2,15 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { csvToObjects } from '../../../shared/csv';
 import { downloadCsv, leaveService } from '../../services/leaveService';
 import { MonthView } from './AttendanceTab';
+import { AddPersonDrawer } from './AddPersonDrawer';
+import type { User } from '../../types';
 import { btnDanger, btnGhost, btnPrimary, Card, ConfirmButton, days, EmptyState, Field, halfNote, input, LEDGER_LABEL, niceDate, Notice, range, Segmented, Skeleton, StatusPill, thisMonth, todayIst, useRunner, useToast } from './ui';
 
 const readCsv = async (file: File) => csvToObjects(await file.text());
 
 // ------------------------------------------------------------------ people
-export const HrPeople: React.FC = () => {
+export const HrPeople: React.FC<{ currentUser?: User; canAddPeople?: boolean }> = ({ currentUser, canAddPeople }) => {
+  const [adding, setAdding] = useState(false);
   const [items, setItems] = useState<any[]>([]);
   const [settings, setSettings] = useState<any | null>(null);
   const [dirty, setDirty] = useState<Record<string, any>>({});
@@ -29,6 +32,7 @@ export const HrPeople: React.FC = () => {
   return (
     <Card title={`People (${items.length})`} subtitle="Set each person's office, leave policy and who approves their leave." right={
       <div className="flex gap-2">
+        {canAddPeople && currentUser && <button className={btnGhost} onClick={() => setAdding(true)}>Add person</button>}
         <label className={`${btnGhost} cursor-pointer`}>Import CSV
           <input type="file" accept=".csv" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ''; if (f) run(async () => { const r = await leaveService.importProfiles(await readCsv(f)); setImportResult(r); await load(); }, 'Import finished.'); }} />
         </label>
@@ -40,6 +44,11 @@ export const HrPeople: React.FC = () => {
       <p className="text-[11px] text-slate-400 mb-2">CSV columns: email, location, policy, manager_email, join_date (YYYY-MM-DD), gender (F/M/O). Blank cells keep the current value.</p>
       {note && <div className="mb-2"><Notice tone={note.tone === 'ok' ? 'ok' : 'error'}>{note.text}</Notice></div>}
       {importResult && <div className="mb-2"><Notice tone={importResult.errors.length ? 'info' : 'ok'}>Saved {importResult.saved}. {importResult.errors.slice(0, 5).map((e: any) => `Row ${e.row}: ${e.error}. `)}</Notice></div>}
+      {canAddPeople && currentUser && (
+        <AddPersonDrawer open={adding} onClose={() => setAdding(false)} currentUser={currentUser} settings={settings}
+          managers={items.filter((m) => m.active).map((m) => ({ uid: m.uid, name: m.name }))}
+          onAdded={(msg) => { run(async () => { await load(); }, msg); }} />
+      )}
       <input className={`${input} max-w-xs mb-2`} placeholder="Search name, email, ID" value={q} onChange={(e) => setQ(e.target.value)} />
       <div className="overflow-x-auto">
         <table className="text-xs min-w-[900px] w-full">
