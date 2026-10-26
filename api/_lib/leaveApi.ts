@@ -823,7 +823,7 @@ async function people(who: Who): Promise<Result> {
   needManage(who);
   const [{ settings }, list, profiles] = await Promise.all([loadSettings(who.cid), loadPeople(who.cid), loadProfiles(who.cid)]);
   return ok({
-    items: list.map((p) => {
+    items: list.filter((p) => !profiles.get(p.uid)?.hidden).map((p) => {
       const prof = effectiveProfile(settings, p, profiles.get(p.uid));
       return { uid: p.uid, name: p.name, email: p.email, empId: p.empId, department: p.department, title: p.title, active: p.active, ...prof, explicit: profiles.has(p.uid) };
     }),
@@ -847,15 +847,30 @@ function cleanProfile(settings: LeaveSettings, list: Person[], x: any): Profile 
 
 async function saveProfiles(who: Who, body: any): Promise<Result> {
   needManage(who);
-  const [{ settings }, list] = await Promise.all([loadSettings(who.cid), loadPeople(who.cid)]);
+  const [{ settings }, list, existing] = await Promise.all([loadSettings(who.cid), loadPeople(who.cid), loadProfiles(who.cid)]);
   const items = Array.isArray(body?.profiles) ? body.profiles.slice(0, 500) : [body];
   const batch = db().batch();
   for (const x of items) {
     const p = cleanProfile(settings, list, x);
-    batch.set(db().collection('leaveProfiles').doc(profileId(who.cid, p.uid)), { ...p, companyId: who.cid, updatedAt: nowIso() });
+    batch.set(db().collection('leaveProfiles').doc(profileId(who.cid, p.uid)), { ...p, ...(existing.get(p.uid)?.hidden ? { hidden: true } : {}), companyId: who.cid, updatedAt: nowIso() });
   }
   await batch.commit();
   return ok({ saved: items.length });
+}
+
+/**
+ * Removes a person from the People list. Admin only. This only hides them in this screen: the account, leave history,
+ * balances and every other record stay exactly as they were, so nothing is lost.
+ */
+async function hidePerson(who: Who, body: any): Promise<Result> {
+  needManage(who);
+  if (!who.ctx.isCompanyAdmin) return fail(403, 'Only a Company Admin can remove people from this list.');
+  const uid = String(body?.uid || '').slice(0, 128);
+  if (uid === who.ctx.uid) return fail(400, 'You cannot remove yourself.');
+  const [list, existing] = await Promise.all([loadPeople(who.cid), loadProfiles(who.cid)]);
+  if (!list.some((p) => p.uid === uid)) return fail(404, 'Employee not found.');
+  await db().collection('leaveProfiles').doc(profileId(who.cid, uid)).set({ ...(existing.get(uid) || {}), uid, hidden: true, companyId: who.cid, updatedAt: nowIso() });
+  return ok({ hidden: true });
 }
 
 async function importProfiles(who: Who, body: any): Promise<Result> {
@@ -887,7 +902,7 @@ async function importProfiles(who: Who, body: any): Promise<Result> {
       managerUid: mgr?.uid ?? prev.managerUid ?? '', joinDate: join || prev.joinDate || '',
       gender: (['F', 'M', 'O'].includes((r.gender || '').toUpperCase().slice(0, 1)) ? (r.gender.toUpperCase().slice(0, 1) as 'F' | 'M' | 'O') : prev.gender) || '',
     };
-    batch.set(db().collection('leaveProfiles').doc(profileId(who.cid, person.uid)), { ...next, companyId: who.cid, updatedAt: nowIso() });
+    batch.set(db().collection('leaveProfiles').doc(profileId(who.cid, person.uid)), { ...next, ...(prev.hidden ? { hidden: true } : {}), companyId: who.cid, updatedAt: nowIso() });
     saved++;
   });
   if (saved) await batch.commit();
@@ -1107,6 +1122,7 @@ export async function routeLeave(r: LeaveRequestIn): Promise<Result> {
       case 'people': if (GET) return await people(who); break;
       case 'save-profiles': if (POST) return await saveProfiles(who, body); break;
       case 'import-profiles': if (POST) return await importProfiles(who, body); break;
+      case 'hide-person': if (POST) return await hidePerson(who, body); break;
       case 'balances-of': if (GET) return await balancesOf(who, r.query); break;
       case 'adjust': if (POST) return await adjust(who, body); break;
       case 'import-balances': if (POST) return await importBalances(who, body); break;

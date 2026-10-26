@@ -35,6 +35,7 @@ export const leaveService = {
   people: () => get('people'),
   saveProfiles: (profiles: unknown[]) => post('save-profiles', { profiles }),
   importProfiles: (rows: unknown[]) => post('import-profiles', { rows }),
+  hidePerson: (uid: string) => post('hide-person', { uid }),
   balancesOf: (uid: string) => get('balances-of', { uid }),
   adjust: (b: unknown) => post('adjust', b),
   importBalances: (rows: unknown[]) => post('import-balances', { rows }),

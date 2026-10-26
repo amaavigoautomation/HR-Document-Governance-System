@@ -11,6 +11,8 @@ const readCsv = async (file: File) => csvToObjects(await file.text());
 // ------------------------------------------------------------------ people
 export const HrPeople: React.FC<{ currentUser?: User; canAddPeople?: boolean }> = ({ currentUser, canAddPeople }) => {
   const [adding, setAdding] = useState(false);
+  // Only a Company Admin may remove people from the list (the server checks this too).
+  const canRemove = !!currentUser?.isCompanyAdmin;
   const [items, setItems] = useState<any[]>([]);
   const [settings, setSettings] = useState<any | null>(null);
   const [dirty, setDirty] = useState<Record<string, any>>({});
@@ -52,7 +54,7 @@ export const HrPeople: React.FC<{ currentUser?: User; canAddPeople?: boolean }> 
       <input className={`${input} max-w-xs mb-2`} placeholder="Search name, email, ID" value={q} onChange={(e) => setQ(e.target.value)} />
       <div className="overflow-x-auto">
         <table className="text-xs min-w-[900px] w-full">
-          <thead className="text-left text-slate-500"><tr><th className="p-1.5">Person</th><th className="p-1.5">Office</th><th className="p-1.5">Leave policy</th><th className="p-1.5">Approver (manager)</th><th className="p-1.5">Joined</th><th className="p-1.5">Gender</th></tr></thead>
+          <thead className="text-left text-slate-500"><tr><th className="p-1.5">Person</th><th className="p-1.5">Office</th><th className="p-1.5">Leave policy</th><th className="p-1.5">Approver (manager)</th><th className="p-1.5">Joined</th><th className="p-1.5">Gender</th>{canRemove && <th className="p-1.5"><span className="sr-only">Remove</span></th>}</tr></thead>
           <tbody>
             {shown.map((p0) => { const p = row(p0); return (
               <tr key={p.uid} className={`border-t border-slate-100 ${p.active ? '' : 'opacity-50'}`}>
@@ -62,6 +64,9 @@ export const HrPeople: React.FC<{ currentUser?: User; canAddPeople?: boolean }> 
                 <td className="p-1"><select className={input} value={p.managerUid} onChange={(e) => edit(p.uid, { managerUid: e.target.value })}><option value="">None (HR approves)</option>{items.filter((m) => m.uid !== p.uid && m.active).map((m) => <option key={m.uid} value={m.uid}>{m.name}</option>)}</select></td>
                 <td className="p-1"><input type="date" className={input} value={p.joinDate} onChange={(e) => edit(p.uid, { joinDate: e.target.value })} /></td>
                 <td className="p-1"><select className={input} value={p.gender} onChange={(e) => edit(p.uid, { gender: e.target.value })}><option value="">—</option><option value="F">Female</option><option value="M">Male</option><option value="O">Other</option></select></td>
+                {canRemove && <td className="p-1">{p.uid !== currentUser?.id && (
+                  <ConfirmButton disabled={busy} question="Remove from this list? Their records are kept." yes="Remove" onConfirm={() => run(async () => { await leaveService.hidePerson(p.uid); await load(); }, `${p.name} removed from the list.`)}>Remove</ConfirmButton>
+                )}</td>}
               </tr>); })}
           </tbody>
         </table>

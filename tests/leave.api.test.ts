@@ -177,6 +177,20 @@ assert.equal(led.find((e) => e.kind === 'CARRY_IN')?.delta, 30, 'carry capped at
 assert.equal(led.find((e) => e.kind === 'LAPSE')?.delta, -10, 'the rest lapses');
 assert.equal((await ok(HR, 'POST', 'run-accrual')).rollovers, 0, 'year end runs once');
 
+// --- admin-only "remove from list": hides, never deletes
+const ADMIN = tokenFor('u_admin', ['leave.manage'], true);
+fdb.seed('employees', 'u_admin', { companyId: CID, authUid: 'u_admin', name: 'Ada Admin', email: 'u_admin@acme.com', active: true, createdAt: '2020-01-01T00:00:00Z' });
+const listed = async () => (await ok(HR, 'GET', 'people')).items.map((x: any) => x.uid);
+assert.ok((await listed()).includes('u_other'));
+assert.equal((await call(HR, 'POST', 'hide-person', { uid: 'u_other' })).status, 403, 'HR who is not an admin cannot remove people');
+assert.equal((await call(ADMIN, 'POST', 'hide-person', { uid: 'u_admin' })).status, 400, 'cannot remove yourself');
+await ok(ADMIN, 'POST', 'hide-person', { uid: 'u_other' });
+assert.ok(!(await listed()).includes('u_other'), 'hidden from the list');
+assert.ok(fdb.collection('employees').doc('u_other'), 'employee record is untouched');
+assert.equal((await fdb.collection('employees').doc('u_other').get()).data().active, true, 'account stays active');
+await ok(HR, 'POST', 'save-profiles', { profiles: [{ uid: 'u_other', managerUid: 'u_mgr' }] });
+assert.ok(!(await listed()).includes('u_other'), 'saving details does not bring them back');
+
 // --- nothing leaks between companies
 fdb.seed('employees', 'x1', { companyId: 'c2', authUid: 'x1', name: 'Eve', email: 'x1@other.com', active: true, createdAt: '2020-01-01T00:00:00Z' });
 const other = { authorization: `Bearer ${Buffer.from(JSON.stringify({ uid: 'x1', email: 'x1@other.com', cid: 'c2', cs: 'ACTIVE', perms: ['leave.manage'] })).toString('base64')}` };

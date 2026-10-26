@@ -57,6 +57,8 @@ export interface Profile {
   managerUid?: string;
   joinDate?: string;
   gender?: 'F' | 'M' | 'O' | '';
+  /** Removed from the People list by an admin. Nothing is deleted; the person and their records stay. */
+  hidden?: boolean;
 }
 
 export interface EffectiveProfile {
