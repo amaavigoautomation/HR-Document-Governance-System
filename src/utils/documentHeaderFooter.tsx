@@ -19,11 +19,45 @@ export const FOOTER_START_TAG = '<!-- AMAAVIGO_DOCUMENT_FOOTER_START -->';
 export const FOOTER_END_TAG = '<!-- AMAAVIGO_DOCUMENT_FOOTER_END -->';
 
 /**
+ * Safely parses any date input (ISO YYYY-MM-DD, DD/MM/YYYY, timestamps, Date instances) into a valid Date object.
+ * Correctly avoids the JS engine trap where "DD/MM/YYYY" evaluates to Invalid Date in standard new Date().
+ */
+export function parseAnyDate(input: string | number | Date | null | undefined): Date | null {
+  if (!input) return null;
+  if (input instanceof Date) return isNaN(input.getTime()) ? null : input;
+  const str = String(input).trim();
+  if (!str) return null;
+
+  // DD/MM/YYYY
+  const ddmmyyyyMatch = str.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/);
+  if (ddmmyyyyMatch) {
+    const [, d, m, y] = ddmmyyyyMatch;
+    const date = new Date(parseInt(y, 10), parseInt(m, 10) - 1, parseInt(d, 10));
+    return isNaN(date.getTime()) ? null : date;
+  }
+
+  // YYYY-MM-DD
+  const yyyymmddMatch = str.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+  if (yyyymmddMatch) {
+    const [, y, m, d] = yyyymmddMatch;
+    const date = new Date(parseInt(y, 10), parseInt(m, 10) - 1, parseInt(d, 10));
+    return isNaN(date.getTime()) ? null : date;
+  }
+
+  try {
+    const d = new Date(str);
+    return isNaN(d.getTime()) ? null : d;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Normalizes any date into DD/MM/YYYY format (e.g. 09/09/2026).
  */
-export function formatDDMMYYYY(dateInput: string | number | Date | null | undefined, fallback: string = ''): string {
-  if (!dateInput) {
-    if (fallback !== undefined && fallback !== '') return fallback;
+export function formatDDMMYYYY(dateInput: string | number | Date | null | undefined, fallback?: string): string {
+  if (!dateInput || String(dateInput).trim() === '') {
+    if (fallback !== undefined) return fallback;
     const now = new Date();
     const dd = String(now.getDate()).padStart(2, '0');
     const mm = String(now.getMonth() + 1).padStart(2, '0');
@@ -44,25 +78,47 @@ export function formatDDMMYYYY(dateInput: string | number | Date | null | undefi
   if (/^\d{2}\/\d{2}\/\d{4}$/.test(str)) {
     return str;
   }
-  // Standard ISO date YYYY-MM-DD
-  if (/^\d{4}-\d{2}-\d{2}/.test(str)) {
-    const parts = str.slice(0, 10).split('-');
-    if (parts.length === 3) {
-      const [yyyy, mm, dd] = parts;
-      return `${dd}/${mm}/${yyyy}`;
+
+  const parsed = parseAnyDate(dateInput);
+  if (parsed) {
+    const dd = String(parsed.getDate()).padStart(2, '0');
+    const mm = String(parsed.getMonth() + 1).padStart(2, '0');
+    const yyyy = parsed.getFullYear();
+    return `${dd}/${mm}/${yyyy}`;
+  }
+
+  return fallback !== undefined ? fallback : str;
+}
+
+/**
+ * Dynamically calculates the compliance Re-review Date in DD/MM/YYYY format.
+ * If reReviewInput is provided and valid, it is formatted to DD/MM/YYYY.
+ * If reReviewInput is missing, empty, or 'Annual / As req.', it automatically
+ * calculates +yearsToAdd (default 1 year) from the document's Effective Date.
+ */
+export function calculateDynamicReReviewDate(
+  reReviewInput?: string | number | Date | null,
+  effectiveInput?: string | number | Date | null,
+  yearsToAdd: number = 1
+): string {
+  if (reReviewInput && String(reReviewInput).trim() !== '') {
+    const str = String(reReviewInput).trim();
+    if (!str.toLowerCase().includes('annual') && !str.toLowerCase().includes('as req') && !str.toLowerCase().includes('not yet')) {
+      const parsed = parseAnyDate(reReviewInput);
+      if (parsed) {
+        return formatDDMMYYYY(parsed);
+      }
+      if (/^\d{2}\/\d{2}\/\d{4}$/.test(str)) {
+        return str;
+      }
     }
   }
 
-  try {
-    const d = typeof dateInput === 'string' || typeof dateInput === 'number' ? new Date(dateInput) : dateInput;
-    if (isNaN(d.getTime())) return str;
-    const dd = String(d.getDate()).padStart(2, '0');
-    const mm = String(d.getMonth() + 1).padStart(2, '0');
-    const yyyy = d.getFullYear();
-    return `${dd}/${mm}/${yyyy}`;
-  } catch {
-    return str;
-  }
+  // Calculate dynamically from effective date + yearsToAdd
+  const effDate = parseAnyDate(effectiveInput) || new Date();
+  const target = new Date(effDate.getTime());
+  target.setFullYear(target.getFullYear() + yearsToAdd);
+  return formatDDMMYYYY(target);
 }
 
 export function cleanVersionNumber(ver: string): string {
@@ -77,7 +133,7 @@ export function generateHeaderHtml(data: DocumentHeaderFooterData): string {
   const ver = cleanVersionNumber(data.versionNumber);
   const title = data.documentTitle || 'Corporate Governance Document';
   const effective = formatDDMMYYYY(data.effectiveDate);
-  const reReview = formatDDMMYYYY(data.reReviewDate, '');
+  const reReview = calculateDynamicReReviewDate(data.reReviewDate, data.effectiveDate);
 
   return `${HEADER_START_TAG}
 <table class="amaavigo-document-header" style="width: 100%; border-collapse: collapse; border: 2px solid #0f172a; margin-top: 36px; margin-bottom: 24px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background: #ffffff;">
@@ -111,7 +167,7 @@ export function generateHeaderHtml(data: DocumentHeaderFooterData): string {
     </td>
     <td style="border: 1px solid #0f172a; padding: 10px 14px; width: 17%; vertical-align: middle;">
       <div style="font-size: 11px; font-weight: 700; color: #0f172a; margin-bottom: 3px;">Re-review date :</div>
-      <div style="font-size: 13px; font-weight: 600; color: #1e293b;">${reReview || 'Annual / As req.'}</div>
+      <div style="font-size: 13px; font-weight: 600; color: #1e293b;">${reReview}</div>
     </td>
   </tr>
 </table>
@@ -336,7 +392,7 @@ export const DocumentHeaderTable: React.FC<{
   const ver = cleanVersionNumber(data.versionNumber);
   const title = data.documentTitle || 'Document';
   const effective = formatDDMMYYYY(data.effectiveDate);
-  const reReview = formatDDMMYYYY(data.reReviewDate, '');
+  const reReview = calculateDynamicReReviewDate(data.reReviewDate, data.effectiveDate);
 
   return (
     <div
@@ -381,7 +437,7 @@ export const DocumentHeaderTable: React.FC<{
             Re-review date :
           </span>
           <span className="text-xs sm:text-sm font-semibold text-slate-800 mt-0.5 font-mono truncate">
-            {reReview || 'Annual / As req.'}
+            {reReview}
           </span>
         </div>
       </div>

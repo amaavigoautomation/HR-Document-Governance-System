@@ -29,7 +29,7 @@ import { ConfidentialityLevel, DocumentCategory, DocumentMaster, DocumentVersion
 import { StatusBadge } from './StatusBadge';
 import { governanceEngine } from '../services/governance';
 import { formatISTDate } from '../utils/dateFormat';
-import { formatDDMMYYYY } from '../utils/documentHeaderFooter';
+import { formatDDMMYYYY, calculateDynamicReReviewDate } from '../utils/documentHeaderFooter';
 import { downloadDocumentWithIntactFormat } from '../utils/documentStamper';
 
 interface ReviewerDashboardProps {
@@ -104,12 +104,16 @@ export const ReviewerDashboard: React.FC<ReviewerDashboardProps> = ({
         (d) => d.id === ver.documentMasterId || d.documentId === ver.documentId
       );
       const creator = resolveCreator(ver, parentMaster);
+      const verReviewDue = calculateDynamicReReviewDate(
+        ver.reviewDueDate,
+        ver.effectiveFrom || ver.createdAt
+      );
       await downloadDocumentWithIntactFormat({
         fileName: ver.fileName || `${ver.documentId}_v${ver.versionNumber}.pdf`,
         documentTitle: ver.documentTitle || parentMaster?.title,
         versionNumber: ver.versionNumber,
         effectiveDate: formatDDMMYYYY(ver.effectiveFrom || ver.createdAt),
-        reReviewDate: formatDDMMYYYY(ver.reviewDueDate, ''),
+        reReviewDate: verReviewDue,
         creationDate: formatDDMMYYYY(parentMaster?.createdAt || ver.createdAt),
         createdByName: creator.name || ver.createdByName || 'Amee Shah',
         approvedByName:

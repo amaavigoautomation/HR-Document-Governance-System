@@ -3,6 +3,7 @@ import {
   DocumentHeaderFooterData,
   cleanVersionNumber,
   formatDDMMYYYY,
+  calculateDynamicReReviewDate,
   extractCleanBody,
   extractHeaderFooterData,
 } from './documentHeaderFooter';
@@ -175,7 +176,8 @@ export function drawCorporateHeaderTable(
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(7.8);
   doc.setTextColor(30, 41, 59);
-  doc.text(meta.reReviewDate || 'Annual / As req.', col5X + 6, headerY + 30);
+  const reReviewVal = calculateDynamicReReviewDate(meta.reReviewDate, meta.effectiveDate);
+  doc.text(reReviewVal, col5X + 6, headerY + 30);
 }
 
 /**

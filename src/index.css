@@ -59,13 +59,26 @@
 }
 
 /* Interactive Word (DOCX) Document Preview Styles */
+.docx-preview-container {
+  width: 100% !important;
+  max-width: 100% !important;
+  box-sizing: border-box !important;
+  display: flex !important;
+  flex-direction: column !important;
+  align-items: center !important;
+  justify-content: flex-start !important;
+}
+
 .docx-preview-container .docx-wrapper {
   background: transparent !important;
-  padding: 1rem 0 !important;
+  padding: 0.5rem 0 !important;
   display: flex !important;
   flex-direction: column !important;
   align-items: center !important;
   gap: 1.5rem !important;
+  width: 100% !important;
+  max-width: 100% !important;
+  box-sizing: border-box !important;
 }
 
 .docx-preview-container .docx {
@@ -76,11 +89,27 @@
   margin-bottom: 1.5rem !important;
   box-sizing: border-box !important;
   position: relative !important;
+  max-width: 100% !important;
 }
 
 .docx-preview-container .docx table {
   border-collapse: collapse !important;
   max-width: 100% !important;
+  width: 100% !important;
+}
+
+.docx-preview-container .docx p,
+.docx-preview-container .docx article,
+.docx-preview-container .docx section,
+.docx-preview-container .docx div {
+  max-width: 100% !important;
+  word-break: break-word !important;
+  overflow-wrap: break-word !important;
+}
+
+.docx-preview-container .docx img {
+  max-width: 100% !important;
+  height: auto !important;
 }
 
 /* Ensure corporate header table never overlaps the document body title in Word preview while keeping tight natural spacing */
@@ -175,6 +204,114 @@
   margin: 12px 0 !important;
   border-radius: 8px !important;
   color: #1e3a8a !important;
+}
+
+/* Print Optimization for Corporate Governance Documents */
+@media print {
+  @page {
+    margin: 16mm 14mm 16mm 14mm;
+    size: auto;
+  }
+
+  body {
+    background: #ffffff !important;
+    color: #000000 !important;
+    font-size: 11pt !important;
+  }
+
+  /* Prevent table header/footer breaks and clipping */
+  .amaavigo-document-header,
+  table.amaavigo-document-header {
+    margin-top: 8mm !important;
+    margin-bottom: 6mm !important;
+    page-break-inside: avoid !important;
+    break-inside: avoid !important;
+  }
+
+  .amaavigo-document-footer,
+  table.amaavigo-document-footer {
+    margin-top: 8mm !important;
+    page-break-inside: avoid !important;
+    break-inside: avoid !important;
+  }
+
+  /* Hide interactive controls, buttons, navigations on print */
+  nav,
+  aside,
+  button,
+  .no-print,
+  .print-hidden {
+    display: none !important;
+  }
+}
+
+/* Standardized Comment Badges, Highlights & Jump Animations */
+.comment-number-badge {
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  box-sizing: border-box !important;
+  height: 20px !important;
+  min-height: 20px !important;
+  max-height: 20px !important;
+  min-width: 22px !important;
+  padding: 0 6px !important;
+  font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif !important;
+  font-size: 11px !important;
+  font-weight: 800 !important;
+  line-height: 1 !important;
+  color: #ffffff !important;
+  background-color: #FA7014 !important;
+  border-radius: 6px !important;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.12) !important;
+  vertical-align: middle !important;
+  user-select: none !important;
+  margin-left: 6px !important;
+  letter-spacing: -0.02em !important;
+  flex-shrink: 0 !important;
+  white-space: nowrap !important;
+}
+
+table.docx-revision-highlight-table {
+  outline: 2px solid #FA7014 !important;
+  outline-offset: 3px !important;
+  box-shadow: 0 0 0 4px rgba(250, 112, 20, 0.15) !important;
+  border-radius: 6px !important;
+  transition: all 0.2s ease-in-out !important;
+  cursor: pointer !important;
+}
+
+table.docx-revision-highlight-table:hover {
+  outline: 3px solid #FA7014 !important;
+  box-shadow: 0 0 0 6px rgba(250, 112, 20, 0.25) !important;
+}
+
+.comment-table-badge-bar {
+  position: relative !important;
+  z-index: 15 !important;
+  max-width: 100% !important;
+  font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif !important;
+}
+
+@keyframes jumpHighlightGlow {
+  0% {
+    box-shadow: 0 0 0 0 rgba(250, 112, 20, 0.7);
+    background-color: rgba(254, 215, 170, 0.95);
+  }
+  50% {
+    box-shadow: 0 0 0 10px rgba(250, 112, 20, 0);
+    background-color: rgba(253, 186, 116, 0.95);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(250, 112, 20, 0);
+  }
+}
+
+.jump-highlight-pulse {
+  animation: jumpHighlightGlow 0.8s ease-in-out 3 !important;
+  outline: 3px solid #FA7014 !important;
+  outline-offset: 3px !important;
+  border-radius: 6px !important;
 }
 
 

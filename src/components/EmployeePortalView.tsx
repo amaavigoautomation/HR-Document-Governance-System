@@ -27,7 +27,7 @@ import {
 } from '../types';
 import { governanceEngine, isEmployeeInDepartment } from '../services/governance';
 import { formatISTDate } from '../utils/dateFormat';
-import { formatDDMMYYYY } from '../utils/documentHeaderFooter';
+import { formatDDMMYYYY, calculateDynamicReReviewDate } from '../utils/documentHeaderFooter';
 import { downloadDocumentWithIntactFormat } from '../utils/documentStamper';
 import { SubmitSuggestionModal } from './SubmitSuggestionModal';
 
@@ -162,12 +162,16 @@ export const EmployeePortalView: React.FC<EmployeePortalViewProps> = ({
   const handleDownloadIntact = async (doc: DocumentMaster, ver: DocumentVersion) => {
     setDownloadingDocId(doc.id);
     try {
+      const verReviewDue = calculateDynamicReReviewDate(
+        ver.reviewDueDate,
+        ver.effectiveFrom || ver.createdAt
+      );
       await downloadDocumentWithIntactFormat({
         fileName: ver.fileName,
         documentTitle: ver.documentTitle || doc.title,
         versionNumber: ver.versionNumber,
         effectiveDate: formatDDMMYYYY(ver.effectiveFrom || ver.createdAt),
-        reReviewDate: formatDDMMYYYY(ver.reviewDueDate, ''),
+        reReviewDate: verReviewDue,
         creationDate: formatDDMMYYYY(doc.createdAt || ver.createdAt),
         createdByName: ver.createdByName || doc.processOwnerName || 'Amee Shah',
         approvedByName:

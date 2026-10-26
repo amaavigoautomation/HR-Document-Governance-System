@@ -102,17 +102,21 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({
   const [pdfDoc, setPdfDoc] = useState<any>(null);
   const [stampedPdfUrl, setStampedPdfUrl] = useState<string | null>(null);
 
-  // DOCX Interactive View State
+  // DOCX Interactive View State & Sizing
   const [loadingDocx, setLoadingDocx] = useState<boolean>(false);
   const [docxError, setDocxError] = useState<string | null>(null);
   const [stampedDocxBlob, setStampedDocxBlob] = useState<Blob | null>(null);
+  const [docxScale, setDocxScale] = useState<number>(1.0);
+  const [isFitDocxWidth, setIsFitDocxWidth] = useState<boolean>(true);
   const docxContainerRef = useRef<HTMLDivElement | null>(null);
+  const docxOuterWrapperRef = useRef<HTMLDivElement | null>(null);
 
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const renderTaskRef = useRef<any>(null);
 
   const [activeVideoUrl, setActiveVideoUrl] = useState<string>(effectiveFileUrl || '');
 
+  // Revision inline comments state
   // Revision inline comments state
   const [selectedText, setSelectedText] = useState<string>('');
   const [showCommentModal, setShowCommentModal] = useState<boolean>(false);
@@ -121,7 +125,7 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({
     Boolean(inlineComments && inlineComments.length > 0)
   );
   const [selectedCommentId, setSelectedCommentId] = useState<string | null>(null);
-  const [floatingButtonPos, setFloatingButtonPos] = useState<{ x: number; y: number } | null>(null);
+  const [floatingButtonPos, setFloatingButtonPos] = useState<{ x: number; y: number; showBelow?: boolean } | null>(null);
   const viewerWrapperRef = useRef<HTMLDivElement | null>(null);
 
   // Synchronize sidebar if comments change
@@ -131,44 +135,107 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({
     }
   }, [inlineComments.length]);
 
-  const handleContainerMouseUp = () => {
+  // Update selection coordinates and text
+  const updateSelectionState = useCallback(() => {
     if (!enableInlineComments) return;
     const sel = window.getSelection();
     if (!sel || sel.isCollapsed) {
-      if (!showCommentModal) {
-        setFloatingButtonPos(null);
-      }
       return;
     }
 
-    const text = sel.toString().trim();
-    if (text.length >= 2) {
-      setSelectedText(text);
+    const rawText = sel.toString().trim();
+    if (rawText.length >= 2) {
+      setSelectedText(rawText);
       try {
         const range = sel.getRangeAt(0);
-        const rect = range.getBoundingClientRect();
-        const wrapperRect = viewerWrapperRef.current?.getBoundingClientRect();
-        if (wrapperRect) {
+        let rect = range.getBoundingClientRect();
+        if (rect.width === 0 && rect.height === 0 && range.getClientRects().length > 0) {
+          rect = range.getClientRects()[0];
+        }
+        if (rect && (rect.width > 0 || rect.height > 0)) {
+          const centerX = rect.left + rect.width / 2;
+          const showBelow = rect.top < 110;
+          const targetY = showBelow ? rect.bottom + 8 : rect.top - 8;
           setFloatingButtonPos({
-            x: Math.max(50, rect.left - wrapperRect.left + rect.width / 2),
-            y: Math.max(20, rect.top - wrapperRect.top - 12),
+            x: Math.max(120, Math.min(window.innerWidth - 120, centerX)),
+            y: targetY,
+            showBelow,
           });
         }
       } catch {
-        setFloatingButtonPos(null);
-      }
-    } else {
-      if (!showCommentModal) {
-        setFloatingButtonPos(null);
+        // Fallback
       }
     }
+  }, [enableInlineComments]);
+
+  const handleContainerMouseUp = () => {
+    setTimeout(updateSelectionState, 20);
   };
+
+  // Global mouseup / mousedown listeners so selection button works smoothly and reliably every time
+  useEffect(() => {
+    if (!enableInlineComments) return;
+    const handleDocMouseUp = () => {
+      setTimeout(updateSelectionState, 20);
+    };
+    const handleDocMouseDown = (e: MouseEvent) => {
+      const target = e.target as HTMLElement | null;
+      if (
+        target?.closest('.comment-floating-btn') ||
+        target?.closest('.comment-modal-dialog') ||
+        target?.closest('#btn-comment-selection-top')
+      ) {
+        return;
+      }
+      setTimeout(() => {
+        const sel = window.getSelection();
+        if (!sel || sel.isCollapsed) {
+          setFloatingButtonPos(null);
+          setSelectedText('');
+        }
+      }, 50);
+    };
+
+    document.addEventListener('mouseup', handleDocMouseUp);
+    document.addEventListener('mousedown', handleDocMouseDown);
+    return () => {
+      document.removeEventListener('mouseup', handleDocMouseUp);
+      document.removeEventListener('mousedown', handleDocMouseDown);
+    };
+  }, [enableInlineComments, updateSelectionState]);
+
+  // Keyboard shortcut listener: Pressing 'C' when text is selected immediately opens comment modal
+  useEffect(() => {
+    if (!enableInlineComments) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (
+        (e.key === 'c' || e.key === 'C') &&
+        !showCommentModal &&
+        document.activeElement?.tagName !== 'INPUT' &&
+        document.activeElement?.tagName !== 'TEXTAREA'
+      ) {
+        const sel = window.getSelection();
+        const rawText = sel?.toString().trim();
+        if (rawText && rawText.length >= 2) {
+          e.preventDefault();
+          updateSelectionState();
+          setShowCommentModal(true);
+        }
+      } else if (e.key === 'Escape') {
+        setShowCommentModal(false);
+        setFloatingButtonPos(null);
+        setSelectedText('');
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [enableInlineComments, showCommentModal, updateSelectionState]);
 
   const handleSaveComment = () => {
     if (!commentInput.trim() || !selectedText) return;
     if (onAddInlineComment) {
       onAddInlineComment({
-        selectedText,
+        selectedText: selectedText.trim(),
         comment: commentInput.trim(),
         createdById: currentUser?.id || 'reviewer-1',
         createdByName: currentUser?.name || 'Authorized Reviewer',
@@ -178,239 +245,353 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({
     setCommentInput('');
     setShowCommentModal(false);
     setFloatingButtonPos(null);
+    setSelectedText('');
     setShowCommentsSidebar(true);
     window.getSelection()?.removeAllRanges();
   };
 
-  // Robust Jump To Comment function that handles docx, canvas, and formatted text
+  // Helper to escape HTML entities
+  const escapeHtml = (str: string): string =>
+    str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+
+  // Helper to highlight ONLY the exact selected text in the DOM
+  const highlightSingleComment = useCallback(
+    (container: HTMLElement, comment: InlineRevisionComment, idx: number) => {
+      if (!comment.selectedText) return;
+      const cleanTarget = comment.selectedText.trim();
+      if (cleanTarget.length < 2) return;
+
+      // Don't duplicate if already highlighted with marks
+      if (container.querySelector(`mark[data-comment-id="${comment.id}"]`)) return;
+
+      // Exclude non-content nodes
+      const walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT, {
+        acceptNode(node) {
+          const parent = node.parentElement;
+          if (!parent) return NodeFilter.FILTER_REJECT;
+          if (
+            parent.closest('.comment-table-badge-bar') ||
+            parent.closest('.comment-number-badge') ||
+            parent.closest('.amaavigo-document-header') ||
+            parent.closest('.amaavigo-document-footer') ||
+            parent.classList.contains('docx-revision-highlight')
+          ) {
+            return NodeFilter.FILTER_REJECT;
+          }
+          if (parent.tagName === 'SCRIPT' || parent.tagName === 'STYLE') return NodeFilter.FILTER_REJECT;
+          return NodeFilter.FILTER_ACCEPT;
+        },
+      });
+
+      interface TextNodeSpan {
+        node: Text;
+        start: number;
+        end: number;
+        length: number;
+      }
+
+      let fullText = '';
+      const spans: TextNodeSpan[] = [];
+      let currentNode: Node | null;
+
+      while ((currentNode = walker.nextNode())) {
+        const text = currentNode.nodeValue || '';
+        if (text.length > 0) {
+          const start = fullText.length;
+          fullText += text;
+          spans.push({
+            node: currentNode as Text,
+            start,
+            end: fullText.length,
+            length: text.length,
+          });
+        }
+      }
+
+      if (spans.length === 0) return;
+
+      // Build normalized string with index mapping
+      const normToOrig: number[] = [];
+      let normFullText = '';
+      for (let i = 0; i < fullText.length; i++) {
+        const ch = fullText[i];
+        if (/\s/.test(ch)) {
+          if (normFullText.length === 0 || normFullText[normFullText.length - 1] !== ' ') {
+            normToOrig.push(i);
+            normFullText += ' ';
+          }
+        } else {
+          normToOrig.push(i);
+          normFullText += ch.toLowerCase();
+        }
+      }
+
+      const rawCleanTarget = cleanTarget.replace(/(\.\.\.|…)+$/, '').trim();
+      const normTarget = rawCleanTarget.replace(/\s+/g, ' ').toLowerCase();
+
+      let matchIdx = normFullText.indexOf(normTarget);
+      let matchLength = normTarget.length;
+
+      // Prefix match if target text is long or truncated
+      if (matchIdx === -1 && normTarget.length > 25) {
+        const prefix = normTarget.substring(0, Math.min(30, normTarget.length)).trim();
+        matchIdx = normFullText.indexOf(prefix);
+        if (matchIdx !== -1) {
+          matchLength = prefix.length;
+        }
+      }
+
+      // Sentence / first line match if target contains multiple lines
+      if (matchIdx === -1) {
+        const firstLine = normTarget.split(/\r?\n|;/)[0].trim();
+        if (firstLine.length >= 8) {
+          matchIdx = normFullText.indexOf(firstLine);
+          if (matchIdx !== -1) {
+            matchLength = firstLine.length;
+          }
+        }
+      }
+
+      if (matchIdx === -1) {
+        // Table fallback: if comment was placed on a table (Comment #2 scenario)
+        const tables = Array.from(container.querySelectorAll('table')) as HTMLTableElement[];
+        for (const tbl of tables) {
+          if (tbl.classList.contains('amaavigo-document-header') || tbl.classList.contains('amaavigo-document-footer')) continue;
+          const tblText = (tbl.textContent || '').replace(/\s+/g, ' ').toLowerCase();
+          const prefix = normTarget.substring(0, Math.min(30, normTarget.length)).trim();
+          if (tblText.includes(normTarget) || (prefix.length >= 8 && tblText.includes(prefix))) {
+            tbl.setAttribute('data-comment-id', comment.id);
+            tbl.setAttribute('id', `highlight-${comment.id}`);
+            tbl.classList.add('docx-revision-highlight-table');
+
+            if (!container.querySelector(`.badge-banner-comment-${comment.id}`)) {
+              const banner = document.createElement('div');
+              banner.className = `badge-banner-comment-${comment.id} comment-table-badge-bar flex items-center justify-between bg-orange-50/95 border border-[#FA7014] rounded-lg px-2.5 py-1 mb-1.5 shadow-xs cursor-pointer select-none transition-transform hover:scale-[1.005]`;
+              banner.setAttribute('data-comment-id', comment.id);
+              banner.setAttribute('id', `highlight-banner-${comment.id}`);
+              const safeComment = escapeHtml(comment.comment);
+              banner.innerHTML = `
+                <div class="flex items-center space-x-2">
+                  <span class="comment-number-badge !ml-0">#${idx + 1}</span>
+                  <span class="text-xs font-bold text-slate-800">Table Revision Comment:</span>
+                  <span class="text-[11px] text-slate-600 font-medium italic truncate max-w-sm">"${safeComment}"</span>
+                </div>
+                <span class="text-[10px] font-bold text-[#FA7014] bg-white border border-orange-200 px-2 py-0.5 rounded shadow-2xs hover:bg-orange-100 flex items-center gap-1">
+                  <span>Jump &rarr;</span>
+                </span>
+              `;
+              banner.onclick = (e) => {
+                e.stopPropagation();
+                handleJumpToComment(comment);
+              };
+              tbl.parentElement?.insertBefore(banner, tbl);
+            }
+            return;
+          }
+        }
+        return;
+      }
+
+      const origStart = normToOrig[matchIdx];
+      const origEnd = normToOrig[Math.min(matchIdx + matchLength - 1, normToOrig.length - 1)] + 1;
+
+      // Find affected spans
+      const affected = spans.filter((s) => s.end > origStart && s.start < origEnd);
+      if (affected.length === 0) return;
+
+      const createdMarks: HTMLElement[] = [];
+
+      // Process in reverse to avoid invalidating text offsets
+      for (let i = affected.length - 1; i >= 0; i--) {
+        const s = affected[i];
+        const nodeStartInOrig = Math.max(0, origStart - s.start);
+        const nodeEndInOrig = Math.min(s.length, origEnd - s.start);
+
+        if (nodeEndInOrig <= nodeStartInOrig) continue;
+
+        try {
+          let textNode = s.node;
+          if (nodeEndInOrig < s.length) {
+            textNode.splitText(nodeEndInOrig);
+          }
+          if (nodeStartInOrig > 0) {
+            textNode = textNode.splitText(nodeStartInOrig);
+          }
+
+          const mark = document.createElement('mark');
+          mark.className =
+            'docx-revision-highlight bg-amber-200/95 hover:bg-amber-300 text-slate-900 border-b-2 border-[#FA7014] px-0.5 rounded cursor-pointer transition-colors shadow-2xs inline-flex items-center flex-wrap gap-0.5';
+          mark.setAttribute('data-comment-id', comment.id);
+          mark.setAttribute('id', `highlight-${comment.id}`);
+          mark.setAttribute('title', `Comment #${idx + 1}: ${comment.comment}`);
+
+          textNode.parentNode?.replaceChild(mark, textNode);
+          mark.appendChild(textNode);
+          createdMarks.unshift(mark);
+
+          mark.onclick = (e) => {
+            e.stopPropagation();
+            handleJumpToComment(comment);
+          };
+        } catch {
+          // Continue
+        }
+      }
+
+      // Attach comment number badge to the first mark
+      if (createdMarks.length > 0 && !container.querySelector(`.badge-comment-${comment.id}`)) {
+        const firstMark = createdMarks[0];
+        const badge = document.createElement('span');
+        badge.className = `badge-comment-${comment.id} comment-number-badge`;
+        badge.textContent = `#${idx + 1}`;
+        firstMark.appendChild(badge);
+      }
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    []
+  );
+
   const handleJumpToComment = useCallback(
     (comment: InlineRevisionComment) => {
       setSelectedCommentId(comment.id);
       setShowCommentsSidebar(true);
 
-      // If document is docx and not currently on docx view, switch to it
       if (isDocx && viewMode !== 'docx') {
         setViewMode('docx');
       }
 
       const performJump = () => {
-        // 1. First look for existing tagged element by data-comment-id or highlight id
-        let targetEl: HTMLElement | null =
-          (docxContainerRef.current?.querySelector(`[data-comment-id="${comment.id}"]`) as HTMLElement) ||
-          (viewerWrapperRef.current?.querySelector(`[data-comment-id="${comment.id}"]`) as HTMLElement) ||
-          document.getElementById(`highlight-${comment.id}`);
+        // Clear browser window selection so the whole document is never selected
+        window.getSelection()?.removeAllRanges();
 
-        // 2. If not tagged yet, find the element by matching clean selectedText
-        if (!targetEl && comment.selectedText) {
-          const rawTarget = comment.selectedText.trim();
-          const cleanTarget = rawTarget.replace(/\s+/g, ' ').toLowerCase();
-          const searchContainer = docxContainerRef.current || viewerWrapperRef.current;
+        const searchContainer =
+          (viewMode === 'docx' ? docxContainerRef.current : viewerWrapperRef.current) ||
+          docxContainerRef.current ||
+          viewerWrapperRef.current;
+        if (!searchContainer) return;
 
-          if (searchContainer && cleanTarget.length >= 2) {
-            const candidates = Array.from(
-              searchContainer.querySelectorAll(
-                'mark, p, span, h1, h2, h3, h4, h5, h6, li, td, tr, div'
-              )
-            ) as HTMLElement[];
+        // Find elements for this comment
+        let marks = Array.from(
+          searchContainer.querySelectorAll(`mark[data-comment-id="${comment.id}"]`)
+        ) as HTMLElement[];
 
-            // Search elements containing the full target text
-            const matches = candidates.filter((el) => {
-              const text = (el.textContent || '').replace(/\s+/g, ' ').toLowerCase();
-              return text.includes(cleanTarget);
-            });
+        // If not found, attempt on-the-fly highlighting
+        if (marks.length === 0) {
+          const commentIdx = (inlineComments || []).findIndex((c) => c.id === comment.id);
+          highlightSingleComment(searchContainer, comment, commentIdx >= 0 ? commentIdx : 0);
+          marks = Array.from(
+            searchContainer.querySelectorAll(`mark[data-comment-id="${comment.id}"]`)
+          ) as HTMLElement[];
+        }
 
-            if (matches.length > 0) {
-              // Deepest / most specific element has the shortest textContent
-              matches.sort((a, b) => (a.textContent?.length || 0) - (b.textContent?.length || 0));
-              targetEl = matches[0];
-            } else if (cleanTarget.length > 15) {
-              // Fallback match by prefix
-              const prefix = cleanTarget.substring(0, Math.min(22, cleanTarget.length));
-              const prefixMatches = candidates.filter((el) => {
-                const text = (el.textContent || '').replace(/\s+/g, ' ').toLowerCase();
-                return text.includes(prefix);
-              });
-              if (prefixMatches.length > 0) {
-                prefixMatches.sort((a, b) => (a.textContent?.length || 0) - (b.textContent?.length || 0));
-                targetEl = prefixMatches[0];
-              }
-            }
-
-            if (targetEl) {
-              targetEl.setAttribute('data-comment-id', comment.id);
-              targetEl.setAttribute('id', `highlight-${comment.id}`);
-            }
+        // If still no mark, check for table banner or highlighted table
+        let targetElements: HTMLElement[] = marks;
+        if (targetElements.length === 0) {
+          const banner = searchContainer.querySelector(
+            `#highlight-banner-${comment.id}`
+          ) as HTMLElement | null;
+          if (banner) {
+            targetElements = [banner];
+          } else {
+            const tbl = searchContainer.querySelector(
+              `table[data-comment-id="${comment.id}"]`
+            ) as HTMLElement | null;
+            if (tbl) targetElements = [tbl];
           }
         }
 
-        // 3. Scroll and animate high-contrast focus
-        if (targetEl) {
-          // Direct container scroll to guarantee target is centered in the scroll area
+        // STRICT GUARD: Only ever pulse and scroll mark tags or table banners, NEVER container elements!
+        targetElements = targetElements.filter((el) => {
+          if (!el || el === searchContainer || el === docxContainerRef.current || el === viewerWrapperRef.current) return false;
+          if (el.classList.contains('docx-preview-container') || el.classList.contains('docx-preview-doc')) return false;
+          const tag = el.tagName.toLowerCase();
+          return (
+            tag === 'mark' ||
+            tag === 'span' ||
+            el.classList.contains('comment-table-badge-bar') ||
+            tag === 'table'
+          );
+        });
+
+        if (targetElements.length > 0) {
+          const firstTarget = targetElements[0];
+
+          // 1. Scroll into view
+          try {
+            firstTarget.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'nearest' });
+          } catch {
+            // Handled below
+          }
+
+          // 2. Adjust wrapper scroll
           const wrapper = viewerWrapperRef.current;
           if (wrapper) {
             const wrapperRect = wrapper.getBoundingClientRect();
-            const targetRect = targetEl.getBoundingClientRect();
+            const targetRect = firstTarget.getBoundingClientRect();
             const relativeTop = targetRect.top - wrapperRect.top + wrapper.scrollTop;
-            const targetScrollTop = relativeTop - (wrapper.clientHeight / 2) + (targetRect.height / 2);
+            const targetScrollTop = relativeTop - wrapper.clientHeight / 2 + targetRect.height / 2;
             wrapper.scrollTo({
               top: Math.max(0, targetScrollTop),
               behavior: 'smooth',
             });
           }
 
-          try {
-            targetEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
-          } catch {
-            // Handled by wrapper.scrollTo
+          // 3. Highlight and scroll the corresponding card in the sidebar
+          const cardEl = document.getElementById(`comment-card-${comment.id}`);
+          if (cardEl) {
+            cardEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
           }
 
-          // Visual highlight animation
-          targetEl.classList.remove('ring-4', 'ring-[#FA7014]', 'ring-offset-2', 'bg-orange-200/95');
-          void targetEl.offsetWidth; // Force DOM reflow
-          targetEl.classList.add(
-            'ring-4',
-            'ring-[#FA7014]',
-            'ring-offset-2',
-            'bg-orange-200/95',
-            'rounded',
-            'transition-all',
-            'duration-300'
-          );
-
-          setTimeout(() => {
-            targetEl?.classList.remove('ring-4', 'ring-[#FA7014]', 'ring-offset-2', 'bg-orange-200/95');
-          }, 2500);
+          // 4. Pulse animation on ONLY the marked selection
+          targetElements.forEach((el) => {
+            el.classList.remove('jump-highlight-pulse');
+            void el.offsetWidth;
+            el.classList.add('jump-highlight-pulse');
+            setTimeout(() => {
+              el.classList.remove('jump-highlight-pulse');
+            }, 2500);
+          });
         }
       };
 
       if (isDocx && viewMode !== 'docx') {
-        setTimeout(performJump, 150);
+        setTimeout(performJump, 300);
       } else {
         performJump();
       }
     },
-    [isDocx, viewMode]
+    [isDocx, viewMode, inlineComments, highlightSingleComment]
   );
 
-  // Highlight inline comment targets inside docxContainerRef
   useEffect(() => {
     if (!inlineComments || inlineComments.length === 0) return;
-    const container = docxContainerRef.current;
+    const container =
+      (viewMode === 'docx' ? docxContainerRef.current : viewerWrapperRef.current) ||
+      docxContainerRef.current ||
+      viewerWrapperRef.current;
     if (!container) return;
 
-    const highlightComments = () => {
+    const runHighlightAll = () => {
       try {
         inlineComments.forEach((c, idx) => {
-          if (!c.selectedText) return;
-          const target = c.selectedText.trim();
-          if (target.length < 2) return;
-
-          // Don't duplicate if already tagged
-          if (container.querySelector(`[data-comment-id="${c.id}"]`)) return;
-
-          const cleanTarget = target.replace(/\s+/g, ' ').toLowerCase();
-
-          // Strategy 1: Check single text nodes using safe DOM splitText
-          const walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT);
-          let node: Node | null;
-          let matched = false;
-
-          while ((node = walker.nextNode())) {
-            const parent = node.parentElement;
-            if (parent?.classList.contains('docx-revision-highlight')) continue;
-
-            const text = (node.nodeValue || '').replace(/\s+/g, ' ');
-            const foundIdx = text.toLowerCase().indexOf(cleanTarget);
-            if (foundIdx !== -1) {
-              try {
-                const textNode = node as Text;
-                const matchNode = textNode.splitText(foundIdx);
-                matchNode.splitText(cleanTarget.length);
-
-                const mark = document.createElement('mark');
-                mark.className =
-                  'docx-revision-highlight bg-amber-200/90 hover:bg-amber-300 text-slate-900 border-b-2 border-[#FA7014] px-1 py-0.5 rounded cursor-pointer transition-colors shadow-2xs inline-flex items-center gap-1';
-                mark.setAttribute('data-comment-id', c.id);
-                mark.setAttribute('id', `highlight-${c.id}`);
-                mark.setAttribute('title', `Comment #${idx + 1}: ${c.comment}`);
-
-                const badge = document.createElement('span');
-                badge.className =
-                  'bg-[#FA7014] text-white text-[9px] font-bold px-1 rounded-sm ml-1 select-none pointer-events-none';
-                badge.textContent = `#${idx + 1}`;
-
-                matchNode.parentNode?.replaceChild(mark, matchNode);
-                mark.appendChild(matchNode);
-                mark.appendChild(badge);
-
-                mark.onclick = (e) => {
-                  e.stopPropagation();
-                  handleJumpToComment(c);
-                };
-                matched = true;
-                break;
-              } catch {
-                // Continue to block strategy
-              }
-            }
-          }
-
-          // Strategy 2: If across spans in docx-preview, find deepest matching element
-          if (!matched) {
-            const elements = Array.from(
-              container.querySelectorAll('p, span, div, h1, h2, h3, h4, h5, h6, li, td, tr')
-            ) as HTMLElement[];
-
-            const matches = elements.filter((el) => {
-              if (el.classList.contains('docx-revision-highlight')) return false;
-              const txt = (el.textContent || '').replace(/\s+/g, ' ').toLowerCase();
-              return txt.includes(cleanTarget);
-            });
-
-            if (matches.length > 0) {
-              matches.sort((a, b) => (a.textContent?.length || 0) - (b.textContent?.length || 0));
-              const best = matches[0];
-              best.setAttribute('data-comment-id', c.id);
-              best.setAttribute('id', `highlight-${c.id}`);
-              best.classList.add(
-                'docx-revision-highlight',
-                'bg-amber-100/90',
-                'border-l-4',
-                'border-[#FA7014]',
-                'px-1',
-                'py-0.5',
-                'rounded-r',
-                'cursor-pointer',
-                'transition-all'
-              );
-
-              if (!best.querySelector(`.badge-comment-${c.id}`)) {
-                const badge = document.createElement('span');
-                badge.className = `badge-comment-${c.id} bg-[#FA7014] text-white text-[9px] font-bold px-1.5 py-0.5 rounded ml-1.5 select-none pointer-events-none inline-block shadow-2xs`;
-                badge.textContent = `#${idx + 1}`;
-                best.appendChild(badge);
-              }
-
-              best.onclick = (e) => {
-                e.stopPropagation();
-                handleJumpToComment(c);
-              };
-            }
-          }
+          highlightSingleComment(container, c, idx);
         });
       } catch (err) {
-        console.warn('Docx comment highlighting note:', err);
+        console.warn('Comment highlight err:', err);
       }
     };
 
-    const timer1 = setTimeout(highlightComments, 300);
-    const timer2 = setTimeout(highlightComments, 800);
+    const t1 = setTimeout(runHighlightAll, 200);
+    const t2 = setTimeout(runHighlightAll, 600);
+    const t3 = setTimeout(runHighlightAll, 1400);
 
     return () => {
-      clearTimeout(timer1);
-      clearTimeout(timer2);
+      clearTimeout(t1);
+      clearTimeout(t2);
+      clearTimeout(t3);
     };
-  }, [inlineComments, viewMode, stampedDocxBlob, loadingDocx, handleJumpToComment]);
+  }, [inlineComments, viewMode, stampedDocxBlob, loadingDocx, highlightSingleComment]);
+
 
   useEffect(() => {
     let isMounted = true;
@@ -458,13 +639,14 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({
         (async () => {
           try {
             const bytes = await resolveDocumentBytes(source);
-
             if (bytes.length > 4 && bytes[0] === 0x50 && bytes[1] === 0x4b) {
               if (effectiveHeaderFooterData) {
                 const stamped = await stampDocxWithHeaderFooter(bytes, {
                   documentTitle: effectiveHeaderFooterData.documentTitle || fileName.replace(/\.[^/.]+$/, ''),
                   versionNumber: effectiveHeaderFooterData.versionNumber || '1.0',
                   effectiveDate: effectiveHeaderFooterData.effectiveDate || new Date().toISOString(),
+                  reReviewDate: effectiveHeaderFooterData.reReviewDate,
+                  creationDate: effectiveHeaderFooterData.creationDate,
                   createdByName: effectiveHeaderFooterData.createdByName,
                   approvedByName: effectiveHeaderFooterData.approvedByName,
                   approvedDate: effectiveHeaderFooterData.approvedDate,
@@ -508,6 +690,35 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({
     };
   }, [isDocx, effectiveFileUrl, effectiveHeaderFooterData, fileName]);
 
+  // Calculate scale so the entire Word (DOCX) page width fits within the container without clipping
+  const handleFitDocxWidth = useCallback(() => {
+    const parent = docxOuterWrapperRef.current || docxContainerRef.current;
+    if (!parent) return;
+    const parentW = parent.clientWidth || 800;
+    // Standard Word page rendered by docx-preview is ~816px wide (US Letter 8.5in or A4 210mm)
+    let pageW = 816;
+    if (docxContainerRef.current) {
+      const sectionEl = docxContainerRef.current.querySelector('section.docx') as HTMLElement | null;
+      if (sectionEl && sectionEl.offsetWidth > 0) {
+        pageW = sectionEl.offsetWidth;
+      }
+    }
+    const availableW = Math.max(280, parentW - 24);
+    const computedScale = Math.min(1.15, Math.max(0.4, Number((availableW / pageW).toFixed(2))));
+    setDocxScale(computedScale);
+    setIsFitDocxWidth(true);
+  }, []);
+
+  // Window resize observer to preserve fit when in fit-width mode
+  useEffect(() => {
+    if (viewMode !== 'docx' || !isFitDocxWidth) return;
+    const onResize = () => {
+      handleFitDocxWidth();
+    };
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, [viewMode, isFitDocxWidth, handleFitDocxWidth]);
+
   // Render Word document via docx-preview into container
   useEffect(() => {
     let isCurrent = true;
@@ -526,7 +737,13 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({
         className: 'docx-preview-doc',
       })
         .then(() => {
-          if (isCurrent) setLoadingDocx(false);
+          if (isCurrent) {
+            setLoadingDocx(false);
+            // Automatically fit docx to available container width so the entire document is visible without clipping
+            requestAnimationFrame(() => {
+              handleFitDocxWidth();
+            });
+          }
         })
         .catch((err) => {
           console.warn('docx-preview render warning:', err);
@@ -539,7 +756,7 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({
     return () => {
       isCurrent = false;
     };
-  }, [viewMode, stampedDocxBlob]);
+  }, [viewMode, stampedDocxBlob, handleFitDocxWidth]);
 
   // Stamp PDF with official corporate header & footer while keeping original document 100% intact
   useEffect(() => {
@@ -552,11 +769,13 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({
           documentTitle: effectiveHeaderFooterData.documentTitle || fileName.replace(/\.[^/.]+$/, ''),
           versionNumber: effectiveHeaderFooterData.versionNumber || '1.0',
           effectiveDate: effectiveHeaderFooterData.effectiveDate || new Date().toISOString(),
+          reReviewDate: effectiveHeaderFooterData.reReviewDate,
+          creationDate: effectiveHeaderFooterData.creationDate,
           createdByName: effectiveHeaderFooterData.createdByName,
           approvedByName: effectiveHeaderFooterData.approvedByName,
           approvedDate: effectiveHeaderFooterData.approvedDate,
           companyName: effectiveHeaderFooterData.companyName,
-        })
+        }, { forceRestamp: true })
           .then((res) => {
             if (isMounted) setStampedPdfUrl(res.dataUrl);
           })
@@ -877,6 +1096,73 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({
           </div>
         )}
 
+        {/* WORD (DOCX) ZOOM & FIT CONTROLS */}
+        {viewMode === 'docx' && !loadingDocx && !docxError && (
+          <div className="flex items-center space-x-2 text-xs text-slate-700">
+            {/* Zoom Controls */}
+            <div className="flex items-center space-x-1 bg-white px-2 py-1 rounded-xl border border-slate-200 shadow-2xs">
+              <button
+                type="button"
+                disabled={docxScale <= 0.5}
+                onClick={() => {
+                  setDocxScale((s) => Math.max(0.5, Number((s - 0.1).toFixed(2))));
+                  setIsFitDocxWidth(false);
+                }}
+                className="p-1 rounded-lg hover:bg-slate-100 disabled:opacity-30 transition-colors cursor-pointer"
+                title="Zoom Out"
+              >
+                <ZoomOut className="w-3.5 h-3.5" />
+              </button>
+              <span className="font-mono text-xs px-1.5 text-slate-700 min-w-[42px] text-center font-bold">
+                {Math.round(docxScale * 100)}%
+              </span>
+              <button
+                type="button"
+                disabled={docxScale >= 2.0}
+                onClick={() => {
+                  setDocxScale((s) => Math.min(2.0, Number((s + 0.1).toFixed(2))));
+                  setIsFitDocxWidth(false);
+                }}
+                className="p-1 rounded-lg hover:bg-slate-100 disabled:opacity-30 transition-colors cursor-pointer"
+                title="Zoom In"
+              >
+                <ZoomIn className="w-3.5 h-3.5" />
+              </button>
+            </div>
+
+            {/* Quick Fit Controls */}
+            <div className="flex items-center space-x-1 bg-white p-1 rounded-xl border border-slate-200 shadow-2xs">
+              <button
+                type="button"
+                onClick={handleFitDocxWidth}
+                className={`px-2.5 py-1 text-[11px] rounded-lg font-bold transition-all cursor-pointer ${
+                  isFitDocxWidth
+                    ? 'bg-[#FA7014] text-white shadow-2xs'
+                    : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+                }`}
+                title="Fit full Word document page to container width"
+              >
+                Fit Width
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setDocxScale(1.0);
+                  setIsFitDocxWidth(false);
+                }}
+                className={`px-2.5 py-1 text-[11px] rounded-lg font-bold transition-all cursor-pointer ${
+                  docxScale === 1.0 && !isFitDocxWidth
+                    ? 'bg-slate-900 text-white shadow-2xs'
+                    : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+                }`}
+                title="100% Actual Print Size"
+              >
+                100%
+              </button>
+            </div>
+          </div>
+        )}
+
         {/* REVISION COMMENTS ACTION BUTTONS */}
         <div className="flex items-center space-x-2">
           {enableInlineComments && (
@@ -926,24 +1212,29 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({
         onMouseUp={handleContainerMouseUp}
         className="relative flex-1 bg-slate-100/70 p-4 overflow-y-auto max-h-[65vh] min-h-[320px] flex flex-col lg:flex-row gap-4 items-start justify-center"
       >
-        {/* FLOATING ACTION TOOLTIP NEAR SELECTION */}
-        {floatingButtonPos && enableInlineComments && selectedText && (
+        {/* FLOATING ACTION PILL NEAR SELECTION */}
+        {floatingButtonPos && enableInlineComments && selectedText && !showCommentModal && (
           <div
             style={{
-              position: 'absolute',
+              position: 'fixed',
               left: `${floatingButtonPos.x}px`,
               top: `${floatingButtonPos.y}px`,
-              transform: 'translate(-50%, -100%)',
+              transform: floatingButtonPos.showBelow ? 'translate(-50%, 0)' : 'translate(-50%, -100%)',
+              zIndex: 9999,
             }}
-            className="z-50 pointer-events-auto"
+            className="comment-floating-btn pointer-events-auto select-none animate-in fade-in zoom-in-95 duration-150"
           >
             <button
               type="button"
-              onClick={() => setShowCommentModal(true)}
-              className="inline-flex items-center space-x-1.5 bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold px-3 py-1.5 rounded-xl shadow-xl border border-slate-700 animate-in fade-in zoom-in-95 cursor-pointer ring-2 ring-[#FA7014]/50"
+              onClick={() => {
+                setShowCommentModal(true);
+              }}
+              className="flex items-center space-x-2 bg-gradient-to-r from-[#FA7014] to-[#E65A05] hover:from-[#E65A05] hover:to-[#D44E00] text-white px-3.5 py-1.5 rounded-full shadow-xl hover:shadow-2xl hover:scale-105 active:scale-95 transition-all text-xs font-bold ring-2 ring-white cursor-pointer"
+              title="Add Revision Comment on selected text (or press 'C')"
             >
-              <MessageSquarePlus className="w-4 h-4 text-[#FA7014]" />
-              <span>Add Revision Comment</span>
+              <MessageSquarePlus className="w-3.5 h-3.5" />
+              <span>Add Comment</span>
+              <span className="bg-black/25 text-[10px] font-mono px-1 py-0.2 rounded ml-0.5">C</span>
             </button>
           </div>
         )}
@@ -1017,7 +1308,7 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({
 
         {/* 1. INTERACTIVE WORD (DOCX) DOCUMENT VIEWER */}
         {viewMode === 'docx' && (
-          <div className="flex flex-col items-center justify-center w-full">
+          <div ref={docxOuterWrapperRef} className="flex flex-col items-center justify-start w-full overflow-x-auto min-h-[400px]">
             {loadingDocx && (
               <div className="py-16 text-center text-slate-500">
                 <div className="w-8 h-8 border-2 border-[#FA7014] border-t-transparent rounded-full animate-spin mx-auto mb-3" />
@@ -1041,7 +1332,11 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({
 
             <div
               ref={docxContainerRef}
-              className={`docx-preview-container flex flex-col items-center py-4 px-2 bg-transparent overflow-x-auto w-full max-w-5xl ${
+              style={{
+                zoom: docxScale,
+                transformOrigin: 'top center',
+              }}
+              className={`docx-preview-container flex flex-col items-center py-4 px-2 bg-transparent w-full transition-transform duration-100 ${
                 loadingDocx ? 'hidden' : 'block'
               }`}
             />
@@ -1270,7 +1565,7 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({
                   >
                     <div className="flex items-center justify-between mb-1.5">
                       <div className="flex items-center space-x-1.5">
-                        <span className="bg-[#FA7014] text-white text-[10px] font-extrabold px-1.5 py-0.5 rounded">
+                        <span className="comment-number-badge !ml-0">
                           #{idx + 1}
                         </span>
                         <span className="font-bold text-slate-900 text-[11px] truncate max-w-[130px]">
@@ -1338,11 +1633,31 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({
             </div>
           </div>
         )}
-      </div>
+        </div>
+
+        {/* STICKY BOTTOM FLOATING COMMENT PROMPT WHEN TEXT IS SELECTED */}
+        {enableInlineComments && selectedText && !showCommentModal && (
+          <div className="fixed bottom-6 right-6 z-[60] bg-slate-900 text-white px-4 py-3 rounded-2xl shadow-2xl border border-slate-700 flex items-center space-x-3 animate-in fade-in slide-in-from-bottom-4 duration-200">
+            <div className="flex flex-col max-w-xs">
+              <span className="text-[10px] font-bold text-[#FA7014] uppercase tracking-wider">Text Selected</span>
+              <span className="text-xs font-serif italic truncate text-slate-200">"{selectedText}"</span>
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                setShowCommentModal(true);
+              }}
+              className="bg-[#FA7014] hover:bg-[#E65A05] text-white text-xs font-bold px-4 py-2 rounded-xl shadow-md flex items-center space-x-1.5 cursor-pointer shrink-0 transition-transform hover:scale-105"
+            >
+              <MessageSquarePlus className="w-4 h-4" />
+              <span>Add Comment</span>
+            </button>
+          </div>
+        )}
 
       {/* COMMENT MODAL DIALOG */}
       {showCommentModal && (
-        <div className="fixed inset-0 z-[100] bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
+        <div className="comment-modal-dialog fixed inset-0 z-[100] bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl p-6 max-w-lg w-full shadow-2xl border border-slate-200 animate-in zoom-in-95 duration-150">
             <div className="flex items-center justify-between pb-3 border-b border-slate-100">
               <div className="flex items-center space-x-2.5">
@@ -1370,7 +1685,7 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({
             <div className="mt-3.5 bg-slate-50 border-l-4 border-l-[#FA7014] border-slate-200 p-3 rounded-r-xl">
               <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500 flex items-center space-x-1 mb-1">
                 <Quote className="w-3 h-3 text-[#FA7014]" />
-                <span>Selected Text from Word Document:</span>
+                <span>Selected Text from Document:</span>
               </span>
               <p className="text-xs text-slate-800 font-serif italic line-clamp-4 leading-relaxed">
                 "{selectedText}"
@@ -1388,15 +1703,16 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({
                 onChange={(e) => setCommentInput(e.target.value)}
                 placeholder="Example: Please revise this paragraph to specify 15 days notice period instead of 30 days as discussed..."
                 rows={3}
-                className="w-full text-xs p-3 bg-slate-50 border border-slate-300 rounded-xl text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#FA7014] focus:bg-white placeholder:text-slate-400"
+                className="w-full text-xs p-3 bg-slate-50 border border-slate-300 rounded-xl text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#FA7014] focus:bg-white placeholder:text-slate-400 resize-none"
                 onKeyDown={(e) => {
-                  if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+                  if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault();
                     handleSaveComment();
                   }
                 }}
               />
               <p className="text-[10px] text-slate-400 mt-1">
-                Press Ctrl+Enter or click below to save. When you reject the document, all attached comments are sent to HR.
+                Press Enter to save (Shift+Enter for newline). When you reject the document, all attached comments are sent to HR.
               </p>
             </div>
 

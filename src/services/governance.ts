@@ -24,7 +24,7 @@ import { calculateSha256, defaultStorageProvider } from './storage';
 import { firestoreService } from './firestoreService';
 import { uploadMediaToServer } from './mediaStorage';
 import { normalizeAuthorizedModules, getAuthorizationLabel, ModuleAuthorizationCode } from '../utils/authorization';
-import { appendApprovedHeaderAndFooter, formatDDMMYYYY, stripPolicyMetadataHeader, extractCleanBody } from '../utils/documentHeaderFooter';
+import { appendApprovedHeaderAndFooter, formatDDMMYYYY, calculateDynamicReReviewDate, parseAnyDate, stripPolicyMetadataHeader, extractCleanBody } from '../utils/documentHeaderFooter';
 import { stampPdfWithHeaderFooter, stampDocxWithHeaderFooter, cleanDocxDataUrl, HeaderFooterMetadata } from '../utils/documentStamper';
 
 // Helper to verify if an employee belongs to a specific department or audience
@@ -903,11 +903,20 @@ export class DocumentGovernanceEngine {
       ? (data.creationDate.includes('T') ? data.creationDate : `${data.creationDate}T00:00:00.000Z`)
       : new Date().toISOString();
 
+    const effectiveDateVal = data.effectiveFrom || new Date().toISOString().split('T')[0];
+    const initialReviewDue =
+      data.reviewDueDate ||
+      (() => {
+        const d = parseAnyDate(effectiveDateVal) || new Date();
+        d.setFullYear(d.getFullYear() + 1);
+        return d.toISOString().split('T')[0];
+      })();
+
     const initialHeaderFooter: HeaderFooterMetadata = {
       documentTitle: data.title.trim(),
       versionNumber: '1.0',
-      effectiveDate: data.effectiveFrom || new Date().toISOString().split('T')[0],
-      reReviewDate: data.reviewDueDate || '',
+      effectiveDate: formatDDMMYYYY(effectiveDateVal),
+      reReviewDate: calculateDynamicReReviewDate(initialReviewDue, effectiveDateVal),
       creationDate: formatDDMMYYYY(docCreationDateIso),
       createdByName: creator.name,
       approvedByName: 'Not yet approved',
@@ -924,7 +933,7 @@ export class DocumentGovernanceEngine {
       }
     } else if (isPdfUpload && sanitizedFileUrl) {
       try {
-        const stampedPdf = await stampPdfWithHeaderFooter(sanitizedFileUrl, initialHeaderFooter);
+        const stampedPdf = await stampPdfWithHeaderFooter(sanitizedFileUrl, initialHeaderFooter, { forceRestamp: true });
         sanitizedFileUrl = stampedPdf.dataUrl;
       } catch (pdfErr) {
         console.warn('Could not stamp initial PDF on createDocument:', pdfErr);
@@ -1148,13 +1157,21 @@ export class DocumentGovernanceEngine {
     // 1. Take effective date first for this revision and build updated header/footer data
     const revisionEffectiveDate = data.effectiveFrom || new Date().toISOString().split('T')[0];
     const formattedEffectiveDate = formatDDMMYYYY(revisionEffectiveDate);
+    const revisionReviewDueDate =
+      data.reviewDueDate ||
+      (() => {
+        const d = parseAnyDate(revisionEffectiveDate) || new Date();
+        d.setFullYear(d.getFullYear() + 1);
+        return d.toISOString().split('T')[0];
+      })();
+    const formattedReReviewDate = calculateDynamicReReviewDate(revisionReviewDueDate, revisionEffectiveDate);
 
     const revisionHeaderFooterData = {
       companyName: master.companyName || 'Amaavigo',
       documentTitle: master.title,
       versionNumber: nextVersionNumber,
       effectiveDate: formattedEffectiveDate,
-      reReviewDate: data.reviewDueDate ? formatDDMMYYYY(data.reviewDueDate) : '',
+      reReviewDate: formattedReReviewDate,
       creationDate: formatDDMMYYYY(master.createdAt),
       createdByName: creator.name || 'Amee Shah',
       approvedByName: 'Not yet approved',
@@ -1192,7 +1209,7 @@ export class DocumentGovernanceEngine {
       }
     } else if (isPdf && sanitizedFileUrl) {
       try {
-        const stampedPdf = await stampPdfWithHeaderFooter(sanitizedFileUrl, revisionHeaderFooterData);
+        const stampedPdf = await stampPdfWithHeaderFooter(sanitizedFileUrl, revisionHeaderFooterData, { forceRestamp: true });
         sanitizedFileUrl = stampedPdf.dataUrl;
       } catch (pdfErr) {
         console.warn('Could not stamp PDF on createNewVersion:', pdfErr);
@@ -1259,7 +1276,7 @@ export class DocumentGovernanceEngine {
       reviewDueDate:
         data.reviewDueDate ||
         (() => {
-          const d = new Date(data.effectiveFrom || Date.now());
+          const d = parseAnyDate(data.effectiveFrom) || new Date();
           d.setFullYear(d.getFullYear() + 1);
           return d.toISOString().split('T')[0];
         })(),
@@ -1442,13 +1459,21 @@ export class DocumentGovernanceEngine {
 
     const nowIso = new Date().toISOString();
 
+    const versionReviewDue =
+      version.reviewDueDate ||
+      (() => {
+        const d = parseAnyDate(version.effectiveFrom || nowIso) || new Date();
+        d.setFullYear(d.getFullYear() + 1);
+        return d.toISOString().split('T')[0];
+      })();
+
     // 0. Append dynamic Corporate Header & Footer to the approved document BEFORE saving and dispatching emails
     const headerFooterData = {
       companyName: master.companyName || 'Amaavigo',
       documentTitle: master.title || version.documentTitle,
       versionNumber: version.versionNumber,
       effectiveDate: formatDDMMYYYY(version.effectiveFrom || nowIso),
-      reReviewDate: formatDDMMYYYY(version.reviewDueDate || ''),
+      reReviewDate: calculateDynamicReReviewDate(versionReviewDue, version.effectiveFrom || nowIso),
       creationDate: formatDDMMYYYY(master.createdAt || version.createdAt),
       createdByName: version.createdByName || master.createdByName || 'Amee Shah',
       approvedByName: reviewer.name,
@@ -1487,7 +1512,7 @@ export class DocumentGovernanceEngine {
             ? version.rawContent
             : null;
         if (sourcePdf) {
-          const stamped = await stampPdfWithHeaderFooter(sourcePdf, headerFooterData);
+          const stamped = await stampPdfWithHeaderFooter(sourcePdf, headerFooterData, { forceRestamp: true });
           version.fileUrl = stamped.dataUrl;
         }
       } catch (e) {

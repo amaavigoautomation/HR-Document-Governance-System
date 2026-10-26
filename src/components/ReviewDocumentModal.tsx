@@ -40,7 +40,7 @@ import { governanceEngine } from '../services/governance';
 import { auditService } from '../services/audit';
 import { DocumentViewer } from './DocumentViewer';
 import { formatIST, formatISTDate } from '../utils/dateFormat';
-import { formatDDMMYYYY } from '../utils/documentHeaderFooter';
+import { formatDDMMYYYY, calculateDynamicReReviewDate } from '../utils/documentHeaderFooter';
 import { downloadDocumentWithIntactFormat } from '../utils/documentStamper';
 import { extractPointByPointDiffs, PointDiffItem } from '../services/comparison';
 
@@ -128,12 +128,16 @@ export const ReviewDocumentModal: React.FC<ReviewDocumentModalProps> = ({
   const handleDownloadVersion = async () => {
     try {
       setIsDownloading(true);
+      const versionReviewDue = calculateDynamicReReviewDate(
+        version.reviewDueDate,
+        version.effectiveFrom || version.createdAt
+      );
       await downloadDocumentWithIntactFormat({
         fileName: version.fileName || `${version.documentId}_v${version.versionNumber}.pdf`,
         documentTitle: version.documentTitle || master?.title,
         versionNumber: version.versionNumber,
         effectiveDate: formatDDMMYYYY(version.effectiveFrom || version.createdAt),
-        reReviewDate: formatDDMMYYYY(version.reviewDueDate, ''),
+        reReviewDate: versionReviewDue,
         creationDate: formatDDMMYYYY(master?.createdAt || version.createdAt),
         createdByName: creator.name || version.createdByName || 'Amee Shah',
         approvedByName:
@@ -864,7 +868,10 @@ export const ReviewDocumentModal: React.FC<ReviewDocumentModalProps> = ({
                       documentTitle: version.documentTitle || master?.title || 'Document',
                       versionNumber: version.versionNumber,
                       effectiveDate: formatDDMMYYYY(version.effectiveFrom || new Date()),
-                      reReviewDate: formatDDMMYYYY(version.reviewDueDate, ''),
+                      reReviewDate: calculateDynamicReReviewDate(
+                        version.reviewDueDate,
+                        version.effectiveFrom || version.createdAt
+                      ),
                       creationDate: formatDDMMYYYY(master?.createdAt || version.createdAt),
                       createdByName: version.createdByName || master?.createdByName || 'Amee Shah',
                       approvedByName:

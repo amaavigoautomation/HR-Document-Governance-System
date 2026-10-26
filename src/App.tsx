@@ -28,7 +28,7 @@ import { ReviewDocumentModal } from './components/ReviewDocumentModal';
 import { DocumentDetailModal } from './components/DocumentDetailModal';
 import { NotificationDrawer } from './components/NotificationDrawer';
 import { DocumentViewer } from './components/DocumentViewer';
-import { formatDDMMYYYY } from './utils/documentHeaderFooter';
+import { formatDDMMYYYY, calculateDynamicReReviewDate } from './utils/documentHeaderFooter';
 import { downloadDocumentWithIntactFormat } from './utils/documentStamper';
 import { FileText, X, Download, ExternalLink, Users, FileSpreadsheet, UserCheck } from 'lucide-react';
 import { StatusBadge } from './components/StatusBadge';
@@ -911,14 +911,24 @@ export default function App() {
               <div className="flex items-center space-x-2">
                 <button
                   type="button"
-                  onClick={() =>
+                  onClick={() => {
+                    const readerMaster = documents.find(
+                      (d) => d.id === readerVersion.documentMasterId || d.documentId === readerVersion.documentId
+                    );
+                    const readerReviewDue =
+                      readerVersion.reviewDueDate ||
+                      (() => {
+                        const d = new Date(readerVersion.effectiveFrom || readerVersion.createdAt || Date.now());
+                        d.setFullYear(d.getFullYear() + 1);
+                        return d.toISOString().split('T')[0];
+                      })();
                     downloadDocumentWithIntactFormat({
                       fileName: readerVersion.fileName,
                       documentTitle: readerVersion.documentTitle,
                       versionNumber: readerVersion.versionNumber,
                       effectiveDate: formatDDMMYYYY(readerVersion.effectiveFrom || readerVersion.createdAt),
-                      reReviewDate: formatDDMMYYYY(readerVersion.reviewDueDate, ''),
-                      creationDate: formatDDMMYYYY(readerVersion.createdAt),
+                      reReviewDate: formatDDMMYYYY(readerReviewDue),
+                      creationDate: formatDDMMYYYY(readerMaster?.createdAt || readerVersion.createdAt),
                       createdByName: readerVersion.createdByName || 'Amee Shah',
                       approvedByName:
                         readerVersion.status === VersionStatus.PUBLISHED
@@ -928,13 +938,13 @@ export default function App() {
                         readerVersion.status === VersionStatus.PUBLISHED && (readerVersion.reviewedAt || readerVersion.publishedAt)
                           ? formatDDMMYYYY(readerVersion.reviewedAt || readerVersion.publishedAt!)
                           : 'Not yet approved',
-                      companyName: 'Amaavigo',
+                      companyName: readerMaster?.companyName || 'Amaavigo',
                       rawContent: readerVersion.rawContent,
                       fileUrl: readerVersion.fileUrl || readerVersion.originalFileUrl,
                       versionId: readerVersion.id,
                       documentId: readerVersion.documentId,
-                    })
-                  }
+                    });
+                  }}
                   className="inline-flex items-center space-x-1.5 bg-slate-800 hover:bg-slate-700 text-white text-xs font-semibold px-3 py-1.5 rounded-lg transition-colors border border-slate-700 cursor-pointer"
                 >
                   <Download className="w-3.5 h-3.5" />
@@ -950,31 +960,42 @@ export default function App() {
             </div>
 
             <div className="flex-1 overflow-y-auto p-6 bg-slate-950">
-              <DocumentViewer
-                fileName={readerVersion.fileName}
-                rawContent={readerVersion.rawContent}
-                fileUrl={readerVersion.fileUrl || readerVersion.originalFileUrl}
-                mimeType={readerVersion.mimeType}
-                versionId={readerVersion.id}
-                documentId={readerVersion.documentId}
-                headerFooterData={{
-                  companyName: 'Amaavigo',
-                  documentTitle: readerVersion.documentTitle,
-                  versionNumber: readerVersion.versionNumber,
-                  effectiveDate: formatDDMMYYYY(readerVersion.effectiveFrom || readerVersion.createdAt),
-                  reReviewDate: formatDDMMYYYY(readerVersion.reviewDueDate, ''),
-                  creationDate: formatDDMMYYYY(readerVersion.createdAt),
-                  createdByName: readerVersion.createdByName || 'Amee Shah',
-                  approvedByName:
-                    readerVersion.status === VersionStatus.PUBLISHED
-                      ? (readerVersion.reviewedByName || readerVersion.publishedByName || 'Authorized Approver')
-                      : 'Not yet approved',
-                  approvedDate:
-                    readerVersion.status === VersionStatus.PUBLISHED && (readerVersion.reviewedAt || readerVersion.publishedAt)
-                      ? formatDDMMYYYY(readerVersion.reviewedAt || readerVersion.publishedAt!)
-                      : 'Not yet approved',
-                }}
-              />
+              {(() => {
+                const readerMaster = documents.find(
+                  (d) => d.id === readerVersion.documentMasterId || d.documentId === readerVersion.documentId
+                );
+                const readerReviewDue = calculateDynamicReReviewDate(
+                  readerVersion.reviewDueDate,
+                  readerVersion.effectiveFrom || readerVersion.createdAt
+                );
+                return (
+                  <DocumentViewer
+                    fileName={readerVersion.fileName}
+                    rawContent={readerVersion.rawContent}
+                    fileUrl={readerVersion.fileUrl || readerVersion.originalFileUrl}
+                    mimeType={readerVersion.mimeType}
+                    versionId={readerVersion.id}
+                    documentId={readerVersion.documentId}
+                    headerFooterData={{
+                      companyName: readerMaster?.companyName || 'Amaavigo',
+                      documentTitle: readerVersion.documentTitle,
+                      versionNumber: readerVersion.versionNumber,
+                      effectiveDate: formatDDMMYYYY(readerVersion.effectiveFrom || readerVersion.createdAt),
+                      reReviewDate: readerReviewDue,
+                      creationDate: formatDDMMYYYY(readerMaster?.createdAt || readerVersion.createdAt),
+                      createdByName: readerVersion.createdByName || 'Amee Shah',
+                      approvedByName:
+                        readerVersion.status === VersionStatus.PUBLISHED
+                          ? (readerVersion.reviewedByName || readerVersion.publishedByName || 'Authorized Approver')
+                          : 'Not yet approved',
+                      approvedDate:
+                        readerVersion.status === VersionStatus.PUBLISHED && (readerVersion.reviewedAt || readerVersion.publishedAt)
+                          ? formatDDMMYYYY(readerVersion.reviewedAt || readerVersion.publishedAt!)
+                          : 'Not yet approved',
+                    }}
+                  />
+                );
+              })()}
             </div>
           </div>
         </div>
