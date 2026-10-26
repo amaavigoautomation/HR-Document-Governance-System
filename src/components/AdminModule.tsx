@@ -263,7 +263,9 @@ const UserModal: React.FC<{
           setInviteLink(r.inviteLink);
           return;
         }
-        onDone(`${name} added (${r.empId}). An invite email was sent to ${email}.`);
+        onDone(r.emailed
+          ? `${name} added (${r.empId}). An invite email was sent to ${email}.`
+          : `${name} added (${r.empId}), but the invite email was NOT sent${r.inviteError ? ` (${r.inviteError})` : ''}. Use Resend invite on their row.`);
       }
     } catch (err) {
       setError(message(err));
@@ -368,6 +370,7 @@ const ImportModal: React.FC<{ onClose: () => void; onDone: (msg: string) => void
   if (result) {
     const failed = result.results.filter((r) => !r.ok);
     const links = result.results.filter((r) => r.ok && r.inviteLink);
+    const unsent = result.results.filter((r) => r.ok && !r.emailed && !r.inviteLink);
     return (
       <Modal title="Import finished" onClose={() => onDone(`${result.imported} people imported${result.failed ? `, ${result.failed} failed` : ''}.`)} wide>
         <Banner kind={result.failed ? 'error' : 'success'}>{result.imported} imported, {result.failed} failed.</Banner>
@@ -375,6 +378,9 @@ const ImportModal: React.FC<{ onClose: () => void; onDone: (msg: string) => void
           <ul className="mt-3 max-h-48 space-y-1 overflow-y-auto text-xs text-rose-700">
             {failed.map((f) => <li key={f.row}>Row {f.row} ({f.email || 'no email'}): {f.error}</li>)}
           </ul>
+        )}
+        {unsent.length > 0 && (
+          <div className="mt-3"><Banner kind="error">Invite emails were not sent to {unsent.length} {unsent.length === 1 ? 'person' : 'people'} ({unsent.slice(0, 5).map((u) => u.email).join(', ')}{unsent.length > 5 ? '…' : ''}). Use Resend invite on their row.</Banner></div>
         )}
         {links.length > 0 && (
           <div className="mt-3 text-xs text-slate-600">

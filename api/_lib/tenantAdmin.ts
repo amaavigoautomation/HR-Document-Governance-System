@@ -217,7 +217,15 @@ async function activeAdminCount(companyId: string, adminRoleIds: string[], exclu
 }
 
 async function sendInvite(email: string, name: string, companyName: string, origin?: string): Promise<{ link: string; emailed: boolean }> {
-  const link = await adminAuth().generatePasswordResetLink(email, origin ? { url: origin } : undefined);
+  // The "continue" address must be on Firebase's authorized-domains list; if it is not, fall back to the plain link
+  // so the person still gets an email instead of the invite failing silently.
+  let link: string;
+  try {
+    link = await adminAuth().generatePasswordResetLink(email, origin ? { url: origin } : undefined);
+  } catch (e) {
+    if (!origin) throw e;
+    link = await adminAuth().generatePasswordResetLink(email);
+  }
   const result = await dispatchLiveEmail({
     to: email,
     recipientName: name,
@@ -430,8 +438,20 @@ async function createUserInternal(actor: AuthContext, companyId: string, body: a
   }
 
   let invite: { link: string; emailed: boolean } | null = null;
-  if (body.sendInvite !== false) invite = await sendInvite(email, name, company.name, origin).catch(() => null);
-  return { userId: user.uid, empId, emailed: invite?.emailed ?? false, inviteLink: invite && !invite.emailed ? invite.link : undefined };
+  let inviteError: string | undefined;
+  if (body.sendInvite !== false) {
+    invite = await sendInvite(email, name, company.name, origin).catch((e: any) => {
+      console.error('[tenant] invite failed for', email, e?.message || e);
+      inviteError = e?.message || 'Could not create the invite link.';
+      return null;
+    });
+  }
+  return {
+    userId: user.uid, empId, emailed: invite?.emailed ?? false,
+    inviteLink: invite && !invite.emailed ? invite.link : undefined,
+    // Set when no invite went out and there is no link to share either, so the screen can say so instead of claiming success.
+    inviteError: !invite && body.sendInvite !== false ? inviteError : undefined,
+  };
 }
 
 async function importUsers(headers: Record<string, any>, body: any, origin?: string): Promise<TenantResult> {
@@ -450,7 +470,7 @@ async function importUsers(headers: Record<string, any>, body: any, origin?: str
   const roleByName = new Map(roles.map((r) => [r.name.toLowerCase(), r]));
   const depts = new Map(deptSnap.docs.map((d) => [d.id, String(d.data().name)]));
 
-  const results: { row: number; email: string; ok: boolean; error?: string; inviteLink?: string }[] = [];
+  const results: { row: number; email: string; ok: boolean; error?: string; emailed?: boolean; inviteLink?: string; inviteError?: string }[] = [];
   for (let i = 0; i < rows.length; i++) {
     const r = rows[i] || {};
     const email = str(r.email, 200).toLowerCase();
@@ -480,7 +500,7 @@ async function importUsers(headers: Record<string, any>, body: any, origin?: str
         origin,
         { company, roles, depts }
       );
-      results.push({ row: i + 1, email, ok: true, inviteLink: res.inviteLink });
+      results.push({ row: i + 1, email, ok: true, emailed: res.emailed, inviteLink: res.inviteLink, inviteError: res.inviteError });
     } catch (e: any) {
       results.push({ row: i + 1, email, ok: false, error: e?.message || 'Failed' });
     }

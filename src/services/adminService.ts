@@ -40,6 +40,8 @@ export interface CreateUserResult {
   empId: string;
   emailed: boolean;
   inviteLink?: string;
+  /** Set when the account exists but no invite could be sent or linked. */
+  inviteError?: string;
 }
 
 export const adminApi = {
@@ -49,7 +51,7 @@ export const adminApi = {
     apiJson<{
       imported: number;
       failed: number;
-      results: { row: number; email: string; ok: boolean; error?: string; inviteLink?: string }[];
+      results: { row: number; email: string; ok: boolean; error?: string; emailed?: boolean; inviteLink?: string; inviteError?: string }[];
     }>('/api/tenant/import-users', { rows }),
 
   updateUser: (input: { userId: string; name?: string; title?: string; departmentId?: string; roleIds?: string[]; active?: boolean }) =>

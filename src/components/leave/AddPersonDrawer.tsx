@@ -32,6 +32,9 @@ export const AddPersonDrawer: React.FC<Props> = ({ open, onClose, currentUser, s
   const [error, setError] = useState('');
   const [inviteLink, setInviteLink] = useState('');
   const [warn, setWarn] = useState('');
+  // Set when the account exists but the invite email is not confirmed sent: the panel then explains and offers a retry.
+  const [created, setCreated] = useState<{ userId: string; inviteError?: string } | null>(null);
+  const [retrying, setRetrying] = useState(false);
 
   useEffect(() => {
     if (!open) return;
@@ -55,7 +58,18 @@ export const AddPersonDrawer: React.FC<Props> = ({ open, onClose, currentUser, s
   const set = (patch: Partial<typeof empty>) => setF((x) => ({ ...x, ...patch }));
   const toggleRole = (id: string) => set({ roleIds: f.roleIds.includes(id) ? f.roleIds.filter((r) => r !== id) : [...f.roleIds, id] });
 
-  const close = () => { setF(empty); setError(''); setInviteLink(''); setWarn(''); onClose(); };
+  const close = () => { setF(empty); setError(''); setInviteLink(''); setWarn(''); setCreated(null); onClose(); };
+
+  const retry = async () => {
+    if (!created) return;
+    setRetrying(true); setError('');
+    try {
+      const r = await adminApi.resendInvite(created.userId);
+      if (r.emailed) { onAdded(`Invite emailed to ${f.email.trim()}.`); close(); return; }
+      setInviteLink(r.inviteLink || '');
+      setCreated({ ...created, inviteError: r.inviteLink ? undefined : 'The email could not be sent.' });
+    } catch (e) { setError(message(e)); } finally { setRetrying(false); }
+  };
 
   const submit = async () => {
     setError(''); setWarn('');
@@ -70,7 +84,14 @@ export const AddPersonDrawer: React.FC<Props> = ({ open, onClose, currentUser, s
         await leaveService.saveProfiles([{ uid: r.userId, locationId: f.locationId, policyId: f.policyId, managerUid: f.managerUid, joinDate: f.joinDate, gender: f.gender }]);
       } catch { leaveSaved = false; }
       const done = `${f.name.trim()} added (${r.empId}).${r.emailed ? ` An invite was emailed to ${f.email.trim()}.` : ''}`;
-      if (r.inviteLink) { setInviteLink(r.inviteLink); setWarn(leaveSaved ? '' : 'Their leave details could not be saved. Set them in the table.'); onAdded(done); return; }
+      if (!r.emailed) {
+        // Never claim an invite went out when it did not: show the link, or the reason, and let them try again.
+        setInviteLink(r.inviteLink || '');
+        setCreated({ userId: r.userId, inviteError: r.inviteLink ? undefined : r.inviteError || 'The invite could not be created.' });
+        setWarn(leaveSaved ? '' : 'Their leave details could not be saved. Set them in the table.');
+        onAdded(`${f.name.trim()} added (${r.empId}). The invite email was NOT sent.`);
+        return;
+      }
       onAdded(leaveSaved ? done : `${done} Their leave details could not be saved. Set them in the table.`);
       close();
     } catch (e) {
@@ -82,19 +103,22 @@ export const AddPersonDrawer: React.FC<Props> = ({ open, onClose, currentUser, s
 
   return (
     <Drawer open={open} onClose={close} title="Add a person" subtitle="Creates their account, emails an invite and sets up their leave."
-      footer={inviteLink ? <div className="flex justify-end"><button className={btnPrimary} onClick={close}>Done</button></div> : (
+      footer={created ? <div className="flex justify-end gap-2"><button className={btnGhost} onClick={retry} disabled={retrying}>{retrying ? 'Sending…' : 'Send invite again'}</button><button className={btnPrimary} onClick={close}>Done</button></div> : (
         <div className="flex justify-end gap-2">
           <button className={btnGhost} onClick={close} disabled={busy}>Cancel</button>
           <button className={btnPrimary} onClick={submit} disabled={busy}>{busy ? 'Adding…' : 'Add and invite'}</button>
         </div>)}>
-      {inviteLink ? (
+      {created ? (
         <div className="space-y-3">
-          <Notice tone="ok">The account was created, but the invite email could not be sent. Share this link so {f.name.trim()} can set a password:</Notice>
+          {error && <Notice tone="error">{error}</Notice>}
+          <Notice tone="warn">{f.name.trim()}'s account was created, but the invite email was not sent{created.inviteError ? ` (${created.inviteError})` : ''}. {inviteLink ? 'Share this link so they can set a password, or try sending again:' : 'Try sending again, or use Administration → People → Resend invite.'}</Notice>
           {warn && <Notice tone="warn">{warn}</Notice>}
-          <div className="flex gap-2">
-            <input readOnly className={`${input} font-mono text-[11px]`} value={inviteLink} onFocus={(e) => e.currentTarget.select()} />
-            <button className={btnGhost} aria-label="Copy link" onClick={() => navigator.clipboard?.writeText(inviteLink)}><Copy className="w-3.5 h-3.5" /></button>
-          </div>
+          {inviteLink && (
+            <div className="flex gap-2">
+              <input readOnly className={`${input} font-mono text-[11px]`} value={inviteLink} onFocus={(e) => e.currentTarget.select()} />
+              <button className={btnGhost} aria-label="Copy link" onClick={() => navigator.clipboard?.writeText(inviteLink)}><Copy className="w-3.5 h-3.5" /></button>
+            </div>
+          )}
         </div>
       ) : (
         <div className="space-y-3">
