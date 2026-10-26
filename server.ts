@@ -12,6 +12,7 @@ import { routeApplications, routeApply } from './api/_lib/applicationsApi';
 import { routeLeave } from './api/_lib/leaveApi';
 import { routePayroll } from './api/_lib/payrollApi';
 import { routeLifecycle } from './api/_lib/lifecycleApi';
+import { routeDashboard } from './api/_lib/dashboardApi';
 import { UserRole } from './src/types';
 import { generateJobDescription } from './api/_lib/jdGenerator';
 import { publishForCompany } from './api/_lib/careersPublisher';
@@ -187,6 +188,12 @@ async function startServer() {
         const out = await routePayroll({
           method: req.method, action: req.params.action.slice('payroll-'.length), query: req.query as Record<string, any>,
           body: req.body, headers: req.headers as Record<string, any>,
+        });
+        return res.status(out.status).json(out.json);
+      }
+      if (req.params.action.startsWith('dashboard-')) {
+        const out = await routeDashboard({
+          method: req.method, action: req.params.action.slice('dashboard-'.length), headers: req.headers as Record<string, any>, ip,
         });
         return res.status(out.status).json(out.json);
       }

@@ -1,6 +1,7 @@
 import { routeLeave } from '../_lib/leaveApi.js';
 import { routePayroll } from '../_lib/payrollApi.js';
 import { routeLifecycle } from '../_lib/lifecycleApi.js';
+import { routeDashboard } from '../_lib/dashboardApi.js';
 
 export default async function handler(req: any, res: any) {
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -22,6 +23,13 @@ export default async function handler(req: any, res: any) {
     if (action.startsWith('lifecycle-')) {
       const { status, json } = await routeLifecycle({
         method: req.method, action: action.slice('lifecycle-'.length), query: req.query || {}, body: req.body, headers: req.headers,
+      });
+      return res.status(status).json(json);
+    }
+    // The Home dashboard shares it as well: /api/leave/dashboard-<action>
+    if (action.startsWith('dashboard-')) {
+      const { status, json } = await routeDashboard({
+        method: req.method, action: action.slice('dashboard-'.length), headers: req.headers, ip,
       });
       return res.status(status).json(json);
     }
