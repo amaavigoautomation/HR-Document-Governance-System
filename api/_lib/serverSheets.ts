@@ -14,6 +14,7 @@
  */
 
 import { listApplications, listOpenings, usesLegacySource, type ApplicationDoc } from './recruitmentData.js';
+import { designationKey, listJobDescriptions, type JobDescriptionDoc } from './jobDescriptions.js';
 
 import type { SheetRowData, RecruitmentOverviewResult, ColumnMappingReport, RecruitmentKPIs } from '../../shared/recruitmentTypes.js';
 export { isExcludedSheetTab } from '../../shared/recruitmentTypes.js';
@@ -301,11 +302,23 @@ export async function fetchSheetData(companyId: string, tabName: string): Promis
 
   if (wanted === JD_TAB.toLowerCase()) {
     const openings = (await loadOpenings(companyId)) || [];
-    return sheet(
-      JD_TAB,
-      openings.map(o => [o.designation, o.qualification]),
-      ['Designation', 'Job Description']
-    );
+    // A description written in the portal wins over the source's (the website API often has none for older roles).
+    let overrides = new Map<string, JobDescriptionDoc>();
+    try {
+      overrides = await listJobDescriptions(companyId);
+    } catch (err: any) {
+      console.warn('[Recruitment] Could not read portal job descriptions:', err?.message || err);
+    }
+    const used = new Set<string>();
+    const rows: (string | number | boolean)[][] = openings.map(o => {
+      const key = designationKey(o.designation);
+      const own = overrides.get(key);
+      if (own) used.add(key);
+      return own ? [o.designation, own.text, 'PORTAL'] : [o.designation, o.qualification, o.qualification ? 'WEBSITE' : 'NONE'];
+    });
+    // Roles that have a portal description but no current opening (applications can outlive an opening).
+    for (const [key, own] of overrides) if (!used.has(key)) rows.push([own.designation, own.text, 'PORTAL']);
+    return sheet(JD_TAB, rows, ['Designation', 'Job Description', 'Source']);
   }
 
   if (wanted === 'request data') {

@@ -1,5 +1,7 @@
 import { fetchSheetData, getSpreadsheetTabNames } from './serverSheets.js';
 import { applyAiScoring } from './aiScoring.js';
+import { applyKeywordScoring } from './resumeKeywords.js';
+import { designationKey } from './jobDescriptions.js';
 
 export type { CandidateEvaluationResult, JDCriteriaSummary, AIEvaluationResponse } from '../../shared/evaluationTypes.js';
 import type { CandidateEvaluationResult, JDCriteriaSummary, AIEvaluationResponse } from '../../shared/evaluationTypes.js';
@@ -43,7 +45,7 @@ function parseExperienceYears(expStr: string | null | undefined): number | null 
 /**
  * Parses JD Markdown or raw text into structured criteria
  */
-function parseJDText(designation: string, jdText: string): JDCriteriaSummary {
+export function parseJDText(designation: string, jdText: string, source: 'PORTAL' | 'WEBSITE' | 'NONE' = 'WEBSITE'): JDCriteriaSummary {
   const norm = (jdText || '').trim();
   
   let minExp = 'Not specified';
@@ -105,48 +107,22 @@ function parseJDText(designation: string, jdText: string): JDCriteriaSummary {
     }
   }
 
-  // Fallbacks if regex didn't populate enough
-  if (requiredSkills.length === 0) {
-    if (/performance/i.test(designation)) {
-      requiredSkills.push('Meta Ads (Instagram & Facebook)', 'Google Ads & Search Campaigns', 'Conversion API (CAPI) & Pixel Setup', 'ROAS & CPL Optimization', 'Google Tag Manager & GA4');
-    } else if (/lead/i.test(designation)) {
-      requiredSkills.push('Cold Email Outreach Systems', 'LinkedIn Outreach & Sales Navigator', 'Email Deliverability (SPF/DKIM/DMARC)', 'CRM Workflows & Lead Nurturing', 'Multi-channel Prospecting (Apollo, Lemlist)');
-    } else if (/content/i.test(designation)) {
-      requiredSkills.push('Short-form Video Production (Reels/TikTok)', 'Visual Content Strategy & Storyboarding', 'Video Editing & Creative Showreels', 'Creative Copywriting & Engagement Growth');
-    } else if (/analyst/i.test(designation)) {
-      requiredSkills.push('Social Media Analytics & KPI Tracking', 'Excel / Google Sheets (Pivot, Formulas)', 'Meta Business Suite & Ads Manager Insights', 'Looker Studio / Dashboard Reporting');
-    } else {
-      requiredSkills.push('Core Domain Technical Knowledge', 'Communication & Problem Solving', 'Tools & Workflow Automation');
-    }
-  }
-
-  if (coreResponsibilities.length === 0) {
-    if (/performance/i.test(designation)) {
-      coreResponsibilities.push('Plan, execute and scale paid advertising campaigns', 'Build high-converting lead funnels and retargeting flows', 'Optimize CPA, CPL, ROAS and conversion rates', 'Perform audience segmentation and A/B split testing');
-    } else if (/lead/i.test(designation)) {
-      coreResponsibilities.push('Build and scale cold email and LinkedIn campaigns', 'Set up outreach automation infrastructure and warm-up', 'Manage follow-up sequences and response rates', 'Build verified prospect databases and decision-maker lists');
-    } else if (/content/i.test(designation)) {
-      coreResponsibilities.push('Produce high-converting Reels and short-form videos', 'Develop monthly content calendars and brand assets', 'Maintain high creative quality and posting consistency');
-    } else if (/analyst/i.test(designation)) {
-      coreResponsibilities.push('Track reach, impressions, engagement and conversion metrics', 'Prepare weekly and monthly performance reports', 'Provide data-driven recommendations to strategy teams');
-    }
-  }
-
-  if (proofOfWorkRequirements.length === 0) {
-    if (/performance/i.test(designation)) {
-      proofOfWorkRequirements.push('Ad account case studies', 'Campaign screenshots with verifiable metrics', 'ROAS / CPL improvement data');
-    } else if (/lead/i.test(designation)) {
-      proofOfWorkRequirements.push('Campaign case studies with open/reply rates', 'Outreach automation workflows and tool stack examples');
-    } else if (/content/i.test(designation)) {
-      proofOfWorkRequirements.push('Instagram handles managed', 'Reel/video creative portfolio and showreel');
-    } else if (/analyst/i.test(designation)) {
-      proofOfWorkRequirements.push('Reporting dashboard samples or case studies', 'Analytics interpretation and insights presentation');
+  // A JD that has no recognisable headings: use its bullet points as the requirements, so a plainly written
+  // description still gives something to score against. No JD at all means no criteria (nothing is invented).
+  if (norm && requiredSkills.length === 0) {
+    for (const line of lines) {
+      if (!/^\s*(?:[•*\-–]|\d+[.)])\s+\S/.test(line)) continue;
+      const cleaned = line.replace(/^[•\*\-–\d\.\)\s]+/, '').trim();
+      if (cleaned.length < 4 || cleaned.length > 120) continue;
+      if (coreResponsibilities.includes(cleaned)) continue;
+      requiredSkills.push(cleaned);
+      if (requiredSkills.length >= 8) break;
     }
   }
 
   return {
     designation,
-    department: /marketing|content|social/i.test(designation) ? 'Marketing' : 'Operations',
+    department: /marketing|content|social/i.test(designation) ? 'Marketing' : 'Not specified',
     minExperience: minExp,
     maxExperience: maxExp,
     requiredSkills,
@@ -155,6 +131,8 @@ function parseJDText(designation: string, jdText: string): JDCriteriaSummary {
     requiredTools,
     proofOfWorkRequirements,
     rawJDText: norm,
+    jdProvided: norm.length > 0,
+    jdSource: norm ? source : 'NONE',
   };
 }
 
@@ -386,6 +364,39 @@ function evaluateCandidateAlgorithmic(
     interviewChecklist.push(`Confirm availability and notice period commitment (${notice})`);
   }
 
+  // A score needs evidence. Rows from the website API carry no recruiter notes (Pros/Cons), so without a JD and
+  // without a resume reading there is nothing to score from: say so instead of showing a number every
+  // candidate would share. The keyword and AI passes score these rows afterwards.
+  const hasCriteria = jd.requiredSkills.length + jd.coreResponsibilities.length > 0;
+  const scored = hasCriteria && !!(pros || cons);
+  if (!scored) {
+    return {
+      id,
+      name,
+      experience: rawExp,
+      experienceNumeric: expNum,
+      experienceVsJD: { status: expStatus, label: expLabel },
+      jobPreference: jobPref,
+      noticePeriod: notice,
+      resumeUrl,
+      alignmentScore: 0,
+      scored: false,
+      overallAlignment: 'Not Evidenced',
+      rank: 1,
+      skillsAlignment,
+      responsibilitiesAlignment,
+      strengths: expStatus === 'EXCEEDS' || expStatus === 'MEETS' ? [expLabel] : [],
+      gaps: [],
+      missingOrNotEvidenced: [],
+      keyTakeaway: hasCriteria
+        ? 'Not scored yet: the resume has not been read.'
+        : 'Not scored: this role has no job description yet. Add one to score candidates.',
+      interviewChecklist: notice && notice !== 'Not provided / Not evidenced' ? [`Confirm availability and notice period commitment (${notice})`] : [],
+      scoringMode: 'RULES',
+      aiNote: hasCriteria ? undefined : 'Add a job description for this role to score candidates.',
+    };
+  }
+
   return {
     id,
     name,
@@ -399,6 +410,7 @@ function evaluateCandidateAlgorithmic(
     noticePeriod: notice,
     resumeUrl,
     alignmentScore: score,
+    scored: true,
     overallAlignment,
     rank: 1, // will be sorted later
     skillsAlignment,
@@ -408,7 +420,33 @@ function evaluateCandidateAlgorithmic(
     missingOrNotEvidenced: missingOrNotEvidenced.slice(0, 5),
     keyTakeaway,
     interviewChecklist: interviewChecklist.slice(0, 4),
+    scoringMode: 'RULES',
   };
+}
+
+/** Identity of an applicant for spotting repeat applications: email first, then mobile, then name. */
+export function personKey(email: unknown, mobile: unknown, name: unknown): string {
+  const e = String(email ?? '').trim().toLowerCase();
+  if (e) return `e:${e}`;
+  const m = String(mobile ?? '').replace(/\D+/g, '').slice(-10);
+  if (m.length >= 8) return `m:${m}`;
+  const n = String(name ?? '').trim().toLowerCase().replace(/\s+/g, ' ');
+  return n ? `n:${n}` : '';
+}
+
+/** One row per person: the most recent application wins (later date, then later position in the list). */
+export function collapseRepeatApplications<T extends { _identity: string; _appliedAt: number; _order: number }>(rows: T[]): T[] {
+  const latest = new Map<string, T>();
+  const keep: T[] = [];
+  for (const r of rows) {
+    if (!r._identity) {
+      keep.push(r);
+      continue;
+    }
+    const cur = latest.get(r._identity);
+    if (!cur || r._appliedAt > cur._appliedAt || (r._appliedAt === cur._appliedAt && r._order > cur._order)) latest.set(r._identity, r);
+  }
+  return [...keep, ...latest.values()].sort((a, b) => a._order - b._order);
 }
 
 /**
@@ -436,15 +474,20 @@ export async function runCandidateEvaluation(
 
   // 1. Fetch JD tab
   let rawJDText = '';
+  let jdSource: 'PORTAL' | 'WEBSITE' | 'NONE' = 'NONE';
   try {
     const jdsSheet = await fetchSheetData(companyId, "JD's");
-    const matchedRow = jdsSheet.rows.find(r => {
-      const tabDesig = String(r[0] || '').toLowerCase().trim();
-      const targetDesig = designation.toLowerCase().trim();
-      return tabDesig === targetDesig || tabDesig.includes(targetDesig) || targetDesig.includes(tabDesig);
+    const target = designationKey(designation);
+    // The exact role first, so "Sales Manager" never picks up the "Inside Sales Manager" description.
+    const sameRole = jdsSheet.rows.filter(r => designationKey(String(r[0] || '')) === target);
+    const looseRole = jdsSheet.rows.filter(r => {
+      const k = designationKey(String(r[0] || ''));
+      return !!k && (k.includes(target) || target.includes(k));
     });
+    const matchedRow = sameRole.find(r => r[1]) || looseRole.find(r => r[1]);
     if (matchedRow && matchedRow[1]) {
       rawJDText = String(matchedRow[1]);
+      jdSource = matchedRow[2] === 'PORTAL' ? 'PORTAL' : 'WEBSITE';
     }
   } catch (err) {
     console.warn("Could not read JD's tab, checking Request Data...", err);
@@ -470,7 +513,8 @@ export async function runCandidateEvaluation(
     }
   }
 
-  const jdSummary = parseJDText(designation, rawJDText);
+  if (rawJDText.trim() && jdSource === 'NONE') jdSource = 'WEBSITE';
+  const jdSummary = parseJDText(designation, rawJDText, jdSource);
 
   // 2. Fetch Candidates for this designation tab
   let candidateRows: any[] = [];
@@ -518,8 +562,20 @@ export async function runCandidateEvaluation(
   const prosIdx = candHeaders.findIndex(h => /^pros$/i.test(h) || /strengths/i.test(h));
   const consIdx = candHeaders.findIndex(h => /^cons$/i.test(h) || /gaps/i.test(h));
 
-  const parsedCandidates = candidateRows.map((row, idx) => {
+  // Used only to recognise repeat applications; never sent to the browser.
+  const emailIdx = candHeaders.findIndex(h => /^e-?mail$/i.test(h));
+  const mobileIdx = candHeaders.findIndex(h => /^(mobile|phone)/i.test(h));
+  const appliedIdx = candHeaders.findIndex(h => /^applied on$|^created/i.test(h));
+
+  const allParsed = candidateRows.map((row, idx) => {
     return {
+      _identity: personKey(
+        emailIdx !== -1 ? row[emailIdx] : null,
+        mobileIdx !== -1 ? row[mobileIdx] : null,
+        nameIdx !== -1 ? row[nameIdx] : null
+      ),
+      _appliedAt: appliedIdx !== -1 ? Date.parse(String(row[appliedIdx] || '')) || 0 : 0,
+      _order: idx,
       id: idIdx !== -1 && row[idIdx] ? String(row[idIdx]).trim() : `CAND-${idx + 1}`,
       name: nameIdx !== -1 && row[nameIdx] ? String(row[nameIdx]).trim() : `Applicant ${idx + 1}`,
       experience: expIdx !== -1 ? row[expIdx] : null,
@@ -532,17 +588,27 @@ export async function runCandidateEvaluation(
     };
   });
 
+  // The same person applying again is one candidate: keep their latest application.
+  const parsedCandidates = collapseRepeatApplications(allParsed);
+  const duplicatesMerged = allParsed.length - parsedCandidates.length;
+
   // Evaluate each candidate
   let evaluatedCandidates = parsedCandidates.map(cand => 
     evaluateCandidateAlgorithmic(cand, jdSummary, parsedCandidates.length)
   );
 
+  // Free pass: match the JD against each resume's text (no AI call) for everyone who has no score yet.
+  const keywordRun = await applyKeywordScoring({ jd: jdSummary, results: evaluatedCandidates });
+  evaluatedCandidates = keywordRun.results;
+
   // Optional resume-evidence scoring with OpenAI (cached; only runs when HR clicks Evaluate)
   const aiRun = await applyAiScoring({ companyId, jd: jdSummary, results: evaluatedCandidates, evaluate: evaluateWithAi });
   evaluatedCandidates = aiRun.results;
+  aiRun.summary.keywordScored = keywordRun.summary.scored;
+  aiRun.summary.keywordPending = keywordRun.summary.pending;
 
-  // Sort by alignment score descending
-  evaluatedCandidates.sort((a, b) => b.alignmentScore - a.alignmentScore);
+  // Scored candidates first (best first); candidates with nothing to score from follow in application order.
+  evaluatedCandidates.sort((a, b) => (b.scored === false ? 0 : 1) - (a.scored === false ? 0 : 1) || b.alignmentScore - a.alignmentScore);
   // Assign ranks
   evaluatedCandidates = evaluatedCandidates.map((c, idx) => ({ ...c, rank: idx + 1 }));
 
@@ -594,7 +660,7 @@ export async function runCandidateEvaluation(
   });
 
   // 4. Generate HR Recommendation Support
-  const topCandidate = evaluatedCandidates.length > 0 ? evaluatedCandidates[0] : null;
+  const topCandidate = evaluatedCandidates.length > 0 && evaluatedCandidates[0].scored !== false ? evaluatedCandidates[0] : null;
   let summaryReasoning = '';
   const supportingEvidence: string[] = [];
   let poolComparativeInsight = '';
@@ -614,9 +680,14 @@ export async function runCandidateEvaluation(
     summaryReasoning = `While ${topCandidate.name} ranks highest in the current applicant pool (Score: ${topCandidate.alignmentScore}), the overall evidence across all candidates remains limited. Multiple core technical requirements in the JD lack documented verification.`;
     topCandidate.strengths.forEach(s => supportingEvidence.push(s));
     poolComparativeInsight = `The current candidate pool exhibits significant un-evidenced competencies across core JD criteria. Sourcing additional candidates or conducting targeted technical screens is recommended.`;
+  } else if (evaluatedCandidates.length > 0) {
+    summaryReasoning = jdSummary.jdProvided
+      ? `None of the ${evaluatedCandidates.length} applicants for ${designation} has been scored yet. Resumes are read in small batches: refresh to continue, or click Evaluate with AI.`
+      : `No job description exists for ${designation}, so applicants cannot be scored. Add one (View / edit JD) and they will be scored from their resumes.`;
+    poolComparativeInsight = '';
   } else {
-    summaryReasoning = `No candidate records available in the Google Sheet for ${designation}.`;
-    poolComparativeInsight = `Please add candidate application rows to the corresponding sheet tab.`;
+    summaryReasoning = `No applications found for ${designation}.`;
+    poolComparativeInsight = `Applications appear here as soon as they arrive.`;
   }
 
   const responseData: AIEvaluationResponse = {
@@ -626,6 +697,7 @@ export async function runCandidateEvaluation(
     engineUsed: 'enterprise-algorithmic-ai',
     jdSummary,
     totalCandidates: evaluatedCandidates.length,
+    duplicatesMerged,
     candidates: evaluatedCandidates,
     comparativeMatrix,
     hrRecommendation: {

@@ -465,6 +465,7 @@ service cloud.firestore {
     match /candidateStatuses/{id} { allow read, write: if false; }
     match /counters/{id} { allow read, write: if false; }
     match /candidateEvaluations/{id} { allow read, write: if false; }
+    match /jobDescriptions/{id} { allow read, write: if false; }
     match /applications/{id} { allow read, write: if false; }
     match /recruitmentSettings/{id} { allow read, write: if false; }
     match /leaveSettings/{id} { allow read, write: if false; }

@@ -7,7 +7,7 @@
 
 import { RecruitmentOverviewResult, SheetRowData } from './serverSheets';
 import type { AIEvaluationResponse } from './aiEvaluationService';
-import { apiFetch } from './apiClient';
+import { apiFetch, apiJson } from './apiClient';
 
 export class RecruitmentService {
   private overviewCache: { data: RecruitmentOverviewResult; timestamp: number } | null = null;
@@ -159,6 +159,18 @@ export class RecruitmentService {
     const data = await this.safeFetchJson<AIEvaluationResponse>(url, headers);
     this.aiEvalCache.set(key, { data, timestamp: now });
     return data;
+  }
+
+  /** Saves a job description written in the portal for a role; it replaces the website's for that role. */
+  async saveJobDescription(designation: string, text: string): Promise<void> {
+    await apiJson('/api/recruitment/jd-save', { designation, text });
+    this.clearCache();
+  }
+
+  /** Removes the portal-written description of a role, going back to the website's. */
+  async deleteJobDescription(designation: string): Promise<void> {
+    await apiJson('/api/recruitment/jd-delete', { designation });
+    this.clearCache();
   }
 
   /**

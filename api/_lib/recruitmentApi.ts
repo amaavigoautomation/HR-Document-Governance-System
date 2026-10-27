@@ -5,11 +5,13 @@
 import { authErrorResponse, requirePermission } from './authContext.js';
 import { computeRecruitmentOverview, fetchSheetData, getGoogleSheetsConfigStatus } from './serverSheets.js';
 import { clearEvaluationCache, runCandidateEvaluation } from './serverAiEvaluation.js';
+import { deleteJobDescription, saveJobDescription, validateJobDescription } from './jobDescriptions.js';
 
 export interface RecruitmentRequest {
   method: string;
   action: string;
   query: Record<string, any>;
+  body?: any;
   headers: Record<string, any>;
 }
 
@@ -17,11 +19,24 @@ type Result = { status: number; json: any };
 
 export async function routeRecruitment(r: RecruitmentRequest): Promise<Result> {
   try {
-    if (r.method !== 'GET') return { status: 405, json: { success: false, error: 'Method not allowed.' } };
-    const permission = r.action === 'ai-evaluation' ? 'candidate.evaluate' : 'talent.view';
+    // Changing a job description is a POST and needs the same permission as editing one in a requisition.
+    const isJdWrite = r.action === 'jd-save' || r.action === 'jd-delete';
+    if (r.method !== (isJdWrite ? 'POST' : 'GET')) return { status: 405, json: { success: false, error: 'Method not allowed.' } };
+    const permission = isJdWrite ? 'req.manage_jd' : r.action === 'ai-evaluation' ? 'candidate.evaluate' : 'talent.view';
     const ctx = await requirePermission(r.headers, permission);
     const companyId = ctx.companyId;
     if (!companyId) return { status: 403, json: { success: false, error: 'Open this as a company user.' } };
+
+    if (isJdWrite) {
+      const body = r.body && typeof r.body === 'object' ? r.body : {};
+      const designation = String(body.designation ?? '').trim();
+      const invalid = validateJobDescription(designation, r.action === 'jd-save' ? body.text : undefined);
+      if (invalid) return { status: 400, json: { success: false, error: invalid } };
+      if (r.action === 'jd-save') await saveJobDescription(companyId, designation, String(body.text), ctx.email || ctx.uid);
+      else await deleteJobDescription(companyId, designation);
+      clearEvaluationCache(companyId); // the next evaluation reads the new description
+      return { status: 200, json: { success: true } };
+    }
 
     if (r.action === 'config') return { status: 200, json: getGoogleSheetsConfigStatus(companyId) };
 

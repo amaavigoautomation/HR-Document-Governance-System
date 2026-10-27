@@ -8,6 +8,10 @@ export interface AiScoringSummary {
   fromCache: number;
   pending: number;
   failed: number;
+  /** Candidates scored by matching the JD against their resume text (no AI call). */
+  keywordScored?: number;
+  /** Candidates whose resume has not been read yet (time budget reached); refresh to continue. */
+  keywordPending?: number;
   note?: string;
   tokens?: { input: number; output: number };
 }
@@ -25,6 +29,8 @@ export interface CandidateEvaluationResult {
   noticePeriod: string;
   resumeUrl: string | null;
   alignmentScore: number;
+  /** false when there is nothing to score from yet (no JD, no resume, or resume not read). alignmentScore is 0 and must not be shown as a score. */
+  scored?: boolean;
   overallAlignment: 'Strong Evidence' | 'Moderate Evidence' | 'Limited Evidence' | 'Not Evidenced';
   rank: number;
   
@@ -47,8 +53,8 @@ export interface CandidateEvaluationResult {
   keyTakeaway: string;
   interviewChecklist: string[];
 
-  /** 'AI' when scored from resume evidence, 'RULES' for the rule-based fallback. */
-  scoringMode?: 'AI' | 'RULES';
+  /** 'AI' = resume read by the model, 'KEYWORDS' = JD requirements matched against the resume text, 'RULES' = from recruiter notes (Pros/Cons) only. */
+  scoringMode?: 'AI' | 'KEYWORDS' | 'RULES';
   aiNote?: string;
 }
 
@@ -63,6 +69,10 @@ export interface JDCriteriaSummary {
   requiredTools: string[];
   proofOfWorkRequirements: string[];
   rawJDText: string;
+  /** false when no JD text exists for this role, so no criteria could be taken from it. */
+  jdProvided?: boolean;
+  /** PORTAL = written or edited in this portal, WEBSITE = from the company's careers API, NONE = missing. */
+  jdSource?: 'PORTAL' | 'WEBSITE' | 'NONE';
 }
 
 export interface AIEvaluationResponse {
@@ -72,6 +82,8 @@ export interface AIEvaluationResponse {
   engineUsed: 'enterprise-algorithmic-ai';
   jdSummary: JDCriteriaSummary;
   totalCandidates: number;
+  /** Repeat applications by the same person that were merged into their latest one. */
+  duplicatesMerged?: number;
   candidates: CandidateEvaluationResult[];
   comparativeMatrix: {
     criteria: string;

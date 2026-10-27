@@ -165,12 +165,13 @@ async function startServer() {
   // ----------------------------------------------------
 
   // Recruitment Overview, built-in data tabs and AI candidate evaluation. Answered from the caller's own company only.
-  app.get('/api/recruitment/:action', async (req, res) => {
+  app.all('/api/recruitment/:action', async (req, res) => {
     try {
       const { status, json } = await routeRecruitment({
         method: req.method,
         action: req.params.action,
         query: req.query as Record<string, any>,
+        body: req.body,
         headers: req.headers as Record<string, any>,
       });
       res.status(status).json(json);

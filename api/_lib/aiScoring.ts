@@ -34,18 +34,19 @@ export interface ScorableCandidate {
   gaps: string[];
   missingOrNotEvidenced: string[];
   alignmentScore: number;
+  scored?: boolean;
   overallAlignment: 'Strong Evidence' | 'Moderate Evidence' | 'Limited Evidence' | 'Not Evidenced';
   keyTakeaway: string;
   interviewChecklist: string[];
   noticePeriod: string;
-  scoringMode?: 'AI' | 'RULES';
+  scoringMode?: 'AI' | 'KEYWORDS' | 'RULES';
   aiNote?: string;
 }
 
 import type { AiScoringSummary } from '../../shared/evaluationTypes.js';
 export type { AiScoringSummary };
 
-interface Evidence {
+export interface Evidence {
   skills: { status: Status; evidence: string }[];
   responsibilities: { status: Status; evidence: string }[];
   strengths: string[];
@@ -145,7 +146,26 @@ function scrub(text: string): string {
     .trim();
 }
 
-export async function readResume(url: string): Promise<{ text?: string; error?: string }> {
+type ResumeRead = { text?: string; error?: string };
+const RESUME_TEXT_TTL_MS = 30 * 60 * 1000;
+const RESUME_ERROR_TTL_MS = 10 * 60 * 1000;
+const RESUME_CACHE_MAX = 300;
+const resumeTextCache = new Map<string, { at: number; value: ResumeRead }>();
+
+/** Reads a resume's text once per instance for a while, so the keyword pass and the AI pass never download it twice. */
+export async function readResume(url: string): Promise<ResumeRead> {
+  const hit = resumeTextCache.get(url);
+  if (hit && Date.now() - hit.at < (hit.value.text ? RESUME_TEXT_TTL_MS : RESUME_ERROR_TTL_MS)) return hit.value;
+  const value = await readResumeUncached(url);
+  if (resumeTextCache.size >= RESUME_CACHE_MAX) {
+    const oldest = resumeTextCache.keys().next().value;
+    if (oldest !== undefined) resumeTextCache.delete(oldest);
+  }
+  resumeTextCache.set(url, { at: Date.now(), value });
+  return value;
+}
+
+async function readResumeUncached(url: string): Promise<ResumeRead> {
   let u: URL;
   try {
     u = new URL(url);
@@ -338,10 +358,11 @@ function usable(e: CacheEntry | null): boolean {
 
 // ------------------------------------------------------------------ scoring (our code, fixed weights)
 
-function applyEvidence<C extends ScorableCandidate>(
+export function applyEvidence<C extends ScorableCandidate>(
   base: C,
   jd: { requiredSkills: string[]; coreResponsibilities: string[] },
-  ev: Evidence
+  ev: Evidence,
+  mode: 'AI' | 'KEYWORDS' = 'AI'
 ): C {
   const skillsAlignment = jd.requiredSkills.map((skill, i) => ({
     skill,
@@ -397,9 +418,10 @@ function applyEvidence<C extends ScorableCandidate>(
     missingOrNotEvidenced: missing.slice(0, 5),
     alignmentScore: score,
     overallAlignment,
-    keyTakeaway: `${met} of ${skillsAlignment.length} required skills clearly evidenced in the resume, ${partial} partially (${metResp} of ${responsibilitiesAlignment.length} responsibilities evidenced).`,
+    keyTakeaway: `${met} of ${skillsAlignment.length} required skills ${mode === 'AI' ? 'clearly evidenced' : 'matched'} in the resume, ${partial} partially (${metResp} of ${responsibilitiesAlignment.length} responsibilities ${mode === 'AI' ? 'evidenced' : 'matched'}).${mode === 'KEYWORDS' ? ' Keyword match only; run Evaluate with AI for a deeper reading.' : ''}`,
     interviewChecklist: checklist.slice(0, 4),
-    scoringMode: 'AI',
+    scored: true,
+    scoringMode: mode,
   };
 }
 
@@ -421,7 +443,7 @@ export async function applyAiScoring<C extends ScorableCandidate>(args: {
     pending: 0,
     failed: 0,
   };
-  const results = args.results.map((r) => ({ ...r, scoringMode: 'RULES' as const })) as C[];
+  const results = args.results.map((r) => ({ ...r, scoringMode: r.scoringMode ?? ('RULES' as const) })) as C[];
 
   if (!summary.enabled) {
     summary.note = 'AI scoring is off: set OPENAI_API_KEY to enable it. Showing rule-based scores.';

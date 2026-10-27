@@ -27,6 +27,8 @@ import {
   FileSpreadsheet,
 } from 'lucide-react';
 import { recruitmentService } from '../services/recruitmentService';
+import { apiJson } from '../services/apiClient';
+import { hasPerm } from '../../shared/permissions';
 import type {
   AIEvaluationResponse,
   CandidateEvaluationResult,
@@ -61,6 +63,13 @@ export const CandidateEvaluationSection: React.FC<CandidateEvaluationSectionProp
 
   // Candidate status (Pending / On hold / Rejected) + onboarding state, stored server-side
   const isHr = currentUser.role === UserRole.CREATOR;
+  const canEditJd = hasPerm(currentUser.perms, 'req.manage_jd');
+
+  // Job description editor (the description written here is used for this role instead of the website's)
+  const [jdEditing, setJdEditing] = useState<boolean>(false);
+  const [jdDraft, setJdDraft] = useState<string>('');
+  const [jdBusy, setJdBusy] = useState<'save' | 'generate' | 'revert' | null>(null);
+  const [jdMsg, setJdMsg] = useState<string | null>(null);
   const [candStatuses, setCandStatuses] = useState<Record<string, CandidateStatus>>({});
   const [candOnboardings, setCandOnboardings] = useState<Record<string, { id: string; status: string; employeeId: string }>>({});
   const [onboardTarget, setOnboardTarget] = useState<{ id: string; name: string } | null>(null);
@@ -111,6 +120,67 @@ export const CandidateEvaluationSection: React.FC<CandidateEvaluationSectionProp
       setOnboardTarget(null);
     } finally {
       setOnboardBusy(false);
+    }
+  };
+
+  const openJdModal = (edit: boolean) => {
+    setJdMsg(null);
+    setJdDraft(evaluation?.jdSummary?.rawJDText || '');
+    setJdEditing(edit);
+    setShowFullJDModal(true);
+  };
+
+  const afterJdChange = async (message: string) => {
+    recruitmentService.clearCache();
+    setJdEditing(false);
+    setJdMsg(message);
+    await fetchEvaluation(true);
+  };
+
+  const saveJd = async () => {
+    const role = evaluation?.designation || activeDesignation;
+    setJdBusy('save');
+    setJdMsg(null);
+    try {
+      await recruitmentService.saveJobDescription(role, jdDraft);
+      await afterJdChange('Saved. Candidates are scored against this description from now on.');
+    } catch (err: any) {
+      setJdMsg(err?.message || 'Could not save the job description.');
+    } finally {
+      setJdBusy(null);
+    }
+  };
+
+  const revertJd = async () => {
+    const role = evaluation?.designation || activeDesignation;
+    setJdBusy('revert');
+    setJdMsg(null);
+    try {
+      await recruitmentService.deleteJobDescription(role);
+      await afterJdChange('Reverted to the website description.');
+    } catch (err: any) {
+      setJdMsg(err?.message || 'Could not revert the job description.');
+    } finally {
+      setJdBusy(null);
+    }
+  };
+
+  const generateJd = async () => {
+    const role = evaluation?.designation || activeDesignation;
+    const dept = evaluation?.jdSummary?.department;
+    setJdBusy('generate');
+    setJdMsg(null);
+    try {
+      const r = await apiJson<{ text: string; generatedBy: string; note?: string }>('/api/requisitions/generate-jd', {
+        positionTitle: role,
+        departmentName: dept && dept !== 'Not specified' ? dept : 'General',
+      });
+      setJdDraft(r.text || '');
+      setJdMsg(r.note || 'Draft generated. Review and edit it, then save.');
+    } catch (err: any) {
+      setJdMsg(err?.message || 'Could not generate a draft.');
+    } finally {
+      setJdBusy(null);
     }
   };
 
@@ -262,10 +332,26 @@ export const CandidateEvaluationSection: React.FC<CandidateEvaluationSectionProp
                   (evaluation?.aiScoring?.enabled
                     ? `AI-scored ${evaluation.aiScoring.aiScored} of ${evaluation.aiScoring.totalCandidates} candidates${
                         evaluation.aiScoring.pending > 0
-                          ? ` · ${evaluation.aiScoring.pending} not scored yet (click Evaluate with AI)`
+                          ? ` · ${evaluation.aiScoring.pending} not AI-scored yet (click Evaluate with AI)`
                           : ''
-                      }. Other rows use rule-based scoring.`
-                    : evaluation?.aiScoring?.note)}
+                      }. ${
+                        evaluation.aiScoring.keywordScored
+                          ? `${evaluation.aiScoring.keywordScored} scored by matching the JD against their resume. `
+                          : ''
+                      }${
+                        evaluation.aiScoring.keywordPending
+                          ? `${evaluation.aiScoring.keywordPending} resumes still to read: refresh to continue. `
+                          : ''
+                      }${evaluation.duplicatesMerged ? `${evaluation.duplicatesMerged} repeat application(s) merged.` : ''}`
+                    : [
+                        evaluation?.aiScoring?.note,
+                        evaluation?.aiScoring?.keywordScored
+                          ? `${evaluation.aiScoring.keywordScored} scored by matching the JD against their resume.`
+                          : '',
+                        evaluation?.duplicatesMerged ? `${evaluation.duplicatesMerged} repeat application(s) merged.` : '',
+                      ]
+                        .filter(Boolean)
+                        .join(' '))}
               </p>
             )}
           </div>
@@ -338,13 +424,30 @@ export const CandidateEvaluationSection: React.FC<CandidateEvaluationSectionProp
 
             <button
               type="button"
-              onClick={() => setShowFullJDModal(true)}
+              onClick={() => openJdModal(false)}
               className="text-xs text-[#FA7014] hover:text-orange-300 font-bold inline-flex items-center gap-1 cursor-pointer transition-colors"
             >
               <FileSpreadsheet className="w-3.5 h-3.5" />
-              <span>View Full Sheet JD</span>
+              <span>{canEditJd ? 'View / edit JD' : 'View JD'}</span>
               <ChevronRight className="w-3.5 h-3.5" />
             </button>
+          </div>
+        )}
+        {evaluation?.jdSummary && evaluation.jdSummary.jdProvided === false && (
+          <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-amber-400/40 bg-amber-400/10 px-3.5 py-2.5 text-xs text-amber-100">
+            <span>
+              No job description exists for this role, so applicants cannot be scored yet.
+              {canEditJd ? ' Add one and they are scored from their resumes.' : ' Ask someone who manages job descriptions to add one.'}
+            </span>
+            {canEditJd && (
+              <button
+                type="button"
+                onClick={() => openJdModal(true)}
+                className="px-3 py-1.5 rounded-lg bg-[#FA7014] hover:bg-[#E65A05] text-white font-bold cursor-pointer"
+              >
+                Add job description
+              </button>
+            )}
           </div>
         )}
       </div>
@@ -606,25 +709,43 @@ export const CandidateEvaluationSection: React.FC<CandidateEvaluationSectionProp
                               cand.overallAlignment
                             )}`}
                           >
-                            {cand.overallAlignment}
+                            {cand.scored === false ? 'Not scored' : cand.overallAlignment}
                           </span>
                         </td>
 
                         {/* Score */}
                         <td className="px-4 py-3.5 text-center">
-                          <span
-                            className={`inline-block text-xs font-mono font-bold px-2 py-0.5 rounded-lg border ${getScoreColorClass(
-                              cand.alignmentScore
-                            )}`}
-                          >
-                            {cand.alignmentScore}
-                          </span>
-                          <div
-                            className="text-[9px] font-bold uppercase tracking-wide text-slate-400 mt-0.5"
-                            title={cand.aiNote || (cand.scoringMode === 'AI' ? 'Scored from resume evidence' : 'Rule-based score')}
-                          >
-                            {cand.scoringMode === 'AI' ? 'AI' : 'Rules'}
-                          </div>
+                          {cand.scored === false ? (
+                            <span
+                              className="inline-block text-[11px] font-semibold px-2 py-0.5 rounded-lg border border-slate-200 bg-slate-50 text-slate-500"
+                              title={cand.aiNote || cand.keyTakeaway}
+                            >
+                              Not scored
+                            </span>
+                          ) : (
+                            <>
+                              <span
+                                className={`inline-block text-xs font-mono font-bold px-2 py-0.5 rounded-lg border ${getScoreColorClass(
+                                  cand.alignmentScore
+                                )}`}
+                              >
+                                {cand.alignmentScore}
+                              </span>
+                              <div
+                                className="text-[9px] font-bold uppercase tracking-wide text-slate-400 mt-0.5"
+                                title={
+                                  cand.aiNote ||
+                                  (cand.scoringMode === 'AI'
+                                    ? 'Scored from resume evidence by AI'
+                                    : cand.scoringMode === 'KEYWORDS'
+                                      ? 'Job description requirements matched against the resume text'
+                                      : 'Scored from recruiter notes')
+                                }
+                              >
+                                {cand.scoringMode === 'AI' ? 'AI' : cand.scoringMode === 'KEYWORDS' ? 'Resume match' : 'Notes'}
+                              </div>
+                            </>
+                          )}
                         </td>
 
                         {/* Key Verified Strengths */}
@@ -655,7 +776,11 @@ export const CandidateEvaluationSection: React.FC<CandidateEvaluationSectionProp
 
                         {/* Missing / Gaps */}
                         <td className="px-4 py-3.5">
-                          {cand.missingOrNotEvidenced.length > 0 ? (
+                          {cand.scored === false ? (
+                            <span className="text-slate-500 text-[11px]">
+                              {cand.aiNote || (evaluation?.jdSummary?.jdProvided === false ? 'Add a job description to score' : 'Waiting for resume')}
+                            </span>
+                          ) : cand.missingOrNotEvidenced.length > 0 ? (
                             <div className="space-y-1">
                               {cand.missingOrNotEvidenced.slice(0, 2).map((gap, i) => (
                                 <div
@@ -819,7 +944,11 @@ export const CandidateEvaluationSection: React.FC<CandidateEvaluationSectionProp
                     {evaluation.jdSummary.designation} — Full Job Description
                   </h3>
                   <p className="text-[10px] text-slate-400">
-                    Sourced dynamically from Google Sheets (JD's tab)
+                    {evaluation.jdSummary.jdSource === 'PORTAL'
+                      ? 'Written in this portal'
+                      : evaluation.jdSummary.jdSource === 'WEBSITE'
+                        ? "From the company's careers website"
+                        : 'No description found for this role'}
                   </p>
                 </div>
               </div>
@@ -905,22 +1034,82 @@ export const CandidateEvaluationSection: React.FC<CandidateEvaluationSectionProp
                 </div>
               )}
 
-              {/* Raw Full Text */}
+              {/* Job description text (viewer or editor) */}
               <div className="space-y-2 pt-2 border-t border-slate-200">
-                <h4 className="text-xs font-bold uppercase tracking-wider text-slate-900">
-                  Raw Job Description Text from Sheet:
-                </h4>
-                <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 font-mono text-[11px] leading-relaxed whitespace-pre-wrap max-h-72 overflow-y-auto text-slate-800">
-                  {evaluation.jdSummary.rawJDText || 'No raw JD text available.'}
+                <div className="flex items-center justify-between gap-2">
+                  <h4 className="text-xs font-bold uppercase tracking-wider text-slate-900">Job description text:</h4>
+                  {canEditJd && !jdEditing && (
+                    <button
+                      type="button"
+                      onClick={() => openJdModal(true)}
+                      className="text-xs font-bold text-[#FA7014] hover:text-[#E65A05] cursor-pointer"
+                    >
+                      {evaluation.jdSummary.jdProvided === false ? 'Add JD' : 'Edit JD'}
+                    </button>
+                  )}
                 </div>
+                {jdEditing ? (
+                  <div className="space-y-2">
+                    <textarea
+                      value={jdDraft}
+                      onChange={(e) => setJdDraft(e.target.value)}
+                      rows={14}
+                      maxLength={20000}
+                      placeholder={'Role overview\n\nResponsibilities\n- ...\n\nRequired skills\n- ...\n\nExperience: 2-4 years'}
+                      className="w-full bg-white p-3 rounded-xl border border-slate-300 font-mono text-[11px] leading-relaxed text-slate-800 focus:outline-hidden focus:ring-2 focus:ring-[#FA7014]"
+                    />
+                    <p className="text-[10px] text-slate-500">
+                      Use headings such as "Responsibilities" and "Required skills" with one point per line. Candidates are
+                      matched against these points, and the minimum experience is read from a line like "Experience: 3 years".
+                    </p>
+                  </div>
+                ) : (
+                  <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 font-mono text-[11px] leading-relaxed whitespace-pre-wrap max-h-72 overflow-y-auto text-slate-800">
+                    {evaluation.jdSummary.rawJDText || 'No job description available for this role.'}
+                  </div>
+                )}
+                {jdMsg && <p className="text-[11px] font-medium text-slate-700">{jdMsg}</p>}
               </div>
             </div>
 
             {/* Modal Footer */}
-            <div className="p-4 bg-slate-50 border-t border-slate-200 flex justify-end shrink-0">
+            <div className="p-4 bg-slate-50 border-t border-slate-200 flex flex-wrap justify-end gap-2 shrink-0">
+              {jdEditing && (
+                <>
+                  {evaluation.jdSummary.jdSource === 'PORTAL' && (
+                    <button
+                      type="button"
+                      onClick={revertJd}
+                      disabled={jdBusy !== null}
+                      className="mr-auto px-3 py-2 text-xs font-bold text-slate-600 hover:text-slate-900 underline cursor-pointer disabled:opacity-50"
+                    >
+                      {jdBusy === 'revert' ? 'Reverting…' : 'Revert to website version'}
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={generateJd}
+                    disabled={jdBusy !== null}
+                    className="px-3 py-2 bg-white border border-slate-300 hover:bg-slate-100 text-slate-800 font-bold rounded-xl text-xs cursor-pointer disabled:opacity-50"
+                  >
+                    {jdBusy === 'generate' ? 'Generating…' : 'Generate draft with AI'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={saveJd}
+                    disabled={jdBusy !== null || !jdDraft.trim()}
+                    className="px-4 py-2 bg-[#FA7014] hover:bg-[#E65A05] text-white font-bold rounded-xl text-xs cursor-pointer disabled:opacity-50"
+                  >
+                    {jdBusy === 'save' ? 'Saving…' : 'Save job description'}
+                  </button>
+                </>
+              )}
               <button
                 type="button"
-                onClick={() => setShowFullJDModal(false)}
+                onClick={() => {
+                  setShowFullJDModal(false);
+                  setJdEditing(false);
+                }}
                 className="px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white font-bold rounded-xl text-xs transition-colors cursor-pointer"
               >
                 Close
@@ -956,8 +1145,10 @@ export const CandidateEvaluationSection: React.FC<CandidateEvaluationSectionProp
                     </span>
                   </div>
                   <p className="text-[11px] text-slate-400 mt-0.5">
-                    Rank #{selectedCandidateForDeepDive.rank} • Score:{' '}
-                    {selectedCandidateForDeepDive.alignmentScore}/100 • Experience:{' '}
+                    {selectedCandidateForDeepDive.scored === false
+                      ? 'Not scored'
+                      : `Rank #${selectedCandidateForDeepDive.rank} • Score: ${selectedCandidateForDeepDive.alignmentScore}/100`}{' '}
+                    • Experience:{' '}
                     {selectedCandidateForDeepDive.experience}
                   </p>
                 </div>
@@ -1050,7 +1241,11 @@ export const CandidateEvaluationSection: React.FC<CandidateEvaluationSectionProp
                     <HelpCircle className="w-3.5 h-3.5 text-amber-600" />
                     <span>Missing / Not Evidenced:</span>
                   </h4>
-                  {selectedCandidateForDeepDive.missingOrNotEvidenced.length > 0 ? (
+                  {selectedCandidateForDeepDive.scored === false ? (
+                    <p className="text-slate-600 bg-slate-50 p-2 rounded-lg border border-slate-200">
+                      {selectedCandidateForDeepDive.aiNote || selectedCandidateForDeepDive.keyTakeaway}
+                    </p>
+                  ) : selectedCandidateForDeepDive.missingOrNotEvidenced.length > 0 ? (
                     <ul className="space-y-1.5">
                       {selectedCandidateForDeepDive.missingOrNotEvidenced.map((gap, i) => (
                         <li
