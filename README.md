@@ -52,8 +52,8 @@ gives read-only company reports. Existing roles need `leave.manage` / `leave.rep
 
 ## Job descriptions and candidate scoring
 
-- A role's job description comes from the company's source (the website careers API for the home company, a
-  published requisition for others). HR with `req.manage_jd` can write or edit one for any role from
+- A role's job description is found automatically, best first: one edited on the evaluation screen, then the JD stored on
+  the company's own hiring requisition (open or closed; drafts are ignored), then what the careers website returns. HR with `req.manage_jd` can write or edit one for any role from
   Talent Acquisition > candidate evaluation > "View / edit JD" (or generate a draft with AI). It is stored in the
   server-only `jobDescriptions` collection and takes priority over the source; "Revert" goes back to the source.
 - With no job description a role has no criteria, so applicants show "Not scored" instead of a made-up score.

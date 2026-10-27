@@ -45,7 +45,7 @@ function parseExperienceYears(expStr: string | null | undefined): number | null 
 /**
  * Parses JD Markdown or raw text into structured criteria
  */
-export function parseJDText(designation: string, jdText: string, source: 'PORTAL' | 'WEBSITE' | 'NONE' = 'WEBSITE'): JDCriteriaSummary {
+export function parseJDText(designation: string, jdText: string, source: 'PORTAL' | 'REQUISITION' | 'WEBSITE' | 'NONE' = 'WEBSITE'): JDCriteriaSummary {
   const norm = (jdText || '').trim();
   
   let minExp = 'Not specified';
@@ -474,7 +474,7 @@ export async function runCandidateEvaluation(
 
   // 1. Fetch JD tab
   let rawJDText = '';
-  let jdSource: 'PORTAL' | 'WEBSITE' | 'NONE' = 'NONE';
+  let jdSource: 'PORTAL' | 'REQUISITION' | 'WEBSITE' | 'NONE' = 'NONE';
   try {
     const jdsSheet = await fetchSheetData(companyId, "JD's");
     const target = designationKey(designation);
@@ -487,7 +487,7 @@ export async function runCandidateEvaluation(
     const matchedRow = sameRole.find(r => r[1]) || looseRole.find(r => r[1]);
     if (matchedRow && matchedRow[1]) {
       rawJDText = String(matchedRow[1]);
-      jdSource = matchedRow[2] === 'PORTAL' ? 'PORTAL' : 'WEBSITE';
+      jdSource = matchedRow[2] === 'PORTAL' || matchedRow[2] === 'REQUISITION' ? matchedRow[2] : 'WEBSITE';
     }
   } catch (err) {
     console.warn("Could not read JD's tab, checking Request Data...", err);

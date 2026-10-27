@@ -303,6 +303,30 @@ export async function deleteApplication(companyId: string, id: string): Promise<
 
 // ------------------------------------------------------------------ open jobs (the company's published requisitions)
 
+export interface RequisitionJd {
+  designation: string;
+  text: string;
+  open: boolean;
+  updatedAt: string;
+}
+
+/**
+ * Job descriptions stored on the company's own requisitions (written in the requisition flow, then posted or closed).
+ * These are the company's own record of a role's JD, whatever the careers website echoes back. Drafts are left out:
+ * a JD that has not been published is not yet what applicants applied to.
+ */
+export async function listRequisitionJds(companyId: string): Promise<RequisitionJd[]> {
+  const snap = await db().collection('requisitions').where('companyId', '==', companyId).get();
+  const out: RequisitionJd[] = [];
+  for (const d of snap.docs) {
+    const r = d.data() as any;
+    const text = String(r.jd?.text || '').trim().slice(0, 20000);
+    if (!text || (r.status !== 'JOB_OPEN' && r.status !== 'CLOSED')) continue;
+    out.push({ designation: str(r.positionTitle, 120), text, open: r.status === 'JOB_OPEN', updatedAt: String(r.jd?.updatedAt || r.updatedAt || '') });
+  }
+  return out;
+}
+
 export async function listOpenings(companyId: string): Promise<OpeningDoc[]> {
   const snap = await db().collection('requisitions').where('companyId', '==', companyId).where('status', '==', 'JOB_OPEN').get();
   return snap.docs.map((d) => {

@@ -71,8 +71,8 @@ export interface JDCriteriaSummary {
   rawJDText: string;
   /** false when no JD text exists for this role, so no criteria could be taken from it. */
   jdProvided?: boolean;
-  /** PORTAL = written or edited in this portal, WEBSITE = from the company's careers API, NONE = missing. */
-  jdSource?: 'PORTAL' | 'WEBSITE' | 'NONE';
+  /** PORTAL = written or edited on the evaluation screen, REQUISITION = stored on the hiring requisition, WEBSITE = from the company's careers API, NONE = missing. */
+  jdSource?: 'PORTAL' | 'REQUISITION' | 'WEBSITE' | 'NONE';
 }
 
 export interface AIEvaluationResponse {

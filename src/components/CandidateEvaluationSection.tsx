@@ -945,8 +945,10 @@ export const CandidateEvaluationSection: React.FC<CandidateEvaluationSectionProp
                   </h3>
                   <p className="text-[10px] text-slate-400">
                     {evaluation.jdSummary.jdSource === 'PORTAL'
-                      ? 'Written in this portal'
-                      : evaluation.jdSummary.jdSource === 'WEBSITE'
+                      ? 'Edited here; used to score applicants'
+                      : evaluation.jdSummary.jdSource === 'REQUISITION'
+                        ? 'From the hiring requisition; used to score applicants'
+                        : evaluation.jdSummary.jdSource === 'WEBSITE'
                         ? "From the company's careers website"
                         : 'No description found for this role'}
                   </p>

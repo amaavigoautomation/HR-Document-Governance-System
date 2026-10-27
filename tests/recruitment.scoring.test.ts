@@ -174,6 +174,27 @@ ev = await evaluate();
 assert.equal(ev.jdSummary.jdProvided, false);
 assert.ok(ev.candidates.every((c: any) => c.scored === false));
 
+// 3b. A JD stored on the company's own requisition is used automatically, even though the website returns none
+fdb.seed('requisitions', 'rq-draft', { companyId: CID, positionTitle: 'Inside Sales Manager', status: 'JD_DRAFT', jd: { text: 'Required skills\n- Quantum basket weaving\n', updatedAt: '2026-10-30T00:00:00Z' } });
+fdb.seed('requisitions', 'rq-open', {
+  companyId: CID,
+  positionTitle: 'Inside Sales Manager',
+  status: 'JOB_OPEN',
+  jd: { text: 'Responsibilities\n- Manage the inside sales pipeline\n\nRequired skills\n- CRM tools such as HubSpot\n- Cold calling and negotiation', updatedAt: '2026-10-20T00:00:00Z' },
+});
+fdb.seed('requisitions', 'rq-other-company', { companyId: 'someone-else', positionTitle: 'Inside Sales Manager', status: 'JOB_OPEN', jd: { text: 'Required skills\n- Not ours\n' } });
+ev = await evaluate();
+assert.equal(ev.jdSummary.jdSource, 'REQUISITION');
+assert.ok(ev.jdSummary.requiredSkills.includes('CRM tools such as HubSpot'), JSON.stringify(ev.jdSummary.requiredSkills));
+assert.ok(!ev.jdSummary.rawJDText.includes('Quantum') && !ev.jdSummary.rawJDText.includes('Not ours'), 'drafts and other companies are ignored');
+assert.ok(ev.candidates.every((c: any) => c.scored === true));
+assert.ok(ev.candidates.find((c: any) => c.name === 'Asha Rao').alignmentScore > ev.candidates.find((c: any) => c.name === 'Ravi Kumar').alignmentScore);
+// editing it on the evaluation screen still wins over the requisition's
+await post(HR, 'jd-save', { designation: 'Inside Sales Manager', text: 'Required skills\n- Cold calling and negotiation\n' });
+ev = await evaluate();
+assert.equal(ev.jdSummary.jdSource, 'PORTAL');
+await post(HR, 'jd-delete', { designation: 'Inside Sales Manager' });
+
 // 4. When the website does carry a JD, it is used; a portal one still wins over it
 ev = await evaluate('Account Executive');
 assert.equal(ev.jdSummary.jdSource, 'WEBSITE');

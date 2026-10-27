@@ -13,7 +13,7 @@
  *   RECRUITMENT_API_AUTH_HEADER header name for the key (default Authorization: Bearer)
  */
 
-import { listApplications, listOpenings, usesLegacySource, type ApplicationDoc } from './recruitmentData.js';
+import { listApplications, listOpenings, listRequisitionJds, usesLegacySource, type ApplicationDoc, type RequisitionJd } from './recruitmentData.js';
 import { designationKey, listJobDescriptions, type JobDescriptionDoc } from './jobDescriptions.js';
 
 import type { SheetRowData, RecruitmentOverviewResult, ColumnMappingReport, RecruitmentKPIs } from '../../shared/recruitmentTypes.js';
@@ -302,22 +302,41 @@ export async function fetchSheetData(companyId: string, tabName: string): Promis
 
   if (wanted === JD_TAB.toLowerCase()) {
     const openings = (await loadOpenings(companyId)) || [];
-    // A description written in the portal wins over the source's (the website API often has none for older roles).
+    // Where a role's description comes from, best first:
+    //   PORTAL       written or edited by HR on the evaluation screen
+    //   REQUISITION  stored on the company's own hiring requisition (written there, then posted)
+    //   WEBSITE      what the careers source returns for the opening (often empty for older roles)
     let overrides = new Map<string, JobDescriptionDoc>();
     try {
       overrides = await listJobDescriptions(companyId);
     } catch (err: any) {
       console.warn('[Recruitment] Could not read portal job descriptions:', err?.message || err);
     }
+    const fromRequisition = new Map<string, RequisitionJd>();
+    try {
+      for (const r of await listRequisitionJds(companyId)) {
+        const key = designationKey(r.designation);
+        const cur = fromRequisition.get(key);
+        // An open requisition beats a closed one; otherwise the most recently edited.
+        if (key && (!cur || (r.open && !cur.open) || (r.open === cur.open && r.updatedAt > cur.updatedAt))) fromRequisition.set(key, r);
+      }
+    } catch (err: any) {
+      console.warn('[Recruitment] Could not read requisition job descriptions:', err?.message || err);
+    }
+
     const used = new Set<string>();
     const rows: (string | number | boolean)[][] = openings.map(o => {
       const key = designationKey(o.designation);
+      used.add(key);
       const own = overrides.get(key);
-      if (own) used.add(key);
-      return own ? [o.designation, own.text, 'PORTAL'] : [o.designation, o.qualification, o.qualification ? 'WEBSITE' : 'NONE'];
+      if (own) return [o.designation, own.text, 'PORTAL'];
+      const req = fromRequisition.get(key);
+      if (req) return [o.designation, req.text, 'REQUISITION'];
+      return [o.designation, o.qualification, o.qualification ? 'WEBSITE' : 'NONE'];
     });
-    // Roles that have a portal description but no current opening (applications can outlive an opening).
-    for (const [key, own] of overrides) if (!used.has(key)) rows.push([own.designation, own.text, 'PORTAL']);
+    // Roles with a stored description but no current opening (applications can outlive an opening).
+    for (const [key, own] of overrides) if (!used.has(key)) { used.add(key); rows.push([own.designation, own.text, 'PORTAL']); }
+    for (const [key, req] of fromRequisition) if (!used.has(key)) { used.add(key); rows.push([req.designation, req.text, 'REQUISITION']); }
     return sheet(JD_TAB, rows, ['Designation', 'Job Description', 'Source']);
   }
 
