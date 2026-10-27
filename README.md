@@ -59,6 +59,8 @@ gives read-only company reports. Existing roles need `leave.manage` / `leave.rep
 - With no job description a role has no criteria, so applicants show "Not scored" instead of a made-up score.
 - Applicants are scored from their resume, not from a spreadsheet's Pros/Cons columns: first a free match of the JD
   requirements against the resume text ("Resume match"), then "Evaluate with AI" for a deeper reading ("AI").
+  Resume links may be on any public host (https or plain http), or a Google Drive / Docs / Dropbox share link, and may be a
+  PDF, .docx or old .doc; a link the server cannot read says why, with the host. Private addresses are refused.
   Resumes are read a few at a time within a time budget (`KEYWORD_PASS_BUDGET_MS`, default 7000); refresh to continue.
 - Repeat applications by the same person (same email, else mobile, else name) are merged into their latest one in the
   ranking. The raw Overview counts still show every application.

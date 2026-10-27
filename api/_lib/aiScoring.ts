@@ -186,45 +186,105 @@ export async function readResume(url: string): Promise<ResumeRead> {
   return value;
 }
 
-async function readResumeUncached(url: string): Promise<ResumeRead> {
+/** Turns a share link (Google Drive / Docs, Dropbox) into a direct download link; any other link is returned as is. */
+export function normalizeResumeUrl(raw: string): string {
   let u: URL;
   try {
-    u = new URL(url);
+    u = new URL(raw.trim());
   } catch {
-    return { error: 'Resume link is not a valid URL.' };
+    return raw;
   }
-  // Hosts in RESUME_ALLOWED_HOSTS are trusted (the Amaavigo website). Any other link, such as one sent by a
-  // company's own site through the application webhook, is fetched only if it is a public https address.
-  const trusted = hostAllowed(u);
-  if (!trusted && u.protocol !== 'https:') return { error: 'Resume links must use https.' };
+  const host = u.hostname.toLowerCase();
+  if (host === 'drive.google.com') {
+    const id = u.pathname.match(/\/file\/d\/([\w-]+)/)?.[1] || u.searchParams.get('id');
+    if (id) return `https://drive.google.com/uc?export=download&id=${id}`;
+  }
+  if (host === 'docs.google.com') {
+    const id = u.pathname.match(/\/document\/d\/([\w-]+)/)?.[1];
+    if (id) return `https://docs.google.com/document/d/${id}/export?format=docx`;
+  }
+  if (host === 'dropbox.com' || host.endsWith('.dropbox.com')) {
+    u.searchParams.delete('dl');
+    u.searchParams.set('dl', '1');
+    return u.toString();
+  }
+  return raw;
+}
 
+const MAX_RESUME_BYTES = 6 * 1024 * 1024;
+
+async function downloadResume(target: URL, trusted: boolean): Promise<{ buf?: Buffer; error?: string }> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 15000);
   try {
+    // Hosts in RESUME_ALLOWED_HOSTS are trusted (the Amaavigo website). Any other link is fetched only if it is a
+    // public address: the SSRF checks in fetchPublic still apply to http as well as https.
     const res = trusted
-      ? await fetch(u, { signal: controller.signal, headers: RESUME_HEADERS })
-      : await fetchPublic(u.toString(), { signal: controller.signal, headers: RESUME_HEADERS });
+      ? await fetch(target, { signal: controller.signal, headers: RESUME_HEADERS })
+      : await fetchPublic(target.toString(), { signal: controller.signal, headers: RESUME_HEADERS, allowHttp: true });
     if (!res.ok) return { error: `Resume download failed (HTTP ${res.status}).` };
-    if (trusted && !hostAllowed(new URL(res.url || u.toString()))) return { error: 'Resume redirected to a disallowed host.' };
+    if (trusted && !hostAllowed(new URL(res.url || target.toString()))) return { error: 'Resume redirected to a disallowed host.' };
     const declared = Number(res.headers.get('content-length') || 0);
-    if (declared > 6 * 1024 * 1024) return { error: 'Resume file is larger than 6 MB.' };
+    if (declared > MAX_RESUME_BYTES) return { error: 'Resume file is larger than 6 MB.' };
     const buf = Buffer.from(await res.arrayBuffer());
-    if (buf.length > 6 * 1024 * 1024) return { error: 'Resume file is larger than 6 MB.' };
+    if (buf.length > MAX_RESUME_BYTES) return { error: 'Resume file is larger than 6 MB.' };
+    return { buf };
+  } catch (err: any) {
+    return { error: err?.name === 'AbortError' ? 'Resume download timed out.' : `Could not download the resume: ${err?.message || err}` };
+  } finally {
+    clearTimeout(timer);
+  }
+}
 
+async function readResumeUncached(url: string): Promise<ResumeRead> {
+  let u: URL;
+  try {
+    u = new URL(normalizeResumeUrl(url));
+  } catch {
+    return { error: 'Resume link is not a valid URL.' };
+  }
+  if (u.protocol !== 'https:' && u.protocol !== 'http:') return { error: 'Resume link must be an http or https address.' };
+  const trusted = hostAllowed(u);
+  const host = u.hostname;
+  const why = (msg: string): ResumeRead => ({ error: `${msg} [${host}]` });
+
+  // A plain http link is tried over https first (most hosts serve both), then as given.
+  const targets: URL[] = [u];
+  if (u.protocol === 'http:' && !trusted) {
+    const secure = new URL(u.toString());
+    secure.protocol = 'https:';
+    targets.unshift(secure);
+  }
+  let lastError = 'Resume could not be downloaded.';
+  let buf: Buffer | undefined;
+  for (const target of targets) {
+    const out = await downloadResume(target, trusted);
+    if (out.buf) {
+      buf = out.buf;
+      break;
+    }
+    lastError = out.error || lastError;
+  }
+  if (!buf) {
+    console.warn(`[Resume] ${host}: ${lastError}`);
+    return why(lastError);
+  }
+
+  try {
     let text = '';
     if (buf.slice(0, 4).toString('latin1') === '%PDF') text = await pdfText(buf);
     else if (buf[0] === 0x50 && buf[1] === 0x4b) text = await docxText(buf);
     else if (buf[0] === 0xd0 && buf[1] === 0xcf && buf[2] === 0x11 && buf[3] === 0xe0) text = legacyDocText(buf);
-    else if (/^\s*<(!doctype|html)/i.test(buf.slice(0, 200).toString('latin1'))) return { error: 'The resume link returned a web page, not a file (it may need a login or be blocked).' };
-    else return { error: 'Resume is not a PDF or Word file (images are not read).' };
+    else if (/^\s*<(!doctype|html)/i.test(buf.slice(0, 200).toString('latin1'))) {
+      return why('The resume link returned a web page, not a file (it may need a login, be a share page, or be blocked).');
+    } else return why('Resume is not a PDF or Word file (images are not read).');
 
     text = scrub(text);
-    if (text.length < 80) return { error: 'No readable text in the resume (it may be a scanned image).' };
+    if (text.length < 80) return why('No readable text in the resume (it may be a scanned image).');
     return { text: text.slice(0, num('AI_SCORING_RESUME_CHARS', 6000)) };
   } catch (err: any) {
-    return { error: err?.name === 'AbortError' ? 'Resume download timed out.' : `Could not read resume: ${err?.message || err}` };
-  } finally {
-    clearTimeout(timer);
+    console.warn(`[Resume] ${host}: could not read the file: ${err?.message || err}`);
+    return why(`Could not read the resume file: ${err?.message || err}`);
   }
 }
 

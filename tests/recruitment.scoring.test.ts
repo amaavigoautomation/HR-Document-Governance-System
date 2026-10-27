@@ -5,6 +5,7 @@ import { FakeFirestore } from './fakeFirestore.ts';
 import { routeRecruitment } from '../api/_lib/recruitmentApi.ts';
 import { clearEvaluationCache, collapseRepeatApplications, parseJDText, personKey } from '../api/_lib/serverAiEvaluation.ts';
 import { keywordEvidence } from '../api/_lib/resumeKeywords.ts';
+import { normalizeResumeUrl, readResume } from '../api/_lib/aiScoring.ts';
 import { designationKey } from '../api/_lib/jobDescriptions.ts';
 
 // ---------------------------------------------------------------- pure pieces
@@ -86,6 +87,7 @@ const oleDoc = Buffer.concat([
   Buffer.alloc(256),
 ]);
 const resumes: Record<string, Buffer> = {
+  'http://93.184.216.34/cv/http-only.docx': await docx('Sunil Verma. Inside sales manager with seven years of experience in cold calling, negotiation and CRM tools such as HubSpot.'),
   'https://www.amaavigo.com/cv/old.doc': oleDoc,
   'https://www.amaavigo.com/cv/page.html': Buffer.from('<!DOCTYPE html><html><body>Please log in</body></html>'),
   'https://www.amaavigo.com/cv/strong.docx': await docx(
@@ -232,6 +234,21 @@ assert.match(gone.aiNote, /HTTP 404/);
 assert.equal(ev.aiScoring.keywordFailed, 2);
 assert.ok(ev.aiScoring.keywordFailureNote);
 assert.equal(ev.aiScoring.keywordScored, 1);
+
+// 6. Resume links on other hosts: share links become downloads, http-only hosts work, errors name the host
+assert.equal(normalizeResumeUrl('https://drive.google.com/file/d/1AbC_-x/view?usp=sharing'), 'https://drive.google.com/uc?export=download&id=1AbC_-x');
+assert.equal(normalizeResumeUrl('https://drive.google.com/open?id=ZZ9'), 'https://drive.google.com/uc?export=download&id=ZZ9');
+assert.equal(normalizeResumeUrl('https://docs.google.com/document/d/XyZ/edit'), 'https://docs.google.com/document/d/XyZ/export?format=docx');
+assert.equal(normalizeResumeUrl('https://www.dropbox.com/s/abc/cv.pdf?dl=0'), 'https://www.dropbox.com/s/abc/cv.pdf?dl=1');
+const plain = 'https://www.amaavigo.com/public/images/jobapplications/attachment/27/HR%20Leave%20Management%20Automation.pdf';
+assert.equal(normalizeResumeUrl(plain), plain);
+const httpOnly = await readResume('http://93.184.216.34/cv/http-only.docx');
+assert.ok(httpOnly.text?.includes('Sunil Verma'), JSON.stringify(httpOnly));
+const missing = await readResume('http://93.184.216.34/cv/none.pdf');
+assert.match(missing.error || '', /HTTP 404.*\[93\.184\.216\.34\]/);
+const priv = await readResume('http://10.0.0.5/cv.pdf');
+assert.match(priv.error || '', /not public/i);
+assert.match((await readResume('ftp://x.com/cv.pdf')).error || '', /http or https/i);
 
 globalThis.fetch = realFetch;
 console.log('recruitment.scoring: ok');
