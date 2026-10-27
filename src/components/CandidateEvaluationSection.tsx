@@ -342,11 +342,18 @@ export const CandidateEvaluationSection: React.FC<CandidateEvaluationSectionProp
                         evaluation.aiScoring.keywordPending
                           ? `${evaluation.aiScoring.keywordPending} resumes still to read: refresh to continue. `
                           : ''
+                      }${
+                        evaluation.aiScoring.keywordFailed
+                          ? `${evaluation.aiScoring.keywordFailed} resume(s) could not be read: ${evaluation.aiScoring.keywordFailureNote}. `
+                          : ''
                       }${evaluation.duplicatesMerged ? `${evaluation.duplicatesMerged} repeat application(s) merged.` : ''}`
                     : [
                         evaluation?.aiScoring?.note,
                         evaluation?.aiScoring?.keywordScored
                           ? `${evaluation.aiScoring.keywordScored} scored by matching the JD against their resume.`
+                          : '',
+                        evaluation?.aiScoring?.keywordFailed
+                          ? `${evaluation.aiScoring.keywordFailed} resume(s) could not be read: ${evaluation.aiScoring.keywordFailureNote}.`
                           : '',
                         evaluation?.duplicatesMerged ? `${evaluation.duplicatesMerged} repeat application(s) merged.` : '',
                       ]

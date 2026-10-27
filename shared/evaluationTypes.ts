@@ -12,6 +12,9 @@ export interface AiScoringSummary {
   keywordScored?: number;
   /** Candidates whose resume has not been read yet (time budget reached); refresh to continue. */
   keywordPending?: number;
+  /** Resumes that could not be read, with the most common reason. */
+  keywordFailed?: number;
+  keywordFailureNote?: string;
   note?: string;
   tokens?: { input: number; output: number };
 }

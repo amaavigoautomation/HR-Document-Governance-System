@@ -108,6 +108,9 @@ const num = (name: string, fallback: number) => {
 export interface KeywordPassSummary {
   scored: number;
   pending: number;
+  /** Resumes that could not be read, and why (the most common reason first). */
+  failed: number;
+  failureNote?: string;
 }
 
 /**
@@ -122,7 +125,8 @@ export async function applyKeywordScoring<C extends ScorableCandidate>(args: {
 }): Promise<{ results: C[]; summary: KeywordPassSummary }> {
   const { jd } = args;
   const results = [...args.results];
-  const summary: KeywordPassSummary = { scored: 0, pending: 0 };
+  const summary: KeywordPassSummary = { scored: 0, pending: 0, failed: 0 };
+  const reasons = new Map<string, number>();
   if (jd.requiredSkills.length === 0 && jd.coreResponsibilities.length === 0) return { results, summary };
 
   const maxCandidates = num('AI_SCORING_MAX_CANDIDATES', 30);
@@ -154,7 +158,11 @@ export async function applyKeywordScoring<C extends ScorableCandidate>(args: {
       }
       const resume = await readResume(cand.resumeUrl as string);
       if (!resume.text) {
-        cand.aiNote = resume.error || 'Resume could not be read.';
+        const why = resume.error || 'Resume could not be read.';
+        cand.aiNote = why;
+        cand.keyTakeaway = `Not scored: ${why}`;
+        summary.failed++;
+        reasons.set(why, (reasons.get(why) || 0) + 1);
         continue;
       }
       results[idx] = applyEvidence(cand, jd, keywordEvidence(jd, resume.text), 'KEYWORDS');
@@ -162,5 +170,7 @@ export async function applyKeywordScoring<C extends ScorableCandidate>(args: {
     }
   };
   await Promise.all(Array.from({ length: 4 }, worker));
+  const top = [...reasons.entries()].sort((a, b) => b[1] - a[1])[0];
+  if (top) summary.failureNote = top[0];
   return { results, summary };
 }

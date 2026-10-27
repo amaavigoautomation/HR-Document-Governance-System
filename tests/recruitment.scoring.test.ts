@@ -79,7 +79,15 @@ async function docx(text: string): Promise<Buffer> {
   return Buffer.from(await zip.generateAsync({ type: 'uint8array' }));
 }
 
+const oleDoc = Buffer.concat([
+  Buffer.from([0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1]),
+  Buffer.alloc(512),
+  Buffer.from('Meera Nair. Experienced support lead handling customer escalations and ticket queues with strong communication. Reduced response time by 30%.', 'utf16le'),
+  Buffer.alloc(256),
+]);
 const resumes: Record<string, Buffer> = {
+  'https://www.amaavigo.com/cv/old.doc': oleDoc,
+  'https://www.amaavigo.com/cv/page.html': Buffer.from('<!DOCTYPE html><html><body>Please log in</body></html>'),
   'https://www.amaavigo.com/cv/strong.docx': await docx(
     'Asha Rao. Inside sales leader. Led the inside sales pipeline and coached a team of sales executives for 6 years.\nExpert in HubSpot CRM, cold calling and negotiation. Grew revenue 40% year on year.\nPortfolio and case studies available.'
   ),
@@ -105,11 +113,15 @@ const apps = [
   application(2, 'Ravi Kumar', 'ravi@x.com', 'https://www.amaavigo.com/cv/weak.docx', '2026-10-02T10:00:00Z'),
   application(3, 'Ravi Kumar', 'RAVI@x.com', 'https://www.amaavigo.com/cv/weak.docx', '2026-10-05T10:00:00Z'), // applied again
   application(4, 'Asha Rao', 'asha@x.com', 'https://www.amaavigo.com/cv/strong.docx', '2026-10-06T10:00:00Z', 'Account Executive'),
+  application(5, 'Meera Nair', 'meera@x.com', 'https://www.amaavigo.com/cv/old.doc', '2026-10-07T10:00:00Z', 'Support Lead'),
+  application(6, 'Login Wall', 'wall@x.com', 'https://www.amaavigo.com/cv/page.html', '2026-10-07T11:00:00Z', 'Support Lead'),
+  application(7, 'Gone Missing', 'gone@x.com', 'https://www.amaavigo.com/cv/missing.pdf', '2026-10-07T12:00:00Z', 'Support Lead'),
 ];
 // "Inside Sales Manager" has no description on the website; "Account Executive" does.
 const openings: any[] = [
   { id: 7, designation: { title: 'Inside Sales Manager' }, no_of_opening: 2, joining_on: '', qualification: '' },
   { id: 8, designation: { title: 'Account Executive' }, no_of_opening: 1, joining_on: '', qualification: 'Required skills\n- Cold calling and negotiation\n' },
+  { id: 9, designation: { title: 'Support Lead' }, no_of_opening: 1, joining_on: '', qualification: 'Required skills\n- Customer escalations handling\n- Ticket queue management\n' },
 ];
 
 const realFetch = globalThis.fetch;
@@ -204,6 +216,22 @@ await post(HR, 'jd-save', { designation: 'Account Executive', text: 'Required sk
 ev = await evaluate('Account Executive');
 assert.equal(ev.jdSummary.jdSource, 'PORTAL');
 assert.deepEqual(ev.jdSummary.requiredSkills, ['Kubernetes cluster operations']);
+
+// 5. Resumes that cannot be read say why, per candidate and for the whole list; old .doc files are read
+ev = await evaluate('Support Lead');
+const meera = ev.candidates.find((c: any) => c.name === 'Meera Nair');
+assert.equal(meera.scored, true, JSON.stringify(meera.aiNote));
+assert.ok(meera.skillsAlignment.some((x: any) => x.status === 'MET'));
+const wall = ev.candidates.find((c: any) => c.name === 'Login Wall');
+assert.equal(wall.scored, false);
+assert.match(wall.aiNote, /web page/i);
+assert.match(wall.keyTakeaway, /web page/i);
+const gone = ev.candidates.find((c: any) => c.name === 'Gone Missing');
+assert.equal(gone.scored, false);
+assert.match(gone.aiNote, /HTTP 404/);
+assert.equal(ev.aiScoring.keywordFailed, 2);
+assert.ok(ev.aiScoring.keywordFailureNote);
+assert.equal(ev.aiScoring.keywordScored, 1);
 
 globalThis.fetch = realFetch;
 console.log('recruitment.scoring: ok');

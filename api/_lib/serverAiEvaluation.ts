@@ -606,6 +606,8 @@ export async function runCandidateEvaluation(
   evaluatedCandidates = aiRun.results;
   aiRun.summary.keywordScored = keywordRun.summary.scored;
   aiRun.summary.keywordPending = keywordRun.summary.pending;
+  aiRun.summary.keywordFailed = keywordRun.summary.failed;
+  aiRun.summary.keywordFailureNote = keywordRun.summary.failureNote;
 
   // Scored candidates first (best first); candidates with nothing to score from follow in application order.
   evaluatedCandidates.sort((a, b) => (b.scored === false ? 0 : 1) - (a.scored === false ? 0 : 1) || b.alignmentScore - a.alignmentScore);

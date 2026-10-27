@@ -98,6 +98,16 @@ function hostAllowed(u: URL): boolean {
 async function pdfText(buf: Buffer): Promise<string> {
   // @ts-ignore - legacy build has no bundled types
   const pdfjs: any = await import('pdfjs-dist/legacy/build/pdf.mjs');
+  // pdf.js loads its worker by a computed path, which serverless bundlers do not include ("Setting up fake worker
+  // failed"). Importing it by name makes the bundler ship it, and handing it over skips the path lookup.
+  if (!(globalThis as any).pdfjsWorker) {
+    try {
+      // @ts-ignore - legacy build has no bundled types
+      (globalThis as any).pdfjsWorker = await import('pdfjs-dist/legacy/build/pdf.worker.mjs');
+    } catch {
+      /* fall back to pdf.js's own lookup */
+    }
+  }
   const task = pdfjs.getDocument({
     data: new Uint8Array(buf),
     useWorkerFetch: false,
@@ -120,6 +130,16 @@ async function pdfText(buf: Buffer): Promise<string> {
     /* ignore */
   }
   return out.join('\n');
+}
+
+/** Old Word files (.doc, pre-2007) keep text as plain runs inside a container: pull out the readable runs. */
+function legacyDocText(buf: Buffer): string {
+  const runs = (s: string) => (s.match(/[A-Za-z0-9@&%$#+\-.,:;()/'" ]{6,}/g) || []).map((r) => r.trim()).filter((r) => /[A-Za-z]{3}/.test(r));
+  const utf16 = runs(buf.toString('utf16le'));
+  const latin = runs(buf.toString('latin1'));
+  // Word stores a document's text in one encoding; the one that yields more text is the real one.
+  const best = utf16.join(' ').length > latin.join(' ').length ? utf16 : latin;
+  return best.join('\n');
 }
 
 async function docxText(buf: Buffer): Promise<string> {
@@ -148,7 +168,8 @@ function scrub(text: string): string {
 
 type ResumeRead = { text?: string; error?: string };
 const RESUME_TEXT_TTL_MS = 30 * 60 * 1000;
-const RESUME_ERROR_TTL_MS = 10 * 60 * 1000;
+const RESUME_ERROR_TTL_MS = 2 * 60 * 1000;
+const RESUME_HEADERS = { Accept: '*/*', 'User-Agent': 'Mozilla/5.0 (compatible; HRPortal/1.0; resume-reader)' };
 const RESUME_CACHE_MAX = 300;
 const resumeTextCache = new Map<string, { at: number; value: ResumeRead }>();
 
@@ -181,8 +202,8 @@ async function readResumeUncached(url: string): Promise<ResumeRead> {
   const timer = setTimeout(() => controller.abort(), 15000);
   try {
     const res = trusted
-      ? await fetch(u, { signal: controller.signal, headers: { Accept: '*/*' } })
-      : await fetchPublic(u.toString(), { signal: controller.signal, headers: { Accept: '*/*' } });
+      ? await fetch(u, { signal: controller.signal, headers: RESUME_HEADERS })
+      : await fetchPublic(u.toString(), { signal: controller.signal, headers: RESUME_HEADERS });
     if (!res.ok) return { error: `Resume download failed (HTTP ${res.status}).` };
     if (trusted && !hostAllowed(new URL(res.url || u.toString()))) return { error: 'Resume redirected to a disallowed host.' };
     const declared = Number(res.headers.get('content-length') || 0);
@@ -193,6 +214,8 @@ async function readResumeUncached(url: string): Promise<ResumeRead> {
     let text = '';
     if (buf.slice(0, 4).toString('latin1') === '%PDF') text = await pdfText(buf);
     else if (buf[0] === 0x50 && buf[1] === 0x4b) text = await docxText(buf);
+    else if (buf[0] === 0xd0 && buf[1] === 0xcf && buf[2] === 0x11 && buf[3] === 0xe0) text = legacyDocText(buf);
+    else if (/^\s*<(!doctype|html)/i.test(buf.slice(0, 200).toString('latin1'))) return { error: 'The resume link returned a web page, not a file (it may need a login or be blocked).' };
     else return { error: 'Resume is not a PDF or Word file (images are not read).' };
 
     text = scrub(text);
