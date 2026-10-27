@@ -198,6 +198,18 @@ export const RequisitionDetailPanel: React.FC<Props> = ({ req, currentUser, user
               <div className="flex items-center gap-2 text-sm font-black text-slate-900">
                 <UserCog className="w-4 h-4 text-[#FA7014]" /> {req.ownerHr ? 'Reassign HR owner' : 'Assign to an HR'}
               </div>
+              {req.ownerHr && (
+                <div className="mt-3 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-900">
+                  <span className="font-black">Already assigned to {req.ownerHr.name}</span>
+                  {(req.assignedByName || req.assignedAt) && (
+                    <span className="text-emerald-800">
+                      {req.assignedByName ? ` by ${req.assignedByName}` : ''}
+                      {req.assignedAt ? ` on ${fmt(req.assignedAt)}` : ''}
+                    </span>
+                  )}
+                  . Choose someone else below only to reassign.
+                </div>
+              )}
               <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
                 <select className={field} value={assigneeId} onChange={(e) => setAssigneeId(e.target.value)}>
                   <option value="">Select HR...</option>
