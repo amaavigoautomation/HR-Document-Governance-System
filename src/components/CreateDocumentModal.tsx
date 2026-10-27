@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import {
   X,
   FileText,
@@ -12,7 +12,8 @@ import {
   Lock,
   Users,
 } from 'lucide-react';
-import { ConfidentialityLevel, DocumentCategory, User } from '../types';
+import { ConfidentialityLevel, DocumentCategory, User, Department } from '../types';
+import { subscribeToDepartments } from '../services/adminService';
 import { governanceEngine } from '../services/governance';
 import { parseUploadedFile } from '../utils/fileParser';
 import { stripPolicyMetadataHeader } from '../utils/documentHeaderFooter';
@@ -34,6 +35,17 @@ export const CreateDocumentModal: React.FC<CreateDocumentModalProps> = ({
   const [title, setTitle] = useState('');
   const [category, setCategory] = useState<DocumentCategory>(DocumentCategory.POLICY);
   const [department, setDepartment] = useState('All Department');
+  // The company's own departments (created in Admin or during setup), not a fixed list.
+  const [departments, setDepartments] = useState<Department[]>([]);
+  const [departmentsLoaded, setDepartmentsLoaded] = useState(false);
+  useEffect(
+    () =>
+      subscribeToDepartments((items) => {
+        setDepartments(items);
+        setDepartmentsLoaded(true);
+      }),
+    []
+  );
   const [confidentiality, setConfidentiality] = useState<ConfidentialityLevel | ''>(ConfidentialityLevel.PUBLIC);
   const [acknowledgementRequired, setAcknowledgementRequired] = useState(true);
   const [creationDate, setCreationDate] = useState(new Date().toISOString().split('T')[0]);
@@ -67,7 +79,7 @@ export const CreateDocumentModal: React.FC<CreateDocumentModalProps> = ({
       setAcknowledgementRequired(true);
     } else if (lvl === ConfidentialityLevel.SPECIFIC_DEPARTMENT) {
       if (department === 'All Department') {
-        setDepartment('Content');
+        setDepartment(departments[0]?.name || 'All Department');
       }
       setAcknowledgementRequired(true);
     } else if (lvl === ConfidentialityLevel.INTERNAL) {
@@ -272,7 +284,11 @@ Employees should notify their immediate manager via the HR self-service portal a
       return;
     }
     if (confidentiality === ConfidentialityLevel.SPECIFIC_DEPARTMENT && department === 'All Department') {
-      setError('Please select a specific department (e.g., Content, Human Resources, Operations) when Confidentiality is set to "Specific Department".');
+      setError(
+        departments.length === 0
+          ? 'No departments exist yet. Create departments in Admin first, or use Public / Internal confidentiality.'
+          : 'Please select a specific department when Confidentiality is set to "Specific Department".'
+      );
       return;
     }
     if (!creationDate || !creationDate.trim()) {
@@ -301,7 +317,7 @@ Employees should notify their immediate manager via the HR self-service portal a
         category,
         companyId: currentUser.companyId,
         companyName: currentUser.companyName,
-        departmentId: department.toLowerCase().replace(/\s+/g, '-'),
+        departmentId: departments.find((d) => d.name === department)?.id || department.toLowerCase().replace(/\s+/g, '-'),
         departmentName: department,
         processOwnerId: currentUser.id,
         processOwnerName: currentUser.name,
@@ -471,25 +487,15 @@ Employees should notify their immediate manager via the HR self-service portal a
                 <option value="All Department" className="bg-white text-slate-900 py-1 font-semibold">
                   All Department
                 </option>
-                <option value="Content" className="bg-white text-slate-900 py-1 font-semibold">
-                  Content
-                </option>
-                <option value="Human Resources" className="bg-white text-slate-900 py-1">
-                  Human Resources
-                </option>
-                <option value="Operations" className="bg-white text-slate-900 py-1">
-                  Operations
-                </option>
-                <option value="Compliance & Legal" className="bg-white text-slate-900 py-1">
-                  Compliance & Legal
-                </option>
-                <option value="Engineering & IT" className="bg-white text-slate-900 py-1">
-                  Engineering & IT
-                </option>
-                <option value="Finance" className="bg-white text-slate-900 py-1">
-                  Finance
-                </option>
+                {departments.map((d) => (
+                  <option key={d.id} value={d.name} className="bg-white text-slate-900 py-1">
+                    {d.name}
+                  </option>
+                ))}
               </select>
+              {departmentsLoaded && departments.length === 0 && (
+                <p className="text-[11px] text-amber-700 mt-1">No departments yet. Create them in Admin to target a specific department.</p>
+              )}
               {isDepartmentLocked ? (
                 <p className="text-[11px] text-slate-500 mt-1 flex items-center">
                   <Lock className="w-3 h-3 mr-1 text-slate-400 shrink-0" />
