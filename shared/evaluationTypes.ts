@@ -31,6 +31,8 @@ export interface CandidateEvaluationResult {
   jobPreference: string;
   noticePeriod: string;
   resumeUrl: string | null;
+  /** The role the applicant applied for (always set; the list view of all roles shows it). */
+  role?: string;
   alignmentScore: number;
   /** false when there is nothing to score from yet (no JD, no resume, or resume not read). alignmentScore is 0 and must not be shown as a score. */
   scored?: boolean;
@@ -85,6 +87,8 @@ export interface AIEvaluationResponse {
   engineUsed: 'enterprise-algorithmic-ai';
   jdSummary: JDCriteriaSummary;
   totalCandidates: number;
+  /** Set when this is the list of every role: each applicant is scored against their own role's JD. */
+  allRoles?: { roles: number; rolesMissingJd: string[] };
   /** Repeat applications by the same person that were merged into their latest one. */
   duplicatesMerged?: number;
   candidates: CandidateEvaluationResult[];

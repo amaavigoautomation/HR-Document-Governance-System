@@ -460,8 +460,11 @@ export async function runCandidateEvaluation(
   companyId: string,
   designation: string,
   forceRefresh = false,
-  evaluateWithAi = false
+  evaluateWithAi = false,
+  opts: { keywordBudgetMs?: number } = {}
 ): Promise<AIEvaluationResponse> {
+  if (isAllRolesName(designation)) return runAllRolesEvaluation(companyId, forceRefresh);
+
   // Evaluations are cached per company: the same job title in two companies must never share a result.
   const cacheKey = `${companyId}|${designation.toLowerCase().trim()}`;
   const now = Date.now();
@@ -598,7 +601,7 @@ export async function runCandidateEvaluation(
   );
 
   // Free pass: match the JD against each resume's text (no AI call) for everyone who has no score yet.
-  const keywordRun = await applyKeywordScoring({ jd: jdSummary, results: evaluatedCandidates });
+  const keywordRun = await applyKeywordScoring({ jd: jdSummary, results: evaluatedCandidates, budgetMs: opts.keywordBudgetMs });
   evaluatedCandidates = keywordRun.results;
 
   // Optional resume-evidence scoring with OpenAI (cached; only runs when HR clicks Evaluate)
@@ -612,7 +615,7 @@ export async function runCandidateEvaluation(
   // Scored candidates first (best first); candidates with nothing to score from follow in application order.
   evaluatedCandidates.sort((a, b) => (b.scored === false ? 0 : 1) - (a.scored === false ? 0 : 1) || b.alignmentScore - a.alignmentScore);
   // Assign ranks
-  evaluatedCandidates = evaluatedCandidates.map((c, idx) => ({ ...c, rank: idx + 1 }));
+  evaluatedCandidates = evaluatedCandidates.map((c, idx) => ({ ...c, rank: idx + 1, role: designation }));
 
   // 3. Build Comparative Matrix
   const comparativeCriteria: { criteria: string; type: 'EXPERIENCE' | 'SKILL' | 'TOOL' | 'RESPONSIBILITY' | 'PROOF' }[] = [
@@ -720,4 +723,100 @@ export async function runCandidateEvaluation(
 
   evaluationCache.set(cacheKey, { data: responseData, timestamp: now });
   return responseData;
+}
+
+// ------------------------------------------------------------------ the whole list: every applicant against their own role
+
+const ALL_ROLES_NAME = 'All Applications';
+
+function isAllRolesName(designation: string): boolean {
+  return designation.toLowerCase().trim() === ALL_ROLES_NAME.toLowerCase();
+}
+
+/**
+ * "All Applications" is not a role, so there is no single JD to score against. Each role is evaluated on its own
+ * (its own JD, its own repeat-application merge) and the applicants are listed together, best first, with their role.
+ * One shared time budget covers all the resume reading, and AI scoring is left to the per-role view: here it only
+ * shows results that were already cached.
+ */
+async function runAllRolesEvaluation(companyId: string, forceRefresh: boolean): Promise<AIEvaluationResponse> {
+  const cacheKey = `${companyId}|${ALL_ROLES_NAME.toLowerCase()}`;
+  const now = Date.now();
+  if (!forceRefresh && evaluationCache.has(cacheKey)) {
+    const cached = evaluationCache.get(cacheKey)!;
+    if (now - cached.timestamp < CACHE_TTL_MS) return cached.data;
+  }
+
+  const roles = (await getSpreadsheetTabNames(companyId)).filter(
+    t => t.toLowerCase() !== ALL_ROLES_NAME.toLowerCase() && t.toLowerCase() !== 'candidate log' && t.toLowerCase() !== "jd's"
+  );
+
+  const totalBudget = Number.parseInt(process.env.KEYWORD_PASS_BUDGET_MS || '', 10) || 7000;
+  const deadline = Date.now() + totalBudget;
+  const perRole: AIEvaluationResponse[] = [];
+  for (const role of roles) {
+    // Roles are done one after another so they share the resume-reading budget instead of each taking their own.
+    perRole.push(await runCandidateEvaluation(companyId, role, forceRefresh, false, { keywordBudgetMs: Math.max(0, deadline - Date.now()) }));
+  }
+
+  const rolesMissingJd = perRole.filter(r => r.jdSummary.jdProvided === false && r.totalCandidates > 0).map(r => r.designation);
+  const candidates = perRole
+    .flatMap(r => r.candidates)
+    .sort((a, b) => (b.scored === false ? 0 : 1) - (a.scored === false ? 0 : 1) || b.alignmentScore - a.alignmentScore)
+    .map((c, idx) => ({ ...c, rank: idx + 1 }));
+
+  const sum = (pick: (s: NonNullable<AIEvaluationResponse['aiScoring']>) => number | undefined) =>
+    perRole.reduce((n, r) => n + (r.aiScoring ? pick(r.aiScoring) || 0 : 0), 0);
+  const firstOf = <T,>(pick: (s: NonNullable<AIEvaluationResponse['aiScoring']>) => T | undefined) =>
+    perRole.map(r => (r.aiScoring ? pick(r.aiScoring) : undefined)).find(Boolean);
+  const failed = sum(s => s.keywordFailed);
+
+  const response: AIEvaluationResponse = {
+    success: true,
+    timestamp: new Date().toISOString(),
+    designation: ALL_ROLES_NAME,
+    engineUsed: 'enterprise-algorithmic-ai',
+    jdSummary: {
+      designation: ALL_ROLES_NAME,
+      department: 'Various',
+      minExperience: 'Varies by role',
+      maxExperience: 'Varies by role',
+      requiredSkills: [],
+      preferredSkills: [],
+      coreResponsibilities: [],
+      requiredTools: [],
+      proofOfWorkRequirements: [],
+      rawJDText: '',
+      jdProvided: true,
+      jdSource: 'NONE',
+    },
+    allRoles: { roles: roles.length, rolesMissingJd },
+    duplicatesMerged: perRole.reduce((n, r) => n + (r.duplicatesMerged || 0), 0),
+    totalCandidates: candidates.length,
+    candidates,
+    comparativeMatrix: [],
+    hrRecommendation: {
+      topCandidate: null,
+      summaryReasoning: `Each applicant is scored against the job description of the role they applied for (${roles.length} roles). Pick a role to compare its applicants side by side.`,
+      supportingEvidence: [],
+      poolComparativeInsight: '',
+      advisoryDisclaimer: 'Notice: This evaluation provides objective decision support based strictly on documented evidence in candidate profiles against the job description. It does NOT make the final hiring decision, which remains the sole responsibility of the hiring manager and interview committee.',
+    },
+    aiScoring: {
+      enabled: perRole.some(r => r.aiScoring?.enabled),
+      model: firstOf(s => s.model),
+      totalCandidates: candidates.length,
+      aiScored: sum(s => s.aiScored),
+      fromCache: sum(s => s.fromCache),
+      pending: sum(s => s.pending),
+      failed: sum(s => s.failed),
+      keywordScored: sum(s => s.keywordScored),
+      keywordPending: sum(s => s.keywordPending),
+      keywordFailed: failed,
+      keywordFailureNote: failed ? firstOf(s => s.keywordFailureNote) : undefined,
+    },
+    fairnessNote: 'Fairness & Compliance: Evaluation conducted exclusively on verified job-related qualifications, skills, experience, and responsibilities. Protected characteristics (gender, age, race, address, contact info) are strictly excluded.',
+  };
+  evaluationCache.set(cacheKey, { data: response, timestamp: now });
+  return response;
 }

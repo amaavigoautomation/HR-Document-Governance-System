@@ -118,11 +118,13 @@ const apps = [
   application(5, 'Meera Nair', 'meera@x.com', 'https://www.amaavigo.com/cv/old.doc', '2026-10-07T10:00:00Z', 'Support Lead'),
   application(6, 'Login Wall', 'wall@x.com', 'https://www.amaavigo.com/cv/page.html', '2026-10-07T11:00:00Z', 'Support Lead'),
   application(7, 'Gone Missing', 'gone@x.com', 'https://www.amaavigo.com/cv/missing.pdf', '2026-10-07T12:00:00Z', 'Support Lead'),
+  application(8, 'Nobody Jd', 'nojd@x.com', 'https://www.amaavigo.com/cv/strong.docx', '2026-10-08T10:00:00Z', 'Ghost Role'),
 ];
 // "Inside Sales Manager" has no description on the website; "Account Executive" does.
 const openings: any[] = [
   { id: 7, designation: { title: 'Inside Sales Manager' }, no_of_opening: 2, joining_on: '', qualification: '' },
   { id: 8, designation: { title: 'Account Executive' }, no_of_opening: 1, joining_on: '', qualification: 'Required skills\n- Cold calling and negotiation\n' },
+  { id: 10, designation: { title: 'Ghost Role' }, no_of_opening: 1, joining_on: '', qualification: '' },
   { id: 9, designation: { title: 'Support Lead' }, no_of_opening: 1, joining_on: '', qualification: 'Required skills\n- Customer escalations handling\n- Ticket queue management\n' },
 ];
 
@@ -249,6 +251,23 @@ assert.match(missing.error || '', /HTTP 404.*\[93\.184\.216\.34\]/);
 const priv = await readResume('http://10.0.0.5/cv.pdf');
 assert.match(priv.error || '', /not public/i);
 assert.match((await readResume('ftp://x.com/cv.pdf')).error || '', /http or https/i);
+
+// 7. The whole list: each applicant is scored against their own role's JD
+await post(HR, 'jd-delete', { designation: 'Account Executive' }); // back to the website JD
+ev = await evaluate('All Applications');
+assert.ok(ev.allRoles, 'all-roles marker is set');
+assert.deepEqual(ev.allRoles.rolesMissingJd, ['Ghost Role'], JSON.stringify(ev.allRoles));
+assert.equal(ev.comparativeMatrix.length, 0);
+assert.equal(ev.hrRecommendation.topCandidate, null);
+assert.ok(ev.candidates.every((c: any) => typeof c.role === 'string' && c.role));
+const ashaRoles = ev.candidates.filter((c: any) => c.name === 'Asha Rao').map((c: any) => c.role).sort();
+assert.deepEqual(ashaRoles, ['Account Executive', 'Inside Sales Manager'], 'repeat applications merge within a role only');
+assert.equal(ev.candidates.filter((c: any) => c.name === 'Ravi Kumar').length, 1);
+assert.ok(ev.candidates.find((c: any) => c.name === 'Meera Nair').scored, 'scored against Support Lead JD');
+assert.ok(ev.candidates.filter((c: any) => c.role === 'Ghost Role').every((c: any) => c.scored === false), 'no JD, no score');
+const flags = ev.candidates.map((c: any) => c.scored !== false);
+assert.deepEqual(flags, [...flags].sort((a, b) => Number(b) - Number(a)), 'scored candidates are listed first');
+assert.deepEqual(ev.candidates.map((c: any) => c.rank), ev.candidates.map((_: any, i: number) => i + 1));
 
 globalThis.fetch = realFetch;
 console.log('recruitment.scoring: ok');

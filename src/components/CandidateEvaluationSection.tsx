@@ -396,10 +396,12 @@ export const CandidateEvaluationSection: React.FC<CandidateEvaluationSectionProp
             <button
               type="button"
               onClick={runAiScoring}
-              disabled={aiRunning || isLoading || !isHr || evaluation?.aiScoring?.enabled === false}
+              disabled={aiRunning || isLoading || !isHr || evaluation?.aiScoring?.enabled === false || !!evaluation?.allRoles}
               className="inline-flex items-center space-x-1.5 px-3 py-2 rounded-xl bg-white/10 hover:bg-white/20 text-white text-xs font-bold border border-white/20 transition-all cursor-pointer disabled:opacity-50"
               title={
-                evaluation?.aiScoring?.enabled === false
+                evaluation?.allRoles
+                  ? 'Pick a role to run AI evaluation'
+                  : evaluation?.aiScoring?.enabled === false
                   ? 'Set OPENAI_API_KEY on the server to enable AI scoring'
                   : 'Score candidates from their resumes with AI (results are cached; each candidate is only analysed once)'
               }
@@ -415,32 +417,63 @@ export const CandidateEvaluationSection: React.FC<CandidateEvaluationSectionProp
           <div className="mt-5 pt-4 border-t border-slate-800 flex flex-wrap items-center justify-between gap-3 text-xs">
             <div className="flex flex-wrap items-center gap-2">
               <span className="text-slate-400 font-medium">JD Grounding:</span>
-              <span className="font-bold text-white bg-slate-800 px-2.5 py-1 rounded-lg border border-slate-700">
-                {evaluation.jdSummary.designation}
-              </span>
-              <span className="text-slate-400 font-mono text-[11px] bg-white/5 px-2 py-1 rounded-lg">
-                Min Exp: <strong className="text-white">{evaluation.jdSummary.minExperience}</strong>
-              </span>
-              <span className="text-slate-400 font-mono text-[11px] bg-white/5 px-2 py-1 rounded-lg">
-                Core Skills: <strong className="text-white">{evaluation.jdSummary.requiredSkills.length} Criteria</strong>
-              </span>
+              {evaluation.allRoles ? (
+                <span className="font-bold text-white bg-slate-800 px-2.5 py-1 rounded-lg border border-slate-700">
+                  Each applicant is scored against the JD of the role they applied for ({evaluation.allRoles.roles} roles)
+                </span>
+              ) : (
+                <>
+                  <span className="font-bold text-white bg-slate-800 px-2.5 py-1 rounded-lg border border-slate-700">
+                    {evaluation.jdSummary.designation}
+                  </span>
+                  <span className="text-slate-400 font-mono text-[11px] bg-white/5 px-2 py-1 rounded-lg">
+                    Min Exp: <strong className="text-white">{evaluation.jdSummary.minExperience}</strong>
+                  </span>
+                  <span className="text-slate-400 font-mono text-[11px] bg-white/5 px-2 py-1 rounded-lg">
+                    Core Skills: <strong className="text-white">{evaluation.jdSummary.requiredSkills.length} Criteria</strong>
+                  </span>
+                </>
+              )}
               <span className="text-slate-400 font-mono text-[11px] bg-white/5 px-2 py-1 rounded-lg">
                 Applicants: <strong className="text-white">{evaluation.totalCandidates} Evaluated</strong>
               </span>
             </div>
 
-            <button
-              type="button"
-              onClick={() => openJdModal(false)}
-              className="text-xs text-[#FA7014] hover:text-orange-300 font-bold inline-flex items-center gap-1 cursor-pointer transition-colors"
-            >
-              <FileSpreadsheet className="w-3.5 h-3.5" />
-              <span>{canEditJd ? 'View / edit JD' : 'View JD'}</span>
-              <ChevronRight className="w-3.5 h-3.5" />
-            </button>
+            {!evaluation.allRoles && (
+              <button
+                type="button"
+                onClick={() => openJdModal(false)}
+                className="text-xs text-[#FA7014] hover:text-orange-300 font-bold inline-flex items-center gap-1 cursor-pointer transition-colors"
+              >
+                <FileSpreadsheet className="w-3.5 h-3.5" />
+                <span>{canEditJd ? 'View / edit JD' : 'View JD'}</span>
+                <ChevronRight className="w-3.5 h-3.5" />
+              </button>
+            )}
           </div>
         )}
-        {evaluation?.jdSummary && evaluation.jdSummary.jdProvided === false && (
+        {evaluation?.allRoles && evaluation.allRoles.rolesMissingJd.length > 0 && (
+          <div className="mt-4 rounded-xl border border-amber-400/40 bg-amber-400/10 px-3.5 py-2.5 text-xs text-amber-100 space-y-2">
+            <span>
+              {evaluation.allRoles.rolesMissingJd.length === 1 ? 'This role has' : 'These roles have'} no job description, so
+              their applicants cannot be scored yet:
+            </span>
+            <div className="flex flex-wrap gap-2">
+              {evaluation.allRoles.rolesMissingJd.map((role) => (
+                <button
+                  key={role}
+                  type="button"
+                  onClick={() => onSelectDesignation(role)}
+                  className="px-2.5 py-1 rounded-lg bg-white/10 hover:bg-white/20 text-white font-bold cursor-pointer"
+                  title={canEditJd ? 'Open this role to add its job description' : 'Open this role'}
+                >
+                  {role}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+        {evaluation?.jdSummary && !evaluation.allRoles && evaluation.jdSummary.jdProvided === false && (
           <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-amber-400/40 bg-amber-400/10 px-3.5 py-2.5 text-xs text-amber-100">
             <span>
               No job description exists for this role, so applicants cannot be scored yet.
@@ -496,7 +529,8 @@ export const CandidateEvaluationSection: React.FC<CandidateEvaluationSectionProp
       {/* MAIN EVALUATION CONTENT */}
       {evaluation && (
         <div className="space-y-6">
-          {/* 1. HR RECOMMENDATION SUPPORT CARD */}
+          {/* 1. HR RECOMMENDATION SUPPORT CARD (a single role only: a "top candidate" across different roles means nothing) */}
+          {!evaluation.allRoles && (
           <div className="bg-white rounded-2xl border border-slate-200/90 shadow-md p-5 sm:p-6 overflow-hidden relative">
             <div className="flex flex-col lg:flex-row lg:items-start justify-between gap-6">
               {/* Left Column: Top Match Callout */}
@@ -596,6 +630,7 @@ export const CandidateEvaluationSection: React.FC<CandidateEvaluationSectionProp
               </div>
             </div>
           </div>
+          )}
 
           {/* 2. SIDE-BY-SIDE CANDIDATE COMPARISON MATRIX */}
           <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
@@ -641,6 +676,7 @@ export const CandidateEvaluationSection: React.FC<CandidateEvaluationSectionProp
                   <tr className="bg-slate-50/90 border-b border-slate-200 text-slate-600 font-bold uppercase tracking-wider text-[10px]">
                     <th className="px-4 py-3 text-center w-12">Rank</th>
                     <th className="px-4 py-3 min-w-[180px]">Candidate</th>
+                    {evaluation.allRoles && <th className="px-4 py-3 min-w-[150px]">Role</th>}
                     <th className="px-4 py-3 min-w-[140px]">Experience vs. JD</th>
                     <th className="px-4 py-3 min-w-[130px]">Alignment Tier</th>
                     <th className="px-4 py-3 min-w-[90px] text-center">Score</th>
@@ -654,7 +690,7 @@ export const CandidateEvaluationSection: React.FC<CandidateEvaluationSectionProp
                 <tbody className="divide-y divide-slate-100">
                   {filteredCandidates.length === 0 ? (
                     <tr>
-                      <td colSpan={10} className="px-4 py-8 text-center text-slate-500">
+                      <td colSpan={evaluation.allRoles ? 11 : 10} className="px-4 py-8 text-center text-slate-500">
                         No candidates match the selected filters.
                       </td>
                     </tr>
@@ -700,6 +736,10 @@ export const CandidateEvaluationSection: React.FC<CandidateEvaluationSectionProp
                             )}
                           </div>
                         </td>
+
+                        {evaluation.allRoles && (
+                          <td className="px-4 py-3.5 text-slate-700 font-medium">{cand.role || '—'}</td>
+                        )}
 
                         {/* Experience vs JD */}
                         <td className="px-4 py-3.5">
