@@ -97,6 +97,13 @@ export interface LeaveSettings {
   notifyEmails: string[];
   /** Version of the published leave policy (starts at 1; bumped each time a draft is published). */
   policyVersion?: number;
+  /** Date the published version took effect. */
+  effectiveFrom?: string;
+  /** Reference to the approved policy document in Document Governance (title, number or link). */
+  governanceRef?: string;
+  approvedBy?: string;
+  /** When on, rule changes go through draft -> approval -> publish instead of being saved straight away. */
+  requireApproval?: boolean;
 }
 
 // ------------------------------------------------------------------ dates

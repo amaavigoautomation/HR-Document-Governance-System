@@ -7,13 +7,14 @@
  */
 import { authErrorResponse, requireActiveTenant, type AuthContext } from './authContext.js';
 import { hasPerm } from '../../shared/permissions.js';
+import { diffSettings } from '../../shared/leavePolicyDiff.js';
 import {
   DEFAULT_SHIFT, addDays, computeDayStatus, hasOpenSession, sessionsOf, workedMinutesOf, type PunchSession, cycleOf, daysBetween, isIsoDate, istParts, istToInstant, istToday,
   lastDayOfMonth, nationalHolidays, starterSettings, summarizeMonth, timeToMinutes, typeStartMonth,
   type AttendanceRecord, type LeaveLocation, type LeavePolicy, type LeaveSettings, type LeaveType,
 } from '../../shared/leaveEngine.js';
 import {
-  ACTIVE_STATUSES, RESERVING, LeaveError, companyLabel, balanceOf, companyLedger, companyRequests, db, effectiveProfile, entryData, findLocation, findPolicy,
+  ACTIVE_STATUSES, RESERVING, LeaveError, audit, raiseException, companyLabel, balanceOf, companyLedger, companyRequests, db, effectiveProfile, entryData, findLocation, findPolicy,
   findType, ledgerRef, loadPeople, loadProfiles, loadSettings, notify, nowIso, parseApplyInput, personByUid, planRequest, profileId,
   profileOf, requestsOfUser, restoreEntries, runAccrual, str, usageEntries, userLedger,
   type LeaveRequest, type Person, type Profile,
@@ -171,8 +172,36 @@ export function sanitizeSettings(input: any, prev: LeaveSettings): LeaveSettings
   };
 }
 
-async function saveSettings(cid: string, settings: LeaveSettings, by: string) {
-  await db().collection('leaveSettings').doc(cid).set({ ...settings, companyId: cid, updatedAt: nowIso(), updatedBy: by });
+const versionRef = (cid: string, n: number) => db().collection('leavePolicyVersions').doc(`${cid}__${n}`);
+
+/**
+ * Saves the live leave setup. When the rules actually changed, the policy version goes up and the new version is
+ * archived next to a plain-language list of what changed, so every request and approval can be traced to the
+ * rules in force at the time.
+ */
+async function saveSettings(cid: string, settings: LeaveSettings, by: string, byUid = '', opts: { effectiveFrom?: string; approvedBy?: string; governanceRef?: string } = {}) {
+  const prev = await loadSettings(cid);
+  const changes = prev.configured ? diffSettings(prev.settings, settings) : [{ area: 'General' as const, text: 'Initial leave setup.' }];
+  const at = nowIso();
+  let version = prev.settings.policyVersion || (prev.configured ? 1 : 0);
+  const next: LeaveSettings = JSON.parse(JSON.stringify(settings)); // also drops undefined fields
+  if (changes.length > 0 || !prev.configured) {
+    version += 1;
+    next.policyVersion = version;
+    next.effectiveFrom = opts.effectiveFrom || istToday();
+    next.governanceRef = opts.governanceRef ?? prev.settings.governanceRef ?? '';
+    next.approvedBy = opts.approvedBy ?? by;
+    await versionRef(cid, version).set({
+      companyId: cid, version, effectiveFrom: next.effectiveFrom, publishedAt: at, publishedBy: by, approvedBy: next.approvedBy,
+      governanceRef: next.governanceRef, changes: changes.map((c) => ({ area: c.area, text: c.text })), settings: JSON.parse(JSON.stringify(next)),
+    });
+    await audit(cid, 'policy', `v${version}`, prev.configured ? 'POLICY_PUBLISHED' : 'POLICY_CREATED', { name: by, uid: byUid }, prev.configured ? { version: version - 1 } : null,
+      { version, changes: changes.slice(0, 40).map((c) => c.text) });
+  } else {
+    next.policyVersion = version || 1;
+  }
+  await db().collection('leaveSettings').doc(cid).set({ ...next, companyId: cid, updatedAt: at, updatedBy: by });
+  return { version: next.policyVersion || 1, changes };
 }
 
 // ------------------------------------------------------------------ shared lookups
@@ -568,6 +597,7 @@ async function decide(who: Who, body: any): Promise<Result> {
         events.push({ at: now, by: approver, message: `Approved at ${step.role === 'MANAGER' ? 'manager' : 'HR'} level${note}. Waiting for HR.` });
       }
     }
+    if (upd.status === 'APPROVED' || upd.status === 'REJECTED') upd.decisionPolicyVersion = c.settings.policyVersion || 1;
     upd.events = events;
     result = { ...r, ...upd } as LeaveRequest;
     tx.update(ref, upd as any);
@@ -1042,11 +1072,12 @@ async function postSettings(who: Who, body: any): Promise<Result> {
   needManage(who);
   const c = await loadCtx(who);
   const { settings } = await loadSettings(who.cid);
+  if (c.configured && settings.requireApproval) return fail(409, 'Policy changes need approval. Save a draft, submit it, and an administrator publishes it.');
   const clean = sanitizeSettings(body?.settings, settings);
-  await saveSettings(who.cid, clean, c.me.name);
+  const saved = await saveSettings(who.cid, clean, c.me.name, who.ctx.uid);
   // Post any credits that are now due under the new rules (months already credited are left as they are).
   const accrual = await runAccrual(who.cid).catch(() => null);
-  return ok({ settings: clean, accrual });
+  return ok({ settings: { ...clean, policyVersion: saved.version }, accrual, version: saved.version, changes: saved.changes.map((x) => x.text) });
 }
 
 async function applyStarter(who: Who, body: any): Promise<Result> {
@@ -1059,7 +1090,7 @@ async function applyStarter(who: Who, body: any): Promise<Result> {
   const fy = body?.yearStartMonth === 1 ? 1 : 4;
   start.yearStartMonth = fy;
   start.locations[0].holidays = [...nationalHolidays(year), ...nationalHolidays(year + 1)];
-  await saveSettings(who.cid, start, c.me.name);
+  await saveSettings(who.cid, start, c.me.name, who.ctx.uid);
   return ok({ settings: start });
 }
 
@@ -1285,6 +1316,156 @@ async function reportBalances(who: Who): Promise<Result> {
   return ok({ types: types.map((t) => ({ id: t.id, code: t.code, name: t.name })), rows: rows.sort((a, b) => a.name.localeCompare(b.name)) });
 }
 
+// ------------------------------------------------------------------ policy versions: draft -> approve -> publish
+
+const draftRef = (cid: string) => db().collection('leavePolicyDrafts').doc(cid);
+
+interface PolicyDraft {
+  companyId: string;
+  status: 'DRAFT' | 'SUBMITTED' | 'APPROVED';
+  settings: LeaveSettings;
+  baseVersion: number;
+  note: string;
+  governanceRef: string;
+  effectiveFrom: string;
+  savedBy: string;
+  savedByUid: string;
+  savedAt: string;
+  submittedBy?: string;
+  submittedByUid?: string;
+  approvedBy?: string;
+  returnedNote?: string;
+}
+
+async function impactOf(cid: string, live: LeaveSettings, changes: ReturnType<typeof diffSettings>) {
+  const changed = new Set(changes.flatMap((c) => c.policyIds || []));
+  if (changed.size === 0) return { policies: [] as { id: string; name: string; people: number }[], people: 0 };
+  const [people, profiles] = await Promise.all([loadPeople(cid), loadProfiles(cid)]);
+  const count = new Map<string, number>();
+  for (const p of people) {
+    if (!p.active) continue;
+    const prof = effectiveProfile(live, p, profiles.get(p.uid));
+    if (changed.has(prof.policyId)) count.set(prof.policyId, (count.get(prof.policyId) || 0) + 1);
+  }
+  const policies = [...changed].map((id) => ({ id, name: findPolicy(live, id)?.name || id, people: count.get(id) || 0 }));
+  return { policies, people: policies.reduce((n, p) => n + p.people, 0) };
+}
+
+/** Publishes any approved draft whose effective date has arrived. */
+async function activateDue(cid: string, by = 'System'): Promise<boolean> {
+  const snap = await draftRef(cid).get();
+  const d = snap.data() as PolicyDraft | undefined;
+  if (!d || d.status !== 'APPROVED' || d.effectiveFrom > istToday()) return false;
+  const { settings: live } = await loadSettings(cid);
+  const merged: LeaveSettings = { ...d.settings, requireApproval: live.requireApproval };
+  await saveSettings(cid, merged, by, '', { effectiveFrom: d.effectiveFrom, approvedBy: d.approvedBy, governanceRef: d.governanceRef });
+  await draftRef(cid).delete();
+  await runAccrual(cid).catch(() => null);
+  return true;
+}
+
+async function policyState(who: Who): Promise<Result> {
+  needManage(who);
+  await activateDue(who.cid);
+  const { settings: live, configured } = await loadSettings(who.cid);
+  const [dsnap, vs] = await Promise.all([draftRef(who.cid).get(), db().collection('leavePolicyVersions').where('companyId', '==', who.cid).get()]);
+  const d = dsnap.data() as PolicyDraft | undefined;
+  const versions = vs.docs.map((x) => x.data() as any).sort((a, b) => b.version - a.version).slice(0, 30)
+    .map((v) => ({ version: v.version, effectiveFrom: v.effectiveFrom, publishedAt: v.publishedAt, publishedBy: v.publishedBy, approvedBy: v.approvedBy, governanceRef: v.governanceRef, changes: v.changes }));
+  let draft: any = null;
+  if (d) {
+    const changes = diffSettings(live, d.settings);
+    draft = { ...d, settings: d.settings, changes: changes.map((c) => ({ area: c.area, text: c.text })), impact: await impactOf(who.cid, live, changes),
+      stale: d.baseVersion !== (live.policyVersion || 1) };
+  }
+  return ok({
+    configured, version: live.policyVersion || (configured ? 1 : 0), effectiveFrom: live.effectiveFrom || '', governanceRef: live.governanceRef || '',
+    approvedBy: live.approvedBy || '', requireApproval: live.requireApproval === true, canApprove: who.ctx.isCompanyAdmin, draft, versions,
+  });
+}
+
+async function policyDraftSave(who: Who, body: any): Promise<Result> {
+  needManage(who);
+  const c = await loadCtx(who);
+  const { settings: live, configured } = await loadSettings(who.cid);
+  if (!configured) return fail(409, 'Set up leave first, then changes can go through approval.');
+  const cur = (await draftRef(who.cid).get()).data() as PolicyDraft | undefined;
+  if (cur?.status === 'APPROVED') return fail(409, 'An approved change is waiting for its effective date. Discard it first to start another.');
+  const settings: LeaveSettings = JSON.parse(JSON.stringify(sanitizeSettings(body?.settings ?? cur?.settings ?? live, live)));
+  const effectiveFrom = isIsoDate(str(body?.effectiveFrom, 10)) ? str(body.effectiveFrom, 10) : (cur?.effectiveFrom || istToday());
+  const changes = diffSettings(live, settings);
+  if (changes.length === 0) return fail(400, 'Nothing is different from the live policy.');
+  const doc: PolicyDraft = {
+    companyId: who.cid, status: 'DRAFT', settings, baseVersion: live.policyVersion || 1, note: str(body?.note, 500) || cur?.note || '',
+    governanceRef: str(body?.governanceRef, 200) || cur?.governanceRef || '', effectiveFrom, savedBy: c.me.name, savedByUid: who.ctx.uid, savedAt: nowIso(),
+  };
+  await draftRef(who.cid).set(doc);
+  await audit(who.cid, 'policy-draft', who.cid, 'DRAFT_SAVED', { name: c.me.name, uid: who.ctx.uid }, null, { changes: changes.slice(0, 20).map((x) => x.text) });
+  return ok({ changes: changes.map((x) => ({ area: x.area, text: x.text })), impact: await impactOf(who.cid, live, changes) });
+}
+
+async function policySubmit(who: Who): Promise<Result> {
+  needManage(who);
+  const c = await loadCtx(who);
+  const d = (await draftRef(who.cid).get()).data() as PolicyDraft | undefined;
+  if (!d || d.status !== 'DRAFT') return fail(409, 'There is no draft to send for approval.');
+  if (!d.governanceRef) return fail(400, 'Add the reference of the policy document (Document Governance) before sending for approval.');
+  await draftRef(who.cid).update({ status: 'SUBMITTED', submittedBy: c.me.name, submittedByUid: who.ctx.uid, returnedNote: '' });
+  await audit(who.cid, 'policy-draft', who.cid, 'SUBMITTED', { name: c.me.name, uid: who.ctx.uid });
+  const { settings } = await loadSettings(who.cid);
+  await notify(who.cid, settings.notifyEmails, 'Leave policy change waiting for approval', `${c.me.name} sent a leave policy change for approval (effective ${d.effectiveFrom}, document ${d.governanceRef}). Open Leave & Attendance > Setup > Policy changes.`);
+  return ok({});
+}
+
+async function policyDecide(who: Who, body: any): Promise<Result> {
+  if (!who.ctx.isCompanyAdmin) return fail(403, 'Only an administrator can approve a policy change.');
+  const c = await loadCtx(who);
+  const d = (await draftRef(who.cid).get()).data() as PolicyDraft | undefined;
+  if (!d || d.status !== 'SUBMITTED') return fail(409, 'No policy change is waiting for approval.');
+  const { settings: live } = await loadSettings(who.cid);
+  if (d.baseVersion !== (live.policyVersion || 1)) return fail(409, 'The live policy changed after this draft was made. Discard it and make the change again on the current version.');
+  if (body?.decision === 'REJECT') {
+    const note = str(body?.comment, 400);
+    if (!note) return fail(400, 'Say what needs to change.');
+    await draftRef(who.cid).update({ status: 'DRAFT', returnedNote: note });
+    await audit(who.cid, 'policy-draft', who.cid, 'RETURNED', { name: c.me.name, uid: who.ctx.uid }, null, { note });
+    return ok({ status: 'DRAFT' });
+  }
+  const self = d.submittedByUid === who.ctx.uid;
+  await draftRef(who.cid).update({ status: 'APPROVED', approvedBy: c.me.name + (self ? ' (self-approved)' : '') });
+  await audit(who.cid, 'policy-draft', who.cid, self ? 'APPROVED_BY_SUBMITTER' : 'APPROVED', { name: c.me.name, uid: who.ctx.uid });
+  const published = await activateDue(who.cid, c.me.name);
+  return ok({ status: published ? 'PUBLISHED' : 'SCHEDULED', effectiveFrom: d.effectiveFrom });
+}
+
+async function policyDiscard(who: Who): Promise<Result> {
+  needManage(who);
+  const c = await loadCtx(who);
+  await draftRef(who.cid).delete();
+  await audit(who.cid, 'policy-draft', who.cid, 'DISCARDED', { name: c.me.name, uid: who.ctx.uid });
+  return ok({});
+}
+
+async function policySetRequire(who: Who, body: any): Promise<Result> {
+  if (!who.ctx.isCompanyAdmin) return fail(403, 'Only an administrator can change this.');
+  const c = await loadCtx(who);
+  const { settings, configured } = await loadSettings(who.cid);
+  if (!configured) return fail(409, 'Set up leave first.');
+  const value = body?.value === true;
+  await db().collection('leaveSettings').doc(who.cid).update({ requireApproval: value });
+  await audit(who.cid, 'policy', 'approval-rule', value ? 'APPROVAL_REQUIRED_ON' : 'APPROVAL_REQUIRED_OFF', { name: c.me.name, uid: who.ctx.uid }, { requireApproval: settings.requireApproval === true }, { requireApproval: value });
+  return ok({ requireApproval: value });
+}
+
+async function policyVersionView(who: Who, query: any): Promise<Result> {
+  needManage(who);
+  const n = parseInt(str(query?.v, 6), 10);
+  const snap = Number.isFinite(n) ? await versionRef(who.cid, n).get() : null;
+  const v = snap?.data() as any;
+  if (!v || v.companyId !== who.cid) return fail(404, 'Version not found.');
+  return ok({ version: v });
+}
+
 // ------------------------------------------------------------------ cron
 
 export async function runLeaveCron(): Promise<Result> {
@@ -1294,6 +1475,7 @@ export async function runLeaveCron(): Promise<Result> {
   for (const d of snap.docs) {
     const cid = d.id;
     try {
+      await activateDue(cid).catch(() => false);
       const acc = await runAccrual(cid, today);
       // Remind HR about requests nobody has acted on.
       const { settings } = await loadSettings(cid);
@@ -1367,6 +1549,13 @@ export async function routeLeave(r: LeaveRequestIn): Promise<Result> {
       // HR
       case 'settings': if (GET) return await getSettings(who); break;
       case 'save-settings': if (POST) return await postSettings(who, body); break;
+      case 'policy-state': if (GET) return await policyState(who); break;
+      case 'policy-draft-save': if (POST) return await policyDraftSave(who, body); break;
+      case 'policy-submit': if (POST) return await policySubmit(who); break;
+      case 'policy-decide': if (POST) return await policyDecide(who, body); break;
+      case 'policy-discard': if (POST) return await policyDiscard(who); break;
+      case 'policy-require': if (POST) return await policySetRequire(who, body); break;
+      case 'policy-version': if (GET) return await policyVersionView(who, r.query); break;
       case 'apply-starter': if (POST) return await applyStarter(who, body); break;
       case 'people': if (GET) return await people(who); break;
       case 'save-profiles': if (POST) return await saveProfiles(who, body); break;

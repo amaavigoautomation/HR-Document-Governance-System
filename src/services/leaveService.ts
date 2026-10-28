@@ -36,6 +36,13 @@ export const leaveService = {
   // HR
   settings: () => get('settings'),
   saveSettings: (settings: unknown) => post('save-settings', { settings }),
+  policyState: () => get('policy-state'),
+  policyDraftSave: (b: unknown) => post('policy-draft-save', b),
+  policySubmit: () => post('policy-submit', {}),
+  policyDecide: (decision: 'APPROVE' | 'REJECT', comment = '') => post('policy-decide', { decision, comment }),
+  policyDiscard: () => post('policy-discard', {}),
+  policyRequire: (value: boolean) => post('policy-require', { value }),
+  policyVersion: (v: number) => get('policy-version', { v: String(v) }),
   applyStarter: (b: unknown) => post('apply-starter', b),
   people: () => get('people'),
   saveProfiles: (profiles: unknown[]) => post('save-profiles', { profiles }),

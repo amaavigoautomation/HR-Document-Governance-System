@@ -215,6 +215,8 @@ export interface LeaveRequest {
   docUrl: string;
   /** Policy version in force when the request was made (history stays traceable after the policy changes). */
   policyVersion?: number;
+  /** Policy version in force when the final decision was made. */
+  decisionPolicyVersion?: number;
   /** Emergency leave: applied for after the fact, provisional until approved. */
   emergency?: boolean;
   status: RequestStatus;
@@ -488,6 +490,68 @@ export async function notify(companyId: string, to: string[], subject: string, b
   } catch (err: any) {
     console.warn('[Leave] email failed:', err?.message || err);
   }
+}
+
+// ------------------------------------------------------------------ audit trail and exception register
+
+const clean = (v: unknown) => (v === undefined ? null : JSON.parse(JSON.stringify(v)));
+
+export interface AuditEntry {
+  id: string;
+  companyId: string;
+  entity: string;
+  entityId: string;
+  action: string;
+  actor: string;
+  actorUid: string;
+  at: string;
+  oldValue: unknown;
+  newValue: unknown;
+}
+
+/** One company-wide, append-only trail of who changed what (policies, balances, overrides, payroll corrections). */
+export async function audit(companyId: string, entity: string, entityId: string, action: string, actor: { name: string; uid: string },
+  oldValue?: unknown, newValue?: unknown): Promise<void> {
+  const ref = db().collection('leaveAudit').doc();
+  const entry: Omit<AuditEntry, 'id'> = { companyId, entity, entityId, action, actor: actor.name, actorUid: actor.uid, at: nowIso(), oldValue: clean(oldValue), newValue: clean(newValue) };
+  await ref.set(entry);
+}
+
+export type ExceptionCategory =
+  | 'NO_MANAGER' | 'NO_POLICY' | 'MANAGER_AWAY' | 'OVERDUE_APPROVAL' | 'BALANCE_NEGATIVE' | 'ATTENDANCE_MISMATCH'
+  | 'PAYROLL_LOCKED_CHANGE' | 'POLICY_CHANGED' | 'RETRO_LEAVE' | 'EMERGENCY_REVIEW' | 'UNAUTHORIZED';
+
+export interface LeaveException {
+  id: string;
+  companyId: string;
+  category: ExceptionCategory;
+  severity: 'LOW' | 'MEDIUM' | 'HIGH';
+  message: string;
+  requestId: string;
+  uid: string;
+  assignedTo: string;
+  status: 'OPEN' | 'RESOLVED';
+  createdAt: string;
+  resolvedAt?: string;
+  resolvedBy?: string;
+  resolution?: string;
+}
+
+/**
+ * Records a business-rule problem for HR to work through. The id is built from the category and what it is about,
+ * so the same problem raised twice (a rerun, a retry) stays one open item.
+ */
+export async function raiseException(companyId: string, e: { category: ExceptionCategory; severity?: LeaveException['severity']; message: string;
+  requestId?: string; uid?: string; assignedTo?: string; key?: string }): Promise<void> {
+  const id = `${companyId}__${e.category}__${e.key || e.requestId || e.uid || 'general'}`.replace(/[^A-Za-z0-9_-]/g, '_').slice(0, 200);
+  const ref = db().collection('leaveExceptions').doc(id);
+  const cur = await ref.get();
+  if (cur.exists && (cur.data() as LeaveException).status === 'OPEN') return;
+  const doc: LeaveException = {
+    id, companyId, category: e.category, severity: e.severity || 'MEDIUM', message: e.message.slice(0, 400),
+    requestId: e.requestId || '', uid: e.uid || '', assignedTo: e.assignedTo || 'HR', status: 'OPEN', createdAt: nowIso(),
+  };
+  await ref.set(doc);
 }
 
 export { addDays, FieldValue };
