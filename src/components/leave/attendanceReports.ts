@@ -137,9 +137,9 @@ export function pendingTable(items: { docNo: string; name: string; date: string;
 const esc = (v: string | number) => String(v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c] as string));
 
 /** A printable page (Print or Save as PDF from the browser's print box). Values are escaped. */
-export function printHtml(title: string, subtitle: string, t: ReportTable, company = ''): string {
+export function printHtml(title: string, subtitle: string, t: ReportTable, company = '', onePage = false): string {
   return `<!doctype html><html><head><meta charset="utf-8"><title>${esc(title)}</title><style>
 body{font-family:Arial,sans-serif;font-size:11px;color:#111;margin:24px}h1{font-size:16px;margin:0}p{margin:2px 0 12px;color:#555}
-table{border-collapse:collapse;width:100%}th,td{border:1px solid #ccc;padding:4px 6px;text-align:left}th{background:#f1f5f9}
+${onePage ? `@page{size:landscape;margin:8mm}body{margin:0;zoom:${Math.max(0.35, Math.min(1, 38 / Math.max(1, t.rows.length))).toFixed(2)}}` : ''}table{border-collapse:collapse;width:100%}th,td{border:1px solid #ccc;padding:4px 6px;text-align:left}th{background:#f1f5f9}
 </style></head><body>${company ? `<div style="font-size:13px;font-weight:bold;letter-spacing:.04em;margin-bottom:6px">${esc(company)}</div>` : ''}<h1>${esc(title)}</h1><p>${esc(subtitle)}</p><table><thead><tr>${t.headers.map((h) => `<th>${esc(h)}</th>`).join('')}</tr></thead><tbody>${t.rows.map((r) => `<tr>${r.map((c) => `<td>${esc(c)}</td>`).join('')}</tr>`).join('')}</tbody></table></body></html>`;
 }
