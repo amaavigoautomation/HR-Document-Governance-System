@@ -331,7 +331,12 @@ export const firestoreService = {
         }
       }
       if (sanitizedVersion.originalFileUrl && sanitizedVersion.originalFileUrl.startsWith('data:')) {
-        sanitizedVersion.originalFileUrl = sanitizedVersion.fileUrl;
+        // If the original data URL is under 750KB, preserve it directly in Firestore!
+        // This ensures ANY other tab, browser, or remote reviewer immediately has the original binary
+        // without depending on ephemeral local container disk storage.
+        if (sanitizedVersion.originalFileUrl.length > 750000) {
+          sanitizedVersion.originalFileUrl = sanitizedVersion.fileUrl;
+        }
       }
       await setDoc(doc(db, VERSIONS_COLLECTION, sanitizedVersion.id), cleanFirestoreData(sanitizedVersion));
     } catch (e) {
@@ -356,7 +361,9 @@ export const firestoreService = {
         }
       }
       if (sanitizedUpdates.originalFileUrl && sanitizedUpdates.originalFileUrl.startsWith('data:')) {
-        sanitizedUpdates.originalFileUrl = sanitizedUpdates.fileUrl;
+        if (sanitizedUpdates.originalFileUrl.length > 750000) {
+          sanitizedUpdates.originalFileUrl = sanitizedUpdates.fileUrl;
+        }
       }
       await updateDoc(doc(db, VERSIONS_COLLECTION, versionId), cleanFirestoreData(sanitizedUpdates));
     } catch (e) {

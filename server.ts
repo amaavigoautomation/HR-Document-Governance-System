@@ -510,7 +510,7 @@ async function startServer() {
   });
 
   // Media Streaming & Retrieval Endpoint (Supports HTML5 video range streaming)
-  app.get('/api/storage/file/:fileId', (req, res) => {
+  app.get('/api/storage/file/:fileId', async (req, res) => {
     try {
       const rawFileId = path.basename(req.params.fileId);
       let fileId = rawFileId;
@@ -558,7 +558,7 @@ async function startServer() {
           } catch (e) {}
         }
 
-        // Fallback 3: Search governanceEngine document versions in memory for dataUrl
+        // Fallback 3: Search governanceEngine document versions in memory for dataUrl or generate from rawContent
         if (!fs.existsSync(filePath)) {
           try {
             const allVersions = governanceEngine.getDocumentVersions();
@@ -580,9 +580,27 @@ async function startServer() {
                 const b64 = dataUrl.split('base64,')[1];
                 const recoveredBuffer = Buffer.from(b64, 'base64');
                 fs.writeFileSync(filePath, recoveredBuffer);
+              } else if (matchedVer.rawContent && (filePath.endsWith('.docx') || matchedVer.fileName?.endsWith('.docx'))) {
+                const master = governanceEngine.getDocumentMasterById(matchedVer.documentMasterId);
+                const docxBlob = await generateCorporateDocxBlob({
+                  documentTitle: matchedVer.documentTitle || master?.title || 'Corporate Document',
+                  versionNumber: matchedVer.versionNumber || '1.0',
+                  effectiveDate: matchedVer.effectiveFrom || matchedVer.createdAt,
+                  reReviewDate: matchedVer.reviewDueDate,
+                  creationDate: master?.createdAt || matchedVer.createdAt,
+                  createdByName: matchedVer.createdByName || 'HR Author',
+                  approvedByName: matchedVer.status === 'PUBLISHED' ? (matchedVer.reviewedByName || 'Authorized Approver') : 'Not yet approved',
+                  approvedDate: matchedVer.status === 'PUBLISHED' ? (matchedVer.reviewedAt || matchedVer.publishedAt || 'Not yet approved') : 'Not yet approved',
+                  companyName: master?.companyName || 'Amaavigo',
+                  rawContent: matchedVer.rawContent,
+                });
+                const buf = Buffer.from(await docxBlob.arrayBuffer());
+                fs.writeFileSync(filePath, buf);
               }
             }
-          } catch (e) {}
+          } catch (e) {
+            console.warn('[Server Storage] Fallback docx synthesis notice:', e);
+          }
         }
       }
 

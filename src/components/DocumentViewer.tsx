@@ -35,7 +35,14 @@ import {
   stripPolicyMetadataHeader,
 } from '../utils/documentHeaderFooter';
 import { generateCorporatePdfBlob } from '../utils/pdfGenerator';
-import { stampPdfWithHeaderFooter, stampDocxWithHeaderFooter, toUint8Array, downloadDocumentWithIntactFormat, resolveDocumentBytes } from '../utils/documentStamper';
+import {
+  stampPdfWithHeaderFooter,
+  stampDocxWithHeaderFooter,
+  toUint8Array,
+  downloadDocumentWithIntactFormat,
+  resolveDocumentBytes,
+  generateCorporateDocxBlob,
+} from '../utils/documentStamper';
 import { renderAsync } from 'docx-preview';
 import { resolvePlayableMediaUrl } from '../services/mediaStorage';
 import { InlineRevisionComment, User } from '../types';
@@ -628,67 +635,94 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({
   }, [headerFooterData, rawContent]);
 
   // Prepare stamped DOCX for high-fidelity interactive preview
-  // Preserves 100% of original fonts, sizes, colors, and layout while displaying the official header & footer
+  // Preserves 100% of original fonts, sizes, colors, and layout while displaying the official header & footer.
+  // Resilient across multiple tabs, incognito sessions, and new browser windows via automatic on-the-fly DOCX synthesis.
   useEffect(() => {
     let isMounted = true;
     if (isDocx) {
       const source = effectiveFileUrl || null;
-      if (source) {
-        setLoadingDocx(true);
-        setDocxError(null);
-        (async () => {
-          try {
-            const bytes = await resolveDocumentBytes(source);
-            if (bytes.length > 4 && bytes[0] === 0x50 && bytes[1] === 0x4b) {
-              if (effectiveHeaderFooterData) {
-                const stamped = await stampDocxWithHeaderFooter(bytes, {
-                  documentTitle: effectiveHeaderFooterData.documentTitle || fileName.replace(/\.[^/.]+$/, ''),
-                  versionNumber: effectiveHeaderFooterData.versionNumber || '1.0',
-                  effectiveDate: effectiveHeaderFooterData.effectiveDate || new Date().toISOString(),
-                  reReviewDate: effectiveHeaderFooterData.reReviewDate,
-                  creationDate: effectiveHeaderFooterData.creationDate,
-                  createdByName: effectiveHeaderFooterData.createdByName,
-                  approvedByName: effectiveHeaderFooterData.approvedByName,
-                  approvedDate: effectiveHeaderFooterData.approvedDate,
-                  companyName: effectiveHeaderFooterData.companyName,
-                });
-                if (isMounted) {
-                  setStampedDocxBlob(stamped.blob);
-                  setLoadingDocx(false);
-                }
-              } else {
-                const blob = new Blob([bytes], {
-                  type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-                });
-                if (isMounted) {
-                  setStampedDocxBlob(blob);
-                  setLoadingDocx(false);
+      setLoadingDocx(true);
+      setDocxError(null);
+
+      (async () => {
+        try {
+          let docxBlobToRender: Blob | null = null;
+
+          // 1. First Tier: Attempt to resolve original binary DOCX bytes from source dataUrl / network URL / local IndexedDB
+          if (source) {
+            try {
+              const extraIds = [versionId, documentId, fileName].filter(Boolean) as string[];
+              const bytes = await resolveDocumentBytes(source, extraIds);
+              if (bytes && bytes.length > 4 && bytes[0] === 0x50 && bytes[1] === 0x4b) {
+                if (effectiveHeaderFooterData) {
+                  const stamped = await stampDocxWithHeaderFooter(bytes, {
+                    documentTitle: effectiveHeaderFooterData.documentTitle || fileName.replace(/\.[^/.]+$/, ''),
+                    versionNumber: effectiveHeaderFooterData.versionNumber || '1.0',
+                    effectiveDate: effectiveHeaderFooterData.effectiveDate || new Date().toISOString(),
+                    reReviewDate: effectiveHeaderFooterData.reReviewDate,
+                    creationDate: effectiveHeaderFooterData.creationDate,
+                    createdByName: effectiveHeaderFooterData.createdByName,
+                    approvedByName: effectiveHeaderFooterData.approvedByName,
+                    approvedDate: effectiveHeaderFooterData.approvedDate,
+                    companyName: effectiveHeaderFooterData.companyName,
+                  });
+                  docxBlobToRender = stamped.blob;
+                } else {
+                  docxBlobToRender = new Blob([bytes], {
+                    type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+                  });
                 }
               }
-            } else {
-              if (isMounted) {
-                setLoadingDocx(false);
-                setViewMode('formatted');
-              }
-            }
-          } catch (err: any) {
-            console.warn('Could not prepare stamped DOCX preview:', err);
-            if (isMounted) {
-              setDocxError('Interactive Word preview could not render.');
-              setLoadingDocx(false);
-              setViewMode('formatted');
+            } catch (resolveErr) {
+              console.warn('[DocumentViewer] Binary DOCX resolve notice, switching to corporate docx generator:', resolveErr);
             }
           }
-        })();
-      } else {
-        setLoadingDocx(false);
-        setViewMode('formatted');
-      }
+
+          // 2. Second Tier (Resilient Cross-Tab Fallback): If source binary was not accessible in this tab,
+          // dynamically synthesize the pristine corporate DOCX document on-the-fly directly from rawContent!
+          if (!docxBlobToRender && rawContent && rawContent.trim()) {
+            try {
+              docxBlobToRender = await generateCorporateDocxBlob({
+                documentTitle: effectiveHeaderFooterData?.documentTitle || fileName.replace(/\.[^/.]+$/, ''),
+                versionNumber: effectiveHeaderFooterData?.versionNumber || '1.0',
+                effectiveDate: effectiveHeaderFooterData?.effectiveDate || new Date().toISOString(),
+                reReviewDate: effectiveHeaderFooterData?.reReviewDate,
+                creationDate: effectiveHeaderFooterData?.creationDate,
+                createdByName: effectiveHeaderFooterData?.createdByName,
+                approvedByName: effectiveHeaderFooterData?.approvedByName,
+                approvedDate: effectiveHeaderFooterData?.approvedDate,
+                companyName: effectiveHeaderFooterData?.companyName || 'Amaavigo',
+                rawContent,
+              });
+            } catch (genErr) {
+              console.warn('[DocumentViewer] Corporate DOCX synthesis error:', genErr);
+            }
+          }
+
+          if (!isMounted) return;
+
+          if (docxBlobToRender) {
+            setStampedDocxBlob(docxBlobToRender);
+            setLoadingDocx(false);
+          } else {
+            setLoadingDocx(false);
+            setDocxError('Word document preview could not render.');
+            setViewMode('formatted');
+          }
+        } catch (err: any) {
+          console.warn('Could not prepare stamped DOCX preview:', err);
+          if (isMounted) {
+            setDocxError('Interactive Word preview could not render.');
+            setLoadingDocx(false);
+            setViewMode('formatted');
+          }
+        }
+      })();
     }
     return () => {
       isMounted = false;
     };
-  }, [isDocx, effectiveFileUrl, effectiveHeaderFooterData, fileName]);
+  }, [isDocx, effectiveFileUrl, effectiveHeaderFooterData, fileName, rawContent, versionId, documentId]);
 
   // Calculate scale so the entire Word (DOCX) page width fits within the container without clipping
   const handleFitDocxWidth = useCallback(() => {
@@ -1313,6 +1347,13 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({
               <div className="py-16 text-center text-slate-500">
                 <div className="w-8 h-8 border-2 border-[#FA7014] border-t-transparent rounded-full animate-spin mx-auto mb-3" />
                 <p className="text-xs">Rendering Word Document with intact fonts, styles, and header/footer...</p>
+              </div>
+            )}
+
+            {!loadingDocx && !stampedDocxBlob && !docxError && (
+              <div className="py-16 text-center text-slate-500">
+                <div className="w-8 h-8 border-2 border-[#FA7014] border-t-transparent rounded-full animate-spin mx-auto mb-3" />
+                <p className="text-xs">Preparing Word Document preview...</p>
               </div>
             )}
 
