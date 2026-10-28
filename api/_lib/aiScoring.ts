@@ -77,6 +77,12 @@ function apiKey(): string {
 
 const modelName = () => (process.env.OPENAI_SCORING_MODEL || process.env.OPENAI_MODEL || 'gpt-4o-mini').trim();
 
+/** Blank lines in a saved JD would count as requirements nothing can match, pushing every candidate to the same score. */
+export function cleanJd(jd: { requiredSkills: string[]; coreResponsibilities: string[] }) {
+  const keep = (a: string[]) => (Array.isArray(a) ? a.map((x) => String(x ?? '').trim()).filter((x) => /[a-z0-9]/i.test(x)) : []);
+  return { requiredSkills: keep(jd.requiredSkills), coreResponsibilities: keep(jd.coreResponsibilities) };
+}
+
 export function isAiScoringEnabled(): boolean {
   return !!apiKey();
 }
@@ -355,6 +361,11 @@ async function callOpenAi(
       return { error: 'The model returned invalid JSON.' };
     }
 
+    // A reply without the two lists is a bad reply, not "nothing evidenced": do not cache it as a result.
+    if (!Array.isArray(parsed?.skills) || !Array.isArray(parsed?.responsibilities)) {
+      return { error: 'The model reply was not in the expected shape. Try again.' };
+    }
+
     const resumeNorm = norm(resume);
     const fix = (arr: any, count: number) => {
       const out: { status: Status; evidence: string }[] = Array.from({ length: count }, () => ({
@@ -516,7 +527,8 @@ export async function applyAiScoring<C extends ScorableCandidate>(args: {
   results: C[];
   evaluate: boolean;
 }): Promise<{ results: C[]; summary: AiScoringSummary }> {
-  const { jd, evaluate } = args;
+  const { evaluate } = args;
+  const jd = cleanJd(args.jd);
   const summary: AiScoringSummary = {
     enabled: isAiScoringEnabled(),
     model: modelName(),
