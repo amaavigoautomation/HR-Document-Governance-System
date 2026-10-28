@@ -14,6 +14,7 @@ import { hasPerm } from '../../shared/permissions.js';
 import {
   db, loadPeople, loadProfiles, notify, nowIso, personByUid, profileId, profileOf, str, companyLabel, type Person, type Profile,
 } from './leaveCore.js';
+import { IDENTITY_TYPES, identityProblem, identityTypeKeys, normalizeIdentity } from '../../shared/employeeIdentity.js';
 import { istToday } from '../../shared/leaveEngine.js';
 import {
   ASSIGNEE_LABEL, DEFAULT_CLEARANCE, DEFAULT_LETTERS, DEFAULT_TASK_TEMPLATES, EXIT_REASONS, EXIT_STATUS_LABEL, MERGE_FIELDS,
@@ -813,6 +814,78 @@ async function profileSave(w: Who, body: any): Promise<Result> {
   return ok({});
 }
 
+// ------------------------------------------------------------------ employee identity (Employee > Employee Identity)
+//
+// Government ID numbers are kept in the server-only employeeIdentities collection and only ever returned to the person
+// themselves and to HR. An employee's change waits for HR approval; the approved number stays in force until then.
+
+interface IdentityDoc {
+  companyId: string; uid: string; type: string;
+  number: string;          // approved number
+  pendingNumber: string;   // waiting for HR, '' when nothing is waiting
+  status: 'APPROVED' | 'PENDING' | 'REJECTED' | '';
+  note: string;
+  updatedAt: string; updatedBy: string;
+}
+const identityDocId = (cid: string, uid: string, type: string) => `${cid}__${uid}__${type}`;
+
+async function identityGet(w: Who, q: any): Promise<Result> {
+  const uid = str(q?.uid, 128) || w.uid;
+  if (uid !== w.uid && !canSeeProfiles(w)) return fail(403, 'You can only open your own identity details.');
+  if (!(await personByUid(w.cid, uid))) return fail(404, 'Employee not found.');
+  const snap = await db().collection('employeeIdentities').where('companyId', '==', w.cid).where('uid', '==', uid).get();
+  const have = new Map<string, IdentityDoc>(snap.docs.map((d: any) => [String(d.data().type), d.data() as IdentityDoc]));
+  return ok({
+    canDecide: w.canManage, canEditDirect: w.canManage,
+    items: IDENTITY_TYPES.map((t) => {
+      const d = have.get(t.key);
+      return { type: t.key, label: t.label, hint: t.hint, number: d?.number || '', pendingNumber: d?.pendingNumber || '', status: d?.status || '', note: d?.note || '', updatedAt: d?.updatedAt || '' };
+    }),
+  });
+}
+
+async function identitySave(w: Who, body: any): Promise<Result> {
+  const uid = str(body?.uid, 128) || w.uid;
+  const type = str(body?.type, 40);
+  if (uid !== w.uid && !w.canManage) return fail(403, 'Only HR can change someone else\'s identity details.');
+  if (!(await personByUid(w.cid, uid))) return fail(404, 'Employee not found.');
+  const number = normalizeIdentity(body?.number);
+  if (number) { const problem = identityProblem(type, number); if (problem) return fail(400, problem); }
+  else if (!identityTypeKeys.includes(type)) return fail(400, 'Unknown identity type.');
+  const ref = db().collection('employeeIdentities').doc(identityDocId(w.cid, uid, type));
+  const cur = await ref.get();
+  const old: Partial<IdentityDoc> = cur.exists && cur.data().companyId === w.cid ? cur.data() : {};
+  const base = { companyId: w.cid, uid, type, updatedAt: nowIso(), updatedBy: w.uid, note: '' };
+  if (w.canManage) {
+    // HR's own entry is final: no approval step.
+    await ref.set(clean({ ...base, number, pendingNumber: '', status: number ? 'APPROVED' : '' }));
+    return ok({ status: number ? 'APPROVED' : '' });
+  }
+  if (!number) return fail(400, 'Enter the number. HR can remove one.');
+  if (number === old.number && !old.pendingNumber) return ok({ status: old.status || 'APPROVED' });
+  await ref.set(clean({ ...base, number: old.number || '', pendingNumber: number, status: 'PENDING' }));
+  return ok({ status: 'PENDING' });
+}
+
+async function identityDecide(w: Who, body: any): Promise<Result> {
+  needManage(w);
+  const uid = str(body?.uid, 128);
+  const type = str(body?.type, 40);
+  const ref = db().collection('employeeIdentities').doc(identityDocId(w.cid, uid, type));
+  const cur = await ref.get();
+  const d: IdentityDoc | null = cur.exists && cur.data().companyId === w.cid ? (cur.data() as IdentityDoc) : null;
+  if (!d || d.status !== 'PENDING' || !d.pendingNumber) return fail(409, 'There is nothing waiting for approval here.');
+  const approve = body?.approve === true;
+  const note = str(body?.note, 300);
+  if (!approve && !note) return fail(400, 'Give a short reason so the employee knows what to fix.');
+  await ref.set(clean(approve
+    ? { ...d, number: d.pendingNumber, pendingNumber: '', status: 'APPROVED', note: '', updatedAt: nowIso(), updatedBy: w.uid }
+    : { ...d, pendingNumber: '', status: d.number ? 'APPROVED' : 'REJECTED', note, updatedAt: nowIso(), updatedBy: w.uid }));
+  const label = IDENTITY_TYPES.find((t) => t.key === type)?.label || type;
+  await notify(w.cid, [uid], `${label} ${approve ? 'approved' : 'not approved'}`, approve ? `HR approved your ${label}.` : `HR did not approve your ${label}: ${note}`).catch(() => undefined);
+  return ok({});
+}
+
 // ------------------------------------------------------------------ router
 
 async function me(w: Who): Promise<Result> {
@@ -884,6 +957,9 @@ export async function routeLifecycle(r: LifecycleRequestIn): Promise<Result> {
       case 'letters': return GET ? await lettersList(w, r.query) : wrong;
       case 'my-letters': return GET ? await myLetters(w) : wrong;
       case 'letter': return GET ? await letterGet(w, r.query) : wrong;
+      case 'identity': return GET ? await identityGet(w, r.query) : wrong;
+      case 'identity-save': return POST ? await identitySave(w, body) : wrong;
+      case 'identity-decide': return POST ? await identityDecide(w, body) : wrong;
       case 'profile': return GET ? await profileGet(w, r.query) : wrong;
       case 'profile-save': return POST ? await profileSave(w, body) : wrong;
       case 'directory': return GET ? await directory(w, r.query) : wrong;

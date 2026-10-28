@@ -1,5 +1,5 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { Briefcase, Building2, FileText, Pencil, RefreshCw, Search, UserRound } from 'lucide-react';
+import React, { useCallback, useEffect, useState } from 'react';
+import { Briefcase, Building2, FileText, Pencil, RefreshCw, UserRound } from 'lucide-react';
 import { lifecycleService } from '../../services/lifecycleService';
 import { Avatar } from '../home/parts';
 import { Drawer, Field, Notice, btnGhost, btnPrimary, input, niceDate, useRunner } from '../leave/ui';
@@ -61,23 +61,14 @@ const EditDrawer: React.FC<{ p: Profile; open: boolean; onClose: () => void; onS
 };
 
 /** Employee Master: one employee's profile. Everyone opens their own; HR can pick anyone. */
-export const EmployeeProfilePage: React.FC<{ canPick: boolean }> = ({ canPick }) => {
-  const [uid, setUid] = useState<string | undefined>(undefined);
+export const EmployeeProfilePage: React.FC<{ uid?: string }> = ({ uid }) => {
   const [data, setData] = useState<{ profile: Profile; canEdit: boolean } | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [tab, setTab] = useState<Tab>('about');
   const [edit, setEdit] = useState(false);
-  const [q, setQ] = useState('');
-  const [people, setPeople] = useState<{ uid: string; name: string; empId: string }[]>([]);
 
   const load = useCallback(() => lifecycleService.profile(uid).then((d) => { setData(d); setErr(null); }).catch((e) => setErr(e.message)), [uid]);
-  useEffect(() => { load(); }, [load]);
-  useEffect(() => { if (canPick) lifecycleService.directory(true).then((d) => setPeople(d.people)).catch(() => undefined); }, [canPick]);
-
-  const matches = useMemo(() => {
-    const n = q.trim().toLowerCase();
-    return n ? people.filter((p) => `${p.name} ${p.empId}`.toLowerCase().includes(n)).slice(0, 8) : [];
-  }, [q, people]);
+  useEffect(() => { setTab('about'); load(); }, [load]);
 
   if (err) return <Notice tone="error">{err}</Notice>;
   if (!data) return <div className="text-sm text-slate-500">Loading…</div>;
@@ -85,20 +76,6 @@ export const EmployeeProfilePage: React.FC<{ canPick: boolean }> = ({ canPick })
 
   return (
     <div className="space-y-4">
-      {canPick && (
-        <div className="relative max-w-sm">
-          <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" aria-hidden />
-          <input className={`${input} pl-9`} placeholder="Find an employee by name or code" value={q} onChange={(e) => setQ(e.target.value)} aria-label="Find an employee" />
-          {matches.length > 0 && (
-            <ul className="absolute z-10 mt-1 w-full bg-white border border-slate-200 rounded-lg shadow-lg overflow-hidden">
-              {matches.map((m) => (
-                <li key={m.uid}><button type="button" className="w-full text-left px-3 py-2 text-sm hover:bg-slate-50" onClick={() => { setUid(m.uid); setQ(''); setTab('about'); }}>{m.name}<span className="text-xs text-slate-400 ml-2">{m.empId}</span></button></li>
-              ))}
-            </ul>
-          )}
-        </div>
-      )}
-
       <section className="bg-white border border-slate-200 rounded-xl p-4 flex flex-col sm:flex-row gap-5">
         <div className="relative shrink-0 self-start"><span className="inline-flex"><Avatar name={p.name} size="lg" /></span></div>
         <div className="min-w-0 flex-1">

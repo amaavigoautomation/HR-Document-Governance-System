@@ -43,6 +43,10 @@ export const lifecycleService = {
   // employee profile
   profile: (uid?: string) => get('profile', { uid }),
   saveProfile: (uid: string, fields: Record<string, string>) => post('profile-save', { uid, fields }),
+  // identity documents
+  identities: (uid?: string) => get('identity', { uid }),
+  saveIdentity: (b: { uid?: string; type: string; number: string }) => post('identity-save', b),
+  decideIdentity: (b: { uid: string; type: string; approve: boolean; note?: string }) => post('identity-decide', b),
   // directory
   directory: (all = false) => get('directory', { all: all ? '1' : undefined }),
   setManager: (uid: string, managerUid: string) => post('set-manager', { uid, managerUid }),

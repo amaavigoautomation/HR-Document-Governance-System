@@ -4,6 +4,8 @@ import { User } from '../../types';
 import { peopleNav } from '../lifecycle/peopleNav';
 import { EMPLOYEE_ENTRIES, employeeNav, employeeNavItems } from './employeeNav';
 import { EmployeeProfilePage } from './EmployeeProfilePage';
+import { EmployeeIdentityPage } from './EmployeeIdentityPage';
+import { EmployeePicker } from './EmployeePicker';
 import type { HRAgentModule } from '../HRAgentShell';
 
 /** Screens that already exist elsewhere in the app. The rest show a "not set up yet" page until they are built. */
@@ -14,6 +16,7 @@ const EXISTING: Record<string, { label: string; open: (go: (m: HRAgentModule) =>
 
 export const EmployeeModule: React.FC<{ currentUser: User; canPick?: boolean; onOpenModule: (m: HRAgentModule) => void }> = ({ canPick = false, onOpenModule }) => {
   const { section } = employeeNav.useNav();
+  const [pickedUid, setPickedUid] = useState<string | undefined>(undefined);
   const [tab, setTab] = useState<'Transaction' | 'Reports'>('Transaction');
   useEffect(() => { employeeNav.publish(employeeNavItems()); }, []);
   useEffect(() => () => employeeNav.publish([]), []);
@@ -51,9 +54,11 @@ export const EmployeeModule: React.FC<{ currentUser: User; canPick?: boolean; on
           </div>
         )}
 
-        {entry?.key === 'master' && <EmployeeProfilePage canPick={canPick} />}
+        {canPick && (entry?.key === 'master' || entry?.key === 'identity') && <EmployeePicker current={pickedUid} onPick={setPickedUid} />}
+        {entry?.key === 'master' && <EmployeeProfilePage uid={pickedUid} />}
+        {entry?.key === 'identity' && <EmployeeIdentityPage uid={pickedUid} />}
 
-        {entry && entry.key !== 'master' && (
+        {entry && entry.key !== 'master' && entry.key !== 'identity' && (
           <div className="bg-white border border-slate-200 rounded-2xl p-8 text-center">
             <h2 className="text-base font-black text-slate-800">{entry.label}</h2>
             <p className="text-xs text-slate-500 mt-1">{entry.hint}</p>

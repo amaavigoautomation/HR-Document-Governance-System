@@ -211,4 +211,36 @@ assert.equal((await call(HR, 'POST', 'profile-save', { uid: 'u_emp', fields: { d
 assert.equal((await call(HR, 'POST', 'profile-save', { uid: 'u_emp', fields: { gender: 'x' } })).status, 400);
 assert.equal((await call(FOREIGN, 'GET', 'profile', {}, { uid: 'u_emp' })).status, 404, 'another company cannot read it');
 
+// ---- employee identity
+{
+  const list = async (h: any, uid?: string) => (await call(h, 'GET', 'identity', {}, uid ? { uid } : {})).json;
+  const first = await list(EMP);
+  assert.equal(first.items.length, 5);
+  assert.ok(first.items.every((i: any) => i.number === '' && i.status === ''));
+  assert.equal((await call(EMP, 'POST', 'identity-save', { type: 'PAN', number: 'bad' })).status, 400);
+  assert.equal((await call(EMP, 'POST', 'identity-save', { type: 'AADHAAR', number: '1234 5678 9012' })).status, 400, 'aadhaar cannot start with 0 or 1');
+  assert.equal((await call(EMP, 'POST', 'identity-save', { type: 'PAN', number: 'pawps4272m' })).json.status, 'PENDING');
+  let pan = (await list(EMP)).items.find((i: any) => i.type === 'PAN');
+  assert.equal(pan.pendingNumber, 'PAWPS4272M');
+  assert.equal(pan.number, '', 'nothing approved yet');
+  assert.equal((await call(OTHER, 'GET', 'identity', {}, { uid: 'u_emp' })).status, 403);
+  assert.equal((await call(EMP, 'POST', 'identity-decide', { uid: 'u_emp', type: 'PAN', approve: true })).status, 403);
+  assert.equal((await call(HR, 'POST', 'identity-decide', { uid: 'u_emp', type: 'PAN', approve: false })).status, 400, 'a reason is needed');
+  await ok(HR, 'POST', 'identity-decide', { uid: 'u_emp', type: 'PAN', approve: true });
+  pan = (await list(HR, 'u_emp')).items.find((i: any) => i.type === 'PAN');
+  assert.equal(pan.number, 'PAWPS4272M'); assert.equal(pan.status, 'APPROVED'); assert.equal(pan.pendingNumber, '');
+  // a later change keeps the approved number until HR decides; a rejection restores it
+  await ok(EMP, 'POST', 'identity-save', { type: 'PAN', number: 'ABCDE1234F' });
+  pan = (await list(EMP)).items.find((i: any) => i.type === 'PAN');
+  assert.equal(pan.number, 'PAWPS4272M'); assert.equal(pan.pendingNumber, 'ABCDE1234F');
+  await ok(HR, 'POST', 'identity-decide', { uid: 'u_emp', type: 'PAN', approve: false, note: 'Does not match the card' });
+  pan = (await list(EMP)).items.find((i: any) => i.type === 'PAN');
+  assert.equal(pan.number, 'PAWPS4272M'); assert.equal(pan.pendingNumber, ''); assert.equal(pan.note, 'Does not match the card');
+  assert.equal((await call(HR, 'POST', 'identity-decide', { uid: 'u_emp', type: 'PAN', approve: true })).status, 409, 'nothing is waiting any more');
+  // HR's own entry is final
+  assert.equal((await call(HR, 'POST', 'identity-save', { uid: 'u_emp', type: 'PASSPORT', number: 'A1234567' })).json.status, 'APPROVED');
+  assert.equal((await call(EMP, 'POST', 'identity-save', { uid: 'u_mgr', type: 'PASSPORT', number: 'A1234567' })).status, 403);
+  assert.equal((await call(FOREIGN, 'GET', 'identity', {}, { uid: 'u_emp' })).status, 404, 'another company cannot read it');
+}
+
 console.log('lifecycle tests passed');
