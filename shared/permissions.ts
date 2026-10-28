@@ -51,6 +51,10 @@ export const PERMISSIONS: PermissionDef[] = [
   // People lifecycle (everyone sees the directory, their own tasks, exit and letters; managers handle their team's exits)
   { key: 'lifecycle.manage', label: 'Run onboarding tasks, exits and no-dues clearance, and issue letters', group: 'People' },
 
+  // Home page (everyone sees Home; these two let someone fill it)
+  { key: 'announce.manage', label: 'Post announcements and the leadership message on Home', group: 'Home' },
+  { key: 'home.manage', label: 'Set up Home: quick links and which cards show', group: 'Home' },
+
   // Administration
   { key: 'users.manage', label: 'Add, edit and deactivate users', group: 'Administration' },
   { key: 'departments.manage', label: 'Manage departments', group: 'Administration' },
@@ -110,7 +114,7 @@ export const DEFAULT_ROLE_TEMPLATES: RoleTemplate[] = [
       'req.create', 'req.view_all', 'req.assign', 'req.hr_decide', 'req.manage_jd',
       'talent.view', 'candidate.evaluate', 'onboarding.manage', 'app.manage',
       'users.manage', 'departments.manage', 'doc.acknowledge', 'doc.suggest',
-      'leave.manage', 'leave.report', 'lifecycle.manage',
+      'leave.manage', 'leave.report', 'lifecycle.manage', 'announce.manage', 'home.manage',
     ],
   },
   {
@@ -122,7 +126,7 @@ export const DEFAULT_ROLE_TEMPLATES: RoleTemplate[] = [
       'doc.create', 'compliance.view',
       'req.create', 'req.hr_decide', 'req.manage_jd',
       'talent.view', 'candidate.evaluate', 'onboarding.manage', 'app.manage',
-      'doc.acknowledge', 'doc.suggest', 'leave.manage', 'leave.report', 'lifecycle.manage',
+      'doc.acknowledge', 'doc.suggest', 'leave.manage', 'leave.report', 'lifecycle.manage', 'announce.manage',
     ],
   },
   {
@@ -133,7 +137,7 @@ export const DEFAULT_ROLE_TEMPLATES: RoleTemplate[] = [
     permissions: [
       'doc.review', 'doc.publish', 'compliance.view', 'audit.view',
       'req.view_all', 'req.assign', 'req.founder_decide', 'talent.view',
-      'doc.acknowledge', 'doc.suggest', 'leave.report',
+      'doc.acknowledge', 'doc.suggest', 'leave.report', 'announce.manage',
     ],
   },
   {

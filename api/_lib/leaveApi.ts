@@ -229,7 +229,7 @@ function attendanceId(cid: string, uid: string, date: string) {
   return `${cid}__${uid}__${date}`;
 }
 
-async function attendanceOfUser(cid: string, uid: string, month: string): Promise<Map<string, AttendanceRecord & { source?: string; note?: string }>> {
+export async function attendanceOfUser(cid: string, uid: string, month: string): Promise<Map<string, AttendanceRecord & { source?: string; note?: string }>> {
   const snap = await db().collection('leaveAttendance').where('companyId', '==', cid).where('uid', '==', uid).where('month', '==', month).get();
   const m = new Map<string, any>();
   snap.docs.forEach((d) => m.set(String(d.get('date')), d.data()));
@@ -669,7 +669,7 @@ function ipAllowed(settings: LeaveSettings, ip?: string): boolean {
   return settings.allowedIps.some((a) => v === a || (a.endsWith('.') && v.startsWith(a)));
 }
 
-async function punch(who: Who, kind: 'in' | 'out', ip?: string): Promise<Result> {
+async function punch(who: Who, kind: 'in' | 'out', ip?: string, body?: any): Promise<Result> {
   const c = await loadCtx(who);
   if (!ipAllowed(c.settings, ip)) return fail(403, 'Check in from your office network.');
   const date = istToday();
@@ -677,14 +677,15 @@ async function punch(who: Who, kind: 'in' | 'out', ip?: string): Promise<Result>
   const snap = await ref.get();
   const rec: any = snap.exists ? snap.data() : null;
   const now = nowIso();
+  const remarks = str(body?.remarks, 200);
   if (kind === 'in') {
     if (rec?.checkIn) return fail(409, `You already checked in at ${istParts(rec.checkIn).time}.`);
-    await ref.set({ companyId: who.cid, uid: c.me.uid, date, month: date.slice(0, 7), checkIn: now, checkOut: null, source: 'SELF', ip: ip || '', updatedAt: now });
+    await ref.set({ companyId: who.cid, uid: c.me.uid, date, month: date.slice(0, 7), checkIn: now, checkOut: null, source: 'SELF', ip: ip || '', inNote: remarks, updatedAt: now });
     return ok({ time: istParts(now).time });
   }
   if (!rec?.checkIn) return fail(409, 'Check in first.');
   if (new Date(now).getTime() - new Date(rec.checkIn).getTime() < 60_000) return fail(409, 'Please wait a minute before checking out.');
-  await ref.update({ checkOut: now, updatedAt: now });
+  await ref.update({ checkOut: now, outNote: remarks, updatedAt: now });
   return ok({ time: istParts(now).time });
 }
 
@@ -1109,8 +1110,8 @@ export async function routeLeave(r: LeaveRequestIn): Promise<Result> {
       case 'clear-delegation': if (POST) return await clearDelegation(who, body); break;
       case 'decide': if (POST) return await decide(who, body); break;
       case 'team-calendar': if (GET) return await teamCalendar(who, r.query); break;
-      case 'check-in': if (POST) return await punch(who, 'in', r.ip); break;
-      case 'check-out': if (POST) return await punch(who, 'out', r.ip); break;
+      case 'check-in': if (POST) return await punch(who, 'in', r.ip, body); break;
+      case 'check-out': if (POST) return await punch(who, 'out', r.ip, body); break;
       case 'attendance': if (GET) return await attendance(who, r.query); break;
       case 'regularize': if (POST) return await regularize(who, body); break;
       case 'my-regularizations': if (GET) return await myRegularizations(who); break;

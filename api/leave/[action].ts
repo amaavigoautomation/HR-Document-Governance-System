@@ -2,6 +2,7 @@ import { routeLeave } from '../_lib/leaveApi.js';
 import { routePayroll } from '../_lib/payrollApi.js';
 import { routeLifecycle } from '../_lib/lifecycleApi.js';
 import { routeDashboard } from '../_lib/dashboardApi.js';
+import { routeHome } from '../_lib/homeApi.js';
 
 export default async function handler(req: any, res: any) {
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -30,6 +31,13 @@ export default async function handler(req: any, res: any) {
     if (action.startsWith('dashboard-')) {
       const { status, json } = await routeDashboard({
         method: req.method, action: action.slice('dashboard-'.length), headers: req.headers, ip,
+      });
+      return res.status(status).json(json);
+    }
+    // The Home page cards share it too: /api/leave/home-<action>
+    if (action.startsWith('home-')) {
+      const { status, json } = await routeHome({
+        method: req.method, action: action.slice('home-'.length), query: req.query || {}, body: req.body, headers: req.headers,
       });
       return res.status(status).json(json);
     }

@@ -31,7 +31,7 @@ const DocList: React.FC<{ items: { documentId: string; title: string; versionNum
 );
 
 /** One renderer per widget id. An id the browser does not know is skipped, so a newer server never breaks an older page. */
-const BODY: Partial<Record<WidgetId, (d: any) => React.ReactNode>> = {
+export const BODY: Partial<Record<WidgetId, (d: any) => React.ReactNode>> = {
   approvals: (d) => (
     <div className="flex gap-6">
       <Count n={d.leave} label="leave and attendance requests" urgent />
@@ -95,6 +95,18 @@ const BODY: Partial<Record<WidgetId, (d: any) => React.ReactNode>> = {
     </div>
   ),
 };
+
+export const WidgetCard: React.FC<{ w: DashboardWidget; onOpen: (t: WidgetTarget) => void }> = ({ w, onOpen }) => (
+  <Card title={w.title} subtitle={w.reason}
+    className={w.urgent ? 'border-[#FA7014]/40' : ''}
+    right={w.target ? (
+      <button type="button" onClick={() => onOpen(w.target!)} className="text-xs font-bold text-[#FA7014] inline-flex items-center gap-1 hover:underline" aria-label={`Open ${w.title}`}>
+        Open <ArrowRight className="w-3 h-3" />
+      </button>
+    ) : undefined}>
+    {BODY[w.id]!(w.data)}
+  </Card>
+);
 
 export const HomeDashboard: React.FC<Props> = ({ fallbackName, onOpen }) => {
   const [state, setState] = useState<{ loading: boolean; error: string | null; name: string; widgets: DashboardWidget[] }>({ loading: true, error: null, name: fallbackName || '', widgets: [] });

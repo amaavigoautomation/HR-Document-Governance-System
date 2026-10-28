@@ -14,7 +14,7 @@ import { defaultEmailProvider } from './services/email';
 import { firestoreService } from './services/firestoreService';
 import { HRHeader } from './components/HRHeader';
 import { ApproverHeader } from './components/ApproverHeader';
-import { HomeDashboard } from './components/home/HomeDashboard';
+import { HomePage } from './components/home/HomePage';
 import { leaveNav } from './components/leave/leaveNav';
 import { payrollNav } from './components/payroll/payrollNav';
 import { peopleNav } from './components/lifecycle/peopleNav';
@@ -567,7 +567,7 @@ export default function App() {
         >
           {hrAgentModule === 'home' && (
             <div className="flex-1 min-w-0 overflow-y-auto">
-              <HomeDashboard fallbackName={currentUser.name} onOpen={openDashboardTarget} />
+              <HomePage fallbackName={currentUser.name} onOpen={openDashboardTarget} />
             </div>
           )}
 
