@@ -491,6 +491,7 @@ service cloud.firestore {
     match /lifecycleTasks/{id} { allow read, write: if false; }
     match /lifecycleBank/{id} { allow read, write: if false; }
     match /lifecycleExits/{id} { allow read, write: if false; }
+    match /lifecycleExitFiles/{id} { allow read, write: if false; }
     match /lifecycleLetters/{id} { allow read, write: if false; }
     // Home page: server-only. personalDates holds birth and marriage dates, which colleagues must not be able to read.
     match /homeSettings/{id} { allow read, write: if false; }

@@ -8,13 +8,13 @@ import { EmployeeIdentityPage } from './EmployeeIdentityPage';
 import { PersonalInfoPage } from './PersonalInfoPage';
 import { FamilyDetailsPage } from './FamilyDetailsPage';
 import { QualificationPage } from './QualificationPage';
+import { SeparationPage } from './SeparationPage';
 import { EmployeePicker } from './EmployeePicker';
 import type { HRAgentModule } from '../HRAgentShell';
 
 /** Screens that already exist elsewhere in the app. The rest show a "not set up yet" page until they are built. */
 const EXISTING: Record<string, { label: string; open: (go: (m: HRAgentModule) => void) => void }> = {
   acknowledgement: { label: 'Open my policies', open: (go) => go('policies') },
-  separation: { label: 'Open exits', open: (go) => { peopleNav.setSection('exits'); go('people'); } },
 };
 
 export const EmployeeModule: React.FC<{ currentUser: User; canPick?: boolean; onOpenModule: (m: HRAgentModule) => void }> = ({ canPick = false, onOpenModule }) => {
@@ -57,14 +57,15 @@ export const EmployeeModule: React.FC<{ currentUser: User; canPick?: boolean; on
           </div>
         )}
 
-        {canPick && (entry?.key === 'master' || entry?.key === 'identity' || entry?.key === 'personal' || entry?.key === 'family' || entry?.key === 'qualification') && <EmployeePicker current={pickedUid} onPick={setPickedUid} />}
+        {canPick && (entry?.key === 'master' || entry?.key === 'identity' || entry?.key === 'personal' || entry?.key === 'family' || entry?.key === 'qualification' || entry?.key === 'separation') && <EmployeePicker current={pickedUid} onPick={setPickedUid} />}
         {entry?.key === 'master' && <EmployeeProfilePage uid={pickedUid} />}
         {entry?.key === 'identity' && <EmployeeIdentityPage uid={pickedUid} />}
         {entry?.key === 'personal' && <PersonalInfoPage uid={pickedUid} />}
         {entry?.key === 'family' && <FamilyDetailsPage uid={pickedUid} />}
         {entry?.key === 'qualification' && <QualificationPage uid={pickedUid} />}
+        {entry?.key === 'separation' && <SeparationPage uid={pickedUid} onOpenModule={onOpenModule} />}
 
-        {entry && !['master', 'identity', 'personal', 'family', 'qualification'].includes(entry.key) && (
+        {entry && !['master', 'identity', 'personal', 'family', 'qualification', 'separation'].includes(entry.key) && (
           <div className="bg-white border border-slate-200 rounded-2xl p-8 text-center">
             <h2 className="text-base font-black text-slate-800">{entry.label}</h2>
             <p className="text-xs text-slate-500 mt-1">{entry.hint}</p>

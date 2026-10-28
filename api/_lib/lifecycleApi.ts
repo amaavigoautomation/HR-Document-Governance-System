@@ -14,7 +14,7 @@ import { hasPerm } from '../../shared/permissions.js';
 import {
   db, loadPeople, loadProfiles, notify, nowIso, personByUid, profileId, profileOf, str, companyLabel, type Person, type Profile,
 } from './leaveCore.js';
-import { IDENTITY_TYPES, MAX_IDENTITY_FILES, checkIdentityImage, identityProblem, identityTypeKeys, normalizeIdentity } from '../../shared/employeeIdentity.js';
+import { IDENTITY_TYPES, MAX_IDENTITY_FILES, checkAttachment, checkIdentityImage, identityProblem, identityTypeKeys, normalizeIdentity } from '../../shared/employeeIdentity.js';
 import { PERSONAL_FIELDS, checkPersonalField } from '../../shared/employeePersonal.js';
 import { MAX_QUALIFICATIONS, cleanQualification } from '../../shared/employeeQualification.js';
 import { MAX_FAMILY_MEMBERS, cleanFamilyMember } from '../../shared/employeeFamily.js';
@@ -339,6 +339,8 @@ export interface ExitDoc {
   clearance: ClearanceItem[];
   events: { at: string; by: string; action: string; note: string }[];
   initiatedBy: 'EMPLOYEE' | 'HR';
+  /** Reference number shown on the Separation screen, e.g. SEP-261028-K3F9. */
+  docNo?: string;
   createdAt: string;
   completedAt?: string;
 }
@@ -349,6 +351,7 @@ async function loadExit(cid: string, uid: string): Promise<ExitDoc | null> {
 }
 const saveExit = (e: ExitDoc) => db().collection('lifecycleExits').doc(exitId(e.companyId, e.uid)).set(clean(e));
 const isOpen = (e: ExitDoc | null) => !!e && ['SUBMITTED', 'MANAGER_APPROVED', 'APPROVED'].includes(e.status);
+const sepDocNo = () => `SEP-${istToday().slice(2).replace(/-/g, '')}-${Math.random().toString(36).slice(2, 6).toUpperCase()}`;
 const ev = (by: string, action: string, note = '') => ({ at: nowIso(), by, action, note });
 
 function parseReason(v: unknown): ExitReason {
@@ -409,7 +412,7 @@ async function exitResign(w: Who, body: any): Promise<Result> {
   const e: ExitDoc = {
     companyId: w.cid, uid: w.uid, status: mgr ? 'SUBMITTED' : 'MANAGER_APPROVED', reason: 'RESIGNATION', resignationDate: today, requestedLastDay: lastDay,
     lastWorkingDay: lastDay, noticeRequiredDays: 0, noticeServedDays: 0, noticeShortfallDays: 0, comments: str(body?.comments, 1000), managerUid: mgr, clearance: [],
-    events: [ev(name, 'RESIGNED', `Last working day asked for: ${lastDay}`)], initiatedBy: 'EMPLOYEE', createdAt: nowIso(),
+    events: [ev(name, 'RESIGNED', `Last working day asked for: ${lastDay}`)], initiatedBy: 'EMPLOYEE', docNo: sepDocNo(), createdAt: nowIso(),
   };
   applyNotice(e, settings.noticeDays);
   await saveExit(e);
@@ -446,7 +449,7 @@ async function exitStart(w: Who, body: any): Promise<Result> {
   const e: ExitDoc = {
     companyId: w.cid, uid, status: 'APPROVED', reason: parseReason(body?.reason), resignationDate: resign, requestedLastDay: last, lastWorkingDay: last,
     noticeRequiredDays: 0, noticeServedDays: 0, noticeShortfallDays: 0, comments: str(body?.comments, 1000), managerUid: mgr,
-    clearance: await buildClearance(w.cid, uid, settings), events: [ev(name, 'STARTED_BY_HR', `Last working day ${last}`)], initiatedBy: 'HR', createdAt: nowIso(),
+    clearance: await buildClearance(w.cid, uid, settings), events: [ev(name, 'STARTED_BY_HR', `Last working day ${last}`)], initiatedBy: 'HR', docNo: sepDocNo(), createdAt: nowIso(),
   };
   const req = body?.noticeRequiredDays;
   applyNotice(e, req === undefined || req === '' ? settings.noticeDays : Math.max(0, Math.min(365, Math.round(Number(req) || 0))));
@@ -1131,6 +1134,68 @@ async function qualDocDelete(w: Who, body: any): Promise<Result> {
   return ok({});
 }
 
+// ------------------------------------------------------------------ separation screen (Employee > Separation)
+//
+// One call gives the screen everything it shows: who, how long they have served, the notice period, the earliest leaving
+// date it allows and the current case. Declaring uses the existing resign / start-exit calls. A supporting document
+// (resignation letter, PDF or photo) is kept apart from the case in the server-only lifecycleExitFiles collection.
+
+async function sepAccess(w: Who, uidIn: unknown, forWrite: boolean): Promise<string> {
+  const uid = str(uidIn, 128) || w.uid;
+  if (uid === w.uid) return uid;
+  if (w.canManage || (!forWrite && (await isManagerOf(w.cid, w.uid, uid)))) {
+    if (!(await personByUid(w.cid, uid))) throw new LcError(404, 'Employee not found.');
+    return uid;
+  }
+  throw new LcError(403, forWrite ? 'Only HR can change someone else\'s separation.' : 'You cannot open this separation.');
+}
+
+async function separationGet(w: Who, q: any): Promise<Result> {
+  const uid = await sepAccess(w, q?.uid, false);
+  const [{ settings }, person, profile, e, fileSnap, people] = await Promise.all([
+    loadSettings(w.cid), personByUid(w.cid, uid), profileOf(w.cid, uid), loadExit(w.cid, uid),
+    db().collection('lifecycleExitFiles').doc(exitId(w.cid, uid)).get(), loadPeople(w.cid),
+  ]);
+  if (!person) return fail(404, 'Employee not found.');
+  const f: any = fileSnap.exists && fileSnap.data().companyId === w.cid ? fileSnap.data() : null;
+  return ok({
+    employee: { uid, name: person.name, empId: person.empId, department: person.department, title: person.title, joinDate: profile?.joinDate || '' },
+    isSelf: uid === w.uid, canDeclareForOthers: w.canManage, hasManager: !!profile?.managerUid,
+    noticeDays: settings.noticeDays, today: istToday(),
+    exit: e ? await view(w.cid, e, people) : null,
+    file: f ? { name: f.fileName, kb: f.kb, mime: f.mime } : null,
+  });
+}
+
+async function sepFileSet(w: Who, body: any): Promise<Result> {
+  const uid = await sepAccess(w, body?.uid, true);
+  const e = await loadExit(w.cid, uid);
+  if (!e || e.status === 'COMPLETED') return fail(409, 'Declare the separation first, then attach the document.');
+  const problem = checkAttachment(body?.dataUrl);
+  if (problem) return fail(400, problem);
+  const dataUrl = body.dataUrl as string;
+  await db().collection('lifecycleExitFiles').doc(exitId(w.cid, uid)).set({
+    companyId: w.cid, uid, dataUrl, mime: dataUrl.slice(5, dataUrl.indexOf(';')), fileName: str(body?.fileName, 120) || 'document',
+    kb: Math.round((dataUrl.length * 3) / 4 / 1024), createdAt: nowIso(), createdBy: w.uid,
+  });
+  return ok({});
+}
+
+async function sepFileGet(w: Who, q: any): Promise<Result> {
+  const uid = await sepAccess(w, q?.uid, false);
+  const s = await db().collection('lifecycleExitFiles').doc(exitId(w.cid, uid)).get();
+  if (!s.exists || s.data().companyId !== w.cid) return fail(404, 'Document not found.');
+  return ok({ dataUrl: s.data().dataUrl, name: s.data().fileName });
+}
+
+async function sepFileDelete(w: Who, body: any): Promise<Result> {
+  const uid = await sepAccess(w, body?.uid, true);
+  const s = await db().collection('lifecycleExitFiles').doc(exitId(w.cid, uid)).get();
+  if (!s.exists || s.data().companyId !== w.cid) return fail(404, 'Document not found.');
+  await db().collection('lifecycleExitFiles').doc(exitId(w.cid, uid)).delete();
+  return ok({});
+}
+
 // ------------------------------------------------------------------ router
 
 async function me(w: Who): Promise<Result> {
@@ -1196,6 +1261,10 @@ export async function routeLifecycle(r: LifecycleRequestIn): Promise<Result> {
       case 'exit-clear': return POST ? await exitClear(w, body) : wrong;
       case 'exit-complete': return POST ? await exitComplete(w, body) : wrong;
       case 'exits': return GET ? await exitsList(w) : wrong;
+      case 'separation': return GET ? await separationGet(w, r.query) : wrong;
+      case 'separation-file-set': return POST ? await sepFileSet(w, body) : wrong;
+      case 'separation-file': return GET ? await sepFileGet(w, r.query) : wrong;
+      case 'separation-file-delete': return POST ? await sepFileDelete(w, body) : wrong;
       case 'exit': return GET ? await exitCase(w, r.query) : wrong;
       case 'letter-preview': return POST ? await letterPreview(w, body) : wrong;
       case 'letter-issue': return POST ? await letterIssue(w, body) : wrong;

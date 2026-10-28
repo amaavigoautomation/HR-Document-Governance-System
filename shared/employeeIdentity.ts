@@ -43,3 +43,14 @@ export function checkIdentityImage(dataUrl: unknown): string {
   const bytes = typeof Buffer !== 'undefined' ? Buffer.from(head, 'base64') : Uint8Array.from(atob(head), (c) => c.charCodeAt(0));
   return bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff ? '' : 'That file is not a valid image.';
 }
+
+/** A JPEG photo or a PDF under the size limit, or a plain-words reason. Used for separation documents (a resignation letter is usually a PDF). */
+export function checkAttachment(dataUrl: unknown): string {
+  const v = typeof dataUrl === 'string' ? dataUrl : '';
+  if (v.startsWith('data:image/jpeg;base64,')) return checkIdentityImage(v);
+  if (!v.startsWith('data:application/pdf;base64,')) return 'Attach a PDF or a photo (JPG or PNG).';
+  if (v.length > MAX_IDENTITY_FILE_CHARS) return 'That file is too large. Keep it under about 650 KB.';
+  const head = v.slice('data:application/pdf;base64,'.length, 'data:application/pdf;base64,'.length + 8);
+  const bytes = typeof Buffer !== 'undefined' ? Buffer.from(head, 'base64') : Uint8Array.from(atob(head), (c) => c.charCodeAt(0));
+  return String.fromCharCode(bytes[0], bytes[1], bytes[2], bytes[3]) === '%PDF' ? '' : 'That file is not a valid PDF.';
+}

@@ -367,4 +367,42 @@ assert.equal((await call(FOREIGN, 'GET', 'profile', {}, { uid: 'u_emp' })).statu
   assert.equal(durationText('2024-01-01', '2023-01-01'), '');
 }
 
+// ---- separation screen
+{
+  fdb.seed('employees', 'u_sep', { companyId: CID, authUid: 'u_sep', name: 'Sia Separating', email: 'u_sep@acme.com', active: true, createdAt: '2020-01-01T00:00:00Z', departmentName: 'Ops', empId: 'U_SEP', title: 'Dev' });
+  fdb.seed('leaveProfiles', `${CID}__u_sep`, { uid: 'u_sep', companyId: CID, joinDate: '2023-01-01' });
+  const SEP = tokenFor('u_sep');
+  const sep = async (h: any, uid?: string) => call(h, 'GET', 'separation', {}, uid ? { uid } : {});
+  const pdf = 'data:application/pdf;base64,' + Buffer.from('%PDF-1.4 test').toString('base64');
+  const first = (await sep(SEP)).json;
+  assert.equal(first.isSelf, true); assert.equal(first.exit, null); assert.equal(first.file, null);
+  assert.equal(first.employee.joinDate, '2023-01-01'); assert.equal(first.noticeDays, 60, 'notice days come from the settings saved above');
+  assert.equal((await call(SEP, 'POST', 'separation-file-set', { dataUrl: pdf, fileName: 'letter.pdf' })).status, 409, 'declare first');
+  assert.equal((await sep(SEP, 'u_emp')).status, 403);
+  assert.equal((await sep(HR, 'u_sep')).json.canDeclareForOthers, true);
+  const r = (await call(SEP, 'POST', 'exit-resign', { requestedLastDay: addDays(istToday(), 70), comments: 'Moving on' })).json;
+  assert.match(r.exit.docNo, /^SEP-\d{6}-[A-Z0-9]{4}$/);
+  const after = (await sep(SEP)).json;
+  assert.equal(after.exit.docNo, r.exit.docNo);
+  assert.equal((await call(SEP, 'POST', 'separation-file-set', { dataUrl: 'data:application/pdf;base64,' + Buffer.from('not a pdf').toString('base64'), fileName: 'x.pdf' })).status, 400, 'real bytes are checked');
+  assert.equal((await call(SEP, 'POST', 'separation-file-set', { dataUrl: 'data:text/html;base64,AAAA', fileName: 'x.html' })).status, 400);
+  assert.equal((await call(SEP, 'POST', 'separation-file-set', { dataUrl: pdf + 'A'.repeat(950000), fileName: 'big.pdf' })).status, 400);
+  await ok(SEP, 'POST', 'separation-file-set', { dataUrl: pdf, fileName: 'letter.pdf' });
+  assert.equal((await sep(SEP)).json.file.name, 'letter.pdf');
+  assert.ok(!JSON.stringify((await sep(SEP)).json).includes('base64'), 'the screen data never carries the document');
+  assert.equal((await call(SEP, 'GET', 'separation-file')).json.dataUrl, pdf);
+  assert.equal((await call(HR, 'GET', 'separation-file', {}, { uid: 'u_sep' })).json.dataUrl, pdf, 'HR can open it');
+  assert.equal((await call(EMP, 'GET', 'separation-file', {}, { uid: 'u_sep' })).status, 403);
+  assert.equal((await call(FOREIGN, 'GET', 'separation-file', {}, { uid: 'u_sep' })).status, 404, 'another company cannot read it');
+  assert.equal((await call(EMP, 'POST', 'separation-file-delete', { uid: 'u_sep' })).status, 403);
+  await ok(SEP, 'POST', 'separation-file-delete', {});
+  assert.equal((await sep(SEP)).json.file, null);
+  // HR declares for someone else
+  const started = (await call(HR, 'POST', 'exit-start', { uid: 'u_new', reason: 'TERMINATION', lastWorkingDay: addDays(istToday(), 14) })).json;
+  assert.match(started.exit.docNo, /^SEP-/);
+  assert.equal((await sep(HR, 'u_new')).json.exit.status, 'APPROVED');
+  await ok(HR, 'POST', 'separation-file-set', { uid: 'u_new', dataUrl: pdf, fileName: 'notice.pdf' });
+  assert.equal((await call(EMP, 'POST', 'separation-file-set', { uid: 'u_new', dataUrl: pdf, fileName: 'x.pdf' })).status, 403);
+}
+
 console.log('lifecycle tests passed');

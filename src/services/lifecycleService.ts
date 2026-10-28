@@ -64,6 +64,11 @@ export const lifecycleService = {
   setQualificationDoc: (b: { uid?: string; id: string; dataUrl: string }) => post('qualification-doc-set', b),
   qualificationDoc: (id: string, uid?: string) => get('qualification-doc', { id, uid }),
   deleteQualificationDoc: (b: { uid?: string; id: string }) => post('qualification-doc-delete', b),
+  // separation screen
+  separation: (uid?: string) => get('separation', { uid }),
+  setSeparationFile: (b: { uid?: string; dataUrl: string; fileName: string }) => post('separation-file-set', b),
+  separationFile: (uid?: string) => get('separation-file', { uid }),
+  deleteSeparationFile: (uid?: string) => post('separation-file-delete', { uid }),
   // directory
   directory: (all = false) => get('directory', { all: all ? '1' : undefined }),
   setManager: (uid: string, managerUid: string) => post('set-manager', { uid, managerUid }),

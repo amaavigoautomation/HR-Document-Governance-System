@@ -1,4 +1,4 @@
-import { BookUser, CheckSquare, ClipboardCheck, Contact, FileBarChart, GraduationCap, IdCard, LayoutList, LogOut, Bot, Users } from 'lucide-react';
+import { BookUser, CheckSquare, ClipboardCheck, Contact, FileBarChart, GraduationCap, IdCard, LayoutList, LogOut, Users } from 'lucide-react';
 import { createModuleNav, NavItem } from '../moduleNav';
 
 /** One entry per screen under the Employee module. `group` becomes a collapsible dropdown in the sidebar. */
@@ -12,7 +12,6 @@ export const EMPLOYEE_ENTRIES: EmployeeEntry[] = [
   { key: 'family', label: 'Family Details', hint: 'Employee Family Details', group: 'Transaction' },
   { key: 'qualification', label: 'Qualification Details', hint: 'Employee Qualification Details', group: 'Transaction' },
   { key: 'separation', label: 'Separation', hint: 'Declare Separation of employee', group: 'Transaction' },
-  { key: 'factobot', label: 'FactoBot Document', hint: 'Upload documents to use in factoBot', group: 'Transaction' },
   { key: 'weekoff', label: 'Weekoff Holiday Report', hint: 'Employee wise Weekoff Holiday Report', group: 'Reports' },
   { key: 'exitclearance', label: 'Exit Clearance Report', hint: 'Exit Clearance Report', group: 'Reports' },
 ];
@@ -21,7 +20,7 @@ export const EMPLOYEE_SECTIONS = ['overview', ...EMPLOYEE_ENTRIES.map((e) => e.k
 
 export const employeeNav = createModuleNav('amaavigo_employee_tab', EMPLOYEE_SECTIONS, 'overview', {
   overview: LayoutList, master: BookUser, acknowledgement: CheckSquare, identity: IdCard, personal: Contact, family: Users,
-  qualification: GraduationCap, separation: LogOut, factobot: Bot, weekoff: FileBarChart, exitclearance: ClipboardCheck,
+  qualification: GraduationCap, separation: LogOut, weekoff: FileBarChart, exitclearance: ClipboardCheck,
 });
 
 export const employeeNavItems = (): NavItem[] => [
