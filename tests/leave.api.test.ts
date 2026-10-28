@@ -129,7 +129,8 @@ await ok(HR, 'POST', 'decide', { id: el.id, decision: 'APPROVE' });
 assert.equal((await ok(EMP, 'GET', 'my-requests')).items.find((r: any) => r.id === el.id).status, 'APPROVED');
 
 // --- HR can record leave on someone's behalf and cancel it
-const hrMade = await ok(HR, 'POST', 'hr-create', { uid: 'u_other', typeId: 'sl', from: addDays(today, -3), to: addDays(today, -3), reason: 'sick' });
+const hrDay = weekday(addDays(today, -3)) === 0 ? addDays(today, -4) : addDays(today, -3); // never a Sunday (weekly off)
+const hrMade = await ok(HR, 'POST', 'hr-create', { uid: 'u_other', typeId: 'sl', from: hrDay, to: hrDay, reason: 'sick' });
 assert.ok(hrMade.id);
 await ok(HR, 'POST', 'hr-cancel', { id: hrMade.id });
 

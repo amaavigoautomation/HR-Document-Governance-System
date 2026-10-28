@@ -33,6 +33,17 @@ const Timeline: React.FC<{ r: any; managerName?: string }> = ({ r, managerName }
   );
 };
 
+const ReplyBox: React.FC<{ busy: boolean; onSend: (message: string) => void }> = ({ busy, onSend }) => {
+  const [text, setText] = useState('');
+  return (
+    <div className="mt-2 rounded-lg border border-violet-200 bg-violet-50 p-3 space-y-2">
+      <div className="text-xs font-semibold text-violet-800">Your approver asked for more information. Reply to put the request back in their queue.</div>
+      <textarea rows={2} className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm" value={text} onChange={(e) => setText(e.target.value)} placeholder="Your reply" />
+      <button className="px-4 py-1.5 rounded-lg bg-[#FA7014] text-white text-xs font-bold disabled:opacity-50" disabled={busy || !text.trim()} onClick={() => { onSend(text.trim()); setText(''); }}>Send reply</button>
+    </div>
+  );
+};
+
 export const MyLeave: React.FC<{ me: any; reload: () => void; onApply: (typeId?: string) => void; refreshKey: number }> = ({ me, reload, onApply, refreshKey }) => {
   const [requests, setRequests] = useState<any[] | null>(null);
   const [ledger, setLedger] = useState<any[] | null>(null);
@@ -45,14 +56,14 @@ export const MyLeave: React.FC<{ me: any; reload: () => void; onApply: (typeId?:
   const loadLedger = useCallback(() => leaveService.myLedger().then((r) => setLedger(r.items)).catch(() => setLedger([])), []);
   useEffect(() => { loadRequests(); loadLedger(); }, [loadRequests, loadLedger, refreshKey]);
 
-  const isOpen = (r: any) => ['PENDING', 'CANCEL_REQUESTED'].includes(r.status) || (r.status === 'APPROVED' && r.to >= me.today);
+  const isOpen = (r: any) => ['PENDING', 'CANCEL_REQUESTED', 'INFO_REQUESTED'].includes(r.status) || (r.status === 'APPROVED' && r.to >= me.today);
   const shown = (requests || []).filter((r) => filter === 'all' || (filter === 'open' ? isOpen(r) : !isOpen(r)));
   const typesInLedger = Array.from(new Set((ledger || []).map((e) => e.typeName))).filter(Boolean) as string[];
   const ledgerShown = (ledger || []).filter((e) => !ledgerType || e.typeName === ledgerType);
   const holidays: any[] = me.holidays || [];
 
   const cancel = (r: any) => run(async () => { await leaveService.cancel(r.id); await Promise.all([loadRequests(), loadLedger(), reload()]); },
-    r.status === 'PENDING' ? 'Request withdrawn.' : 'Cancellation sent for approval.');
+    r.status === 'PENDING' || r.status === 'INFO_REQUESTED' ? 'Request withdrawn.' : 'Cancellation sent for approval.');
 
   return (
     <div className="space-y-4">
@@ -74,7 +85,7 @@ export const MyLeave: React.FC<{ me: any; reload: () => void; onApply: (typeId?:
             <div className="divide-y divide-slate-100">
               {shown.map((r) => {
                 const expanded = openId === r.id;
-                const canWithdraw = r.status === 'PENDING';
+                const canWithdraw = r.status === 'PENDING' || r.status === 'INFO_REQUESTED';
                 const canAskCancel = r.status === 'APPROVED' && r.from > me.today;
                 const lastComment = [...(r.steps || [])].reverse().find((s: any) => s.comment);
                 return (
@@ -94,7 +105,9 @@ export const MyLeave: React.FC<{ me: any; reload: () => void; onApply: (typeId?:
                         {canAskCancel && <ConfirmButton className={quiet} disabled={busy} question="Ask to cancel?" yes="Ask" onConfirm={() => cancel(r)}>Cancel leave</ConfirmButton>}
                       </div>
                     </div>
-                    {r.status !== 'CANCELLED' && <div className="mt-1.5"><Timeline r={r} managerName={me.profile.manager} /></div>}
+                    {r.status === 'INFO_REQUESTED' && <ReplyBox busy={busy} onSend={(message) => run(async () => { await leaveService.respond({ id: r.id, message }); await Promise.all([loadRequests(), reload()]); }, 'Reply sent. Your request is back with the approver.')} />}
+                    {r.emergency && r.status === 'PENDING' && <div className="mt-1 text-[11px] font-semibold text-amber-700">Emergency leave: provisional until approved.</div>}
+                    {r.status !== 'CANCELLED' && r.status !== 'WITHDRAWN' && <div className="mt-1.5"><Timeline r={r} managerName={me.profile.manager} /></div>}
                     {expanded && (
                       <div className="mt-2 rounded-lg bg-slate-50 border border-slate-200 p-3 space-y-1">
                         {(r.events || []).map((e: any, i: number) => (

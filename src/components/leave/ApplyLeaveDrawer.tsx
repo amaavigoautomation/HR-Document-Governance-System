@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { CalendarDays, CheckCircle2 } from 'lucide-react';
 import { leaveService } from '../../services/leaveService';
 import { halves, type LeaveValue } from '../../../shared/leaveEngine';
@@ -26,6 +26,9 @@ export const ApplyLeaveDrawer: React.FC<{ me: any; open: boolean; onClose: () =>
   const [docUrl, setDocUrl] = useState('');
   const [preview, setPreview] = useState<any | null>(null);
   const [checking, setChecking] = useState(false);
+  const [emergency, setEmergency] = useState(false);
+  // One key per opening of the form: a double click or a retry can never create the request twice.
+  const idemKey = useRef('');
   const { busy, note, setNote, run } = useRunner();
 
   // Fresh form each time it opens.
@@ -33,7 +36,8 @@ export const ApplyLeaveDrawer: React.FC<{ me: any; open: boolean; onClose: () =>
     if (!open) return;
     setTypeId(firstUsable?.typeId || '');
     setFrom(initialFrom || me.today); setTo(initialFrom || me.today);
-    setFromValue('FULL'); setToValue('FULL'); setReason(''); setDocUrl(''); setNote(null);
+    setFromValue('FULL'); setToValue('FULL'); setReason(''); setDocUrl(''); setNote(null); setEmergency(false);
+    idemKey.current = (globalThis.crypto?.randomUUID?.() || `${Date.now()}${Math.random().toString(36).slice(2)}`).replace(/-/g, '');
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 
@@ -59,14 +63,14 @@ export const ApplyLeaveDrawer: React.FC<{ me: any; open: boolean; onClose: () =>
     if (!open || !typeId || !from || !to || to < from) { setPreview(null); return; }
     setChecking(true);
     const t = setTimeout(() => {
-      leaveService.calc({ typeId, from, to, halfFrom, halfTo, halfPart, reason, docUrl })
+      leaveService.calc({ typeId, from, to, halfFrom, halfTo, halfPart, reason, docUrl, emergency })
         .then(setPreview).catch(() => setPreview(null)).finally(() => setChecking(false));
     }, 250);
     return () => clearTimeout(t);
-  }, [open, typeId, from, to, halfFrom, halfTo, halfPart, docUrl, reason]);
+  }, [open, typeId, from, to, halfFrom, halfTo, halfPart, docUrl, reason, emergency]);
 
   const submit = () => run(async () => {
-    await leaveService.apply({ typeId, from, to, halfFrom, halfTo, halfPart, reason, docUrl });
+    await leaveService.apply({ typeId, from, to, halfFrom, halfTo, halfPart, reason, docUrl, emergency, idempotencyKey: idemKey.current });
     onSent();
     onClose();
   }, 'Leave request sent. You will get an email when it is decided.');
@@ -146,6 +150,10 @@ export const ApplyLeaveDrawer: React.FC<{ me: any; open: boolean; onClose: () =>
         <section>
           <StepTitle n={3} optional>Reason</StepTitle>
           <textarea rows={2} className={input} placeholder="e.g. Family function in Pune" value={reason} onChange={(e) => setReason(e.target.value)} />
+          <label className="mt-2 flex items-start gap-2 text-xs text-slate-600">
+            <input type="checkbox" className="mt-0.5" checked={emergency} onChange={(e) => setEmergency(e.target.checked)} />
+            <span><b>This is an emergency.</b> No advance notice is needed. The leave shows as provisional until your approver confirms it.</span>
+          </label>
           {needsDoc && (
             <div className="mt-2">
               <Field label="Link to a document (required)" hint={`${bal?.name} longer than ${days(meta.docRequiredAfterDays)} needs a supporting document, e.g. a Google Drive link to a medical note.`}>

@@ -13,7 +13,7 @@ import {
   type AttendanceRecord, type LeaveLocation, type LeavePolicy, type LeaveSettings, type LeaveType,
 } from '../../shared/leaveEngine.js';
 import {
-  ACTIVE_STATUSES, LeaveError, companyLabel, balanceOf, companyLedger, companyRequests, db, effectiveProfile, entryData, findLocation, findPolicy,
+  ACTIVE_STATUSES, RESERVING, LeaveError, companyLabel, balanceOf, companyLedger, companyRequests, db, effectiveProfile, entryData, findLocation, findPolicy,
   findType, ledgerRef, loadPeople, loadProfiles, loadSettings, notify, nowIso, parseApplyInput, personByUid, planRequest, profileId,
   profileOf, requestsOfUser, restoreEntries, runAccrual, str, usageEntries, userLedger,
   type LeaveRequest, type Person, type Profile,
@@ -291,7 +291,7 @@ async function me(who: Who): Promise<Result> {
     const eligible = (t.gender === 'ANY' || t.gender === prof.gender);
     const cy = cycleOf(today, typeStartMonth(t, settings));
     const inCycle = ledger.filter((x) => x.typeId === t.id && x.cycle === cy.key);
-    const reserved = requests.filter((r) => r.typeId === t.id && (r.status === 'PENDING' || r.status === 'CANCEL_REQUESTED')).reduce((n, r) => n + (r.byCycle[cy.key] || 0), 0);
+    const reserved = requests.filter((r) => r.typeId === t.id && RESERVING.includes(r.status)).reduce((n, r) => n + (r.byCycle[cy.key] || 0), 0);
     const usedDays = requests.filter((r) => r.typeId === t.id && r.status === 'APPROVED').reduce((n, r) => n + (r.byCycle[cy.key] || (t.requiresBalance ? 0 : r.days)), 0);
     return [{
       typeId: t.id, code: t.code, name: t.name, color: t.color || null, paid: t.paid, isLop: !!t.isLop, requiresBalance: t.requiresBalance,
@@ -343,31 +343,58 @@ async function calc(who: Who, body: any): Promise<Result> {
   }
 }
 
+const lockRef = (cid: string, uid: string) => db().collection('leaveLocks').doc(`${cid}__${uid}`);
+
 async function createRequest(who: Who, c: Ctx, person: Person, body: any, opts: { onBehalf?: boolean } = {}): Promise<LeaveRequest> {
   needConfigured(c);
   const prof = effectiveProfile(c.settings, person, await profileOf(who.cid, person.uid));
   const input = parseApplyInput(body);
-  const plan = await planRequest({ companyId: who.cid, settings: c.settings, person, profile: prof, input, relaxed: opts.onBehalf });
-  const id = db().collection('leaveRequests').doc().id;
-  const now = nowIso();
-  const req: LeaveRequest = {
-    id, companyId: who.cid, uid: person.uid, name: person.name, email: person.email, managerUid: prof.managerUid,
-    typeId: plan.type.id, typeName: plan.type.name, typeCode: plan.type.code, requiresBalance: plan.type.requiresBalance,
-    from: input.from, to: input.to, halfFrom: input.halfFrom, halfTo: input.halfTo, halfPart: input.halfPart, days: plan.days, detail: plan.detail,
-    byCycle: plan.byCycle, reason: input.reason, docUrl: input.docUrl,
-    status: opts.onBehalf ? 'APPROVED' : 'PENDING',
-    steps: opts.onBehalf
-      ? [{ role: 'HR', status: 'APPROVED', by: who.ctx.uid, byName: c.me.name, at: now, comment: 'Recorded by HR' }]
-      : plan.steps.map((role) => ({ role, status: 'PENDING' as const })),
-    stepIndex: 0, onBehalfOf: !!opts.onBehalf, createdBy: who.ctx.uid, createdAt: now, updatedAt: now,
-    events: [{ at: now, by: opts.onBehalf ? c.me.name : person.name, message: opts.onBehalf ? `Recorded by ${c.me.name} (HR).` : 'Requested.' }],
-  };
-  if (opts.onBehalf) req.stepIndex = 1;
-  const batch = db().batch();
-  batch.set(db().collection('leaveRequests').doc(id), req);
-  if (opts.onBehalf) usageEntries(req, c.settings, who.ctx.uid).forEach((e) => batch.set(ledgerRef(e.id), e.data));
-  await batch.commit();
-  return req;
+
+  // Idempotency: the same submission key never creates a second request (double click, retry, replayed call).
+  const idemKey = str(body?.idempotencyKey, 80).replace(/[^A-Za-z0-9_-]/g, '');
+  const id = idemKey ? `${person.uid}_${idemKey}` : db().collection('leaveRequests').doc().id;
+  if (idemKey) {
+    const dup = await db().collection('leaveRequests').doc(id).get();
+    if (dup.exists) {
+      const old = dup.data() as LeaveRequest;
+      if (old.companyId === who.cid && old.uid === person.uid) return old;
+    }
+  }
+
+  // Plan and write under a per-person version stamp. If another request for the same person was written while this
+  // one was being checked, the stamp moved: plan again against the new state, so two requests can never both
+  // spend the same balance or the same day.
+  for (let attempt = 0; attempt < 4; attempt++) {
+    const seq = ((await lockRef(who.cid, person.uid).get()).data() as { seq?: number } | undefined)?.seq || 0;
+    const plan = await planRequest({ companyId: who.cid, settings: c.settings, person, profile: prof, input, relaxed: opts.onBehalf });
+    const now = nowIso();
+    const emergency = body?.emergency === true && !opts.onBehalf;
+    const req: LeaveRequest = {
+      id, companyId: who.cid, uid: person.uid, name: person.name, email: person.email, managerUid: prof.managerUid,
+      typeId: plan.type.id, typeName: plan.type.name, typeCode: plan.type.code, requiresBalance: plan.type.requiresBalance,
+      from: input.from, to: input.to, halfFrom: input.halfFrom, halfTo: input.halfTo, halfPart: input.halfPart, days: plan.days, detail: plan.detail,
+      byCycle: plan.byCycle, reason: input.reason, docUrl: input.docUrl,
+      policyVersion: c.settings.policyVersion || 1,
+      ...(emergency ? { emergency: true } : {}),
+      status: opts.onBehalf ? 'APPROVED' : 'PENDING',
+      steps: opts.onBehalf
+        ? [{ role: 'HR', status: 'APPROVED', by: who.ctx.uid, byName: c.me.name, at: now, comment: 'Recorded by HR' }]
+        : plan.steps.map((role) => ({ role, status: 'PENDING' as const })),
+      stepIndex: 0, onBehalfOf: !!opts.onBehalf, createdBy: who.ctx.uid, createdAt: now, updatedAt: now,
+      events: [{ at: now, by: opts.onBehalf ? c.me.name : person.name, message: opts.onBehalf ? `Recorded by ${c.me.name} (HR).` : emergency ? 'Requested as emergency leave (provisional until approved).' : 'Requested.' }],
+    };
+    if (opts.onBehalf) req.stepIndex = 1;
+    let clash = false;
+    await db().runTransaction(async (tx: any) => {
+      const cur = ((await tx.get(lockRef(who.cid, person.uid))).data() as { seq?: number } | undefined)?.seq || 0;
+      if (cur !== seq) { clash = true; return; }
+      tx.set(lockRef(who.cid, person.uid), { companyId: who.cid, uid: person.uid, seq: seq + 1 });
+      tx.set(db().collection('leaveRequests').doc(id), req);
+      if (opts.onBehalf) usageEntries(req, c.settings, who.ctx.uid).forEach((e) => tx.set(ledgerRef(e.id), e.data));
+    });
+    if (!clash) return req;
+  }
+  throw new LeaveError(409, 'Another change to your leave was saved at the same moment. Please try again.');
 }
 
 async function apply(who: Who, body: any): Promise<Result> {
@@ -396,7 +423,7 @@ async function apply(who: Who, body: any): Promise<Result> {
   await notify(who.cid, to,
     `Leave request: ${req.name}, ${req.typeName}, ${req.from}${req.to !== req.from ? ' to ' + req.to : ''}`,
     `${req.name} has asked for ${req.days} day(s) of ${req.typeName} (${req.from} to ${req.to}).\n${req.reason ? 'Reason: ' + req.reason + '\n' : ''}\nOpen Leave & Attendance > Approvals to approve or reject.`);
-  return ok({ id: req.id, status: req.status, days: req.days, steps: req.steps.map((s) => s.role) });
+  return ok({ id: req.id, status: req.status, days: req.days, steps: req.steps.map((s) => s.role), policyVersion: req.policyVersion, emergency: !!req.emergency });
 }
 
 async function myRequests(who: Who): Promise<Result> {
@@ -418,9 +445,9 @@ async function cancel(who: Who, body: any): Promise<Result> {
   if (!r || r.companyId !== who.cid || r.uid !== who.ctx.uid) return fail(404, 'Request not found.');
   const now = nowIso();
   const name = r.name;
-  if (r.status === 'PENDING') {
-    await ref.update({ status: 'CANCELLED', updatedAt: now, events: [...r.events, { at: now, by: name, message: 'Withdrawn by the employee.' }] });
-    return ok({ status: 'CANCELLED' });
+  if (r.status === 'PENDING' || r.status === 'INFO_REQUESTED') {
+    await ref.update({ status: 'WITHDRAWN', updatedAt: now, events: [...r.events, { at: now, by: name, message: 'Withdrawn by the employee.' }] });
+    return ok({ status: 'WITHDRAWN' });
   }
   if (r.status === 'APPROVED') {
     if (r.from <= istToday()) return fail(409, 'This leave has already started. Ask HR to cancel it.');
@@ -486,7 +513,8 @@ async function decide(who: Who, body: any): Promise<Result> {
   const id = str(body?.id, 60);
   const decision = str(body?.decision, 10);
   const comment = str(body?.comment, 400);
-  if (decision !== 'APPROVE' && decision !== 'REJECT') return fail(400, 'decision must be APPROVE or REJECT.');
+  if (decision !== 'APPROVE' && decision !== 'REJECT' && decision !== 'INFO') return fail(400, 'decision must be APPROVE, REJECT or INFO.');
+  if (decision === 'INFO' && !comment) return fail(400, 'Say what you need to know.');
   const ref = db().collection('leaveRequests').doc(id);
   let approver = c.me.name;
   let result: LeaveRequest | null = null;
@@ -519,6 +547,10 @@ async function decide(who: Who, body: any): Promise<Result> {
         upd.status = 'APPROVED';
         events.push({ at: now, by: approver, message: `Cancellation declined${note}` });
       }
+    } else if (decision === 'INFO') {
+      if (r.status !== 'PENDING') throw new LeaveError(409, 'Only a request that is waiting for a decision can be sent back.');
+      upd.status = 'INFO_REQUESTED';
+      events.push({ at: now, by: approver, message: `More information needed: ${comment}` });
     } else if (decision === 'REJECT') {
       upd.status = 'REJECTED';
       upd.steps = r.steps.map((s, i) => (i === r.stepIndex ? { ...s, status: 'REJECTED' as const, by: who.ctx.uid, byName: approver, at: now, comment } : s));
@@ -543,7 +575,10 @@ async function decide(who: Who, body: any): Promise<Result> {
 
   const r = result as LeaveRequest | null;
   if (r) {
-    if (r.status === 'APPROVED' || r.status === 'REJECTED' || r.status === 'CANCELLED') {
+    if (r.status === 'INFO_REQUESTED') {
+      await notify(who.cid, [r.email], `More information needed for your ${r.typeName} request`,
+        `${approver} needs more information about your ${r.typeName} request (${r.from} to ${r.to}): ${comment}\nOpen Leave & Attendance > My leave to reply. The request stays on hold until you do.`);
+    } else if (r.status === 'APPROVED' || r.status === 'REJECTED' || r.status === 'CANCELLED') {
       await notify(who.cid, [r.email], `Your ${r.typeName} request was ${r.status.toLowerCase()}`,
         `Your ${r.typeName} request (${r.from} to ${r.to}) was ${r.status.toLowerCase()} by ${approver}.${comment ? '\nComment: ' + comment : ''}`);
     } else if (r.status === 'PENDING') {
@@ -551,6 +586,27 @@ async function decide(who: Who, body: any): Promise<Result> {
     }
   }
   return ok({ status: r?.status });
+}
+
+/** The employee answers a request for more information; the request goes back to the approver. */
+async function respond(who: Who, body: any): Promise<Result> {
+  const id = str(body?.id, 80);
+  const message = str(body?.message, 600);
+  if (!message) return fail(400, 'Write your reply.');
+  const ref = db().collection('leaveRequests').doc(id);
+  const snap = await ref.get();
+  const r = snap.data() as LeaveRequest | undefined;
+  if (!r || r.companyId !== who.cid || r.uid !== who.ctx.uid) return fail(404, 'Request not found.');
+  if (r.status !== 'INFO_REQUESTED') return fail(409, 'This request is not waiting for your reply.');
+  const now = nowIso();
+  const docUrl = body?.docUrl === undefined ? r.docUrl : str(body.docUrl, 500);
+  await ref.update({ status: 'PENDING', docUrl, updatedAt: now, events: [...r.events, { at: now, by: r.name, message: `Replied: ${message}` }] });
+  const people = await loadPeople(who.cid);
+  const mgr = people.find((p) => p.uid === r.managerUid);
+  const { settings } = await loadSettings(who.cid);
+  const role = r.steps[r.stepIndex]?.role;
+  await notify(who.cid, role === 'MANAGER' && mgr ? [mgr.email] : settings.notifyEmails, `${r.name} replied about their ${r.typeName} request`, `${r.name} answered your question: ${message}\nThe request is waiting for your decision again.`);
+  return ok({ status: 'PENDING' });
 }
 
 // ------------------------------------------------------------------ delegation endpoints
@@ -626,7 +682,7 @@ async function hrCancel(who: Who, body: any): Promise<Result> {
     if (!r || r.companyId !== who.cid) throw new LeaveError(404, 'Request not found.');
     if (!ACTIVE_STATUSES.includes(r.status)) throw new LeaveError(409, 'This request is already closed.');
     const now = nowIso();
-    if (r.status !== 'PENDING') restoreEntries(r, who.ctx.uid).forEach((e) => tx.set(ledgerRef(e.id), e.data));
+    if (r.status === 'APPROVED' || r.status === 'CANCEL_REQUESTED') restoreEntries(r, who.ctx.uid).forEach((e) => tx.set(ledgerRef(e.id), e.data));
     tx.update(ref, { status: 'CANCELLED', updatedAt: now, events: [...r.events, { at: now, by: c.me.name, message: `Cancelled by HR${body?.note ? ': ' + str(body.note, 300) : ''}` }] });
   });
   return ok({});
@@ -660,11 +716,11 @@ async function teamCalendar(who: Who, q: any): Promise<Result> {
     return (them?.department || '-') === (c.me.department || '+') || p?.managerUid === c.me.uid;
   };
   const items = requests
-    .filter((r) => ['PENDING', 'APPROVED', 'CANCEL_REQUESTED'].includes(r.status) && r.from <= to && r.to >= from && visible(r.uid))
+    .filter((r) => ['PENDING', 'APPROVED', 'CANCEL_REQUESTED', 'INFO_REQUESTED'].includes(r.status) && r.from <= to && r.to >= from && visible(r.uid))
     .map((r) => {
       const detailed = who.canReport || r.uid === c.me.uid || profiles.get(r.uid)?.managerUid === c.me.uid;
       return {
-        uid: r.uid, name: r.name, from: r.from, to: r.to, days: r.days, status: r.status === 'PENDING' ? 'PENDING' : 'APPROVED',
+        uid: r.uid, name: r.name, from: r.from, to: r.to, days: r.days, status: r.status === 'PENDING' || r.status === 'INFO_REQUESTED' ? 'PENDING' : 'APPROVED',
         halfDay: r.days === 0.5, type: detailed ? r.typeName : null, reason: detailed ? r.reason : null,
       };
     });
@@ -1296,6 +1352,7 @@ export async function routeLeave(r: LeaveRequestIn): Promise<Result> {
       case 'set-delegation': if (POST) return await setDelegation(who, body); break;
       case 'clear-delegation': if (POST) return await clearDelegation(who, body); break;
       case 'decide': if (POST) return await decide(who, body); break;
+      case 'respond': if (POST) return await respond(who, body); break;
       case 'team-calendar': if (GET) return await teamCalendar(who, r.query); break;
       case 'check-in': if (POST) return await punch(who, 'in', r.ip, body); break;
       case 'check-out': if (POST) return await punch(who, 'out', r.ip, body); break;

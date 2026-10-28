@@ -14,9 +14,20 @@ const Avatar: React.FC<{ name: string }> = ({ name }) => (
 const daysBetween = (a: string, b: string) => Math.round((Date.parse(`${b}T00:00:00Z`) - Date.parse(`${a}T00:00:00Z`)) / 86_400_000);
 
 /** One request card. Approve is one tap; reject needs a reason so the employee knows why. */
-const Decide: React.FC<{ busy: boolean; cancel?: boolean; onDecide: (d: 'APPROVE' | 'REJECT', comment: string) => void }> = ({ busy, cancel, onDecide }) => {
-  const [mode, setMode] = useState<'idle' | 'note' | 'reject'>('idle');
+const Decide: React.FC<{ busy: boolean; cancel?: boolean; onDecide: (d: 'APPROVE' | 'REJECT' | 'INFO', comment: string) => void }> = ({ busy, cancel, onDecide }) => {
+  const [mode, setMode] = useState<'idle' | 'note' | 'reject' | 'info'>('idle');
   const [text, setText] = useState('');
+  if (mode === 'info') {
+    return (
+      <div className="mt-3 space-y-2">
+        <textarea autoFocus rows={2} className={input} placeholder="What do you need to know? The employee will see this and the request waits for their reply. (required)" value={text} onChange={(e) => setText(e.target.value)} />
+        <div className="flex gap-2">
+          <button className={btnPrimary} disabled={busy || !text.trim()} onClick={() => onDecide('INFO', text.trim())}>Send question</button>
+          <button className={btnGhost} onClick={() => { setMode('idle'); setText(''); }}>Back</button>
+        </div>
+      </div>
+    );
+  }
   if (mode === 'reject') {
     return (
       <div className="mt-3 space-y-2">
@@ -35,6 +46,7 @@ const Decide: React.FC<{ busy: boolean; cancel?: boolean; onDecide: (d: 'APPROVE
         <button className={`${btnPrimary} !px-5`} disabled={busy} onClick={() => onDecide('APPROVE', text.trim())}>{cancel ? 'Allow cancellation' : 'Approve'}</button>
         <button className={btnDanger} disabled={busy} onClick={() => { setMode('reject'); setText(''); }}>{cancel ? 'Keep leave' : 'Reject'}</button>
         {mode === 'idle' && <button className="text-xs font-bold text-slate-500 hover:text-slate-800" onClick={() => setMode('note')}>Add a note</button>}
+        {!cancel && mode === 'idle' && <button className="text-xs font-bold text-slate-500 hover:text-slate-800" onClick={() => { setMode('info'); setText(''); }}>Ask a question</button>}
       </div>
     </div>
   );
@@ -70,12 +82,12 @@ const ApprovalsList: React.FC<{ reload: () => void }> = ({ reload }) => {
     return Array.from(new Set(names));
   }, [overlap]);
 
-  const act = (id: string, decision: 'APPROVE' | 'REJECT', comment: string, reg = false) =>
+  const act = (id: string, decision: 'APPROVE' | 'REJECT' | 'INFO', comment: string, reg = false) =>
     run(async () => {
-      if (reg) await leaveService.decideRegularization(id, decision, comment);
+      if (reg) await leaveService.decideRegularization(id, decision === 'INFO' ? 'REJECT' : decision, comment);
       else await leaveService.decide(id, decision, comment);
       await Promise.all([load(), reload()]);
-    }, decision === 'APPROVE' ? 'Approved. The employee has been told.' : 'Rejected. The employee has been told.');
+    }, decision === 'APPROVE' ? 'Approved. The employee has been told.' : decision === 'INFO' ? 'Question sent. The request is on hold until the employee replies.' : 'Rejected. The employee has been told.');
 
   const bulk = useMemo(() => (data?.leaves || []).filter((r) => r.stage !== 'CANCEL'), [data]);
   const approveAll = () => run(async () => {

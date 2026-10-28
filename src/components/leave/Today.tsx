@@ -50,7 +50,7 @@ export const Today: React.FC<{ me: any; reload: () => void; onApply: (typeId?: s
     leaveService.teamCalendar(me.today, me.today).then((r) => setAway(r.items.filter((i: any) => i.uid !== me.person.uid && i.status === 'APPROVED'))).catch(() => setAway([]));
   }, [me.today, me.person.uid, refreshKey]);
 
-  const coming = (mine || []).filter((r) => ['PENDING', 'APPROVED', 'CANCEL_REQUESTED'].includes(r.status) && r.to >= me.today).sort((a, b) => a.from.localeCompare(b.from)).slice(0, 4);
+  const coming = (mine || []).filter((r) => ['PENDING', 'APPROVED', 'CANCEL_REQUESTED', 'INFO_REQUESTED'].includes(r.status) && r.to >= me.today).sort((a, b) => a.from.localeCompare(b.from)).slice(0, 4);
   const holidays = (me.holidays || []).filter((h: any) => h.date >= me.today).slice(0, 3);
   const first = (me.person.name || '').split(' ')[0];
 

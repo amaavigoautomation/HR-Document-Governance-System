@@ -95,6 +95,8 @@ export interface LeaveSettings {
   hrApprovalAboveDays: number;
   /** HR mailboxes told about requests that need HR approval and escalations. */
   notifyEmails: string[];
+  /** Version of the published leave policy (starts at 1; bumped each time a draft is published). */
+  policyVersion?: number;
 }
 
 // ------------------------------------------------------------------ dates

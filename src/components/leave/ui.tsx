@@ -58,6 +58,8 @@ const STATUS_STYLE: Record<string, string> = {
   REJECTED: 'bg-rose-50 text-rose-700 border-rose-200',
   CANCELLED: 'bg-slate-100 text-slate-600 border-slate-200',
   CANCEL_REQUESTED: 'bg-orange-50 text-orange-700 border-orange-200',
+  INFO_REQUESTED: 'bg-violet-50 text-violet-700 border-violet-200',
+  WITHDRAWN: 'bg-slate-100 text-slate-600 border-slate-200',
   PRESENT: 'bg-emerald-50 text-emerald-700 border-emerald-200',
   LATE: 'bg-amber-50 text-amber-700 border-amber-200',
   HALF_DAY: 'bg-orange-50 text-orange-700 border-orange-200',
@@ -73,13 +75,13 @@ const STATUS_STYLE: Record<string, string> = {
 };
 
 export const STATUS_LABEL: Record<string, string> = {
-  PENDING: 'Waiting for approval', APPROVED: 'Approved', REJECTED: 'Rejected', CANCELLED: 'Cancelled', CANCEL_REQUESTED: 'Cancellation asked',
+  PENDING: 'Waiting for approval', APPROVED: 'Approved', REJECTED: 'Rejected', CANCELLED: 'Cancelled', CANCEL_REQUESTED: 'Cancellation asked', INFO_REQUESTED: 'More information needed', WITHDRAWN: 'Withdrawn',
   PRESENT: 'Present', LATE: 'Late', HALF_DAY: 'Half day', ABSENT: 'Absent', INCOMPLETE: 'Missed check-out', LEAVE: 'On leave', HALF_LEAVE: 'Half-day leave',
   HOLIDAY: 'Holiday', WEEKLY_OFF: 'Weekly off', TODAY: 'Today', FUTURE: '', NOT_EMPLOYED: '',
 };
 
 const STATUS_ICON: Record<string, React.FC<{ className?: string }>> = {
-  PENDING: Clock, APPROVED: CheckCircle2, REJECTED: XCircle, CANCELLED: Ban, CANCEL_REQUESTED: Clock,
+  PENDING: Clock, APPROVED: CheckCircle2, REJECTED: XCircle, CANCELLED: Ban, CANCEL_REQUESTED: Clock, INFO_REQUESTED: Clock, WITHDRAWN: Ban,
   PRESENT: CheckCircle2, LATE: Clock, HALF_DAY: Sunrise, ABSENT: XCircle, INCOMPLETE: LogOut, LEAVE: Palmtree, HALF_LEAVE: Sunset,
   HOLIDAY: Sun, WEEKLY_OFF: Coffee, TODAY: Clock,
 };

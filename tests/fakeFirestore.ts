@@ -18,6 +18,7 @@ class Snap {
 class DocRef {
   constructor(private store: Map<string, Doc>, public id: string) {}
   async get() { return new Snap(this.id, this.store.get(this.id), this); }
+  raw() { return JSON.stringify(this.store.get(this.id) ?? null); }
   async set(data: Doc, opts?: { merge?: boolean }) {
     rejectUndefined(data);
     this.store.set(this.id, opts?.merge ? { ...(this.store.get(this.id) || {}), ...structuredClone(data) } : structuredClone(data));
@@ -63,16 +64,22 @@ export class FakeFirestore {
       commit: async () => { for (const op of ops) await op(); },
     };
   }
+  /** Like Firestore: if a document read inside the transaction changed before it commits, the whole function runs again. */
   async runTransaction<T>(fn: (tx: any) => Promise<T>): Promise<T> {
-    const writes: (() => Promise<void>)[] = [];
-    const tx = {
-      get: (r: DocRef) => r.get(),
-      set: (r: DocRef, d: Doc, o?: any) => { writes.push(() => r.set(d, o)); },
-      update: (r: DocRef, d: Doc) => { writes.push(() => r.update(d)); },
-    };
-    const out = await fn(tx);
-    for (const w of writes) await w();
-    return out;
+    for (let attempt = 0; attempt < 6; attempt++) {
+      const writes: (() => Promise<void>)[] = [];
+      const reads: [DocRef, string][] = [];
+      const tx = {
+        get: async (r: DocRef) => { const snap = await r.get(); reads.push([r, r.raw()]); await Promise.resolve(); return snap; },
+        set: (r: DocRef, d: Doc, o?: any) => { writes.push(() => r.set(d, o)); },
+        update: (r: DocRef, d: Doc) => { writes.push(() => r.update(d)); },
+      };
+      const out = await fn(tx);
+      if (reads.some(([r, v]) => r.raw() !== v)) continue;
+      for (const w of writes) await w();
+      return out;
+    }
+    throw new Error('transaction kept conflicting');
   }
   seed(name: string, id: string, data: Doc) { this.store(name).set(id, structuredClone(data)); }
   all(name: string): Record<string, any>[] { return [...this.store(name).entries()].map(([id, d]) => ({ id, ...d })); }

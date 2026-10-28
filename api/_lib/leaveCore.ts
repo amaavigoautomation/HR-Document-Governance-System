@@ -180,7 +180,7 @@ export function entryData(e: Omit<LedgerEntry, 'id' | 'createdAt'>): Omit<Ledger
 
 // ------------------------------------------------------------------ requests
 
-export type RequestStatus = 'PENDING' | 'APPROVED' | 'REJECTED' | 'CANCELLED' | 'CANCEL_REQUESTED';
+export type RequestStatus = 'PENDING' | 'APPROVED' | 'REJECTED' | 'CANCELLED' | 'CANCEL_REQUESTED' | 'INFO_REQUESTED' | 'WITHDRAWN';
 
 export interface RequestStep {
   role: Step;
@@ -213,6 +213,10 @@ export interface LeaveRequest {
   byCycle: Record<string, number>;
   reason: string;
   docUrl: string;
+  /** Policy version in force when the request was made (history stays traceable after the policy changes). */
+  policyVersion?: number;
+  /** Emergency leave: applied for after the fact, provisional until approved. */
+  emergency?: boolean;
   status: RequestStatus;
   steps: RequestStep[];
   stepIndex: number;
@@ -224,7 +228,9 @@ export interface LeaveRequest {
   events: { at: string; by: string; message: string }[];
 }
 
-export const ACTIVE_STATUSES: RequestStatus[] = ['PENDING', 'CANCEL_REQUESTED', 'APPROVED'];
+/** Requests that hold balance while they wait for a decision. */
+export const RESERVING: RequestStatus[] = ['PENDING', 'CANCEL_REQUESTED', 'INFO_REQUESTED'];
+export const ACTIVE_STATUSES: RequestStatus[] = ['PENDING', 'CANCEL_REQUESTED', 'APPROVED', 'INFO_REQUESTED'];
 
 export async function requestsOfUser(companyId: string, uid: string): Promise<LeaveRequest[]> {
   const snap = await db().collection('leaveRequests').where('companyId', '==', companyId).where('uid', '==', uid).get();
@@ -245,6 +251,8 @@ export interface ApplyInput {
   halfPart: 'FIRST' | 'SECOND';
   reason: string;
   docUrl: string;
+  /** Emergency leave: no advance notice is needed; the request stays provisional until approved. */
+  emergency: boolean;
 }
 
 export function parseApplyInput(body: any): ApplyInput {
@@ -260,6 +268,7 @@ export function parseApplyInput(body: any): ApplyInput {
     halfPart: body?.halfPart === 'FIRST' ? 'FIRST' : 'SECOND',
     reason: str(body?.reason, 600),
     docUrl: str(body?.docUrl, 500),
+    emergency: body?.emergency === true,
   };
 }
 
@@ -312,7 +321,7 @@ export async function planRequest(opts: {
 
   if (!relaxed) {
     if (daysBetween(today, input.from) < -30) throw new LeaveError(400, 'Leave can be applied up to 30 days back. Ask HR to record older leave.');
-    if (input.from >= today && daysBetween(today, input.from) < type.minNoticeDays) {
+    if (!input.emergency && input.from >= today && daysBetween(today, input.from) < type.minNoticeDays) {
       throw new LeaveError(400, `${type.name} needs ${type.minNoticeDays} day(s) notice.`);
     }
     if (type.maxDaysPerRequest > 0 && counted.days > type.maxDaysPerRequest) {
@@ -346,7 +355,7 @@ export async function planRequest(opts: {
     const ledger = await userLedger(opts.companyId, person.uid);
     for (const [key, need] of Object.entries(byCycle)) {
       const reserved = mine
-        .filter((r) => r.typeId === type.id && (r.status === 'PENDING' || r.status === 'CANCEL_REQUESTED') && r.id !== opts.ignoreRequestId)
+        .filter((r) => r.typeId === type.id && RESERVING.includes(r.status) && r.id !== opts.ignoreRequestId)
         .reduce((n, r) => n + (r.byCycle[key] || 0), 0);
       const available = balanceOf(ledger, type.id, key) - reserved;
       balanceAfter[key] = r2(available - need);

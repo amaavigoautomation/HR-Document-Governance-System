@@ -163,7 +163,7 @@ export const HrRequests: React.FC<{ me: any }> = ({ me }) => {
         <div className="mb-3 overflow-x-auto">
           <Segmented size="sm" value={status} onChange={setStatus} options={[
             { value: '', label: 'All' }, { value: 'PENDING', label: 'Waiting' }, { value: 'APPROVED', label: 'Approved' },
-            { value: 'CANCEL_REQUESTED', label: 'Cancel asked' }, { value: 'REJECTED', label: 'Rejected' }, { value: 'CANCELLED', label: 'Cancelled' },
+            { value: 'CANCEL_REQUESTED', label: 'Cancel asked' }, { value: 'REJECTED', label: 'Rejected' }, { value: 'CANCELLED', label: 'Cancelled' }, { value: 'WITHDRAWN', label: 'Withdrawn' }, { value: 'INFO_REQUESTED', label: 'Info asked' },
           ]} />
         </div>
         {!showRecord && note && <div className="mb-2"><Notice tone={note.tone === 'ok' ? 'ok' : 'error'}>{note.text}</Notice></div>}
@@ -173,7 +173,7 @@ export const HrRequests: React.FC<{ me: any }> = ({ me }) => {
               <div key={r.id} className="py-2.5 flex flex-wrap justify-between items-center gap-2">
                 <div><div className="text-sm font-semibold text-slate-800">{r.name} · {r.typeName} · {days(r.days)}</div><div className="text-xs text-slate-500">{range(r.from, r.to)}{halfNote(r)}{r.managerName ? ` · approver ${r.managerName}` : ''}{r.reason ? ` · ${r.reason}` : ''}</div></div>
                 <div className="flex items-center gap-2"><StatusPill status={r.status} short />
-                  {['PENDING', 'APPROVED', 'CANCEL_REQUESTED'].includes(r.status) && <ConfirmButton disabled={busy} question="Cancel and give days back?" yes="Cancel leave" onConfirm={() => run(async () => { await leaveService.hrCancel(r.id); await load(); }, 'Leave cancelled and balance restored.')}>Cancel</ConfirmButton>}
+                  {['PENDING', 'APPROVED', 'CANCEL_REQUESTED', 'INFO_REQUESTED'].includes(r.status) && <ConfirmButton disabled={busy} question="Cancel and give days back?" yes="Cancel leave" onConfirm={() => run(async () => { await leaveService.hrCancel(r.id); await load(); }, 'Leave cancelled and balance restored.')}>Cancel</ConfirmButton>}
                 </div>
               </div>
             ))}
