@@ -257,7 +257,7 @@ export function buildMonth(settings: LeaveSettings, locId: string, joinDate: str
       date: d, status: r.status, workedMinutes: r.workedMinutes, late: r.late,
       checkIn: rec?.checkIn ? istParts(rec.checkIn).time : null,
       checkOut: rec?.checkOut ? istParts(rec.checkOut).time : null,
-      sessions: sessionsOf(rec).map((x) => ({ in: istParts(x.in).time, out: x.out ? istParts(x.out).time : null })),
+      sessions: sessionsOf(rec).map((x) => ({ in: istParts(x.in).time, out: x.out ? istParts(x.out).time : null, inNote: x.inNote || '', outNote: x.outNote || '' })),
       source: rec?.source || null, note: rec?.note || '',
     });
   }
@@ -729,16 +729,81 @@ async function attendance(who: Who, q: any): Promise<Result> {
   return ok({ month, person: { uid, name: person.name }, ...buildMonth(c.settings, prof.locationId, prof.joinDate, month, records, requests) });
 }
 
-/** Whose attendance this person may open: themselves, their direct reports, or everyone when they run reports. */
-async function attendancePeople(who: Who): Promise<Result> {
-  const c = await loadCtx(who);
+/** Who this person may open attendance for: themselves, their direct reports, or everyone when they run reports. */
+async function visiblePeople(who: Who, c: Ctx): Promise<Person[]> {
   const [people, profiles] = await Promise.all([loadPeople(who.cid), loadProfiles(who.cid)]);
   const mayOpen = (uid: string) => uid === c.me.uid || who.canReport || profiles.get(uid)?.managerUid === c.me.uid;
-  const items = people
+  return people
     .filter((p) => p.active && !profiles.get(p.uid)?.hidden && mayOpen(p.uid))
-    .sort((a, b) => (a.uid === c.me.uid ? -1 : b.uid === c.me.uid ? 1 : a.name.localeCompare(b.name)))
-    .map((p) => ({ uid: p.uid, name: p.name, empId: p.empId, department: p.department }));
+    .sort((a, b) => (a.uid === c.me.uid ? -1 : b.uid === c.me.uid ? 1 : a.name.localeCompare(b.name)));
+}
+
+async function attendancePeople(who: Who): Promise<Result> {
+  const c = await loadCtx(who);
+  const items = (await visiblePeople(who, c)).map((p) => ({ uid: p.uid, name: p.name, empId: p.empId, department: p.department }));
   return ok({ items, me: c.me.uid });
+}
+
+const MAX_REPORT_DAYS = 93;
+
+/**
+ * Day-by-day attendance for the report pages: one employee, or everyone this person may see.
+ * The page builds each report (late, absent, in/out ...) from this one list.
+ */
+async function attendanceReport(who: Who, q: any): Promise<Result> {
+  const c = await loadCtx(who);
+  const from = str(q.from, 10);
+  const to = str(q.to, 10);
+  if (!isIsoDate(from) || !isIsoDate(to) || from > to) return fail(400, 'Choose a valid date range.');
+  if (daysBetween(from, to) + 1 > MAX_REPORT_DAYS) return fail(400, `Choose a range of at most ${MAX_REPORT_DAYS} days.`);
+  const visible = await visiblePeople(who, c);
+  const uid = str(q.uid, 128);
+  const chosen = uid ? visible.filter((p) => p.uid === uid) : visible;
+  if (uid && chosen.length === 0) return fail(403, 'You cannot view this person.');
+  const wanted = new Set(chosen.map((p) => p.uid));
+
+  const months: string[] = [];
+  for (let d = from.slice(0, 7); d <= to.slice(0, 7); d = addDays(`${d}-01`, 32).slice(0, 7)) months.push(d);
+  const [profiles, reqs, ...snaps] = await Promise.all([
+    loadProfiles(who.cid), companyRequests(who.cid),
+    ...months.map((m) => db().collection('leaveAttendance').where('companyId', '==', who.cid).where('month', '==', m).get()),
+  ]);
+  const recs = new Map<string, Map<string, any>>();
+  snaps.forEach((snap: any) => snap.docs.forEach((d: any) => {
+    const x = d.data();
+    if (!wanted.has(x.uid)) return;
+    if (!recs.has(x.uid)) recs.set(x.uid, new Map());
+    recs.get(x.uid)!.set(x.date, x);
+  }));
+
+  const people = chosen.map((p) => {
+    const prof = effectiveProfile(c.settings, p, profiles.get(p.uid));
+    const mine = reqs.filter((r) => r.uid === p.uid);
+    const days: any[] = [];
+    months.forEach((m) => {
+      buildMonth(c.settings, prof.locationId, prof.joinDate, m, recs.get(p.uid) || new Map(), mine).days.forEach((d: any) => {
+        if (d.date >= from && d.date <= to) days.push(d);
+      });
+    });
+    return { uid: p.uid, name: p.name, empId: p.empId, department: p.department, days };
+  });
+  const sh = c.settings.shift;
+  return ok({ from, to, shift: { start: sh.start, end: sh.end, graceMinutes: sh.graceMinutes, fullDayMinutes: sh.fullDayMinutes }, today: istToday(), people });
+}
+
+/** Attendance applications still waiting for a decision, for the people this person may see. */
+async function pendingApplications(who: Who): Promise<Result> {
+  const c = await loadCtx(who);
+  const visible = new Set((await visiblePeople(who, c)).map((p) => p.uid));
+  const snap = await db().collection('leaveRegularizations').where('companyId', '==', who.cid).where('status', '==', 'PENDING').get();
+  const today = istToday();
+  const items = snap.docs.map((d: any) => d.data()).filter((r: any) => visible.has(r.uid))
+    .map((r: any) => ({
+      id: r.id, docNo: r.docNo || '', uid: r.uid, name: r.name, date: r.date, checkIn: r.checkIn || '', checkOut: r.checkOut || '', reason: r.reason || '',
+      appliedByName: r.appliedByName || r.name, appliedOn: String(r.createdAt || '').slice(0, 10), waitingDays: Math.max(0, daysBetween(String(r.createdAt || '').slice(0, 10) || today, today)),
+    }))
+    .sort((a: any, b: any) => a.appliedOn.localeCompare(b.appliedOn));
+  return ok({ items });
 }
 
 const docNo = () => `AA-${istToday().slice(2).replace(/-/g, '')}-${Math.random().toString(36).slice(2, 6).toUpperCase()}`;
@@ -1234,6 +1299,8 @@ export async function routeLeave(r: LeaveRequestIn): Promise<Result> {
       case 'check-out': if (POST) return await punch(who, 'out', r.ip, body); break;
       case 'attendance': if (GET) return await attendance(who, r.query); break;
       case 'apply-attendance': if (POST) return await applyAttendance(who, body); break;
+      case 'attendance-report': if (GET) return await attendanceReport(who, r.query); break;
+      case 'pending-applications': if (GET) return await pendingApplications(who); break;
       case 'attendance-people': if (GET) return await attendancePeople(who); break;
       case 'regularize': if (POST) return await regularize(who, body); break;
       case 'my-regularizations': if (GET) return await myRegularizations(who); break;

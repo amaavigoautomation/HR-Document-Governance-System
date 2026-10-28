@@ -178,6 +178,15 @@ assert.equal((await ok(MGR, 'GET', 'inbox')).regularizations.some((r: any) => r.
 assert.equal((await ok(HR, 'GET', 'inbox')).regularizations.some((r: any) => r.docNo === behalf.docNo), true);
 const direct = await ok(HR, 'POST', 'apply-attendance', { uid: 'u_other', rows: [{ date: addDays(today, -6), checkIn: '09:00', checkOut: '18:00', reason: 'machine down' }] });
 assert.equal(direct.applied, true, 'HR applies straight away');
+
+// --- report data: own, team and everyone, never a peer
+const repOwn = await ok(EMP, 'GET', 'attendance-report', undefined, { from: addDays(today, -6), to: today });
+assert.equal(repOwn.people.length, 1, 'an employee only gets their own days');
+assert.equal((await call(OTHER, 'GET', 'attendance-report', undefined, { from: addDays(today, -6), to: today, uid: 'u_emp' })).status, 403);
+assert.ok((await ok(HR, 'GET', 'attendance-report', undefined, { from: addDays(today, -6), to: today })).people.length >= 3, 'HR sees everyone');
+assert.equal((await call(HR, 'GET', 'attendance-report', undefined, { from: '2026-01-01', to: '2026-12-31' })).status, 400, 'range cap');
+assert.equal((await ok(HR, 'GET', 'pending-applications')).items.some((r: any) => r.docNo === behalf.docNo), true);
+assert.equal((await ok(OTHER, 'GET', 'pending-applications')).items.length, 0, 'peers see no one else\'s applications');
 assert.equal((await call(OTHER, 'GET', 'attendance', undefined, { uid: 'u_emp' })).status, 403, 'peers cannot read your attendance');
 assert.equal((await call(MGR, 'GET', 'attendance', undefined, { uid: 'u_emp' })).status, 200, 'manager can');
 await ok(HR, 'POST', 'mark-attendance', { uid: 'u_other', date: yesterday, checkIn: '10:00', checkOut: '19:00' });
