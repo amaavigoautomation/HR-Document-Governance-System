@@ -5,6 +5,7 @@ import { peopleNav } from '../lifecycle/peopleNav';
 import { EMPLOYEE_ENTRIES, employeeNav, employeeNavItems } from './employeeNav';
 import { EmployeeProfilePage } from './EmployeeProfilePage';
 import { EmployeeIdentityPage } from './EmployeeIdentityPage';
+import { PersonalInfoPage } from './PersonalInfoPage';
 import { EmployeePicker } from './EmployeePicker';
 import type { HRAgentModule } from '../HRAgentShell';
 
@@ -54,11 +55,12 @@ export const EmployeeModule: React.FC<{ currentUser: User; canPick?: boolean; on
           </div>
         )}
 
-        {canPick && (entry?.key === 'master' || entry?.key === 'identity') && <EmployeePicker current={pickedUid} onPick={setPickedUid} />}
+        {canPick && (entry?.key === 'master' || entry?.key === 'identity' || entry?.key === 'personal') && <EmployeePicker current={pickedUid} onPick={setPickedUid} />}
         {entry?.key === 'master' && <EmployeeProfilePage uid={pickedUid} />}
         {entry?.key === 'identity' && <EmployeeIdentityPage uid={pickedUid} />}
+        {entry?.key === 'personal' && <PersonalInfoPage uid={pickedUid} />}
 
-        {entry && entry.key !== 'master' && entry.key !== 'identity' && (
+        {entry && !['master', 'identity', 'personal'].includes(entry.key) && (
           <div className="bg-white border border-slate-200 rounded-2xl p-8 text-center">
             <h2 className="text-base font-black text-slate-800">{entry.label}</h2>
             <p className="text-xs text-slate-500 mt-1">{entry.hint}</p>

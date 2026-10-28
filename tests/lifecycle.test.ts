@@ -243,4 +243,31 @@ assert.equal((await call(FOREIGN, 'GET', 'profile', {}, { uid: 'u_emp' })).statu
   assert.equal((await call(FOREIGN, 'GET', 'identity', {}, { uid: 'u_emp' })).status, 404, 'another company cannot read it');
 }
 
+// ---- employee personal information
+{
+  const get = async (h: any, uid?: string) => (await call(h, 'GET', 'personal', {}, uid ? { uid } : {})).json;
+  const empty = await get(EMP);
+  assert.equal(empty.values.permanentAddress, ''); assert.equal(empty.values.airPassage, false);
+  assert.equal((await call(EMP, 'POST', 'personal-save', { values: { personalNo: 'abc' } })).status, 400);
+  assert.equal((await call(EMP, 'POST', 'personal-save', { values: { personalEmail: 'nope' } })).status, 400);
+  assert.equal((await call(EMP, 'POST', 'personal-save', { values: { anniversaryDate: '2999-01-01' } })).status, 400);
+  await ok(EMP, 'POST', 'personal-save', { values: { permanentAddress: '1 MG Road, Pune', personalNo: '+91 98765 43210', madeUp: 'ignored', emg1Mobile1: '9999999999', airPassage: true, anniversaryDate: '2015-02-14' } });
+  const mine2 = await get(EMP);
+  assert.equal(mine2.values.permanentAddress, '1 MG Road, Pune'); assert.equal(mine2.values.emg1Mobile1, '9999999999');
+  assert.equal(mine2.values.airPassage, true); assert.equal(mine2.values.anniversaryDate, '2015-02-14');
+  assert.equal(mine2.values.madeUp, undefined, 'only known fields are kept');
+  await ok(EMP, 'POST', 'personal-save', { values: { postalAddress: 'PO Box 4' } });
+  assert.equal((await get(EMP)).values.permanentAddress, '1 MG Road, Pune', 'saving one tab leaves the others alone');
+  assert.equal((await call(OTHER, 'GET', 'personal', {}, { uid: 'u_emp' })).status, 403);
+  assert.equal((await call(OTHER, 'POST', 'personal-save', { uid: 'u_emp', values: { contactCity: 'X' } })).status, 403);
+  assert.equal((await get(HR, 'u_emp')).values.contactCity, '');
+  await ok(HR, 'POST', 'personal-save', { uid: 'u_emp', values: { contactCity: 'Pune' } });
+  assert.equal((await get(EMP)).values.contactCity, 'Pune');
+  assert.equal((await call(FOREIGN, 'GET', 'personal', {}, { uid: 'u_emp' })).status, 404, 'another company cannot read it');
+  // saving the anniversary must not undo the person's Home choices or the birth date HR entered
+  await ok(HR, 'POST', 'profile-save', { uid: 'u_emp', fields: { dob: '2000-03-14' } });
+  await ok(EMP, 'POST', 'personal-save', { values: { anniversaryDate: '2016-02-14' } });
+  assert.equal((await call(HR, 'GET', 'profile', {}, { uid: 'u_emp' })).json.profile.dob, '2000-03-14');
+}
+
 console.log('lifecycle tests passed');

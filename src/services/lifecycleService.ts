@@ -47,6 +47,9 @@ export const lifecycleService = {
   identities: (uid?: string) => get('identity', { uid }),
   saveIdentity: (b: { uid?: string; type: string; number: string }) => post('identity-save', b),
   decideIdentity: (b: { uid: string; type: string; approve: boolean; note?: string }) => post('identity-decide', b),
+  // personal information
+  personal: (uid?: string) => get('personal', { uid }),
+  savePersonal: (uid: string | undefined, values: Record<string, string | boolean>) => post('personal-save', { uid, values }),
   // directory
   directory: (all = false) => get('directory', { all: all ? '1' : undefined }),
   setManager: (uid: string, managerUid: string) => post('set-manager', { uid, managerUid }),

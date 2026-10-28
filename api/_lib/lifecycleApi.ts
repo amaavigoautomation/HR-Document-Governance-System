@@ -15,6 +15,7 @@ import {
   db, loadPeople, loadProfiles, notify, nowIso, personByUid, profileId, profileOf, str, companyLabel, type Person, type Profile,
 } from './leaveCore.js';
 import { IDENTITY_TYPES, identityProblem, identityTypeKeys, normalizeIdentity } from '../../shared/employeeIdentity.js';
+import { PERSONAL_FIELDS, checkPersonalField } from '../../shared/employeePersonal.js';
 import { istToday } from '../../shared/leaveEngine.js';
 import {
   ASSIGNEE_LABEL, DEFAULT_CLEARANCE, DEFAULT_LETTERS, DEFAULT_TASK_TEMPLATES, EXIT_REASONS, EXIT_STATUS_LABEL, MERGE_FIELDS,
@@ -886,6 +887,56 @@ async function identityDecide(w: Who, body: any): Promise<Result> {
   return ok({});
 }
 
+// ------------------------------------------------------------------ employee personal information (Employee > Personal Information)
+//
+// Addresses, contacts and emergency contacts live in the server-only employeePersonal collection. The person can fill in
+// their own; HR can fill in anyone's. The wedding anniversary is kept in personalDates with the Home celebration choices.
+
+async function personalGet(w: Who, q: any): Promise<Result> {
+  const uid = str(q?.uid, 128) || w.uid;
+  if (uid !== w.uid && !canSeeProfiles(w)) return fail(403, 'You can only open your own personal information.');
+  if (!(await personByUid(w.cid, uid))) return fail(404, 'Employee not found.');
+  const [snap, dsnap] = await Promise.all([
+    db().collection('employeePersonal').doc(profileDocId(w.cid, uid)).get(),
+    db().collection('personalDates').doc(profileDocId(w.cid, uid)).get(),
+  ]);
+  const d: any = snap.exists && snap.data().companyId === w.cid ? snap.data() : {};
+  const dates: any = dsnap.exists && dsnap.data().companyId === w.cid ? dsnap.data() : {};
+  const values: Record<string, string | boolean> = {};
+  for (const fd of PERSONAL_FIELDS) values[fd.key] = fd.kind === 'bool' ? d[fd.key] === true : String(d[fd.key] || '');
+  values.anniversaryDate = String(dates.marriageDate || '');
+  return ok({ values, updatedAt: d.updatedAt || '' });
+}
+
+async function personalSave(w: Who, body: any): Promise<Result> {
+  const uid = str(body?.uid, 128) || w.uid;
+  if (uid !== w.uid && !canSeeProfiles(w)) return fail(403, 'You can only change your own personal information.');
+  if (!(await personByUid(w.cid, uid))) return fail(404, 'Employee not found.');
+  const given = body?.values && typeof body.values === 'object' ? body.values : {};
+  const next: Record<string, string | boolean> = {};
+  for (const fd of PERSONAL_FIELDS) {
+    if (given[fd.key] === undefined) continue;
+    const r = checkPersonalField(fd, given[fd.key]);
+    if ('error' in r) return fail(400, r.error);
+    next[fd.key] = r.value;
+  }
+  let anniversary: string | undefined;
+  if (given.anniversaryDate !== undefined) {
+    anniversary = str(given.anniversaryDate, 10);
+    if (anniversary && (!isDate(anniversary) || anniversary < '1900-01-01' || anniversary > istToday())) return fail(400, 'Use a valid anniversary date.');
+  }
+  const ref = db().collection('employeePersonal').doc(profileDocId(w.cid, uid));
+  const cur = await ref.get();
+  await ref.set(clean({ ...(cur.exists && cur.data().companyId === w.cid ? cur.data() : {}), ...next, uid, companyId: w.cid, updatedAt: nowIso(), updatedBy: w.uid }));
+  if (anniversary !== undefined) {
+    const dref = db().collection('personalDates').doc(profileDocId(w.cid, uid));
+    const dcur = await dref.get();
+    const dd: any = dcur.exists && dcur.data().companyId === w.cid ? dcur.data() : {};
+    await dref.set(clean({ showCelebrations: true, showMarriage: false, dob: '', ...dd, marriageDate: anniversary, companyId: w.cid, uid, updatedAt: nowIso(), updatedBy: w.uid }));
+  }
+  return ok({});
+}
+
 // ------------------------------------------------------------------ router
 
 async function me(w: Who): Promise<Result> {
@@ -960,6 +1011,8 @@ export async function routeLifecycle(r: LifecycleRequestIn): Promise<Result> {
       case 'identity': return GET ? await identityGet(w, r.query) : wrong;
       case 'identity-save': return POST ? await identitySave(w, body) : wrong;
       case 'identity-decide': return POST ? await identityDecide(w, body) : wrong;
+      case 'personal': return GET ? await personalGet(w, r.query) : wrong;
+      case 'personal-save': return POST ? await personalSave(w, body) : wrong;
       case 'profile': return GET ? await profileGet(w, r.query) : wrong;
       case 'profile-save': return POST ? await profileSave(w, body) : wrong;
       case 'directory': return GET ? await directory(w, r.query) : wrong;
