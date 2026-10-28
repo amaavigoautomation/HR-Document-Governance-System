@@ -145,7 +145,8 @@ const ApprovalsList: React.FC<{ reload: () => void }> = ({ reload }) => {
               <div className="text-sm font-bold text-slate-900">{r.name} <span className="font-normal text-slate-500">wants to fix {shortDate(r.date)}</span>
                 {r.coveringFor && <span className="ml-2 align-middle text-[10px] font-bold px-2 py-0.5 rounded-full bg-sky-50 text-sky-700 border border-sky-200">Covering for {r.coveringFor}</span>}
               </div>
-              <div className="mt-1 text-xs text-slate-600">Real times: <b>{r.checkIn}</b> to <b>{r.checkOut}</b></div>
+              <div className="mt-1 text-xs text-slate-600">Time in: <b>{r.checkIn || 'unchanged'}</b> · Time out: <b>{r.checkOut || 'unchanged'}</b>{r.outDate && r.outDate !== r.date ? ` (next day)` : ''}{r.docNo ? <span className="ml-2 text-slate-400">{r.docNo}</span> : null}</div>
+              {r.onBehalf && <div className="mt-1 text-[11px] text-slate-500">Applied by {r.appliedByName}</div>}
               {r.reason && <div className="mt-1.5 text-xs text-slate-700 bg-slate-50 rounded-lg px-2.5 py-1.5 border border-slate-100">“{r.reason}”</div>}
               <Decide busy={busy} onDecide={(d, c) => act(r.id, d, c, true)} />
             </div>

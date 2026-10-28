@@ -25,6 +25,7 @@ export const leaveService = {
   checkIn: (remarks = '') => post('check-in', { remarks }),
   checkOut: (remarks = '') => post('check-out', { remarks }),
   attendance: (month: string, uid?: string) => get('attendance', { month, uid }),
+  applyAttendance: (b: unknown) => post('apply-attendance', b),
   attendancePeople: () => get('attendance-people'),
   regularize: (b: unknown) => post('regularize', b),
   myRegularizations: () => get('my-regularizations'),

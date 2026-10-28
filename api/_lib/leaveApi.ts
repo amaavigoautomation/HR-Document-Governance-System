@@ -741,28 +741,110 @@ async function attendancePeople(who: Who): Promise<Result> {
   return ok({ items, me: c.me.uid });
 }
 
-async function regularize(who: Who, body: any): Promise<Result> {
-  const c = await loadCtx(who);
-  const date = str(body?.date, 10);
-  const today = istToday();
-  if (!isIsoDate(date) || date > today || daysBetween(date, today) > 31) return fail(400, 'Choose a date within the last 31 days.');
-  const ci = str(body?.checkIn, 5);
-  const co = str(body?.checkOut, 5);
-  if (!Number.isFinite(timeToMinutes(ci)) || !Number.isFinite(timeToMinutes(co)) || timeToMinutes(co) <= timeToMinutes(ci)) {
-    return fail(400, 'Enter valid in and out times (out must be after in).');
+const docNo = () => `AA-${istToday().slice(2).replace(/-/g, '')}-${Math.random().toString(36).slice(2, 6).toUpperCase()}`;
+
+/**
+ * Puts a correction on top of what is recorded. Both times = the day becomes one stretch. Only an in time or only an out
+ * time changes the first in or the last out and keeps the rest. Returns the new record fields, or the reason it cannot be done.
+ */
+function mergeCorrection(date: string, ci: string, co: string, outDate: string, existing: any): { checkIn: string; checkOut: string; sessions: PunchSession[] } | { error: string } {
+  const newIn = ci ? istToInstant(date, ci) : '';
+  const newOut = co ? istToInstant(outDate || date, co) : '';
+  let ss: PunchSession[] = sessionsOf(existing).map((x) => ({ ...x }));
+  if (newIn && newOut) ss = [{ in: newIn, out: newOut }];
+  else {
+    if (ss.length === 0) return { error: 'There are no punches for that day, so give both the time in and the time out.' };
+    if (newIn) ss[0].in = newIn;
+    if (newOut) ss[ss.length - 1].out = newOut;
   }
-  const reason = str(body?.reason, 400);
-  if (!reason) return fail(400, 'Give a reason.');
-  const prof = effectiveProfile(c.settings, c.me, await profileOf(who.cid, c.me.uid));
-  const id = db().collection('leaveRegularizations').doc().id;
-  await db().collection('leaveRegularizations').doc(id).set({
-    id, companyId: who.cid, uid: c.me.uid, name: c.me.name, email: c.me.email, managerUid: prof.managerUid,
-    date, checkIn: ci, checkOut: co, reason, status: 'PENDING', createdAt: nowIso(),
+  for (const x of ss) if (x.out && new Date(x.out).getTime() <= new Date(x.in).getTime()) return { error: 'The time out must be after the time in.' };
+  return { checkIn: ss[0].in, checkOut: ss[ss.length - 1].out || null as any, sessions: ss };
+}
+
+/**
+ * Attendance application: one form, one or more days. Anyone can apply for themselves, a manager for their reports
+ * (HR approves), and HR for anyone (applied straight away). Back to the joining date.
+ */
+async function applyAttendance(who: Who, body: any): Promise<Result> {
+  const c = await loadCtx(who);
+  const forUid = str(body?.uid, 128) || c.me.uid;
+  const mine = forUid === c.me.uid;
+  const target: Person | undefined = mine ? c.me : await personByUid(who.cid, forUid);
+  if (!target) return fail(404, 'Employee not found.');
+  const targetProf = effectiveProfile(c.settings, target, await profileOf(who.cid, forUid));
+  if (!mine && !who.canManage && targetProf.managerUid !== c.me.uid) return fail(403, 'You can only apply for your own team.');
+
+  const rawRows: any[] = Array.isArray(body?.rows) ? body.rows : [];
+  if (rawRows.length === 0) return fail(400, 'Add at least one day.');
+  if (rawRows.length > 31) return fail(400, 'Apply for at most 31 days in one form.');
+  const today = istToday();
+  const floor = targetProf.joinDate && isIsoDate(targetProf.joinDate) ? targetProf.joinDate : addDays(today, -366);
+  const remarks = str(body?.remarks, 400);
+
+  const pending = await db().collection('leaveRegularizations').where('companyId', '==', who.cid).where('uid', '==', forUid).get();
+  const pendingDates = new Set(pending.docs.map((d: any) => d.data()).filter((r: any) => r.status === 'PENDING').map((r: any) => r.date));
+  const seen = new Set<string>();
+  const rows: { date: string; checkIn: string; checkOut: string; outDate: string; reason: string }[] = [];
+  for (let i = 0; i < rawRows.length; i++) {
+    const x = rawRows[i];
+    const n = `Row ${i + 1}: `;
+    const date = str(x?.date, 10);
+    if (!isIsoDate(date) || date > today) return fail(400, `${n}choose a date that is not in the future.`);
+    if (date < floor) return fail(400, `${n}that is before the joining date (${floor}).`);
+    if (seen.has(date)) return fail(400, `${n}${date} is listed twice.`);
+    if (pendingDates.has(date)) return fail(400, `${n}${date} already has a request waiting for approval.`);
+    seen.add(date);
+    const ci = str(x?.checkIn, 5);
+    const co = str(x?.checkOut, 5);
+    if ((ci && !Number.isFinite(timeToMinutes(ci))) || (co && !Number.isFinite(timeToMinutes(co)))) return fail(400, `${n}enter valid times.`);
+    if (!ci && !co) return fail(400, `${n}give a time in, a time out, or both.`);
+    const outDate = str(x?.outDate, 10) || date;
+    if (!isIsoDate(outDate) || outDate < date || outDate > addDays(date, 1)) return fail(400, `${n}the out date must be the same day or the next day.`);
+    const reason = str(x?.reason, 400);
+    if (!reason) return fail(400, `${n}give a reason.`);
+    const existing = await db().collection('leaveAttendance').doc(attendanceId(who.cid, forUid, date)).get();
+    const merged = mergeCorrection(date, ci, co, outDate, existing.exists ? existing.data() : null);
+    if ('error' in merged) return fail(400, `${n}${merged.error}`);
+    rows.push({ date, checkIn: ci, checkOut: co, outDate, reason });
+  }
+
+  const no = docNo();
+  const now = nowIso();
+  const direct = !mine && who.canManage; // HR applying for someone: applied straight away
+  const approverUid = mine ? targetProf.managerUid : ''; // a manager applying for a report: HR approves
+  const batch = db().batch();
+  const ids: string[] = [];
+  rows.forEach((r, i) => {
+    const id = db().collection('leaveRegularizations').doc().id;
+    ids.push(id);
+    batch.set(db().collection('leaveRegularizations').doc(id), {
+      id, docNo: no, rowNo: i + 1, remarks, companyId: who.cid, uid: forUid, name: target.name, email: target.email, managerUid: approverUid,
+      date: r.date, checkIn: r.checkIn, checkOut: r.checkOut, outDate: r.outDate, reason: r.reason,
+      appliedBy: c.me.uid, appliedByName: c.me.name, onBehalf: !mine,
+      status: direct ? 'APPROVED' : 'PENDING', createdAt: now, ...(direct ? { decidedBy: c.me.name, decidedAt: now } : {}),
+    });
   });
-  const people = await loadPeople(who.cid);
-  const mgr = people.find((p) => p.uid === prof.managerUid);
-  await notify(who.cid, mgr ? [mgr.email] : c.settings.notifyEmails, `Attendance correction: ${c.me.name}, ${date}`, `${c.me.name} asked to correct attendance for ${date}: ${ci} to ${co}.\nReason: ${reason}\nOpen Leave & Attendance > Approvals.`);
-  return ok({ id });
+  await batch.commit();
+  if (direct) {
+    for (const r of rows) {
+      const ref = db().collection('leaveAttendance').doc(attendanceId(who.cid, forUid, r.date));
+      const snap = await ref.get();
+      const m = mergeCorrection(r.date, r.checkIn, r.checkOut, r.outDate, snap.exists ? snap.data() : null);
+      if ('error' in m) continue;
+      await ref.set({ companyId: who.cid, uid: forUid, date: r.date, month: r.date.slice(0, 7), ...m, source: 'REGULARIZED', note: r.reason, updatedAt: now, updatedBy: c.me.name });
+    }
+    await notify(who.cid, [target.email], `Attendance updated (${no})`, `${c.me.name} (HR) updated your attendance for ${rows.map((r) => r.date).join(', ')}.`);
+  } else {
+    const people = await loadPeople(who.cid);
+    const mgr = approverUid ? people.find((p) => p.uid === approverUid) : undefined;
+    await notify(who.cid, mgr ? [mgr.email] : c.settings.notifyEmails, `Attendance application ${no}: ${target.name}`,
+      `${c.me.name} applied to correct attendance${mine ? '' : ` for ${target.name}`}: ${rows.map((r) => `${r.date} (${r.checkIn || 'in unchanged'} to ${r.checkOut || 'out unchanged'})`).join('; ')}.\n${remarks ? `Remarks: ${remarks}\n` : ''}Open Leave & Attendance > Approvals.`);
+  }
+  return ok({ id: ids[0], ids, docNo: no, count: rows.length, applied: direct });
+}
+
+async function regularize(who: Who, body: any): Promise<Result> {
+  return applyAttendance(who, { remarks: '', rows: [{ date: body?.date, checkIn: body?.checkIn, checkOut: body?.checkOut, reason: body?.reason }] });
 }
 
 async function myRegularizations(who: Who): Promise<Result> {
@@ -788,10 +870,12 @@ async function decideRegularization(who: Who, body: any): Promise<Result> {
   const batch = db().batch();
   batch.update(ref, { status: approve ? 'APPROVED' : 'REJECTED', decidedBy: decider, decidedAt: now, comment: str(body?.comment, 300) });
   if (approve) {
-    batch.set(db().collection('leaveAttendance').doc(attendanceId(who.cid, r.uid, r.date)), {
-      companyId: who.cid, uid: r.uid, date: r.date, month: r.date.slice(0, 7),
-      checkIn: istToInstant(r.date, r.checkIn), checkOut: istToInstant(r.date, r.checkOut),
-      sessions: [{ in: istToInstant(r.date, r.checkIn), out: istToInstant(r.date, r.checkOut) }],
+    const attRef = db().collection('leaveAttendance').doc(attendanceId(who.cid, r.uid, r.date));
+    const cur = await attRef.get();
+    const m = mergeCorrection(r.date, r.checkIn || '', r.checkOut || '', r.outDate || r.date, cur.exists ? cur.data() : null);
+    if ('error' in m) return fail(409, m.error);
+    batch.set(attRef, {
+      companyId: who.cid, uid: r.uid, date: r.date, month: r.date.slice(0, 7), ...m,
       source: 'REGULARIZED', note: r.reason, updatedAt: now, updatedBy: c.me.name,
     });
   }
@@ -1149,6 +1233,7 @@ export async function routeLeave(r: LeaveRequestIn): Promise<Result> {
       case 'check-in': if (POST) return await punch(who, 'in', r.ip, body); break;
       case 'check-out': if (POST) return await punch(who, 'out', r.ip, body); break;
       case 'attendance': if (GET) return await attendance(who, r.query); break;
+      case 'apply-attendance': if (POST) return await applyAttendance(who, body); break;
       case 'attendance-people': if (GET) return await attendancePeople(who); break;
       case 'regularize': if (POST) return await regularize(who, body); break;
       case 'my-regularizations': if (GET) return await myRegularizations(who); break;

@@ -10,10 +10,10 @@ const WEEK = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 const monthTitle = (m: string) => `${MONTHS[Number(m.slice(5, 7)) - 1]} ${m.slice(0, 4)}`;
 const toMin = (hhmm: string) => { const [h, m] = (hhmm || '0:0').split(':').map(Number); return h * 60 + m; };
-/** Corrections can be asked for the last 31 days (server rule). */
+/** Corrections can be asked for any day since joining (the server checks the join date). */
 const canFix = (d: any) => {
   const today = todayIst();
-  return d.date <= today && d.date >= addDaysIso(today, -31) && !['HOLIDAY', 'WEEKLY_OFF', 'NOT_EMPLOYED', 'FUTURE', 'LEAVE'].includes(d.status);
+  return d.date <= today && !['HOLIDAY', 'WEEKLY_OFF', 'NOT_EMPLOYED', 'FUTURE', 'LEAVE'].includes(d.status);
 };
 
 /** Minutes since midnight in IST, refreshed every 15 seconds. */
@@ -237,8 +237,8 @@ export const FixDayDrawer: React.FC<{ me: any; day: any | null; open: boolean; o
     <Drawer open={open} onClose={onClose} title="Fix a day" subtitle={`Forgot to check in or out? Tell us the real times. ${approver} will approve it.`}
       footer={<div className="flex gap-2"><button className={`${btnBig} flex-1`} disabled={busy || bad} onClick={() => run(async () => { await leaveService.regularize(form); onSent(); onClose(); }, `Sent to ${approver} for approval.`)}>{busy ? 'Sending…' : 'Send for approval'}</button><button className={btnGhost} onClick={onClose}>Cancel</button></div>}>
       <div className="space-y-4">
-        <Field label="Which day?" hint="Any day in the last 31 days">
-          <input type="date" className={input} min={addDaysIso(today, -31)} max={today} value={form.date} onChange={(e) => setForm({ ...form, date: e.target.value })} />
+        <Field label="Which day?" hint="Any day since you joined">
+          <input type="date" className={input} min={me.profile.joinDate || addDaysIso(today, -366)} max={today} value={form.date} onChange={(e) => setForm({ ...form, date: e.target.value })} />
         </Field>
         {day && (
           <div className="rounded-lg bg-slate-50 border border-slate-200 px-3 py-2 text-xs text-slate-600">
@@ -282,7 +282,7 @@ export const AttendanceTab: React.FC<{ me: any; reload: () => void }> = ({ me, r
             <div className="divide-y divide-slate-100">
               {regs.slice(0, 12).map((r) => (
                 <div key={r.id} className="py-2 flex justify-between items-center gap-2 text-xs">
-                  <div><div className="font-semibold text-slate-700">{shortDate(r.date)}</div><div className="text-slate-500">{r.checkIn}–{r.checkOut}{r.reason ? ` · ${r.reason}` : ''}</div></div>
+                  <div><div className="font-semibold text-slate-700">{shortDate(r.date)}</div><div className="text-slate-500">{r.checkIn || '…'}–{r.checkOut || '…'}{r.reason ? ` · ${r.reason}` : ''}</div></div>
                   <StatusPill status={r.status} short />
                 </div>
               ))}

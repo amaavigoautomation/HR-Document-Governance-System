@@ -160,6 +160,24 @@ const month = await ok(EMP, 'GET', 'attendance', undefined, { month: yesterday.s
 const yd = month.days.find((d: any) => d.date === yesterday);
 assert.ok(['PRESENT', 'WEEKLY_OFF', 'HOLIDAY'].includes(yd.status), `regularized day shows ${yd.status}`);
 assert.equal(yd.checkIn, '09:30');
+
+// --- attendance application: several days, partial times, on behalf, back to the joining date
+assert.equal((await call(EMP, 'POST', 'apply-attendance', { rows: [{ date: addDays(today, -2), checkIn: '09:30', reason: 'x' }] })).status, 400, 'only a time in, with no punches that day');
+const partial = await ok(EMP, 'POST', 'apply-attendance', { remarks: 'late out', rows: [{ date: yesterday, checkOut: '19:00', reason: 'stayed late' }] });
+assert.match(partial.docNo, /^AA-/);
+const pend = (await ok(MGR, 'GET', 'inbox')).regularizations.find((r: any) => r.docNo === partial.docNo);
+await ok(MGR, 'POST', 'decide-regularization', { id: pend.id, decision: 'APPROVE' });
+const after = (await ok(EMP, 'GET', 'attendance', undefined, { month: yesterday.slice(0, 7) })).days.find((d: any) => d.date === yesterday);
+assert.equal(after.checkIn, '09:30', 'time in kept');
+assert.equal(after.checkOut, '19:00', 'time out changed');
+assert.equal((await call(EMP, 'POST', 'apply-attendance', { rows: [{ date: yesterday, checkOut: '20:00', reason: 'again' }, { date: yesterday, checkOut: '20:00', reason: 'dup' }] })).status, 400, 'same day twice');
+assert.equal((await call(OTHER, 'POST', 'apply-attendance', { uid: 'u_emp', rows: [{ date: yesterday, checkIn: '09:00', checkOut: '18:00', reason: 'x' }] })).status, 403, 'peers cannot apply for you');
+const behalf = await ok(MGR, 'POST', 'apply-attendance', { uid: 'u_emp', rows: [{ date: addDays(today, -5), checkIn: '09:00', checkOut: '18:00', reason: 'visit' }] });
+assert.equal(behalf.applied, false, 'a manager applying for a report still needs approval');
+assert.equal((await ok(MGR, 'GET', 'inbox')).regularizations.some((r: any) => r.docNo === behalf.docNo), false, 'it goes to HR, not back to the manager');
+assert.equal((await ok(HR, 'GET', 'inbox')).regularizations.some((r: any) => r.docNo === behalf.docNo), true);
+const direct = await ok(HR, 'POST', 'apply-attendance', { uid: 'u_other', rows: [{ date: addDays(today, -6), checkIn: '09:00', checkOut: '18:00', reason: 'machine down' }] });
+assert.equal(direct.applied, true, 'HR applies straight away');
 assert.equal((await call(OTHER, 'GET', 'attendance', undefined, { uid: 'u_emp' })).status, 403, 'peers cannot read your attendance');
 assert.equal((await call(MGR, 'GET', 'attendance', undefined, { uid: 'u_emp' })).status, 200, 'manager can');
 await ok(HR, 'POST', 'mark-attendance', { uid: 'u_other', date: yesterday, checkIn: '10:00', checkOut: '19:00' });

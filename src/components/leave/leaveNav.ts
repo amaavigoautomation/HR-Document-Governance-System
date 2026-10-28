@@ -4,11 +4,11 @@ import { useSyncExternalStore } from 'react';
  * Tiny shared store so the app sidebar (outside the leave page) and the leave page agree on which section is open.
  * The leave page publishes which sections the signed-in person may see; the sidebar reads them and sets the section.
  */
-export type LeaveSection = 'today' | 'my' | 'attendance' | 'regularization' | 'team' | 'approvals' | 'manage';
+export type LeaveSection = 'today' | 'my' | 'attendance' | 'regularization' | 'application' | 'team' | 'approvals' | 'manage';
 export interface LeaveNavItem { key: LeaveSection; label: string; badge?: number }
 
 const STORAGE_KEY = 'amaavigo_leave_tab';
-const VALID: LeaveSection[] = ['today', 'my', 'attendance', 'regularization', 'team', 'approvals', 'manage'];
+const VALID: LeaveSection[] = ['today', 'my', 'attendance', 'regularization', 'application', 'team', 'approvals', 'manage'];
 
 const read = (): LeaveSection => {
   try {
@@ -55,6 +55,7 @@ export function leaveNavItems(me: any | null): LeaveNavItem[] {
     { key: 'my', label: 'My leave', show: ok },
     { key: 'attendance', label: 'Attendance', show: ok },
     { key: 'regularization', label: 'Regularization', show: ok },
+    { key: 'application', label: 'Attendance application', show: ok },
     { key: 'team', label: 'Team calendar', show: ok },
     { key: 'approvals', label: 'Approvals', badge: me.approvals || undefined, show: canApprove },
     { key: 'manage', label: 'Manage', show: canAdmin },
