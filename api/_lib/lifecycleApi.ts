@@ -14,7 +14,7 @@ import { hasPerm } from '../../shared/permissions.js';
 import {
   db, loadPeople, loadProfiles, notify, nowIso, personByUid, profileId, profileOf, str, companyLabel, type Person, type Profile,
 } from './leaveCore.js';
-import { IDENTITY_TYPES, identityProblem, identityTypeKeys, normalizeIdentity } from '../../shared/employeeIdentity.js';
+import { IDENTITY_TYPES, MAX_IDENTITY_FILES, checkIdentityImage, identityProblem, identityTypeKeys, normalizeIdentity } from '../../shared/employeeIdentity.js';
 import { PERSONAL_FIELDS, checkPersonalField } from '../../shared/employeePersonal.js';
 import { MAX_FAMILY_MEMBERS, cleanFamilyMember } from '../../shared/employeeFamily.js';
 import { istToday } from '../../shared/leaveEngine.js';
@@ -837,11 +837,17 @@ async function identityGet(w: Who, q: any): Promise<Result> {
   if (!(await personByUid(w.cid, uid))) return fail(404, 'Employee not found.');
   const snap = await db().collection('employeeIdentities').where('companyId', '==', w.cid).where('uid', '==', uid).get();
   const have = new Map<string, IdentityDoc>(snap.docs.map((d: any) => [String(d.data().type), d.data() as IdentityDoc]));
+  const fsnap = await db().collection('employeeIdentityFiles').where('companyId', '==', w.cid).where('uid', '==', uid).get();
+  const filesBy = new Map<string, { id: string; at: string; kb: number }[]>();
+  fsnap.docs.forEach((d: any) => {
+    const x = d.data();
+    filesBy.set(x.type, [...(filesBy.get(x.type) || []), { id: d.id, at: x.createdAt, kb: x.kb }]);
+  });
   return ok({
-    canDecide: w.canManage, canEditDirect: w.canManage,
+    canDecide: w.canManage, canEditDirect: w.canManage, maxFiles: MAX_IDENTITY_FILES,
     items: IDENTITY_TYPES.map((t) => {
       const d = have.get(t.key);
-      return { type: t.key, label: t.label, hint: t.hint, number: d?.number || '', pendingNumber: d?.pendingNumber || '', status: d?.status || '', note: d?.note || '', updatedAt: d?.updatedAt || '' };
+      return { type: t.key, label: t.label, hint: t.hint, number: d?.number || '', pendingNumber: d?.pendingNumber || '', status: d?.status || '', note: d?.note || '', updatedAt: d?.updatedAt || '', files: (filesBy.get(t.key) || []).sort((a, b) => a.at.localeCompare(b.at)) };
     }),
   });
 }
@@ -885,6 +891,53 @@ async function identityDecide(w: Who, body: any): Promise<Result> {
     : { ...d, pendingNumber: '', status: d.number ? 'APPROVED' : 'REJECTED', note, updatedAt: nowIso(), updatedBy: w.uid }));
   const label = IDENTITY_TYPES.find((t) => t.key === type)?.label || type;
   await notify(w.cid, [uid], `${label} ${approve ? 'approved' : 'not approved'}`, approve ? `HR approved your ${label}.` : `HR did not approve your ${label}: ${note}`).catch(() => undefined);
+  return ok({});
+}
+
+// Photos of the identity documents. Metadata (employeeIdentityFiles) and the image itself (employeeIdentityData) are kept
+// apart so listing never loads the pictures. Both are server-only; an image is only returned to the person and to HR.
+
+async function identityFileAccess(w: Who, uidIn: unknown): Promise<string> {
+  const uid = str(uidIn, 128) || w.uid;
+  if (uid !== w.uid && !canSeeProfiles(w)) throw new LcError(403, 'You can only use your own identity photos.');
+  if (!(await personByUid(w.cid, uid))) throw new LcError(404, 'Employee not found.');
+  return uid;
+}
+
+async function identityFileAdd(w: Who, body: any): Promise<Result> {
+  const uid = await identityFileAccess(w, body?.uid);
+  const type = str(body?.type, 40);
+  if (!identityTypeKeys.includes(type)) return fail(400, 'Unknown identity type.');
+  const problem = checkIdentityImage(body?.dataUrl);
+  if (problem) return fail(400, problem);
+  const have = await db().collection('employeeIdentityFiles').where('companyId', '==', w.cid).where('uid', '==', uid).where('type', '==', type).get();
+  if (have.size >= MAX_IDENTITY_FILES) return fail(400, `You can keep up to ${MAX_IDENTITY_FILES} photos for each document. Remove one first.`);
+  const ref = db().collection('employeeIdentityFiles').doc();
+  const dataUrl = body.dataUrl as string;
+  await db().collection('employeeIdentityData').doc(ref.id).set({ companyId: w.cid, uid, dataUrl });
+  await ref.set({ companyId: w.cid, uid, type, kb: Math.round((dataUrl.length * 3) / 4 / 1024), createdAt: nowIso(), createdBy: w.uid });
+  return ok({ id: ref.id });
+}
+
+async function identityFileGet(w: Who, q: any): Promise<Result> {
+  const uid = await identityFileAccess(w, q?.uid);
+  const id = str(q?.id, 128);
+  const meta = await db().collection('employeeIdentityFiles').doc(id).get();
+  const m: any = meta.exists ? meta.data() : null;
+  if (!m || m.companyId !== w.cid || m.uid !== uid) return fail(404, 'Photo not found.');
+  const data = await db().collection('employeeIdentityData').doc(id).get();
+  if (!data.exists) return fail(404, 'Photo not found.');
+  return ok({ dataUrl: data.data().dataUrl });
+}
+
+async function identityFileDelete(w: Who, body: any): Promise<Result> {
+  const uid = await identityFileAccess(w, body?.uid);
+  const id = str(body?.id, 128);
+  const meta = await db().collection('employeeIdentityFiles').doc(id).get();
+  const m: any = meta.exists ? meta.data() : null;
+  if (!m || m.companyId !== w.cid || m.uid !== uid) return fail(404, 'Photo not found.');
+  await db().collection('employeeIdentityData').doc(id).delete();
+  await db().collection('employeeIdentityFiles').doc(id).delete();
   return ok({});
 }
 
@@ -1062,6 +1115,9 @@ export async function routeLifecycle(r: LifecycleRequestIn): Promise<Result> {
       case 'letter': return GET ? await letterGet(w, r.query) : wrong;
       case 'identity': return GET ? await identityGet(w, r.query) : wrong;
       case 'identity-save': return POST ? await identitySave(w, body) : wrong;
+      case 'identity-file-add': return POST ? await identityFileAdd(w, body) : wrong;
+      case 'identity-file': return GET ? await identityFileGet(w, r.query) : wrong;
+      case 'identity-file-delete': return POST ? await identityFileDelete(w, body) : wrong;
       case 'identity-decide': return POST ? await identityDecide(w, body) : wrong;
       case 'personal': return GET ? await personalGet(w, r.query) : wrong;
       case 'personal-save': return POST ? await personalSave(w, body) : wrong;

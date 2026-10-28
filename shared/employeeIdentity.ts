@@ -29,3 +29,17 @@ export function identityProblem(type: string, raw: unknown): string {
 
 /** Shows only the last 4 characters: XXXXXXXX8616. */
 export const maskIdentity = (v: string): string => (v.length <= 4 ? v : `${'X'.repeat(v.length - 4)}${v.slice(-4)}`);
+
+/** Photos of an identity document. The browser shrinks every upload to a JPEG that fits these limits. */
+export const MAX_IDENTITY_FILES = 2;               // e.g. front and back
+export const MAX_IDENTITY_FILE_CHARS = 900_000;    // size of the stored data URL; Firestore documents stop at 1 MiB
+
+/** A JPEG data URL under the size limit, or a plain-words reason. Checks the real file bytes, not just the label. */
+export function checkIdentityImage(dataUrl: unknown): string {
+  const v = typeof dataUrl === 'string' ? dataUrl : '';
+  if (!v.startsWith('data:image/jpeg;base64,')) return 'Upload a photo (JPG or PNG).';
+  if (v.length > MAX_IDENTITY_FILE_CHARS) return 'That image is too large. Try a smaller photo.';
+  const head = v.slice('data:image/jpeg;base64,'.length, 'data:image/jpeg;base64,'.length + 8);
+  const bytes = typeof Buffer !== 'undefined' ? Buffer.from(head, 'base64') : Uint8Array.from(atob(head), (c) => c.charCodeAt(0));
+  return bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff ? '' : 'That file is not a valid image.';
+}

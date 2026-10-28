@@ -297,4 +297,28 @@ assert.equal((await call(FOREIGN, 'GET', 'profile', {}, { uid: 'u_emp' })).statu
   for (let i = 0; i < 30; i++) { const r = await call(EMP, 'POST', 'family-save', { member: { name: `P${i}`, relation: 'Other' } }); if (r.status === 400) { assert.match(r.json.error, /up to 25/); break; } }
 }
 
+// ---- identity photos
+{
+  const jpeg = 'data:image/jpeg;base64,' + Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0, 16, 0x4a, 0x46, 0x49, 0x46]).toString('base64');
+  const files = async (h: any, uid?: string) => (await call(h, 'GET', 'identity', {}, uid ? { uid } : {})).json.items.find((i: any) => i.type === 'AADHAAR').files;
+  assert.equal((await call(EMP, 'POST', 'identity-file-add', { type: 'AADHAAR', dataUrl: 'data:image/png;base64,AAAA' })).status, 400, 'jpeg only');
+  assert.equal((await call(EMP, 'POST', 'identity-file-add', { type: 'AADHAAR', dataUrl: 'data:image/jpeg;base64,' + Buffer.from('not an image at all').toString('base64') })).status, 400, 'real bytes are checked');
+  assert.equal((await call(EMP, 'POST', 'identity-file-add', { type: 'AADHAAR', dataUrl: jpeg + 'A'.repeat(950000) })).status, 400, 'too large');
+  assert.equal((await call(EMP, 'POST', 'identity-file-add', { type: 'NOPE', dataUrl: jpeg })).status, 400);
+  const a = (await call(EMP, 'POST', 'identity-file-add', { type: 'AADHAAR', dataUrl: jpeg })).json;
+  await ok(EMP, 'POST', 'identity-file-add', { type: 'AADHAAR', dataUrl: jpeg });
+  assert.equal((await call(EMP, 'POST', 'identity-file-add', { type: 'AADHAAR', dataUrl: jpeg })).status, 400, 'two photos per document');
+  assert.equal((await files(EMP)).length, 2);
+  assert.ok(!JSON.stringify((await call(EMP, 'GET', 'identity')).json).includes('base64'), 'listing never carries the pictures');
+  assert.equal((await call(EMP, 'GET', 'identity-file', {}, { id: a.id })).json.dataUrl, jpeg);
+  assert.equal((await call(HR, 'GET', 'identity-file', {}, { id: a.id, uid: 'u_emp' })).json.dataUrl, jpeg, 'HR can open it');
+  assert.equal((await call(OTHER, 'GET', 'identity-file', {}, { id: a.id, uid: 'u_emp' })).status, 403);
+  assert.equal((await call(OTHER, 'GET', 'identity-file', {}, { id: a.id })).status, 404, 'cannot reach it by id either');
+  assert.equal((await call(FOREIGN, 'GET', 'identity-file', {}, { id: a.id, uid: 'u_emp' })).status, 404, 'another company cannot read it');
+  assert.equal((await call(OTHER, 'POST', 'identity-file-delete', { id: a.id })).status, 404);
+  await ok(EMP, 'POST', 'identity-file-delete', { id: a.id });
+  assert.equal((await files(EMP)).length, 1);
+  assert.equal((await call(EMP, 'GET', 'identity-file', {}, { id: a.id })).status, 404, 'gone for good');
+}
+
 console.log('lifecycle tests passed');

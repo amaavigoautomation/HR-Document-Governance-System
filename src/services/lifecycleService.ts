@@ -46,6 +46,9 @@ export const lifecycleService = {
   // identity documents
   identities: (uid?: string) => get('identity', { uid }),
   saveIdentity: (b: { uid?: string; type: string; number: string }) => post('identity-save', b),
+  addIdentityFile: (b: { uid?: string; type: string; dataUrl: string }) => post('identity-file-add', b),
+  identityFile: (id: string, uid?: string) => get('identity-file', { id, uid }),
+  deleteIdentityFile: (b: { uid?: string; id: string }) => post('identity-file-delete', b),
   decideIdentity: (b: { uid: string; type: string; approve: boolean; note?: string }) => post('identity-decide', b),
   // personal information
   personal: (uid?: string) => get('personal', { uid }),
