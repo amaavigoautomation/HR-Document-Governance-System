@@ -725,6 +725,94 @@ async function setManager(w: Who, body: any): Promise<Result> {
   return ok({});
 }
 
+// ------------------------------------------------------------------ employee profile (Employee > Employee Master)
+//
+// One page per person. Core facts come from the employee record, leave profile and exit case; the extra fields HR fills in
+// live in the server-only employeeProfiles collection, and the birth date stays in personalDates (colleagues must not read it).
+
+const PROFILE_TEXT = ['machineCode', 'oldCode', 'salutation', 'firstName', 'middleName', 'lastName', 'shortName', 'nameInLocal', 'mobile'] as const;
+const PROFILE_DATES = ['confirmationDate', 'wef'] as const;
+const profileDocId = (cid: string, uid: string) => `${cid}__${uid}`;
+const canSeeProfiles = (w: Who) => w.canManage || hasPerm(w.ctx.perms, 'leave.manage');
+
+async function profileGet(w: Who, q: any): Promise<Result> {
+  const uid = str(q?.uid, 128) || w.uid;
+  if (uid !== w.uid && !canSeeProfiles(w)) return fail(403, 'You can only open your own profile.');
+  const [person, profiles, people, extraSnap, datesSnap, exit] = await Promise.all([
+    personByUid(w.cid, uid), loadProfiles(w.cid), loadPeople(w.cid),
+    db().collection('employeeProfiles').doc(profileDocId(w.cid, uid)).get(),
+    db().collection('personalDates').doc(profileDocId(w.cid, uid)).get(),
+    loadExit(w.cid, uid),
+  ]);
+  if (!person) return fail(404, 'Employee not found.');
+  const pr: Profile | undefined = profiles.get(uid);
+  const x: any = extraSnap.exists && extraSnap.data().companyId === w.cid ? extraSnap.data() : {};
+  const dates: any = datesSnap.exists && datesSnap.data().companyId === w.cid ? datesSnap.data() : {};
+  const by = nameMap(people);
+  const mgrUid = pr?.managerUid && by.has(pr.managerUid) ? pr.managerUid : '';
+  const mgr = mgrUid ? by.get(mgrUid)! : null;
+  let approving = mgr;
+  if (mgrUid) {
+    const del = await db().collection('leaveDelegations').doc(`${w.cid}__${mgrUid}`).get();
+    const d: any = del.exists ? del.data() : null;
+    const today = istToday();
+    if (d && d.from <= today && today <= d.to) {
+      const cover = people.find((p) => p.uid === d.delegateUid && p.active);
+      if (cover) approving = by.get(cover.uid)!;
+    }
+  }
+  const parts = person.name.trim().split(/\s+/);
+  const fallbackFirst = parts[0] || '';
+  const fallbackLast = parts.length > 1 ? parts[parts.length - 1] : '';
+  const fallbackMiddle = parts.length > 2 ? parts.slice(1, -1).join(' ') : '';
+  const left = exit && exit.status === 'COMPLETED' ? exit.lastWorkingDay : exit && ['APPROVED', 'MANAGER_APPROVED', 'SUBMITTED'].includes(exit.status) ? exit.lastWorkingDay || exit.requestedLastDay : '';
+  return ok({
+    canEdit: w.canManage,
+    profile: {
+      uid, name: person.name, email: person.email, empId: person.empId, department: person.department, title: person.title, active: person.active,
+      salutation: x.salutation || '', firstName: x.firstName || fallbackFirst, middleName: x.middleName ?? fallbackMiddle, lastName: x.lastName || fallbackLast,
+      shortName: x.shortName || '', nameInLocal: x.nameInLocal || '', machineCode: x.machineCode || '', oldCode: x.oldCode || '', mobile: x.mobile || '',
+      gender: x.gender || (pr?.gender === 'M' ? 'Male' : pr?.gender === 'F' ? 'Female' : pr?.gender === 'O' ? 'Other' : ''),
+      dob: dates.dob || '', joinDate: pr?.joinDate || '', leavingDate: left || '', confirmationDate: x.confirmationDate || '', wef: x.wef || pr?.joinDate || '',
+      reportingManager: mgr ? { uid: mgr.uid, name: mgr.name, empId: mgr.empId } : null,
+      approvingManager: approving ? { uid: approving.uid, name: approving.name, empId: approving.empId } : null,
+      exitStatus: exit?.status || '', exitReason: exit?.reason || '', resignationDate: exit?.resignationDate || '', lastWorkingDay: exit?.lastWorkingDay || '',
+    },
+  });
+}
+
+async function profileSave(w: Who, body: any): Promise<Result> {
+  needManage(w);
+  const uid = str(body?.uid, 128);
+  if (!(await personByUid(w.cid, uid))) return fail(404, 'Employee not found.');
+  const f = body?.fields && typeof body.fields === 'object' ? body.fields : {};
+  const next: Record<string, string> = {};
+  for (const k of PROFILE_TEXT) if (f[k] !== undefined) next[k] = str(f[k], k === 'mobile' ? 20 : 80);
+  if (f.gender !== undefined) {
+    if (!['', 'Male', 'Female', 'Other'].includes(f.gender)) return fail(400, 'Choose Male, Female or Other for gender.');
+    next.gender = f.gender;
+  }
+  for (const k of PROFILE_DATES) {
+    if (f[k] === undefined) continue;
+    const v = str(f[k], 10);
+    if (v && !isDate(v)) return fail(400, 'Use a valid date for ' + k + '.');
+    next[k] = v;
+  }
+  if (next.mobile && !/^[0-9+()\-\s]{6,20}$/.test(next.mobile)) return fail(400, 'Enter a valid mobile number.');
+  const ref = db().collection('employeeProfiles').doc(profileDocId(w.cid, uid));
+  const cur = await ref.get();
+  await ref.set(clean({ ...(cur.exists ? cur.data() : {}), ...next, uid, companyId: w.cid, updatedAt: nowIso(), updatedBy: w.uid }));
+  if (f.dob !== undefined) {
+    const dob = str(f.dob, 10);
+    if (dob && (!isDate(dob) || dob < '1900-01-01' || dob > istToday())) return fail(400, 'Use a valid date of birth.');
+    const dref = db().collection('personalDates').doc(profileDocId(w.cid, uid));
+    const dcur = await dref.get();
+    const d: any = dcur.exists ? dcur.data() : {};
+    await dref.set(clean({ showCelebrations: true, showMarriage: false, marriageDate: '', ...d, companyId: w.cid, uid, dob, updatedAt: nowIso(), updatedBy: w.uid }));
+  }
+  return ok({});
+}
+
 // ------------------------------------------------------------------ router
 
 async function me(w: Who): Promise<Result> {
@@ -796,6 +884,8 @@ export async function routeLifecycle(r: LifecycleRequestIn): Promise<Result> {
       case 'letters': return GET ? await lettersList(w, r.query) : wrong;
       case 'my-letters': return GET ? await myLetters(w) : wrong;
       case 'letter': return GET ? await letterGet(w, r.query) : wrong;
+      case 'profile': return GET ? await profileGet(w, r.query) : wrong;
+      case 'profile-save': return POST ? await profileSave(w, body) : wrong;
       case 'directory': return GET ? await directory(w, r.query) : wrong;
       case 'set-manager': return POST ? await setManager(w, body) : wrong;
       default: return wrong;

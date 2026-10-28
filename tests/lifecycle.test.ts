@@ -194,4 +194,21 @@ await ok(LEAVE, 'POST', 'set-manager', { uid: 'u_other', managerUid: '' });
 assert.equal((await ok(EMP, 'GET', 'directory')).people.find((p: any) => p.uid === 'u_other').managerUid, '');
 assert.equal((await ok(FOREIGN, 'GET', 'directory')).people.length, 0, 'another company sees none of these people');
 
+// ---- employee profile
+const myProfile = (await call(EMP, 'GET', 'profile')).json.profile;
+assert.equal(myProfile.uid, 'u_emp');
+assert.equal(myProfile.reportingManager.uid, 'u_mgr');
+assert.equal(myProfile.joinDate, '2022-03-01');
+assert.equal(myProfile.firstName, 'Esha');
+assert.equal((await call(EMP, 'GET', 'profile', {}, { uid: 'u_mgr' })).status, 403, 'others cannot open someone else\'s profile');
+assert.equal((await call(EMP, 'POST', 'profile-save', { uid: 'u_emp', fields: { mobile: '1' } })).status, 403);
+await ok(HR, 'POST', 'profile-save', { uid: 'u_emp', fields: { machineCode: '504', mobile: '+91 87799 89858', gender: 'Female', dob: '2000-03-14', confirmationDate: '2022-09-01' } });
+const hrView = (await call(HR, 'GET', 'profile', {}, { uid: 'u_emp' })).json;
+assert.equal(hrView.profile.machineCode, '504');
+assert.equal(hrView.profile.dob, '2000-03-14');
+assert.equal(hrView.canEdit, true);
+assert.equal((await call(HR, 'POST', 'profile-save', { uid: 'u_emp', fields: { dob: '2999-01-01' } })).status, 400);
+assert.equal((await call(HR, 'POST', 'profile-save', { uid: 'u_emp', fields: { gender: 'x' } })).status, 400);
+assert.equal((await call(FOREIGN, 'GET', 'profile', {}, { uid: 'u_emp' })).status, 404, 'another company cannot read it');
+
 console.log('lifecycle tests passed');

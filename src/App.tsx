@@ -613,7 +613,7 @@ export default function App() {
 
           {hrAgentModule === 'employee' && currentUser && (
             <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
-              <EmployeeModule currentUser={currentUser} onOpenModule={handleSelectHRAgentModule} />
+              <EmployeeModule currentUser={currentUser} canPick={!!currentUser.isCompanyAdmin || hasAnyPerm(currentUser.perms, ['lifecycle.manage', 'leave.manage'])} onOpenModule={handleSelectHRAgentModule} />
             </div>
           )}
 

@@ -40,6 +40,9 @@ export const lifecycleService = {
   letters: (uid?: string) => get('letters', { uid }),
   myLetters: () => get('my-letters'),
   letter: (id: string) => get('letter', { id }),
+  // employee profile
+  profile: (uid?: string) => get('profile', { uid }),
+  saveProfile: (uid: string, fields: Record<string, string>) => post('profile-save', { uid, fields }),
   // directory
   directory: (all = false) => get('directory', { all: all ? '1' : undefined }),
   setManager: (uid: string, managerUid: string) => post('set-manager', { uid, managerUid }),
