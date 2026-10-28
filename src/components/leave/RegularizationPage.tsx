@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { ChevronLeft, ChevronRight, Download, Info, Pencil, RefreshCw } from 'lucide-react';
+import { CalendarDays, ChevronDown, Download, Info, Pencil, RefreshCw } from 'lucide-react';
 import { leaveService, downloadCsv } from '../../services/leaveService';
-import { btnGhost, btnPrimary, Drawer, Field, hm, input, Notice, Skeleton, STATUS_LABEL, thisMonth, todayIst, useRunner } from './ui';
+import { btnGhost, btnPrimary, Drawer, Field, hm, input, Notice, Skeleton, STATUS_LABEL, addDaysIso, todayIst, useRunner } from './ui';
 import { FixDayDrawer } from './AttendanceTab';
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -9,7 +9,39 @@ const DAYS = ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'];
 const MON = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'];
 
 const lastDay = (m: string) => new Date(Date.UTC(Number(m.slice(0, 4)), Number(m.slice(5, 7)), 0)).getUTCDate();
+const monthOf = (iso: string) => iso.slice(0, 7);
 const shiftMonth = (m: string, by: number) => new Date(Date.UTC(Number(m.slice(0, 4)), Number(m.slice(5, 7)) - 1 + by, 1)).toISOString().slice(0, 7);
+
+type Preset = 'today' | 'yesterday' | 'last7' | 'last30' | 'thisMonth' | 'lastMonth' | 'cycle' | 'custom';
+const PRESETS: { value: Preset; label: string }[] = [
+  { value: 'today', label: 'Today' }, { value: 'yesterday', label: 'Yesterday' }, { value: 'last7', label: 'Last 7 Days' },
+  { value: 'last30', label: 'Last 30 Days' }, { value: 'thisMonth', label: 'This Month' }, { value: 'lastMonth', label: 'Last Month' },
+  { value: 'cycle', label: 'Attendance Cycle' }, { value: 'custom', label: 'Custom Range' },
+];
+const MAX_RANGE_DAYS = 93;
+
+/** The from/to dates for a preset. The attendance cycle runs from `startDay` of one month to the day before it next month. */
+function rangeFor(preset: Preset, today: string, startDay: number, custom: { from: string; to: string }): { from: string; to: string } {
+  const m = monthOf(today);
+  switch (preset) {
+    case 'today': return { from: today, to: today };
+    case 'yesterday': { const y = addDaysIso(today, -1); return { from: y, to: y }; }
+    case 'last7': return { from: addDaysIso(today, -6), to: today };
+    case 'last30': return { from: addDaysIso(today, -29), to: today };
+    case 'thisMonth': return { from: `${m}-01`, to: `${m}-${lastDay(m)}` };
+    case 'lastMonth': { const p = shiftMonth(m, -1); return { from: `${p}-01`, to: `${p}-${lastDay(p)}` }; }
+    case 'cycle': {
+      const d = String(Math.min(28, Math.max(1, startDay))).padStart(2, '0');
+      const begin = Number(today.slice(8)) >= startDay ? `${m}-${d}` : `${shiftMonth(m, -1)}-${d}`;
+      const next = shiftMonth(monthOf(begin), 1);
+      return { from: begin, to: addDaysIso(`${next}-${d}`, -1) };
+    }
+    default: return custom;
+  }
+}
+const fmtLong = (iso: string) => `${MONTHS[Number(iso.slice(5, 7)) - 1]} ${Number(iso.slice(8))}, ${iso.slice(0, 4)}`;
+const monthsBetween = (from: string, to: string) => { const out: string[] = []; for (let m = monthOf(from); m <= monthOf(to); m = shiftMonth(m, 1)) out.push(m); return out; };
+
 const rowDate = (iso: string) => `${iso.slice(8)}-${MON[Number(iso.slice(5, 7)) - 1]}-${iso.slice(2, 4)} ${DAYS[new Date(`${iso}T00:00:00Z`).getUTCDay()]}`;
 const arDate = (iso: string) => `${iso.slice(8)}-${MON[Number(iso.slice(5, 7)) - 1]}-${iso.slice(2, 4)}`;
 const clock = (m: number) => `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
@@ -82,7 +114,12 @@ const DayInfo: React.FC<{ day: any | null; open: boolean; onClose: () => void }>
 );
 
 export const RegularizationPage: React.FC<{ me: any; onChanged?: () => void }> = ({ me, onChanged }) => {
-  const [month, setMonth] = useState(thisMonth());
+  const today = todayIst();
+  const [preset, setPreset] = useState<Preset>('thisMonth');
+  const [custom, setCustom] = useState({ from: addDaysIso(today, -13), to: today });
+  const [menu, setMenu] = useState(false);
+  const { from, to } = rangeFor(preset, today, me.settings.cycleStartDay || 1, custom);
+  const tooLong = from > to || (new Date(`${to}T00:00:00Z`).getTime() - new Date(`${from}T00:00:00Z`).getTime()) / 86400000 + 1 > MAX_RANGE_DAYS;
   const [people, setPeople] = useState<{ uid: string; name: string; empId: string; department: string }[]>([]);
   const myUid: string = me.person?.uid || '';
   const [uid, setUid] = useState(myUid);
@@ -93,17 +130,20 @@ export const RegularizationPage: React.FC<{ me: any; onChanged?: () => void }> =
   const [selfFix, setSelfFix] = useState<any | null>(null);
   const [hrFix, setHrFix] = useState<any | null>(null);
   const shift = me.settings.shift;
-  const today = todayIst();
 
   useEffect(() => { leaveService.attendancePeople().then((r: any) => setPeople(r.items || [])).catch(() => setPeople([])); }, []);
 
   const load = useCallback(async () => {
+    if (tooLong) { setData(null); setError(from > to ? 'The start date must be before the end date.' : `Choose a range of at most ${MAX_RANGE_DAYS} days.`); return; }
     setBusy(true);
     setError(null);
-    try { setData(await leaveService.attendance(month, uid === myUid ? undefined : uid)); }
-    catch (e: any) { setError(e?.message || 'Could not load attendance.'); }
+    try {
+      const parts = await Promise.all(monthsBetween(from, to).map((m) => leaveService.attendance(m, uid === myUid ? undefined : uid)));
+      const days = parts.flatMap((p: any) => p.days || []).filter((d: any) => d.date >= from && d.date <= to);
+      setData({ person: parts[0]?.person, days });
+    } catch (e: any) { setError(e?.message || 'Could not load attendance.'); }
     finally { setBusy(false); }
-  }, [month, uid, myUid]);
+  }, [from, to, tooLong, uid, myUid]);
   useEffect(() => { void load(); }, [load]);
 
   const days: any[] = data?.days || [];
@@ -115,12 +155,12 @@ export const RegularizationPage: React.FC<{ me: any; onChanged?: () => void }> =
 
   const isMine = uid === myUid;
   const canEdit = (d: any) => d.date <= today && !['NOT_EMPLOYED', 'FUTURE'].includes(d.status) && (isMine || !!me.canManage);
-  const range = `${MONTHS[Number(month.slice(5, 7)) - 1]} 1, ${month.slice(0, 4)} - ${MONTHS[Number(month.slice(5, 7)) - 1]} ${lastDay(month)}, ${month.slice(0, 4)}`;
+  const range = from === to ? fmtLong(from) : `${fmtLong(from)} - ${fmtLong(to)}`;
   const shiftLabel = `${shift.start}–${shift.end}`;
   const personName = data?.person?.name || people.find((p) => p.uid === uid)?.name || me.person?.name || '';
   const personMeta = people.find((p) => p.uid === uid);
 
-  const exportCsv = () => downloadCsv(`attendance-${personName.replace(/\s+/g, '_')}-${month}.csv`, [
+  const exportCsv = () => downloadCsv(`attendance-${personName.replace(/\s+/g, '_')}-${from}_${to}.csv`, [
     ['Date', 'Status', 'Shift', 'Punch in', 'Punch out', 'Total hrs', 'AR in', 'AR out', 'AR hrs'],
     ...days.map((d) => [d.date, STATUS_LABEL[d.status] || '', shiftLabel, d.checkIn || '', d.checkOut || '', d.workedMinutes ? clock(d.workedMinutes) : '',
       d.source === 'REGULARIZED' ? d.checkIn : '', d.source === 'REGULARIZED' ? d.checkOut : '', d.source === 'REGULARIZED' && d.workedMinutes ? clock(d.workedMinutes) : '']),
@@ -131,11 +171,32 @@ export const RegularizationPage: React.FC<{ me: any; onChanged?: () => void }> =
       <div className="px-4 py-3 border-b border-slate-200"><h2 className="text-sm font-black tracking-wide text-slate-800 uppercase">Attendance regularization</h2></div>
 
       <div className="p-4 flex flex-wrap items-center gap-2">
-        <div className="flex items-center gap-1 border border-slate-300 rounded-lg px-1 py-1 bg-white">
-          <button className="p-1.5 rounded hover:bg-slate-100" aria-label="Previous month" onClick={() => setMonth(shiftMonth(month, -1))}><ChevronLeft className="w-4 h-4" /></button>
-          <span className="text-sm text-slate-700 px-2 min-w-[11rem] text-center">{range}</span>
-          <button className="p-1.5 rounded hover:bg-slate-100 disabled:opacity-30" aria-label="Next month" disabled={month >= thisMonth()} onClick={() => setMonth(shiftMonth(month, 1))}><ChevronRight className="w-4 h-4" /></button>
+        <div className="relative">
+          <button type="button" aria-haspopup="listbox" aria-expanded={menu} onClick={() => setMenu(!menu)}
+            className="flex items-center gap-2 border border-slate-300 rounded-lg px-3 py-2 bg-white text-sm text-slate-700 min-w-[15rem] hover:border-slate-400">
+            <CalendarDays className="w-4 h-4 text-slate-400" /><span className="flex-1 text-left">{range}</span><ChevronDown className="w-3.5 h-3.5 text-slate-400" />
+          </button>
+          {menu && (
+            <>
+              <div className="fixed inset-0 z-10" onClick={() => setMenu(false)} aria-hidden />
+              <ul role="listbox" className="absolute z-20 mt-1 w-44 bg-white border border-slate-200 rounded-lg shadow-lg py-1 text-sm">
+                {PRESETS.map((p) => (
+                  <li key={p.value} role="option" aria-selected={preset === p.value}>
+                    <button type="button" className={`w-full text-left px-4 py-2 ${preset === p.value ? 'bg-blue-500 text-white font-semibold' : 'text-slate-700 hover:bg-slate-50'}`}
+                      onClick={() => { setPreset(p.value); if (p.value !== 'custom') setMenu(false); }}>{p.label}</button>
+                  </li>
+                ))}
+              </ul>
+            </>
+          )}
         </div>
+        {preset === 'custom' && (
+          <div className="flex items-center gap-2 text-xs text-slate-500">
+            <input type="date" aria-label="From" className={`${input} !w-auto`} max={today} value={custom.from} onChange={(e) => setCustom({ ...custom, from: e.target.value })} />
+            to
+            <input type="date" aria-label="To" className={`${input} !w-auto`} value={custom.to} onChange={(e) => setCustom({ ...custom, to: e.target.value })} />
+          </div>
+        )}
         {people.length > 1 ? (
           <select className={`${input} !w-auto min-w-[16rem]`} aria-label="Employee" value={uid} onChange={(e) => setUid(e.target.value)}>
             {people.map((p) => <option key={p.uid} value={p.uid}>{p.empId ? `${p.empId} - ` : ''}{p.name}{p.uid === myUid ? ' (me)' : ''}</option>)}

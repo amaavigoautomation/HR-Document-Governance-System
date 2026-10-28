@@ -160,6 +160,7 @@ export function sanitizeSettings(input: any, prev: LeaveSettings): LeaveSettings
     sandwichRule: input.sandwichRule === true,
     locations, types, policies, shift,
     lateMarksPerHalfDay: num(input.lateMarksPerHalfDay, 0, 31, 0),
+    cycleStartDay: num(input.cycleStartDay, 1, 28, 1),
     allowedIps: (Array.isArray(input.allowedIps) ? input.allowedIps : []).map((x: any) => str(x, 45)).filter(Boolean).slice(0, 20),
     escalateAfterDays: num(input.escalateAfterDays, 0, 30, 3),
     hrApprovalAboveDays: num(input.hrApprovalAboveDays, 0, 400, 0),
@@ -309,7 +310,7 @@ async function me(who: Who): Promise<Result> {
       manager: nameOf(people, prof.managerUid), gender: prof.gender,
     },
     settings: {
-      yearStartMonth: settings.yearStartMonth, sandwichRule: settings.sandwichRule, shift: settings.shift,
+      yearStartMonth: settings.yearStartMonth, sandwichRule: settings.sandwichRule, shift: settings.shift, cycleStartDay: settings.cycleStartDay || 1,
       types: settings.types.filter((t) => t.active).map((t) => ({ id: t.id, code: t.code, name: t.name, halfDay: t.halfDay, docRequiredAfterDays: t.docRequiredAfterDays, minNoticeDays: t.minNoticeDays })),
     },
     balances,

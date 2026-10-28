@@ -85,6 +85,8 @@ export interface LeaveSettings {
   shift: Shift;
   /** Every N late marks in a month suggests a half-day deduction (0 = off). */
   lateMarksPerHalfDay: number;
+  /** Day of the month the attendance cycle starts on (1 = calendar month; 26 = 26th to the 25th). */
+  cycleStartDay?: number;
   /** Browser check-in is only accepted from these IPs / prefixes when the list is not empty. */
   allowedIps: string[];
   /** Pending requests older than this many days are escalated to HR (0 = never). */

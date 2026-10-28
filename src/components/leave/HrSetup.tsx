@@ -171,8 +171,11 @@ export const HrSetup: React.FC<{ onChanged: () => void }> = ({ onChanged }) => {
               <Field label="Cut half a day's pay for every" hint="Example: 3 = every 3 late marks cost half a day. 0 = no cut.">
                 <div className="flex items-center gap-2"><input type="number" min={0} className={input} value={s.lateMarksPerHalfDay} onChange={(e) => patch({ lateMarksPerHalfDay: num(e.target.value) })} /><span className="text-xs text-slate-500">late marks</span></div>
               </Field>
+              <Field label="Attendance cycle starts on day" hint="1 = the calendar month. 26 = from the 26th to the 25th. Used by the Regularization page.">
+                <div className="flex items-center gap-2"><input type="number" min={1} max={28} className={input} value={s.cycleStartDay || 1} onChange={(e) => patch({ cycleStartDay: Math.min(28, Math.max(1, num(e.target.value) || 1)) })} /><span className="text-xs text-slate-500">of the month</span></div>
+              </Field>
               <Field label="Work this long for a full day" hint="Less than this (but more than a half day) = half day"><HoursInput minutes={s.shift.fullDayMinutes} onChange={(m) => patch({ shift: { ...s.shift, fullDayMinutes: m } })} /></Field>
-              <Field label="Work this long for a half day" hint="Less than this = absent"><HoursInput minutes={s.shift.halfDayMinutes} onChange={(m) => patch({ shift: { ...s.shift, halfDayMinutes: m } })} /></Field>
+              <Field label="Half day from (reference)" hint="Any time worked below the full day counts as a half day; only no time worked is absent"><HoursInput minutes={s.shift.halfDayMinutes} onChange={(m) => patch({ shift: { ...s.shift, halfDayMinutes: m } })} /></Field>
               <div className="md:col-span-2">
                 <Field label="Only allow check-in from the office network (optional)" hint="Office internet IP addresses, comma separated. Leave empty to allow check-in from anywhere. Ending with a dot (e.g. 103.21.) allows the whole range.">
                   <input className={input} placeholder="Empty = anywhere" value={s.allowedIps.join(', ')} onChange={(e) => patch({ allowedIps: e.target.value.split(',').map((x: string) => x.trim()).filter(Boolean) })} />
