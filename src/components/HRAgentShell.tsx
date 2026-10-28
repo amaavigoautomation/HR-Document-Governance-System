@@ -24,6 +24,7 @@ import {
   Home,
   FileCheck2,
   ClipboardList,
+  Contact,
 } from 'lucide-react';
 import { User, UserRole } from '../types';
 import { AmaavigoLogo } from './AmaavigoLogo';
@@ -31,6 +32,7 @@ import { LeaveSubNav } from './leave/LeaveSubNav';
 import { ModuleSubNav } from './moduleNav';
 import { payrollNav } from './payroll/payrollNav';
 import { peopleNav } from './lifecycle/peopleNav';
+import { employeeNav } from './employee/employeeNav';
 import {
   hasModulePermission,
   getAuthorizationLabel,
@@ -51,6 +53,7 @@ export type HRAgentModule =
   | 'leave-management'
   | 'payroll'
   | 'people'
+  | 'employee'
   | 'administration';
 
 interface HRAgentShellProps {
@@ -98,6 +101,7 @@ export const HRAgentShell: React.FC<HRAgentShellProps> = ({
   const [isLeaveExpanded, setIsLeaveExpanded] = useState<boolean>(true);
   const [isPayrollExpanded, setIsPayrollExpanded] = useState<boolean>(true);
   const [isPeopleExpanded, setIsPeopleExpanded] = useState<boolean>(true);
+  const [isEmployeeExpanded, setIsEmployeeExpanded] = useState<boolean>(true);
 
   // Mobile sidebar drawer state
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState<boolean>(false);
@@ -105,7 +109,7 @@ export const HRAgentShell: React.FC<HRAgentShellProps> = ({
   // Auto-redirect if currently selected module is not permitted
   useEffect(() => {
     if (activeModule === 'home' || activeModule === 'policies') return;
-    if (activeModule === 'administration' || activeModule === 'leave-management' || activeModule === 'payroll' || activeModule === 'people') return;
+    if (activeModule === 'administration' || activeModule === 'leave-management' || activeModule === 'payroll' || activeModule === 'people' || activeModule === 'employee') return;
     if (activeModule === 'document-version-control' && !hasDocGovAccess && hasTalentAccess) {
       onSelectModule('talent-acquisition-overview');
     } else if (
@@ -698,6 +702,64 @@ export const HRAgentShell: React.FC<HRAgentShellProps> = ({
 
                 {activeModule === 'people' && isPeopleExpanded && (
                   <ModuleSubNav nav={peopleNav} label="People sections" variant="sidebar" idPrefix="nav-submodule-people" onNavigate={() => setIsMobileSidebarOpen(false)} />
+                )}
+
+                {/* ---------------------------------------------------- */}
+                {/* EMPLOYEE (transactions and reports) */}
+                {/* ---------------------------------------------------- */}
+                <div className="relative">
+                <button
+                  id="nav-module-employee"
+                  type="button"
+                  onClick={() => {
+                    onSelectModule('employee');
+                    setIsEmployeeExpanded(true);
+                    setIsMobileSidebarOpen(false);
+                  }}
+                  className={`w-full ${activeModule === 'employee' ? 'pl-3 pr-10' : 'px-3'} py-2.5 rounded-xl border flex items-center justify-between text-left transition-all cursor-pointer ${
+                    activeModule === 'employee'
+                      ? 'bg-[#FA7014]/10 border-[#FA7014]/40 text-slate-900 shadow-xs'
+                      : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50 hover:border-slate-300'
+                  }`}
+                >
+                  <div className="flex items-center space-x-2.5 min-w-0">
+                    <div
+                      className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 ${
+                        activeModule === 'employee' ? 'bg-[#FA7014] text-white shadow-xs' : 'bg-slate-100 text-slate-600'
+                      }`}
+                    >
+                      <Contact className="w-4 h-4" />
+                    </div>
+                    <div className="truncate">
+                      <span className={`text-xs font-bold block truncate ${activeModule === 'employee' ? 'text-[#FA7014]' : 'text-slate-800'}`}>
+                        Employee
+                      </span>
+                      <span className="text-[10px] text-slate-500 font-medium block truncate">Master data, acknowledgements &amp; reports</span>
+                    </div>
+                  </div>
+                  {activeModule === 'employee' && (
+                    <div className="w-5 h-5 rounded-full bg-[#FA7014] text-white flex items-center justify-center shrink-0 ml-1.5">
+                      <Check className="w-3 h-3 stroke-[3]" />
+                    </div>
+                  )}
+                </button>
+                {activeModule === 'employee' && (
+                  <button
+                    id="nav-module-employee-toggle"
+                    type="button"
+                    onClick={() => setIsEmployeeExpanded((v) => !v)}
+                    aria-expanded={isEmployeeExpanded}
+                    aria-label={isEmployeeExpanded ? 'Hide employee sections' : 'Show employee sections'}
+                    title={isEmployeeExpanded ? 'Hide sections' : 'Show sections'}
+                    className="absolute right-1.5 top-1/2 -translate-y-1/2 w-7 h-7 rounded-lg flex items-center justify-center text-[#FA7014] hover:bg-[#FA7014]/15 cursor-pointer"
+                  >
+                    {isEmployeeExpanded ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
+                  </button>
+                )}
+                </div>
+
+                {activeModule === 'employee' && isEmployeeExpanded && (
+                  <ModuleSubNav nav={employeeNav} label="Employee sections" variant="sidebar" idPrefix="nav-submodule-employee" onNavigate={() => setIsMobileSidebarOpen(false)} />
                 )}
 
                 {/* ---------------------------------------------------- */}

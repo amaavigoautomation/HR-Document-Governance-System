@@ -18,6 +18,7 @@ import { HomePage } from './components/home/HomePage';
 import { leaveNav } from './components/leave/leaveNav';
 import { payrollNav } from './components/payroll/payrollNav';
 import { peopleNav } from './components/lifecycle/peopleNav';
+import { EmployeeModule } from './components/employee/EmployeeModule';
 import type { WidgetTarget } from '../shared/dashboard';
 import { hasAnyPerm } from '../shared/permissions';
 import { AuthScreen } from './components/AuthScreen';
@@ -607,6 +608,12 @@ export default function App() {
           {hrAgentModule === 'people' && currentUser && (
             <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
               <PeopleModule currentUser={currentUser} />
+            </div>
+          )}
+
+          {hrAgentModule === 'employee' && currentUser && (
+            <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
+              <EmployeeModule currentUser={currentUser} onOpenModule={handleSelectHRAgentModule} />
             </div>
           )}
 
