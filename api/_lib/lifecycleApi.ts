@@ -16,6 +16,7 @@ import {
 } from './leaveCore.js';
 import { IDENTITY_TYPES, MAX_IDENTITY_FILES, checkIdentityImage, identityProblem, identityTypeKeys, normalizeIdentity } from '../../shared/employeeIdentity.js';
 import { PERSONAL_FIELDS, checkPersonalField } from '../../shared/employeePersonal.js';
+import { MAX_QUALIFICATIONS, cleanQualification } from '../../shared/employeeQualification.js';
 import { MAX_FAMILY_MEMBERS, cleanFamilyMember } from '../../shared/employeeFamily.js';
 import { istToday } from '../../shared/leaveEngine.js';
 import {
@@ -996,9 +997,9 @@ async function personalSave(w: Who, body: any): Promise<Result> {
 // One document per family member in the server-only employeeFamily collection. The person manages their own list;
 // HR can manage anyone's. Photocopies are not stored yet.
 
-async function familyAccess(w: Who, uidIn: unknown, verb: string): Promise<string> {
+async function familyAccess(w: Who, uidIn: unknown, verb: string, what = 'family details'): Promise<string> {
   const uid = str(uidIn, 128) || w.uid;
-  if (uid !== w.uid && !canSeeProfiles(w)) throw new LcError(403, `You can only ${verb} your own family details.`);
+  if (uid !== w.uid && !canSeeProfiles(w)) throw new LcError(403, `You can only ${verb} your own ${what}.`);
   if (!(await personByUid(w.cid, uid))) throw new LcError(404, 'Employee not found.');
   return uid;
 }
@@ -1039,6 +1040,94 @@ async function familyDelete(w: Who, body: any): Promise<Result> {
   const d: any = cur.exists ? cur.data() : null;
   if (!d || d.companyId !== w.cid || d.uid !== uid) return fail(404, 'That family member was not found.');
   await ref.set(clean({ ...d, removed: true, removedAt: nowIso(), removedBy: w.uid }));
+  return ok({});
+}
+
+// ------------------------------------------------------------------ employee qualifications (Employee > Qualification Details)
+//
+// One document per qualification in the server-only employeeQualifications collection; the certificate photo, if any, sits
+// in employeeQualificationData under the same id so lists never load pictures. Own records, or any person's for HR.
+
+const withHighest = async (w: Who, uid: string, keepId: string) => {
+  // Only one qualification can be the highest: choosing a new one clears the others.
+  const snap = await db().collection('employeeQualifications').where('companyId', '==', w.cid).where('uid', '==', uid).get();
+  for (const d of snap.docs) if (d.id !== keepId && d.data().isHighest) await d.ref.set({ ...d.data(), isHighest: false });
+};
+
+async function qualList(w: Who, q: any): Promise<Result> {
+  const uid = await familyAccess(w, q?.uid, 'open', 'qualifications');
+  const snap = await db().collection('employeeQualifications').where('companyId', '==', w.cid).where('uid', '==', uid).get();
+  const items = snap.docs.map((d: any) => ({ id: d.id, ...d.data() }))
+    .sort((a: any, b: any) => String(b.dateOfPassing || b.toDate || '9999').localeCompare(String(a.dateOfPassing || a.toDate || '9999')));
+  return ok({ items, max: MAX_QUALIFICATIONS });
+}
+
+async function qualSave(w: Who, body: any): Promise<Result> {
+  const uid = await familyAccess(w, body?.uid, 'change', 'qualifications');
+  const r = cleanQualification(body?.item, istToday());
+  if ('error' in r) return fail(400, r.error);
+  const col = db().collection('employeeQualifications');
+  const id = str(body?.id, 128);
+  let ref;
+  if (id) {
+    const cur = await col.doc(id).get();
+    const d: any = cur.exists ? cur.data() : null;
+    if (!d || d.companyId !== w.cid || d.uid !== uid) return fail(404, 'That qualification was not found.');
+    ref = col.doc(id);
+    await ref.set(clean({ ...d, ...r.value, updatedAt: nowIso(), updatedBy: w.uid }));
+  } else {
+    const have = await col.where('companyId', '==', w.cid).where('uid', '==', uid).get();
+    if (have.size >= MAX_QUALIFICATIONS) return fail(400, `You can add up to ${MAX_QUALIFICATIONS} qualifications.`);
+    ref = col.doc();
+    await ref.set(clean({ ...r.value, companyId: w.cid, uid, hasDocument: false, createdAt: nowIso(), createdBy: w.uid }));
+  }
+  if (r.value.isHighest) await withHighest(w, uid, ref.id);
+  return ok({ id: ref.id });
+}
+
+async function qualOwn(w: Who, uid: string, id: string) {
+  const cur = await db().collection('employeeQualifications').doc(id).get();
+  const d: any = cur.exists ? cur.data() : null;
+  return d && d.companyId === w.cid && d.uid === uid ? d : null;
+}
+
+async function qualDelete(w: Who, body: any): Promise<Result> {
+  const uid = await familyAccess(w, body?.uid, 'change', 'qualifications');
+  const id = str(body?.id, 128);
+  if (!(await qualOwn(w, uid, id))) return fail(404, 'That qualification was not found.');
+  await db().collection('employeeQualificationData').doc(id).delete();
+  await db().collection('employeeQualifications').doc(id).delete();
+  return ok({});
+}
+
+async function qualDocSet(w: Who, body: any): Promise<Result> {
+  const uid = await familyAccess(w, body?.uid, 'change', 'qualifications');
+  const id = str(body?.id, 128);
+  const d = await qualOwn(w, uid, id);
+  if (!d) return fail(404, 'That qualification was not found.');
+  const problem = checkIdentityImage(body?.dataUrl);
+  if (problem) return fail(400, problem);
+  const dataUrl = body.dataUrl as string;
+  await db().collection('employeeQualificationData').doc(id).set({ companyId: w.cid, uid, dataUrl });
+  await db().collection('employeeQualifications').doc(id).set(clean({ ...d, hasDocument: true, docKb: Math.round((dataUrl.length * 3) / 4 / 1024), updatedAt: nowIso(), updatedBy: w.uid }));
+  return ok({});
+}
+
+async function qualDocGet(w: Who, q: any): Promise<Result> {
+  const uid = await familyAccess(w, q?.uid, 'open', 'qualifications');
+  const id = str(q?.id, 128);
+  if (!(await qualOwn(w, uid, id))) return fail(404, 'Document not found.');
+  const data = await db().collection('employeeQualificationData').doc(id).get();
+  return data.exists ? ok({ dataUrl: data.data().dataUrl }) : fail(404, 'Document not found.');
+}
+
+async function qualDocDelete(w: Who, body: any): Promise<Result> {
+  const uid = await familyAccess(w, body?.uid, 'change', 'qualifications');
+  const id = str(body?.id, 128);
+  const d = await qualOwn(w, uid, id);
+  if (!d) return fail(404, 'That qualification was not found.');
+  await db().collection('employeeQualificationData').doc(id).delete();
+  await db().collection('employeeQualifications').doc(id).set(clean({ ...d, hasDocument: false, docKb: 0, updatedAt: nowIso(), updatedBy: w.uid }));
   return ok({});
 }
 
@@ -1121,6 +1210,12 @@ export async function routeLifecycle(r: LifecycleRequestIn): Promise<Result> {
       case 'identity-decide': return POST ? await identityDecide(w, body) : wrong;
       case 'personal': return GET ? await personalGet(w, r.query) : wrong;
       case 'personal-save': return POST ? await personalSave(w, body) : wrong;
+      case 'qualifications': return GET ? await qualList(w, r.query) : wrong;
+      case 'qualification-save': return POST ? await qualSave(w, body) : wrong;
+      case 'qualification-delete': return POST ? await qualDelete(w, body) : wrong;
+      case 'qualification-doc-set': return POST ? await qualDocSet(w, body) : wrong;
+      case 'qualification-doc': return GET ? await qualDocGet(w, r.query) : wrong;
+      case 'qualification-doc-delete': return POST ? await qualDocDelete(w, body) : wrong;
       case 'family': return GET ? await familyList(w, r.query) : wrong;
       case 'family-save': return POST ? await familySave(w, body) : wrong;
       case 'family-delete': return POST ? await familyDelete(w, body) : wrong;

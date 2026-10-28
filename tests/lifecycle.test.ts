@@ -3,6 +3,7 @@ import { __useFakeAdmin } from '../api/_lib/firebaseAdmin.ts';
 import { FakeFirestore } from './fakeFirestore.ts';
 import { routeLifecycle } from '../api/_lib/lifecycleApi.ts';
 import { routePayroll } from '../api/_lib/payrollApi.ts';
+import { durationText } from '../shared/employeeQualification.ts';
 import { addDays, istToday } from '../shared/leaveEngine.ts';
 import { buildOrgTree, earliestLastDay, flattenOrg, noticeServed, noticeShortfall, renderTemplate, tenureText, wouldCycle } from '../shared/lifecycleEngine.ts';
 
@@ -319,6 +320,51 @@ assert.equal((await call(FOREIGN, 'GET', 'profile', {}, { uid: 'u_emp' })).statu
   await ok(EMP, 'POST', 'identity-file-delete', { id: a.id });
   assert.equal((await files(EMP)).length, 1);
   assert.equal((await call(EMP, 'GET', 'identity-file', {}, { id: a.id })).status, 404, 'gone for good');
+}
+
+// ---- employee qualifications
+{
+  const list = async (h: any, uid?: string) => (await call(h, 'GET', 'qualifications', {}, uid ? { uid } : {})).json.items;
+  const jpeg = 'data:image/jpeg;base64,' + Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0, 16, 0x4a, 0x46, 0x49, 0x46]).toString('base64');
+  const bad1 = (item: any) => call(EMP, 'POST', 'qualification-save', { item });
+  const good = { qualification: 'Master\'s degree', universityName: 'Mumbai University', instituteName: 'TIMS', fromDate: '2022-07-01', toDate: '2024-06-30', dateOfPassing: '2024-07-15', percentage: '78.5', status: 'Completed', isHighest: true };
+  assert.deepEqual(await list(EMP), []);
+  assert.equal((await bad1({ ...good, qualification: '' })).status, 400);
+  assert.equal((await bad1({ ...good, qualification: 'Wizard' })).status, 400);
+  assert.equal((await bad1({ ...good, universityName: '' })).status, 400);
+  assert.equal((await bad1({ ...good, percentage: '101' })).status, 400);
+  assert.equal((await bad1({ ...good, toDate: '2020-01-01' })).status, 400, 'end before start');
+  assert.equal((await bad1({ ...good, dateOfPassing: '2999-01-01' })).status, 400);
+  assert.equal((await bad1({ ...good, dateOfPassing: '' })).status, 400, 'completed needs a passing date');
+  const master = (await bad1(good)).json;
+  const bach = (await bad1({ ...good, qualification: 'Bachelor\'s degree', dateOfPassing: '2022-06-20', isHighest: false })).json;
+  const pursuing = (await bad1({ qualification: 'Doctorate', universityName: 'IIT', status: 'Pursuing', dateOfPassing: '2030-01-01', isHighest: false })).json;
+  let rows = await list(EMP);
+  assert.equal(rows.length, 3);
+  assert.equal(rows[0].id, pursuing.id, 'still-running course sorts first'); assert.equal(rows[0].dateOfPassing, '', 'no passing date while pursuing');
+  assert.equal(rows[1].id, master.id);
+  await ok(EMP, 'POST', 'qualification-save', { id: bach.id, item: { ...good, qualification: 'Bachelor\'s degree', dateOfPassing: '2022-06-20', isHighest: true } });
+  rows = await list(EMP);
+  assert.deepEqual(rows.filter((r: any) => r.isHighest).map((r: any) => r.id), [bach.id], 'only one is the highest');
+  assert.equal((await call(OTHER, 'GET', 'qualifications', {}, { uid: 'u_emp' })).status, 403);
+  assert.equal((await call(OTHER, 'POST', 'qualification-delete', { id: bach.id })).status, 404, 'not reachable by id');
+  assert.equal((await call(FOREIGN, 'GET', 'qualifications', {}, { uid: 'u_emp' })).status, 404);
+  // certificate photo
+  assert.equal((await call(EMP, 'POST', 'qualification-doc-set', { id: bach.id, dataUrl: 'data:image/png;base64,AAAA' })).status, 400);
+  await ok(EMP, 'POST', 'qualification-doc-set', { id: bach.id, dataUrl: jpeg });
+  assert.equal((await list(EMP)).find((r: any) => r.id === bach.id).hasDocument, true);
+  assert.ok(!JSON.stringify(await list(EMP)).includes('base64'), 'listing never carries the pictures');
+  assert.equal((await call(HR, 'GET', 'qualification-doc', {}, { id: bach.id, uid: 'u_emp' })).json.dataUrl, jpeg);
+  assert.equal((await call(OTHER, 'GET', 'qualification-doc', {}, { id: bach.id, uid: 'u_emp' })).status, 403);
+  await ok(EMP, 'POST', 'qualification-doc-delete', { id: bach.id });
+  assert.equal((await list(EMP)).find((r: any) => r.id === bach.id).hasDocument, false);
+  assert.equal((await call(EMP, 'GET', 'qualification-doc', {}, { id: bach.id })).status, 404);
+  await ok(EMP, 'POST', 'qualification-save', { item: good });
+  await ok(EMP, 'POST', 'qualification-delete', { id: master.id });
+  assert.equal((await list(EMP)).length, 3);
+  assert.equal(durationText('2022-07-01', '2024-06-30'), '1 year 11 months');
+  assert.equal(durationText('2020-01-01', '2020-01-10'), 'Less than a month');
+  assert.equal(durationText('2024-01-01', '2023-01-01'), '');
 }
 
 console.log('lifecycle tests passed');

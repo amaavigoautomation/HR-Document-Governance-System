@@ -504,5 +504,7 @@ service cloud.firestore {
     match /employeeIdentityData/{id} { allow read, write: if false; }
     match /employeePersonal/{id} { allow read, write: if false; }
     match /employeeFamily/{id} { allow read, write: if false; }
+    match /employeeQualifications/{id} { allow read, write: if false; }
+    match /employeeQualificationData/{id} { allow read, write: if false; }
   }
 }

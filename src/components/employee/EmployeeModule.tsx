@@ -7,6 +7,7 @@ import { EmployeeProfilePage } from './EmployeeProfilePage';
 import { EmployeeIdentityPage } from './EmployeeIdentityPage';
 import { PersonalInfoPage } from './PersonalInfoPage';
 import { FamilyDetailsPage } from './FamilyDetailsPage';
+import { QualificationPage } from './QualificationPage';
 import { EmployeePicker } from './EmployeePicker';
 import type { HRAgentModule } from '../HRAgentShell';
 
@@ -56,13 +57,14 @@ export const EmployeeModule: React.FC<{ currentUser: User; canPick?: boolean; on
           </div>
         )}
 
-        {canPick && (entry?.key === 'master' || entry?.key === 'identity' || entry?.key === 'personal' || entry?.key === 'family') && <EmployeePicker current={pickedUid} onPick={setPickedUid} />}
+        {canPick && (entry?.key === 'master' || entry?.key === 'identity' || entry?.key === 'personal' || entry?.key === 'family' || entry?.key === 'qualification') && <EmployeePicker current={pickedUid} onPick={setPickedUid} />}
         {entry?.key === 'master' && <EmployeeProfilePage uid={pickedUid} />}
         {entry?.key === 'identity' && <EmployeeIdentityPage uid={pickedUid} />}
         {entry?.key === 'personal' && <PersonalInfoPage uid={pickedUid} />}
         {entry?.key === 'family' && <FamilyDetailsPage uid={pickedUid} />}
+        {entry?.key === 'qualification' && <QualificationPage uid={pickedUid} />}
 
-        {entry && !['master', 'identity', 'personal', 'family'].includes(entry.key) && (
+        {entry && !['master', 'identity', 'personal', 'family', 'qualification'].includes(entry.key) && (
           <div className="bg-white border border-slate-200 rounded-2xl p-8 text-center">
             <h2 className="text-base font-black text-slate-800">{entry.label}</h2>
             <p className="text-xs text-slate-500 mt-1">{entry.hint}</p>

@@ -57,6 +57,13 @@ export const lifecycleService = {
   family: (uid?: string) => get('family', { uid }),
   saveFamily: (b: { uid?: string; id?: string; member: unknown }) => post('family-save', b),
   deleteFamily: (b: { uid?: string; id: string }) => post('family-delete', b),
+  // qualifications
+  qualifications: (uid?: string) => get('qualifications', { uid }),
+  saveQualification: (b: { uid?: string; id?: string; item: unknown }) => post('qualification-save', b),
+  deleteQualification: (b: { uid?: string; id: string }) => post('qualification-delete', b),
+  setQualificationDoc: (b: { uid?: string; id: string; dataUrl: string }) => post('qualification-doc-set', b),
+  qualificationDoc: (id: string, uid?: string) => get('qualification-doc', { id, uid }),
+  deleteQualificationDoc: (b: { uid?: string; id: string }) => post('qualification-doc-delete', b),
   // directory
   directory: (all = false) => get('directory', { all: all ? '1' : undefined }),
   setManager: (uid: string, managerUid: string) => post('set-manager', { uid, managerUid }),
