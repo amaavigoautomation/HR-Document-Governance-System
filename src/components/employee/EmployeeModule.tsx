@@ -9,6 +9,7 @@ import { PersonalInfoPage } from './PersonalInfoPage';
 import { FamilyDetailsPage } from './FamilyDetailsPage';
 import { QualificationPage } from './QualificationPage';
 import { SeparationPage } from './SeparationPage';
+import { WeekoffReportPage } from './WeekoffReportPage';
 import { EmployeePicker } from './EmployeePicker';
 import type { HRAgentModule } from '../HRAgentShell';
 
@@ -63,9 +64,10 @@ export const EmployeeModule: React.FC<{ currentUser: User; canPick?: boolean; on
         {entry?.key === 'personal' && <PersonalInfoPage uid={pickedUid} />}
         {entry?.key === 'family' && <FamilyDetailsPage uid={pickedUid} />}
         {entry?.key === 'qualification' && <QualificationPage uid={pickedUid} />}
+        {entry?.key === 'weekoff' && <WeekoffReportPage />}
         {entry?.key === 'separation' && <SeparationPage uid={pickedUid} onOpenModule={onOpenModule} />}
 
-        {entry && !['master', 'identity', 'personal', 'family', 'qualification', 'separation'].includes(entry.key) && (
+        {entry && !['master', 'identity', 'personal', 'family', 'qualification', 'separation', 'weekoff'].includes(entry.key) && (
           <div className="bg-white border border-slate-200 rounded-2xl p-8 text-center">
             <h2 className="text-base font-black text-slate-800">{entry.label}</h2>
             <p className="text-xs text-slate-500 mt-1">{entry.hint}</p>

@@ -185,6 +185,11 @@ assert.equal(repOwn.people.length, 1, 'an employee only gets their own days');
 assert.equal((await call(OTHER, 'GET', 'attendance-report', undefined, { from: addDays(today, -6), to: today, uid: 'u_emp' })).status, 403);
 assert.ok((await ok(HR, 'GET', 'attendance-report', undefined, { from: addDays(today, -6), to: today })).people.length >= 3, 'HR sees everyone');
 assert.equal((await call(HR, 'GET', 'attendance-report', undefined, { from: '2026-01-01', to: '2026-12-31' })).status, 400, 'range cap');
+// the report carries the company name and the holiday names the Weekoff Holiday report needs
+const repHol = await ok(HR, 'GET', 'attendance-report', undefined, { from: '2026-10-01', to: '2026-10-31' });
+assert.equal(repHol.company, 'Acme Ltd');
+const holDays = repHol.people[0].days.filter((d: any) => d.holiday);
+assert.ok(holDays.length > 0 && typeof holDays[0].holiday === 'string' && typeof holDays[0].optional === 'boolean', 'holiday name and restricted flag are on the day');
 assert.equal((await ok(HR, 'GET', 'pending-applications')).items.some((r: any) => r.docNo === behalf.docNo), true);
 assert.equal((await ok(OTHER, 'GET', 'pending-applications')).items.length, 0, 'peers see no one else\'s applications');
 assert.equal((await call(OTHER, 'GET', 'attendance', undefined, { uid: 'u_emp' })).status, 403, 'peers cannot read your attendance');

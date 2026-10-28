@@ -13,7 +13,7 @@ import {
   type AttendanceRecord, type LeaveLocation, type LeavePolicy, type LeaveSettings, type LeaveType,
 } from '../../shared/leaveEngine.js';
 import {
-  ACTIVE_STATUSES, LeaveError, balanceOf, companyLedger, companyRequests, db, effectiveProfile, entryData, findLocation, findPolicy,
+  ACTIVE_STATUSES, LeaveError, companyLabel, balanceOf, companyLedger, companyRequests, db, effectiveProfile, entryData, findLocation, findPolicy,
   findType, ledgerRef, loadPeople, loadProfiles, loadSettings, notify, nowIso, parseApplyInput, personByUid, planRequest, profileId,
   profileOf, requestsOfUser, restoreEntries, runAccrual, str, usageEntries, userLedger,
   type LeaveRequest, type Person, type Profile,
@@ -253,8 +253,10 @@ export function buildMonth(settings: LeaveSettings, locId: string, joinDate: str
   for (let d = from; d <= to; d = addDays(d, 1)) {
     const rec = records.get(d);
     const r = computeDayStatus({ date: d, today, loc, record: rec, leaveValue: leave.get(d), shift: settings.shift, joinDate });
+    const hol = loc?.holidays.find((h) => h.date === d);
     days.push({
       date: d, status: r.status, workedMinutes: r.workedMinutes, late: r.late,
+      ...(hol ? { holiday: hol.name, optional: hol.optional === true } : {}),
       checkIn: rec?.checkIn ? istParts(rec.checkIn).time : null,
       checkOut: rec?.checkOut ? istParts(rec.checkOut).time : null,
       sessions: sessionsOf(rec).map((x) => ({ in: istParts(x.in).time, out: x.out ? istParts(x.out).time : null, inNote: x.inNote || '', outNote: x.outNote || '' })),
@@ -788,7 +790,7 @@ async function attendanceReport(who: Who, q: any): Promise<Result> {
     return { uid: p.uid, name: p.name, empId: p.empId, department: p.department, days };
   });
   const sh = c.settings.shift;
-  return ok({ from, to, shift: { start: sh.start, end: sh.end, graceMinutes: sh.graceMinutes, fullDayMinutes: sh.fullDayMinutes }, today: istToday(), people });
+  return ok({ from, to, company: await companyLabel(who.cid), shift: { start: sh.start, end: sh.end, graceMinutes: sh.graceMinutes, fullDayMinutes: sh.fullDayMinutes }, today: istToday(), people });
 }
 
 /** Attendance applications still waiting for a decision, for the people this person may see. */
