@@ -1,9 +1,12 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { CalendarDays, CheckCircle2, Sunrise, Sunset, Sun } from 'lucide-react';
+import { CalendarDays, CheckCircle2 } from 'lucide-react';
 import { leaveService } from '../../services/leaveService';
+import { halves, type LeaveValue } from '../../../shared/leaveEngine';
 import { addDaysIso, btnBig, btnGhost, days, Drawer, Field, input, Notice, shortDate, useRunner } from './ui';
 
-type Length = 'FULL' | 'MORNING' | 'AFTERNOON';
+/** What part of the first / last day is taken. */
+type Value = LeaveValue;
+const VALUE_LABEL: Record<Value, string> = { FULL: 'Full Day', FIRST: 'First Half Day', SECOND: 'Second Half Day' };
 
 /**
  * Apply for leave in one panel: pick a type, pick dates, (optionally) half day, add a reason, see exactly what will
@@ -17,9 +20,8 @@ export const ApplyLeaveDrawer: React.FC<{ me: any; open: boolean; onClose: () =>
   const [typeId, setTypeId] = useState<string>(firstUsable?.typeId || '');
   const [from, setFrom] = useState(initialFrom || me.today);
   const [to, setTo] = useState(initialFrom || me.today);
-  const [length, setLength] = useState<Length>('FULL');
-  const [startLate, setStartLate] = useState(false);
-  const [endEarly, setEndEarly] = useState(false);
+  const [fromValue, setFromValue] = useState<Value>('FULL');
+  const [toValue, setToValue] = useState<Value>('FULL');
   const [reason, setReason] = useState('');
   const [docUrl, setDocUrl] = useState('');
   const [preview, setPreview] = useState<any | null>(null);
@@ -31,7 +33,7 @@ export const ApplyLeaveDrawer: React.FC<{ me: any; open: boolean; onClose: () =>
     if (!open) return;
     setTypeId(firstUsable?.typeId || '');
     setFrom(initialFrom || me.today); setTo(initialFrom || me.today);
-    setLength('FULL'); setStartLate(false); setEndEarly(false); setReason(''); setDocUrl(''); setNote(null);
+    setFromValue('FULL'); setToValue('FULL'); setReason(''); setDocUrl(''); setNote(null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 
@@ -40,9 +42,15 @@ export const ApplyLeaveDrawer: React.FC<{ me: any; open: boolean; onClose: () =>
   const canHalf = !!bal?.halfDay;
   const single = from === to;
 
-  const halfFrom = canHalf && (single ? length !== 'FULL' : startLate);
-  const halfTo = canHalf && !single && endEarly;
-  const halfPart: 'FIRST' | 'SECOND' = single && length === 'MORNING' ? 'FIRST' : 'SECOND';
+  // Over several days only the second half of the first day and the first half of the last day make sense.
+  const fromChoices: Value[] = !canHalf ? ['FULL'] : single ? ['FULL', 'FIRST', 'SECOND'] : ['FULL', 'SECOND'];
+  const toChoices: Value[] = !canHalf ? ['FULL'] : single ? ['FULL', 'FIRST', 'SECOND'] : ['FULL', 'FIRST'];
+  const fv: Value = fromChoices.includes(fromValue) ? fromValue : 'FULL';
+  const tv: Value = toChoices.includes(toValue) ? toValue : 'FULL';
+  const h = halves(single, fv, tv);
+  const halfFrom = canHalf && h.halfFrom;
+  const halfTo = canHalf && h.halfTo;
+  const halfPart = h.halfPart;
   // The server refuses the preview while the document is missing, so also show the field when that is the reason.
   const docError = preview?.valid === false && /supporting document/i.test(preview.error || '');
   const needsDoc = (meta?.docRequiredAfterDays || 0) > 0 && ((preview?.days || 0) > meta.docRequiredAfterDays || docError || !!docUrl);
@@ -114,38 +122,29 @@ export const ApplyLeaveDrawer: React.FC<{ me: any; open: boolean; onClose: () =>
                 className={`px-3 py-1 rounded-full text-xs font-bold border ${from === q.from && to === q.to ? 'bg-[#FA7014] border-[#FA7014] text-white' : 'border-slate-300 text-slate-600 hover:bg-slate-50'}`}>{q.label}</button>
             ))}
           </div>
-          <div className="grid grid-cols-2 gap-2">
-            <Field label="From"><input type="date" className={input} value={from} onChange={(e) => { const v = e.target.value; setFrom(v); if (!to || to < v) setTo(v); }} /></Field>
-            <Field label="To (last day off)"><input type="date" className={input} value={to} min={from} onChange={(e) => setTo(e.target.value)} /></Field>
+          <div className="grid grid-cols-2 gap-x-3 gap-y-2">
+            <Field label="From date"><input type="date" className={input} value={from} onChange={(e) => { const v = e.target.value; setFrom(v); if (!to || to < v) setTo(v); }} /></Field>
+            <Field label="Leave value">
+              <select className={input} aria-label="Leave value for the first day" value={fv} disabled={!canHalf} onChange={(e) => setFromValue(e.target.value as Value)}>
+                {fromChoices.map((v) => <option key={v} value={v}>{VALUE_LABEL[v]}</option>)}
+              </select>
+            </Field>
+            <Field label="Till date (last day off)"><input type="date" className={input} value={to} min={from} onChange={(e) => setTo(e.target.value)} /></Field>
+            <Field label="Leave value">
+              <select className={input} aria-label="Leave value for the last day" value={tv} disabled={!canHalf} onChange={(e) => setToValue(e.target.value as Value)}>
+                {toChoices.map((v) => <option key={v} value={v}>{VALUE_LABEL[v]}</option>)}
+              </select>
+            </Field>
           </div>
-        </section>
-
-        {/* 3. half day */}
-        <section>
-          <StepTitle n={3}>{single ? 'Whole day or half?' : 'Any half days?'}</StepTitle>
-          {!canHalf ? (
-            <p className="text-xs text-slate-500">{bal ? `${bal.name} is taken in full days only.` : 'Pick a leave type first.'}</p>
-          ) : single ? (
-            <div className="grid grid-cols-3 gap-2">
-              {([['FULL', 'Full day', Sun], ['MORNING', 'Morning', Sunrise], ['AFTERNOON', 'Afternoon', Sunset]] as const).map(([v, l, Icon]) => (
-                <button key={v} type="button" onClick={() => setLength(v)}
-                  className={`rounded-xl border-2 py-2.5 flex flex-col items-center gap-1 text-xs font-bold ${length === v ? 'border-[#FA7014] bg-orange-50/60 text-[#FA7014]' : 'border-slate-200 text-slate-600 hover:border-slate-300'}`}>
-                  <Icon className="w-4 h-4" />{l}
-                  <span className="text-[10px] font-normal text-slate-400">{v === 'FULL' ? '1 day' : '½ day'}</span>
-                </button>
-              ))}
-            </div>
-          ) : (
-            <div className="space-y-2">
-              <Toggle checked={startLate} onChange={setStartLate} label={`Start after lunch on ${shortDate(from)}`} hint="Work the morning, leave from the afternoon" />
-              <Toggle checked={endEarly} onChange={setEndEarly} label={`Come back after lunch on ${shortDate(to)}`} hint="Off in the morning, back for the afternoon" />
-            </div>
-          )}
+          <p className="mt-1.5 text-[11px] text-slate-400">
+            {!canHalf ? (bal ? `${bal.name} is taken in full days only.` : 'Pick a leave type first.')
+              : single ? 'One day: First Half Day plus Second Half Day is the whole day.' : 'First day can start in its second half; last day can end after its first half.'}
+          </p>
         </section>
 
         {/* 4. reason */}
         <section>
-          <StepTitle n={4} optional>Reason</StepTitle>
+          <StepTitle n={3} optional>Reason</StepTitle>
           <textarea rows={2} className={input} placeholder="e.g. Family function in Pune" value={reason} onChange={(e) => setReason(e.target.value)} />
           {needsDoc && (
             <div className="mt-2">
@@ -186,9 +185,3 @@ const StepTitle: React.FC<{ n: number; optional?: boolean; children: React.React
   </h3>
 );
 
-const Toggle: React.FC<{ checked: boolean; onChange: (v: boolean) => void; label: string; hint?: string }> = ({ checked, onChange, label, hint }) => (
-  <label className={`flex items-start gap-3 rounded-xl border-2 px-3 py-2.5 cursor-pointer ${checked ? 'border-[#FA7014] bg-orange-50/60' : 'border-slate-200 hover:border-slate-300'}`}>
-    <input type="checkbox" className="mt-0.5 accent-[#FA7014] w-4 h-4" checked={checked} onChange={(e) => onChange(e.target.checked)} />
-    <span><span className="block text-xs font-bold text-slate-800">{label}</span>{hint && <span className="block text-[11px] text-slate-500">{hint}</span>}</span>
-  </label>
-);

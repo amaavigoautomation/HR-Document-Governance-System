@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import {
   cycleOf, countLeaveDays, plannedCredits, rollover, entitledMonths, approvalSteps, computeDayStatus,
-  summarizeMonth, istToInstant, istParts, isWeeklyOff, dayKind, starterSettings, DEFAULT_SHIFT, previousCycle,
+  summarizeMonth, istToInstant, istParts, isWeeklyOff, dayKind, starterSettings, DEFAULT_SHIFT, previousCycle, halves,
 } from '../shared/leaveEngine.ts';
 
 // leave year
@@ -61,6 +61,14 @@ assert.deepEqual(approvalSteps({ approval: 'MANAGER' }, 2, true, s), ['MANAGER']
 assert.deepEqual(approvalSteps({ approval: 'MANAGER' }, 2, false, s), ['HR']);
 assert.deepEqual(approvalSteps({ approval: 'MANAGER_HR' }, 2, true, s), ['MANAGER', 'HR']);
 assert.deepEqual(approvalSteps({ approval: 'MANAGER' }, 6, true, { ...s, hrApprovalAboveDays: 5 }), ['MANAGER', 'HR']);
+
+// leave value on the first and last day
+assert.deepEqual(halves(true, 'FIRST', 'SECOND'), { halfFrom: false, halfTo: false, halfPart: 'SECOND' }, 'first + second half of one day = whole day');
+assert.deepEqual(halves(true, 'FIRST', 'FIRST'), { halfFrom: true, halfTo: false, halfPart: 'FIRST' });
+assert.deepEqual(halves(true, 'SECOND', 'SECOND'), { halfFrom: true, halfTo: false, halfPart: 'SECOND' });
+assert.equal(halves(true, 'FULL', 'FULL').halfFrom, false);
+assert.deepEqual(halves(false, 'SECOND', 'FIRST'), { halfFrom: true, halfTo: true, halfPart: 'SECOND' });
+assert.deepEqual(halves(false, 'FULL', 'FULL'), { halfFrom: false, halfTo: false, halfPart: 'SECOND' });
 
 // attendance
 assert.equal(istParts(istToInstant('2026-10-22', '09:40')).time, '09:40');

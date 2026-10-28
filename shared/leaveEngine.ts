@@ -196,6 +196,24 @@ export interface LeaveDayCount {
   kind: DayKind;
 }
 
+/** What part of the first / last day is taken. */
+export type LeaveValue = 'FULL' | 'FIRST' | 'SECOND';
+
+/**
+ * Turns the two "leave value" choices into what the server takes. On a single day the two choices are combined:
+ * First Half + Second Half = the whole day. Over several days, the first day can start in its second half and the
+ * last day can end after its first half.
+ */
+export function halves(single: boolean, fromValue: LeaveValue, toValue: LeaveValue): { halfFrom: boolean; halfTo: boolean; halfPart: 'FIRST' | 'SECOND' } {
+  if (single) {
+    const covers = new Set<number>();
+    for (const v of [fromValue, toValue]) { if (v === 'FULL') { covers.add(1); covers.add(2); } else covers.add(v === 'FIRST' ? 1 : 2); }
+    if (covers.size === 2) return { halfFrom: false, halfTo: false, halfPart: 'SECOND' };
+    return { halfFrom: true, halfTo: false, halfPart: covers.has(1) ? 'FIRST' : 'SECOND' };
+  }
+  return { halfFrom: fromValue !== 'FULL', halfTo: toValue !== 'FULL', halfPart: 'SECOND' };
+}
+
 export interface CountInput {
   from: string;
   to: string;
