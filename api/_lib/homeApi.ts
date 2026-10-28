@@ -23,7 +23,7 @@
  */
 import { authErrorResponse, requireActiveTenant, type AuthContext } from './authContext.js';
 import { hasPerm } from '../../shared/permissions.js';
-import { addDays, istParts, istToday, isIsoDate } from '../../shared/leaveEngine.js';
+import { addDays, istParts, istToday, isIsoDate, sessionsOf } from '../../shared/leaveEngine.js';
 import {
   ANNOUNCEMENT_LIMITS, DEFAULT_QUICK_LINKS, MAX_QUICK_LINKS, canManageAnnouncements, canManageHome, canSeeLoginSummary, canSeeMoodSummary,
   celebrationsFor, isMood, loginChannel, MOODS, quickReportsFor, sanitizeQuickLinks, visibleAnnouncements, visibleQuickLinks,
@@ -225,8 +225,11 @@ async function punches(w: Who, q: any): Promise<Result> {
   const all: { at: string; date: string; time: string; kind: 'IN' | 'OUT'; note: string }[] = [];
   for (const d of snap.docs) {
     const r: any = d.data();
-    if (r.checkIn) { const p = istParts(r.checkIn); all.push({ at: r.checkIn, date: p.date, time: p.time, kind: 'IN', note: str(r.inNote, 200) }); }
-    if (r.checkOut) { const p = istParts(r.checkOut); all.push({ at: r.checkOut, date: p.date, time: p.time, kind: 'OUT', note: str(r.outNote, 200) }); }
+    for (const x of sessionsOf(r)) {
+      const a = istParts(x.in);
+      all.push({ at: x.in, date: a.date, time: a.time, kind: 'IN', note: str(x.inNote, 200) });
+      if (x.out) { const b = istParts(x.out); all.push({ at: x.out, date: b.date, time: b.time, kind: 'OUT', note: str(x.outNote, 200) }); }
+    }
   }
   all.sort((a, b) => b.at.localeCompare(a.at));
   const pages = Math.max(1, Math.ceil(all.length / PUNCH_PAGE));

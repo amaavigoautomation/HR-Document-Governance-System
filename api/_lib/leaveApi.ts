@@ -8,7 +8,7 @@
 import { authErrorResponse, requireActiveTenant, type AuthContext } from './authContext.js';
 import { hasPerm } from '../../shared/permissions.js';
 import {
-  DEFAULT_SHIFT, addDays, computeDayStatus, cycleOf, daysBetween, isIsoDate, istParts, istToInstant, istToday,
+  DEFAULT_SHIFT, addDays, computeDayStatus, hasOpenSession, sessionsOf, workedMinutesOf, type PunchSession, cycleOf, daysBetween, isIsoDate, istParts, istToInstant, istToday,
   lastDayOfMonth, nationalHolidays, starterSettings, summarizeMonth, timeToMinutes, typeStartMonth,
   type AttendanceRecord, type LeaveLocation, type LeavePolicy, type LeaveSettings, type LeaveType,
 } from '../../shared/leaveEngine.js';
@@ -256,6 +256,7 @@ export function buildMonth(settings: LeaveSettings, locId: string, joinDate: str
       date: d, status: r.status, workedMinutes: r.workedMinutes, late: r.late,
       checkIn: rec?.checkIn ? istParts(rec.checkIn).time : null,
       checkOut: rec?.checkOut ? istParts(rec.checkOut).time : null,
+      sessions: sessionsOf(rec).map((x) => ({ in: istParts(x.in).time, out: x.out ? istParts(x.out).time : null })),
       source: rec?.source || null, note: rec?.note || '',
     });
   }
@@ -314,7 +315,14 @@ async function me(who: Who): Promise<Result> {
     balances,
     holidays: (loc?.holidays || []).filter((h) => h.date >= today.slice(0, 4) + '-01-01').slice(0, 40),
     weeklyOff: loc?.weeklyOff || {},
-    attendanceToday: { checkIn: rec?.checkIn ? istParts(rec.checkIn).time : null, checkOut: rec?.checkOut ? istParts(rec.checkOut).time : null },
+    attendanceToday: {
+      checkIn: rec?.checkIn ? istParts(rec.checkIn).time : null,
+      checkOut: rec?.checkOut ? istParts(rec.checkOut).time : null,
+      open: hasOpenSession(rec),
+      openSince: (() => { const o = sessionsOf(rec).find((x) => !x.out); return o ? istParts(o.in).time : null; })(),
+      workedMinutes: workedMinutesOf(rec),
+      sessions: sessionsOf(rec).map((x) => ({ in: istParts(x.in).time, out: x.out ? istParts(x.out).time : null })),
+    },
     isManager, isDelegate: inbox.covered.size > 0, approvals: inbox.leaves.length + inbox.regularizations.length,
   });
 }
@@ -669,6 +677,8 @@ function ipAllowed(settings: LeaveSettings, ip?: string): boolean {
   return settings.allowedIps.some((a) => v === a || (a.endsWith('.') && v.startsWith(a)));
 }
 
+const MAX_SESSIONS = 12;
+
 async function punch(who: Who, kind: 'in' | 'out', ip?: string, body?: any): Promise<Result> {
   const c = await loadCtx(who);
   if (!ipAllowed(c.settings, ip)) return fail(403, 'Check in from your office network.');
@@ -678,14 +688,25 @@ async function punch(who: Who, kind: 'in' | 'out', ip?: string, body?: any): Pro
   const rec: any = snap.exists ? snap.data() : null;
   const now = nowIso();
   const remarks = str(body?.remarks, 200);
+  const sessions: PunchSession[] = sessionsOf(rec).map((x) => ({ ...x }));
+  const open = sessions[sessions.length - 1] && !sessions[sessions.length - 1].out ? sessions[sessions.length - 1] : null;
   if (kind === 'in') {
-    if (rec?.checkIn) return fail(409, `You already checked in at ${istParts(rec.checkIn).time}.`);
-    await ref.set({ companyId: who.cid, uid: c.me.uid, date, month: date.slice(0, 7), checkIn: now, checkOut: null, source: 'SELF', ip: ip || '', inNote: remarks, updatedAt: now });
+    if (open) return fail(409, `You are already checked in since ${istParts(open.in).time}.`);
+    if (sessions.length >= MAX_SESSIONS) return fail(409, `You can check in at most ${MAX_SESSIONS} times a day.`);
+    const last = sessions[sessions.length - 1];
+    if (last?.out && new Date(now).getTime() - new Date(last.out).getTime() < 60_000) return fail(409, 'Please wait a minute before checking in again.');
+    sessions.push({ in: now, out: null, inNote: remarks });
+    await ref.set({
+      companyId: who.cid, uid: c.me.uid, date, month: date.slice(0, 7), checkIn: sessions[0].in, checkOut: null, sessions,
+      source: rec?.source || 'SELF', ip: ip || rec?.ip || '', inNote: sessions[0].inNote || '', outNote: rec?.outNote || '', updatedAt: now,
+    });
     return ok({ time: istParts(now).time });
   }
-  if (!rec?.checkIn) return fail(409, 'Check in first.');
-  if (new Date(now).getTime() - new Date(rec.checkIn).getTime() < 60_000) return fail(409, 'Please wait a minute before checking out.');
-  await ref.update({ checkOut: now, outNote: remarks, updatedAt: now });
+  if (!open) return fail(409, 'Check in first.');
+  if (new Date(now).getTime() - new Date(open.in).getTime() < 60_000) return fail(409, 'Please wait a minute before checking out.');
+  open.out = now;
+  open.outNote = remarks;
+  await ref.update({ sessions, checkOut: now, outNote: remarks, updatedAt: now });
   return ok({ time: istParts(now).time });
 }
 
@@ -757,6 +778,7 @@ async function decideRegularization(who: Who, body: any): Promise<Result> {
     batch.set(db().collection('leaveAttendance').doc(attendanceId(who.cid, r.uid, r.date)), {
       companyId: who.cid, uid: r.uid, date: r.date, month: r.date.slice(0, 7),
       checkIn: istToInstant(r.date, r.checkIn), checkOut: istToInstant(r.date, r.checkOut),
+      sessions: [{ in: istToInstant(r.date, r.checkIn), out: istToInstant(r.date, r.checkOut) }],
       source: 'REGULARIZED', note: r.reason, updatedAt: now, updatedBy: c.me.name,
     });
   }
@@ -782,6 +804,7 @@ async function markAttendance(who: Who, body: any): Promise<Result> {
   if (!Number.isFinite(timeToMinutes(ci)) || !Number.isFinite(timeToMinutes(co)) || timeToMinutes(co) <= timeToMinutes(ci)) return fail(400, 'Enter valid in and out times.');
   await ref.set({
     companyId: who.cid, uid, date, month: date.slice(0, 7), checkIn: istToInstant(date, ci), checkOut: istToInstant(date, co),
+    sessions: [{ in: istToInstant(date, ci), out: istToInstant(date, co) }],
     source: 'HR', note: str(body?.note, 200), updatedAt: nowIso(), updatedBy: c.me.name,
   });
   return ok({});

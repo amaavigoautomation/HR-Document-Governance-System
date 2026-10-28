@@ -69,7 +69,14 @@ const base = { date: '2026-10-21', today: '2026-10-22', loc, shift: DEFAULT_SHIF
 assert.equal(computeDayStatus({ ...base, record: rec('09:30', '18:30') }).status, 'PRESENT');
 assert.equal(computeDayStatus({ ...base, record: rec('09:50', '18:30') }).status, 'LATE');
 assert.equal(computeDayStatus({ ...base, record: rec('09:30', '14:00') }).status, 'HALF_DAY');
-assert.equal(computeDayStatus({ ...base, record: rec('09:30', '11:00') }).status, 'ABSENT');
+// Short hours are not absent: any worked time counts as at least the half day.
+assert.equal(computeDayStatus({ ...base, record: rec('09:30', '11:00') }).status, 'HALF_DAY');
+// Several stretches add up; the gap between them is not counted.
+const multi = { sessions: [{ in: istToInstant('2026-10-21', '09:30'), out: istToInstant('2026-10-21', '13:00') }, { in: istToInstant('2026-10-21', '14:00'), out: istToInstant('2026-10-21', '18:30') }] };
+assert.equal(computeDayStatus({ ...base, record: multi }).workedMinutes, 480);
+assert.equal(computeDayStatus({ ...base, record: multi }).status, 'PRESENT');
+// A stretch left open on a past day waits for a correction.
+assert.equal(computeDayStatus({ ...base, record: { sessions: [{ in: istToInstant('2026-10-21', '09:30'), out: null }] } }).status, 'INCOMPLETE');
 assert.equal(computeDayStatus({ ...base, record: null }).status, 'ABSENT');
 assert.equal(computeDayStatus({ ...base, record: { checkIn: istToInstant('2026-10-21', '09:30') } }).status, 'INCOMPLETE');
 assert.equal(computeDayStatus({ ...base, leaveValue: 1 }).status, 'LEAVE');

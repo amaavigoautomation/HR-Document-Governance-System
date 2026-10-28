@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { Clock, LogIn, LogOut } from 'lucide-react';
 import { leaveService } from '../../../services/leaveService';
 import { homeService } from '../../../services/homeService';
-import { Notice, btnPrimary, input, niceDate, useRunner } from '../../leave/ui';
+import { Notice, btnPrimary, input, hm, niceDate, useRunner } from '../../leave/ui';
 import { HomeCard, NoData } from '../parts';
 import { useLoad } from '../useLoad';
 
@@ -25,10 +25,11 @@ export const AttendanceCard: React.FC<{ refreshKey: number; onChanged: () => voi
   const me = useLoad(() => leaveService.me(), [refreshKey]);
   const punches = useLoad(() => homeService.punches(page), [page, refreshKey]);
   const { busy, note, run } = useRunner();
-  const att = me.data?.attendanceToday as { checkIn: string | null; checkOut: string | null } | undefined;
+  const att = me.data?.attendanceToday as { checkIn: string | null; checkOut: string | null; open?: boolean; workedMinutes?: number; sessions?: { in: string; out: string | null }[] } | undefined;
   const configured = !me.data || me.data.configured !== false;
   const found = !me.data || me.data.found !== false;
-  const state: 'IN' | 'OUT' | 'DONE' = !att?.checkIn ? 'IN' : !att.checkOut ? 'OUT' : 'DONE';
+  // People can check in and out as often as they like; worked time is the sum of the stretches.
+  const state: 'IN' | 'OUT' = att?.open ? 'OUT' : 'IN';
 
   const punch = () => run(async () => {
     if (state === 'IN') await leaveService.checkIn(remarks.trim());
@@ -49,17 +50,19 @@ export const AttendanceCard: React.FC<{ refreshKey: number; onChanged: () => voi
         <>
           <Clock12 />
           <div className="mt-3 flex items-center justify-center gap-6 text-xs text-slate-600">
-            <span>In: <b className="tabular-nums">{att?.checkIn || '--'}</b></span>
-            <span>Out: <b className="tabular-nums">{att?.checkOut || '--'}</b></span>
+            <span>First in: <b className="tabular-nums">{att?.checkIn || '--'}</b></span>
+            <span>Last out: <b className="tabular-nums">{att?.checkOut || '--'}</b></span>
+            <span>Worked: <b className="tabular-nums">{hm(att?.workedMinutes || 0) || '0h 00m'}</b></span>
           </div>
-          {state !== 'DONE' ? (
+          {(
             <div className="mt-3 flex flex-col sm:flex-row gap-2">
               <input className={input} maxLength={200} placeholder="Remarks (optional)" aria-label="Remarks" value={remarks} onChange={(e) => setRemarks(e.target.value)} />
               <button type="button" className={`${btnPrimary} whitespace-nowrap`} disabled={busy} onClick={() => void punch()}>
-                {state === 'IN' ? <><LogIn className="w-3.5 h-3.5" />Punch in</> : <><LogOut className="w-3.5 h-3.5" />Punch out</>}
+                {state === 'IN' ? <><LogIn className="w-3.5 h-3.5" />{att?.checkIn ? 'Punch in again' : 'Punch in'}</> : <><LogOut className="w-3.5 h-3.5" />Punch out</>}
               </button>
             </div>
-          ) : <p className="mt-3 text-center text-xs text-emerald-700 font-semibold">You are done for today.</p>}
+          )}
+          {att?.open && <p className="mt-1 text-center text-[11px] text-slate-400">Check out when you step away, check in when you are back. Only the time you are checked in counts.</p>}
           {note && <div className="mt-2"><Notice tone={note.tone}>{note.text}</Notice></div>}
 
           <div className="mt-4 text-[11px] font-bold text-slate-400 uppercase tracking-wide">Recent in / out</div>

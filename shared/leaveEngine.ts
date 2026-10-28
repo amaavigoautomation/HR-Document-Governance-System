@@ -307,10 +307,34 @@ export type AttendanceStatus =
   | 'PRESENT' | 'LATE' | 'HALF_DAY' | 'ABSENT' | 'INCOMPLETE'
   | 'LEAVE' | 'HALF_LEAVE' | 'HOLIDAY' | 'WEEKLY_OFF' | 'TODAY' | 'FUTURE' | 'NOT_EMPLOYED';
 
+/** One stretch of work: from a punch in to the next punch out. A day can have several (washroom, lunch ...). */
+export interface PunchSession {
+  in: string; // ISO instant
+  out?: string | null; // null/absent = still working
+  inNote?: string;
+  outNote?: string;
+}
+
 export interface AttendanceRecord {
+  /** First punch in of the day and last punch out (null while a session is open). Kept in step with `sessions`. */
   checkIn?: string | null; // ISO instants
   checkOut?: string | null;
+  sessions?: PunchSession[];
 }
+
+/** The day's sessions. Records written before sessions existed hold one checkIn/checkOut pair. */
+export function sessionsOf(rec?: AttendanceRecord | null): PunchSession[] {
+  if (!rec) return [];
+  if (Array.isArray(rec.sessions) && rec.sessions.length > 0) return rec.sessions;
+  return rec.checkIn ? [{ in: rec.checkIn, out: rec.checkOut ?? null }] : [];
+}
+
+/** Minutes in finished sessions. An open session counts only once it is closed. */
+export function workedMinutesOf(rec?: AttendanceRecord | null): number {
+  return sessionsOf(rec).reduce((sum, x) => (x.out ? sum + Math.max(0, Math.round((new Date(x.out).getTime() - new Date(x.in).getTime()) / 60000)) : sum), 0);
+}
+
+export const hasOpenSession = (rec?: AttendanceRecord | null) => sessionsOf(rec).some((x) => !x.out);
 
 export interface DayInput {
   date: string;
@@ -334,10 +358,11 @@ export function computeDayStatus(i: DayInput): DayResult {
   if (i.joinDate && i.date < i.joinDate) return { status: 'NOT_EMPLOYED', ...none };
 
   const rec = i.record;
-  const worked = rec?.checkIn && rec?.checkOut
-    ? Math.max(0, Math.round((new Date(rec.checkOut).getTime() - new Date(rec.checkIn).getTime()) / 60000))
-    : 0;
-  const late = !!rec?.checkIn && istParts(rec.checkIn).minutes > timeToMinutes(i.shift.start) + i.shift.graceMinutes;
+  const sessions = sessionsOf(rec);
+  const first = sessions[0]?.in;
+  const open = sessions.some((x) => !x.out);
+  const worked = workedMinutesOf(rec);
+  const late = !!first && istParts(first).minutes > timeToMinutes(i.shift.start) + i.shift.graceMinutes;
 
   const kind = dayKind(i.date, i.loc);
   if (kind === 'HOLIDAY') return { status: 'HOLIDAY', workedMinutes: worked, late: false };
@@ -346,15 +371,18 @@ export function computeDayStatus(i: DayInput): DayResult {
   if (i.date > i.today) return { status: 'FUTURE', ...none };
 
   const halfLeave = (i.leaveValue ?? 0) > 0;
-  if (i.date === i.today && !(rec?.checkIn && rec?.checkOut)) {
+  // Today is not final while the person is working or may still come back from a break.
+  if (i.date === i.today && (open || worked < i.shift.fullDayMinutes)) {
     return { status: halfLeave ? 'HALF_LEAVE' : 'TODAY', workedMinutes: worked, late };
   }
-  if (!rec?.checkIn) return { status: halfLeave ? 'HALF_LEAVE' : 'ABSENT', ...none };
-  if (!rec.checkOut) return { status: halfLeave ? 'HALF_LEAVE' : 'INCOMPLETE', workedMinutes: 0, late };
+  if (!first) return { status: halfLeave ? 'HALF_LEAVE' : 'ABSENT', ...none };
+  // A session that was never closed: the hours cannot be trusted, so it waits for a correction.
+  if (open) return { status: halfLeave ? 'HALF_LEAVE' : 'INCOMPLETE', workedMinutes: worked, late };
 
-  if (halfLeave) return { status: worked >= i.shift.halfDayMinutes ? 'HALF_LEAVE' : 'ABSENT', workedMinutes: worked, late };
+  // Any worked time is not "absent": short days are paid as the half day, the smallest unit.
+  if (halfLeave) return { status: worked > 0 ? 'HALF_LEAVE' : 'ABSENT', workedMinutes: worked, late };
   if (worked >= i.shift.fullDayMinutes) return { status: late ? 'LATE' : 'PRESENT', workedMinutes: worked, late };
-  if (worked >= i.shift.halfDayMinutes) return { status: 'HALF_DAY', workedMinutes: worked, late };
+  if (worked > 0) return { status: 'HALF_DAY', workedMinutes: worked, late };
   return { status: 'ABSENT', workedMinutes: worked, late };
 }
 

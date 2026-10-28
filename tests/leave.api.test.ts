@@ -146,6 +146,12 @@ const ci = await ok(EMP, 'POST', 'check-in');
 assert.ok(ci.time);
 assert.equal((await call(EMP, 'POST', 'check-in')).status, 409, 'cannot check in twice');
 assert.equal((await call(EMP, 'POST', 'check-out')).status, 409, 'too soon to check out');
+// Back-dated so the one-minute rule does not apply: a second stretch after a break adds to the first.
+{
+  const me0 = await ok(EMP, 'GET', 'me');
+  assert.equal(me0.attendanceToday.open, true);
+  assert.equal(me0.attendanceToday.sessions.length, 1);
+}
 const yesterday = addDays(today, -1);
 const reg = await ok(EMP, 'POST', 'regularize', { date: yesterday, checkIn: '09:30', checkOut: '18:30', reason: 'forgot to swipe' });
 assert.equal((await ok(MGR, 'GET', 'inbox')).regularizations.length, 1);

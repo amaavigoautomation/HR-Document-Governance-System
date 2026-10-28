@@ -32,16 +32,17 @@ export const PunchCard: React.FC<{ me: any; reload: () => void; onChanged?: () =
   const clock = useIstClock();
   const shift = me.settings.shift;
   const shiftMins = Math.max(0, toMin(shift.end) - toMin(shift.start));
-  const worked = att.checkIn ? Math.max(0, (att.checkOut ? toMin(att.checkOut) : clock.mins) - toMin(att.checkIn)) : 0;
+  // Finished sessions plus the one running now; time between sessions (washroom, lunch) is not counted.
+  const worked = (att.workedMinutes || 0) + (att.open && att.openSince ? Math.max(0, clock.mins - toMin(att.openSince)) : 0);
   const pct = shiftMins ? Math.min(100, Math.round((worked / shiftMins) * 100)) : 0;
-  const state: 'out' | 'in' | 'done' = !att.checkIn ? 'out' : !att.checkOut ? 'in' : 'done';
+  const state: 'out' | 'in' | 'back' = !att.checkIn ? 'out' : att.open ? 'in' : 'back';
   const late = att.checkIn && toMin(att.checkIn) > toMin(shift.start) + (shift.graceMinutes || 0);
 
   const punch = (kind: 'in' | 'out') => run(async () => {
     if (kind === 'in') await leaveService.checkIn(); else await leaveService.checkOut();
     await reload();
     onChanged?.();
-  }, kind === 'in' ? 'Checked in. Have a good day!' : 'Checked out. See you tomorrow!');
+  }, kind === 'in' ? 'Checked in. Have a good day!' : 'Checked out.');
 
   return (
     <Card className="!p-0 overflow-hidden">
@@ -51,21 +52,23 @@ export const PunchCard: React.FC<{ me: any; reload: () => void; onChanged?: () =
           <div className="text-4xl font-black text-slate-900 tabular-nums leading-tight mt-0.5">{clock.label}</div>
           <div className="text-sm mt-1">
             {state === 'out' && <span className="text-slate-600">You have not checked in yet.</span>}
-            {state === 'in' && <span className="text-emerald-700 font-semibold">Working since {att.checkIn}{late ? <span className="text-amber-700"> (late)</span> : ''} · {hm(worked) || '0h 00m'}</span>}
-            {state === 'done' && <span className="text-slate-700 font-semibold">Done for today · {hm(worked) || '0h 00m'} ({att.checkIn}–{att.checkOut})</span>}
+            {state === 'in' && <span className="text-emerald-700 font-semibold">Working since {att.openSince}{late ? <span className="text-amber-700"> (late)</span> : ''} · {hm(worked) || '0h 00m'} today</span>}
+            {state === 'back' && <span className="text-slate-700 font-semibold">Checked out at {att.checkOut} · {hm(worked) || '0h 00m'} worked today</span>}
           </div>
         </div>
         <div className="w-full sm:w-auto">
-          {state === 'out' && <button className={`${btnBig} w-full sm:w-44`} disabled={busy} onClick={() => punch('in')}><LogIn className="w-5 h-5" />Check in</button>}
+          {(state === 'out' || state === 'back') && <button className={`${btnBig} w-full sm:w-44`} disabled={busy} onClick={() => punch('in')}><LogIn className="w-5 h-5" />{state === 'back' ? 'Check in again' : 'Check in'}</button>}
           {state === 'in' && <button className={`${btnBig} w-full sm:w-44 !bg-slate-900 hover:!bg-slate-800`} disabled={busy} onClick={() => punch('out')}><LogOut className="w-5 h-5" />Check out</button>}
-          {state === 'done' && <div className="flex items-center gap-2 text-sm font-bold text-emerald-700"><PartyPopper className="w-5 h-5" />All done</div>}
         </div>
       </div>
       {state !== 'out' && (
         <div className="px-5 pb-4">
           <div className="h-2 rounded-full bg-slate-100 overflow-hidden"><div className="h-full bg-emerald-500 transition-all" style={{ width: `${pct}%` }} /></div>
-          <div className="mt-1 text-[11px] text-slate-400 flex justify-between"><span>{pct}% of your {hm(shiftMins)} shift</span>{state === 'in' && <span>Don't forget to check out</span>}</div>
+          <div className="mt-1 text-[11px] text-slate-400 flex justify-between"><span>{pct}% of your {hm(shiftMins)} shift</span>{state === 'in' && <span>Check out when you step away</span>}</div>
         </div>
+      )}
+      {att.sessions?.length > 1 && (
+        <div className="px-5 pb-4 text-[11px] text-slate-500">Today: {att.sessions.map((x: any) => `${x.in}–${x.out || 'now'}`).join(' · ')}</div>
       )}
       {note && <div className="px-5 pb-4"><Notice tone={note.tone === 'ok' ? 'ok' : 'error'}>{note.text}</Notice></div>}
     </Card>
