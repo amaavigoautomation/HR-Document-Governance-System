@@ -270,4 +270,31 @@ assert.equal((await call(FOREIGN, 'GET', 'profile', {}, { uid: 'u_emp' })).statu
   assert.equal((await call(HR, 'GET', 'profile', {}, { uid: 'u_emp' })).json.profile.dob, '2000-03-14');
 }
 
+// ---- employee family
+{
+  const list = async (h: any, uid?: string) => (await call(h, 'GET', 'family', {}, uid ? { uid } : {})).json.members;
+  assert.equal((await list(EMP)).length, 0);
+  assert.equal((await call(EMP, 'POST', 'family-save', { member: { name: '', relation: 'Spouse' } })).status, 400);
+  assert.equal((await call(EMP, 'POST', 'family-save', { member: { name: 'Asha', relation: 'Cousin' } })).status, 400);
+  assert.equal((await call(EMP, 'POST', 'family-save', { member: { name: 'Asha', relation: 'Spouse', dob: '2999-01-01' } })).status, 400);
+  assert.equal((await call(EMP, 'POST', 'family-save', { member: { name: 'Asha', relation: 'Spouse', contactNo: 'call me' } })).status, 400);
+  const added = (await call(EMP, 'POST', 'family-save', { member: { title: 'Mrs', name: 'Asha', relation: 'Spouse', gender: 'Female', maritalStatus: 'Married', marriageDate: '2015-02-14', healthInsurance: true, insuranceNumber: 'POL-1', isDependent: true, dob: '1990-05-05' } })).json;
+  const kid = (await call(EMP, 'POST', 'family-save', { member: { name: 'Ravi', relation: 'Son', maritalStatus: 'Single', marriageDate: '2020-01-01', healthInsurance: false, insuranceNumber: 'LEFT-OVER' } })).json;
+  let rows = await list(EMP);
+  assert.equal(rows.length, 2);
+  assert.equal(rows[0].name, 'Asha'); assert.equal(rows[1].marriageDate, '', 'no marriage date for someone single'); assert.equal(rows[1].insuranceNumber, '', 'no insurance number when not insured');
+  assert.equal((await call(OTHER, 'GET', 'family', {}, { uid: 'u_emp' })).status, 403);
+  assert.equal((await call(OTHER, 'POST', 'family-save', { uid: 'u_emp', member: { name: 'X', relation: 'Son' } })).status, 403);
+  assert.equal((await call(OTHER, 'POST', 'family-delete', { id: added.id })).status, 404, 'cannot reach another person\'s record by id');
+  await ok(EMP, 'POST', 'family-save', { id: added.id, member: { name: 'Asha S', relation: 'Spouse' } });
+  assert.equal((await list(HR, 'u_emp')).find((x: any) => x.id === added.id).name, 'Asha S');
+  await ok(HR, 'POST', 'family-save', { uid: 'u_emp', member: { name: 'Meera', relation: 'Mother' } });
+  assert.equal((await list(EMP)).length, 3);
+  await ok(EMP, 'POST', 'family-delete', { id: kid.id });
+  assert.equal((await list(EMP)).length, 2);
+  assert.equal((await call(EMP, 'POST', 'family-save', { id: kid.id, member: { name: 'Ravi', relation: 'Son' } })).status, 404, 'a removed member cannot be edited');
+  assert.equal((await call(FOREIGN, 'GET', 'family', {}, { uid: 'u_emp' })).status, 404, 'another company cannot read it');
+  for (let i = 0; i < 30; i++) { const r = await call(EMP, 'POST', 'family-save', { member: { name: `P${i}`, relation: 'Other' } }); if (r.status === 400) { assert.match(r.json.error, /up to 25/); break; } }
+}
+
 console.log('lifecycle tests passed');

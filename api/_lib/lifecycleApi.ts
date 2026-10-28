@@ -16,6 +16,7 @@ import {
 } from './leaveCore.js';
 import { IDENTITY_TYPES, identityProblem, identityTypeKeys, normalizeIdentity } from '../../shared/employeeIdentity.js';
 import { PERSONAL_FIELDS, checkPersonalField } from '../../shared/employeePersonal.js';
+import { MAX_FAMILY_MEMBERS, cleanFamilyMember } from '../../shared/employeeFamily.js';
 import { istToday } from '../../shared/leaveEngine.js';
 import {
   ASSIGNEE_LABEL, DEFAULT_CLEARANCE, DEFAULT_LETTERS, DEFAULT_TASK_TEMPLATES, EXIT_REASONS, EXIT_STATUS_LABEL, MERGE_FIELDS,
@@ -937,6 +938,57 @@ async function personalSave(w: Who, body: any): Promise<Result> {
   return ok({});
 }
 
+// ------------------------------------------------------------------ employee family (Employee > Family Details)
+//
+// One document per family member in the server-only employeeFamily collection. The person manages their own list;
+// HR can manage anyone's. Photocopies are not stored yet.
+
+async function familyAccess(w: Who, uidIn: unknown, verb: string): Promise<string> {
+  const uid = str(uidIn, 128) || w.uid;
+  if (uid !== w.uid && !canSeeProfiles(w)) throw new LcError(403, `You can only ${verb} your own family details.`);
+  if (!(await personByUid(w.cid, uid))) throw new LcError(404, 'Employee not found.');
+  return uid;
+}
+
+async function familyList(w: Who, q: any): Promise<Result> {
+  const uid = await familyAccess(w, q?.uid, 'open');
+  const snap = await db().collection('employeeFamily').where('companyId', '==', w.cid).where('uid', '==', uid).get();
+  const members = snap.docs.map((d: any) => ({ id: d.id, ...d.data() })).filter((m: any) => !m.removed)
+    .sort((a: any, b: any) => String(a.createdAt).localeCompare(String(b.createdAt)));
+  return ok({ members, max: MAX_FAMILY_MEMBERS });
+}
+
+async function familySave(w: Who, body: any): Promise<Result> {
+  const uid = await familyAccess(w, body?.uid, 'change');
+  const r = cleanFamilyMember(body?.member, istToday());
+  if ('error' in r) return fail(400, r.error);
+  const id = str(body?.id, 128);
+  const col = db().collection('employeeFamily');
+  if (id) {
+    const cur = await col.doc(id).get();
+    const d: any = cur.exists ? cur.data() : null;
+    if (!d || d.companyId !== w.cid || d.uid !== uid || d.removed) return fail(404, 'That family member was not found.');
+    await col.doc(id).set(clean({ ...d, ...r.value, updatedAt: nowIso(), updatedBy: w.uid }));
+    return ok({ id });
+  }
+  const existing = await col.where('companyId', '==', w.cid).where('uid', '==', uid).get();
+  if (existing.docs.filter((x: any) => !x.data().removed).length >= MAX_FAMILY_MEMBERS) return fail(400, `You can add up to ${MAX_FAMILY_MEMBERS} family members.`);
+  const ref = col.doc();
+  await ref.set(clean({ ...r.value, companyId: w.cid, uid, createdAt: nowIso(), createdBy: w.uid }));
+  return ok({ id: ref.id });
+}
+
+async function familyDelete(w: Who, body: any): Promise<Result> {
+  const uid = await familyAccess(w, body?.uid, 'change');
+  const id = str(body?.id, 128);
+  const ref = db().collection('employeeFamily').doc(id);
+  const cur = await ref.get();
+  const d: any = cur.exists ? cur.data() : null;
+  if (!d || d.companyId !== w.cid || d.uid !== uid) return fail(404, 'That family member was not found.');
+  await ref.set(clean({ ...d, removed: true, removedAt: nowIso(), removedBy: w.uid }));
+  return ok({});
+}
+
 // ------------------------------------------------------------------ router
 
 async function me(w: Who): Promise<Result> {
@@ -1013,6 +1065,9 @@ export async function routeLifecycle(r: LifecycleRequestIn): Promise<Result> {
       case 'identity-decide': return POST ? await identityDecide(w, body) : wrong;
       case 'personal': return GET ? await personalGet(w, r.query) : wrong;
       case 'personal-save': return POST ? await personalSave(w, body) : wrong;
+      case 'family': return GET ? await familyList(w, r.query) : wrong;
+      case 'family-save': return POST ? await familySave(w, body) : wrong;
+      case 'family-delete': return POST ? await familyDelete(w, body) : wrong;
       case 'profile': return GET ? await profileGet(w, r.query) : wrong;
       case 'profile-save': return POST ? await profileSave(w, body) : wrong;
       case 'directory': return GET ? await directory(w, r.query) : wrong;

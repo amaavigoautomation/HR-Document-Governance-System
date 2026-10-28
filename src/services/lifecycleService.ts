@@ -50,6 +50,10 @@ export const lifecycleService = {
   // personal information
   personal: (uid?: string) => get('personal', { uid }),
   savePersonal: (uid: string | undefined, values: Record<string, string | boolean>) => post('personal-save', { uid, values }),
+  // family
+  family: (uid?: string) => get('family', { uid }),
+  saveFamily: (b: { uid?: string; id?: string; member: unknown }) => post('family-save', b),
+  deleteFamily: (b: { uid?: string; id: string }) => post('family-delete', b),
   // directory
   directory: (all = false) => get('directory', { all: all ? '1' : undefined }),
   setManager: (uid: string, managerUid: string) => post('set-manager', { uid, managerUid }),
