@@ -8,9 +8,10 @@
 import { authErrorResponse, requireActiveTenant, type AuthContext } from './authContext.js';
 import { hasPerm } from '../../shared/permissions.js';
 import { diffSettings } from '../../shared/leavePolicyDiff.js';
+import { postCorrections } from './leavePayroll.js';
 import { checkAttachment } from '../../shared/employeeIdentity.js';
 import {
-  DEFAULT_SHIFT, addDays, computeDayStatus, hasOpenSession, sessionsOf, workedMinutesOf, type PunchSession, cycleOf, daysBetween, isIsoDate, istParts, istToInstant, istToday,
+  DEFAULT_SHIFT, previousCycle, rollover, addDays, computeDayStatus, hasOpenSession, sessionsOf, workedMinutesOf, type PunchSession, cycleOf, daysBetween, isIsoDate, istParts, istToInstant, istToday,
   lastDayOfMonth, nationalHolidays, starterSettings, summarizeMonth, timeToMinutes, typeStartMonth,
   type AttendanceRecord, type LeaveLocation, type LeavePolicy, type LeaveSettings, type LeaveType,
 } from '../../shared/leaveEngine.js';
@@ -117,6 +118,8 @@ export function sanitizeSettings(input: any, prev: LeaveSettings): LeaveSettings
     gender: t?.gender === 'F' || t?.gender === 'M' ? t.gender : 'ANY',
     minServiceDays: num(t?.minServiceDays, 0, 3650, 0),
     allowNegative: t?.allowNegative === true,
+    blockInProbation: t?.blockInProbation === true,
+    blockInNotice: t?.blockInNotice === true,
     approval: t?.approval === 'HR' || t?.approval === 'MANAGER_HR' ? t.approval : 'MANAGER',
     startMonth: t?.startMonth ? num(t.startMonth, 1, 12, 0) || undefined : undefined,
     color: /^#[0-9a-fA-F]{6}$/.test(str(t?.color, 7)) ? str(t.color, 7) : undefined,
@@ -136,6 +139,7 @@ export function sanitizeSettings(input: any, prev: LeaveSettings): LeaveSettings
         accrual: ['UPFRONT', 'MONTHLY', 'QUARTERLY'].includes(e.accrual) ? e.accrual : 'NONE',
         carryForward: e.carryForward === true,
         carryCap: num(e.carryCap, 0, 400, 0),
+        encashCap: num(e.encashCap, 0, 400, 0),
       })),
   }));
   if (policies.length > 0 && !policies.some((p) => p.isDefault)) policies[0].isDefault = true;
@@ -160,6 +164,8 @@ export function sanitizeSettings(input: any, prev: LeaveSettings): LeaveSettings
     ...prev,
     yearStartMonth: num(input.yearStartMonth, 1, 12, 4),
     sandwichRule: input.sandwichRule === true,
+    probationDays: num(input.probationDays, 0, 730, 0),
+    yearEndSignoff: input.yearEndSignoff === true,
     locations, types, policies, shift,
     lateMarksPerHalfDay: num(input.lateMarksPerHalfDay, 0, 31, 0),
     cycleStartDay: num(input.cycleStartDay, 1, 28, 1),
@@ -577,6 +583,7 @@ async function decide(who: Who, body: any): Promise<Result> {
   const ref = db().collection('leaveRequests').doc(id);
   let approver = c.me.name;
   let result: LeaveRequest | null = null;
+  let wasCancelRequest = false;
   const covered = await coveredManagers(who.cid, who.ctx.uid, istToday());
 
   await db().runTransaction(async (tx) => {
@@ -597,6 +604,7 @@ async function decide(who: Who, body: any): Promise<Result> {
     const upd: Partial<LeaveRequest> = { updatedAt: now };
     const note = comment ? `: ${comment}` : '';
 
+    wasCancelRequest = r.status === 'CANCEL_REQUESTED';
     if (r.status === 'CANCEL_REQUESTED') {
       if (decision === 'APPROVE') {
         upd.status = 'CANCELLED';
@@ -638,6 +646,13 @@ async function decide(who: Who, body: any): Promise<Result> {
     await inApp(who.cid, [r.uid], r.status === 'INFO_REQUESTED' ? `More information needed: ${r.typeName}` : `Your ${r.typeName} request: ${r.status.toLowerCase().replace('_', ' ')}`,
       `${r.from} to ${r.to}.${comment ? ' ' + comment : ''}`, 'my').catch(() => undefined);
     if (r.status === 'APPROVED' && r.requiresBalance) await lowBalanceAlert(who.cid, r, c.settings).catch(() => undefined);
+    {
+      const t = findType(c.settings, r.typeId);
+      const unpaid = !!t && (!t.paid || !!t.isLop);
+      // Leave approved or cancelled after its payroll month was locked becomes a correction in the next open month.
+      if (r.status === 'APPROVED' && !wasCancelRequest) await postCorrections(who.cid, r, unpaid, 'ADD', { name: approver, uid: who.ctx.uid }).catch(() => undefined);
+      if (r.status === 'CANCELLED') await postCorrections(who.cid, r, unpaid, 'REFUND', { name: approver, uid: who.ctx.uid }).catch(() => undefined);
+    }
     if (r.status === 'INFO_REQUESTED') {
       await notify(who.cid, [r.email], `More information needed for your ${r.typeName} request`,
         `${approver} needs more information about your ${r.typeName} request (${r.from} to ${r.to}): ${comment}\nOpen Leave & Attendance > My leave to reply. The request stays on hold until you do.`);
@@ -751,6 +766,14 @@ async function hrCancel(who: Who, body: any): Promise<Result> {
     cancelled = r;
     tx.update(ref, { status: 'CANCELLED', updatedAt: now, events: [...r.events, { at: now, by: c.me.name, message: `Cancelled by HR${body?.note ? ': ' + str(body.note, 300) : ''}` }] });
   });
+  const was = cancelled as LeaveRequest | null;
+  if (was) {
+    if (was.status === 'APPROVED' || was.status === 'CANCEL_REQUESTED') {
+      const t = findType(c.settings, was.typeId);
+      await postCorrections(who.cid, was, !!t && (!t.paid || !!t.isLop), 'REFUND', { name: c.me.name, uid: who.ctx.uid }).catch(() => undefined);
+    }
+    await audit(who.cid, 'leave-request', was.id, 'HR_CANCELLED_LEAVE', { name: c.me.name, uid: who.ctx.uid }, { status: was.status }, { status: 'CANCELLED', note: str(body?.note, 300) });
+  }
   return ok({});
 }
 
@@ -760,6 +783,10 @@ async function hrCreate(who: Who, body: any): Promise<Result> {
   const person = await personByUid(who.cid, str(body?.uid, 128));
   if (!person) return fail(404, 'Employee not found.');
   const req = await createRequest(who, c, person, body, { onBehalf: true });
+  {
+    const t = findType(c.settings, req.typeId);
+    await postCorrections(who.cid, req, !!t && (!t.paid || !!t.isLop), 'ADD', { name: c.me.name, uid: who.ctx.uid }).catch(() => undefined);
+  }
   await audit(who.cid, 'leave-request', req.id, 'HR_RECORDED_LEAVE', { name: c.me.name, uid: who.ctx.uid }, null, { employee: person.name, type: req.typeName, from: req.from, to: req.to, days: req.days });
   await notify(who.cid, [person.email], `Leave recorded: ${req.typeName}`, `HR recorded ${req.days} day(s) of ${req.typeName} for you (${req.from} to ${req.to}).`);
   return ok({ id: req.id, days: req.days });
@@ -1261,6 +1288,7 @@ async function adjust(who: Who, body: any): Promise<Result> {
   const kind = body?.kind === 'ENCASH' ? 'ENCASH' : 'ADJUST';
   const date = isIsoDate(body?.date) ? body.date : istToday();
   const cycle = cycleOf(date, typeStartMonth(type, c.settings)).key;
+  if ((await db().collection('leaveYearClose').doc(`${who.cid}__${cycle}`).get()).exists) return fail(409, 'That leave year is closed. Post the correction in the current year.');
   const id = db().collection('leaveLedger').doc().id;
   await ledgerRef(id).set(entryData({
     companyId: who.cid, uid, typeId: type.id, cycle, delta: kind === 'ENCASH' ? -Math.abs(delta) : delta, kind, date, note, by: c.me.name,
@@ -1653,6 +1681,73 @@ async function leaveDashboard(who: Who, q: any): Promise<Result> {
   });
 }
 
+// ------------------------------------------------------------------ year-end review and sign-off
+
+/** The leave year that just ended, unless HR names another that has finished. */
+function yearEndCycle(settings: LeaveSettings, requested: string) {
+  const today = istToday();
+  const sm = settings.yearStartMonth || 1;
+  const last = previousCycle(cycleOf(today, sm), sm);
+  if (requested && /^\d{4}$/.test(requested) && requested <= last.key) {
+    const c = cycleOf(`${requested}-${String(sm).padStart(2, '0')}-01`, sm);
+    return c;
+  }
+  return last;
+}
+
+async function yearEndRows(cid: string, settings: LeaveSettings, cycleKey: string) {
+  const [people, profiles, ledger] = await Promise.all([loadPeople(cid), loadProfiles(cid), companyLedger(cid)]);
+  const rows: { uid: string; name: string; typeId: string; type: string; closing: number; carry: number; lapse: number; encash: number; done: boolean }[] = [];
+  for (const p of people) {
+    if (!p.active || profiles.get(p.uid)?.hidden) continue;
+    const prof = effectiveProfile(settings, p, profiles.get(p.uid));
+    const policy = findPolicy(settings, prof.policyId);
+    for (const entry of policy?.entries || []) {
+      const t = findType(settings, entry.typeId);
+      if (!t || !t.active || !t.requiresBalance || t.isLop) continue;
+      const mine = ledger.filter((e) => e.uid === p.uid && e.typeId === t.id && e.cycle === cycleKey);
+      if (mine.length === 0) continue;
+      const done = mine.some((e) => e.kind === 'CARRY_OUT' || e.kind === 'LAPSE' || (e.kind === 'ENCASH' && /Year-end/.test(e.note || '')));
+      // Before the year is processed the closing balance is the sum of everything posted in it; afterwards it is shown as it was.
+      const closing = Math.round(mine.filter((e) => !['CARRY_OUT', 'LAPSE'].includes(e.kind) && !(e.kind === 'ENCASH' && /Year-end/.test(e.note || ''))).reduce((n, e) => n + e.delta, 0) * 100) / 100;
+      const { carry, lapse, encash } = rollover(closing, entry);
+      rows.push({ uid: p.uid, name: p.name, typeId: t.id, type: t.name, closing, carry, lapse, encash, done });
+    }
+  }
+  return rows.sort((a, b) => a.name.localeCompare(b.name) || a.type.localeCompare(b.type));
+}
+
+async function yearEndPreview(who: Who, q: any): Promise<Result> {
+  needManage(who);
+  const { settings, configured } = await loadSettings(who.cid);
+  if (!configured) return fail(409, 'Set up leave first.');
+  const cycle = yearEndCycle(settings, str(q?.cycle, 4));
+  const [rows, closed] = await Promise.all([yearEndRows(who.cid, settings, cycle.key), db().collection('leaveYearClose').doc(`${who.cid}__${cycle.key}`).get()]);
+  const total = (k: 'carry' | 'lapse' | 'encash') => Math.round(rows.reduce((n, r) => n + r[k], 0) * 100) / 100;
+  return ok({
+    cycle: { key: cycle.key, label: cycle.label, start: cycle.start, end: cycle.end }, signoffRequired: settings.yearEndSignoff === true,
+    closed: closed.exists ? closed.data() : null, rows, totals: { carry: total('carry'), lapse: total('lapse'), encash: total('encash') },
+  });
+}
+
+async function yearEndClose(who: Who, body: any): Promise<Result> {
+  needManage(who);
+  const c = await loadCtx(who);
+  const { settings } = await loadSettings(who.cid);
+  const cycle = yearEndCycle(settings, str(body?.cycle, 4));
+  if (cycle.end >= istToday()) return fail(409, 'That leave year has not finished yet.');
+  const ref = db().collection('leaveYearClose').doc(`${who.cid}__${cycle.key}`);
+  if ((await ref.get()).exists) return fail(409, 'This year is already closed. Prior-year balances can no longer be changed.');
+  const rows = await yearEndRows(who.cid, settings, cycle.key);
+  const sum = (k: 'carry' | 'lapse' | 'encash') => Math.round(rows.reduce((n, r) => n + r[k], 0) * 100) / 100;
+  const summary = { carry: sum('carry'), lapse: sum('lapse'), encash: sum('encash'), people: new Set(rows.map((r) => r.uid)).size };
+  await ref.set({ companyId: who.cid, cycle: cycle.key, label: cycle.label, closedBy: c.me.name, closedByUid: who.ctx.uid, closedAt: nowIso(), note: str(body?.note, 300), summary, policyVersion: settings.policyVersion || 1 });
+  await audit(who.cid, 'leave-year', cycle.key, 'YEAR_CLOSED', { name: c.me.name, uid: who.ctx.uid }, null, summary);
+  // Now that the year is signed off, carry-forward, lapse and encashment are posted (each entry once).
+  const accrual = await runAccrual(who.cid).catch(() => null);
+  return ok({ summary, rollovers: accrual?.rollovers ?? 0 });
+}
+
 // ------------------------------------------------------------------ cron
 
 export async function runLeaveCron(): Promise<Result> {
@@ -1664,6 +1759,7 @@ export async function runLeaveCron(): Promise<Result> {
     try {
       await activateDue(cid).catch(() => false);
       const acc = await runAccrual(cid, today);
+      for (const key of acc.awaitingSignoff) await raiseException(cid, { category: 'YEAR_END_PENDING', severity: 'HIGH', message: `The ${key} leave year has finished. Review and sign off the year end so carry-forward, lapse and encashment can be posted.`, key });
       const { settings } = await loadSettings(cid);
       const [people, profiles, allReq] = await Promise.all([loadPeople(cid), loadProfiles(cid), companyRequests(cid)]);
       let escalated = 0;
@@ -1786,6 +1882,8 @@ export async function routeLeave(r: LeaveRequestIn): Promise<Result> {
       case 'notifications': if (GET) return await notificationsList(who); break;
       case 'notifications-read': if (POST) return await notificationsRead(who, body); break;
       case 'leave-summary': if (GET) return await leaveDashboard(who, r.query); break;
+      case 'year-end': if (GET) return await yearEndPreview(who, r.query); break;
+      case 'year-end-close': if (POST) return await yearEndClose(who, body); break;
       case 'policy-state': if (GET) return await policyState(who); break;
       case 'policy-draft-save': if (POST) return await policyDraftSave(who, body); break;
       case 'policy-submit': if (POST) return await policySubmit(who); break;

@@ -5,6 +5,7 @@
 import { authErrorResponse, requireActiveTenant, type AuthContext } from './authContext.js';
 import { hasPerm } from '../../shared/permissions.js';
 import { buildMonth, monthRange } from './leaveApi.js';
+import { pendingCorrections } from './leavePayroll.js';
 import {
   companyLedger, companyRequests, db, effectiveProfile, loadPeople, loadProfiles, loadSettings, nowIso, personByUid, str,
   type Person,
@@ -156,7 +157,7 @@ export interface InputRow {
   payDays: number;
   paidDays: number;
   lopDays: number;
-  lop: { absent: number; halfDay: number; unpaidLeave: number; late: number; manual: number };
+  lop: { absent: number; halfDay: number; unpaidLeave: number; late: number; manual: number; corrections: number };
   paidLeaveDays: number;
   holidays: number;
   weeklyOffs: number;
@@ -188,6 +189,7 @@ export async function loadInputs(cid: string, month: string, ps: PayrollSettings
     if (!recs.has(x.uid)) recs.set(x.uid, new Map());
     recs.get(x.uid)!.set(x.date, x);
   });
+  const fixes = await pendingCorrections(cid, month);
   const unpaidTypes = new Set(ls.types.filter((t) => t.paid === false || t.isLop).map((t) => t.id));
 
   const extra = new Set(includeUids);
@@ -223,12 +225,14 @@ export async function loadInputs(cid: string, month: string, ps: PayrollSettings
     else if (join > from) preJoin = Math.min(payDays, daysBetween(from, join));
 
     const manual = overrides[p.uid]?.lopDelta || 0;
-    const lopDays = r2(absent + halfDay + unpaidLeave + late + manual);
+    const corrections = r2(fixes.filter((c) => c.uid === p.uid).reduce((n, c) => n + c.lopDelta, 0));
+    if (corrections !== 0) warnings.push(`Includes ${corrections > 0 ? '+' : ''}${corrections} loss-of-pay day(s) corrected from an earlier locked month.`);
+    const lopDays = Math.max(0, r2(absent + halfDay + unpaidLeave + late + manual + corrections));
     const encash = r2(-ledger.filter((e) => e.uid === p.uid && e.kind === 'ENCASH' && e.date >= from && e.date <= to).reduce((n, e) => n + e.delta, 0));
     return {
       uid: p.uid, name: p.name, email: p.email, empId: p.empId, department: p.department, title: p.title,
       hasStructure: structures.has(p.uid), monthDays, payDays, paidDays: paidDaysFor(payDays, lopDays, preJoin), lopDays,
-      lop: { absent, halfDay, unpaidLeave: r2(unpaidLeave), late, manual }, paidLeaveDays: paidLeave, holidays, weeklyOffs,
+      lop: { absent, halfDay, unpaidLeave: r2(unpaidLeave), late, manual, corrections }, paidLeaveDays: paidLeave, holidays, weeklyOffs,
       incompleteDays: incomplete, preJoinDays: preJoin, encashDays: Math.max(0, encash), joinDate: join, gender: prof.gender || '', warnings,
     };
   }).sort((a, b) => a.name.localeCompare(b.name));

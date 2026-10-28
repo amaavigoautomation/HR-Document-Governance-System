@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { AlertTriangle, BarChart3, CalendarDays, ChevronRight, ClipboardList, Gauge, ScrollText, Settings, Users, Wallet } from 'lucide-react';
+import { AlertTriangle, BarChart3, CalendarCheck, CalendarDays, ChevronRight, ClipboardList, Gauge, ScrollText, Settings, Users, Wallet } from 'lucide-react';
 import { User } from '../types';
 import { hasPerm } from '../../shared/permissions';
 import { leaveService } from '../services/leaveService';
@@ -11,14 +11,14 @@ import { ApprovalsTab, TeamCalendar } from './leave/ApprovalsTab';
 import { ApplyLeaveDrawer } from './leave/ApplyLeaveDrawer';
 import { HrBalances, HrPeople, HrReports, HrRequests } from './leave/HrOps';
 import { HrSetup } from './leave/HrSetup';
-import { HrAudit, HrDashboard, HrExceptions } from './leave/HrGovernance';
+import { HrAudit, HrDashboard, HrExceptions, HrYearEnd } from './leave/HrGovernance';
 import { LeaveSubNav } from './leave/LeaveSubNav';
 import { leaveNav, leaveNavItems, LeaveSection, resolveSection, useLeaveNav } from './leave/leaveNav';
 import { MyLeave } from './leave/MyLeave';
 import { Today } from './leave/Today';
 import { Card, EmptyState, Notice, Skeleton, ToastProvider } from './leave/ui';
 
-type Admin = 'overview' | 'requests' | 'people' | 'balances' | 'reports' | 'exceptions' | 'audit' | 'setup';
+type Admin = 'overview' | 'requests' | 'people' | 'balances' | 'reports' | 'exceptions' | 'audit' | 'yearend' | 'setup';
 const ADMIN_KEY = 'amaavigo_leave_admin_tab';
 const readKey = (k: string) => { try { return localStorage.getItem(k) || ''; } catch { return ''; } };
 const writeKey = (k: string, v: string) => { try { localStorage.setItem(k, v); } catch { /* private mode */ } };
@@ -67,6 +67,7 @@ const LeaveScreens: React.FC<{ currentUser: User; inlineNav?: boolean }> = ({ cu
     { key: 'balances', label: 'Balances', icon: Wallet, show: me.canManage && ok },
     { key: 'reports', label: 'Reports', icon: BarChart3, show: me.canReport && ok },
     { key: 'exceptions', label: 'Exceptions', icon: AlertTriangle, show: me.canManage && ok },
+    { key: 'yearend', label: 'Year end', icon: CalendarCheck, show: me.canManage && ok },
     { key: 'audit', label: 'Audit trail', icon: ScrollText, show: me.canManage && ok },
     { key: 'setup', label: 'Settings', icon: Settings, show: me.canManage },
   ];
@@ -114,6 +115,7 @@ const LeaveScreens: React.FC<{ currentUser: User; inlineNav?: boolean }> = ({ cu
             </div>
             {activeAdmin === 'overview' && <HrDashboard />}
             {activeAdmin === 'exceptions' && <HrExceptions />}
+            {activeAdmin === 'yearend' && <HrYearEnd onChanged={reload} />}
             {activeAdmin === 'audit' && <HrAudit />}
             {activeAdmin === 'setup' && <HrSetup onChanged={reload} />}
             {activeAdmin === 'people' && <HrPeople currentUser={currentUser} canAddPeople={hasPerm(currentUser.perms, 'users.manage')} />}

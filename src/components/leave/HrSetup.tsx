@@ -160,6 +160,14 @@ export const HrSetup: React.FC<{ onChanged: () => void }> = ({ onChanged }) => {
               <Field label="Also send to HR when leave is longer than" hint="0 = only for leave types set to need HR">
                 <div className="flex items-center gap-2"><input type="number" min={0} className={input} value={s.hrApprovalAboveDays} onChange={(e) => patch({ hrApprovalAboveDays: num(e.target.value) })} /><span className="text-xs text-slate-500">days</span></div>
               </Field>
+              <Field label="Probation lasts" hint="Counted from the joining date. Leave types can be switched off during probation. 0 = no probation rule">
+                <div className="flex items-center gap-2"><input type="number" min={0} className={input} value={s.probationDays || 0} onChange={(e) => patch({ probationDays: num(e.target.value) })} /><span className="text-xs text-slate-500">days</span></div>
+              </Field>
+              <Field label="Year end" hint="With review on, carry-forward, lapse and pay-out wait until HR signs off the year in Manage > Year end">
+                <select className={input} value={s.yearEndSignoff ? '1' : '0'} onChange={(e) => patch({ yearEndSignoff: e.target.value === '1' })}>
+                  <option value="0">Process automatically on the first day of the new year</option><option value="1">HR reviews and signs off first</option>
+                </select>
+              </Field>
               <Field label="Remind HR if a request waits more than" hint="0 = never remind">
                 <div className="flex items-center gap-2"><input type="number" min={0} className={input} value={s.escalateAfterDays} onChange={(e) => patch({ escalateAfterDays: num(e.target.value) })} /><span className="text-xs text-slate-500">days</span></div>
               </Field>
@@ -274,6 +282,8 @@ export const HrSetup: React.FC<{ onChanged: () => void }> = ({ onChanged }) => {
                           <Check checked={t.requiresBalance} disabled={t.isLop} onChange={(v) => setType(i, { requiresBalance: v })} label="Uses a balance" hint="Off = no limit, e.g. loss of pay" />
                           <Check checked={t.halfDay} onChange={(v) => setType(i, { halfDay: v })} label="Half days allowed" />
                           <Check checked={t.allowNegative} onChange={(v) => setType(i, { allowNegative: v })} label="Can borrow from future balance" hint="Balance may go below zero" />
+                          <Check checked={!!t.blockInProbation} onChange={(v) => setType(i, { blockInProbation: v })} label="Not during probation" hint="Set the probation length in Leave year & approvals" />
+                          <Check checked={!!t.blockInNotice} onChange={(v) => setType(i, { blockInNotice: v })} label="Not during notice period" hint="Blocked once a resignation is approved" />
                           <Check checked={t.dayCounting === 'CALENDAR'} onChange={(v) => setType(i, { dayCounting: v ? 'CALENDAR' : 'WORKING' })} label="Count weekends and holidays too" hint="On for maternity-style leave" />
                         </div>
                         <div className="grid sm:grid-cols-3 gap-3">
@@ -309,8 +319,8 @@ export const HrSetup: React.FC<{ onChanged: () => void }> = ({ onChanged }) => {
                     {s.policies.length > 1 && <button className={btnDanger} onClick={() => patch({ policies: s.policies.filter((_: any, j: number) => j !== pi) })}>Remove</button>}
                   </div>
                   <div className="overflow-x-auto">
-                    <table className="text-xs w-full min-w-[560px]">
-                      <thead className="text-left text-slate-500"><tr><th className="p-1">Leave type</th><th className="p-1">Days a year</th><th className="p-1">How days are added</th><th className="p-1">Unused days</th><th className="p-1">Carry at most</th><th /></tr></thead>
+                    <table className="text-xs w-full min-w-[640px]">
+                      <thead className="text-left text-slate-500"><tr><th className="p-1">Leave type</th><th className="p-1">Days a year</th><th className="p-1">How days are added</th><th className="p-1">Unused days</th><th className="p-1">Carry at most</th><th className="p-1">Pay out up to</th><th /></tr></thead>
                       <tbody>
                         {p.entries.map((en: any, ei: number) => {
                           const t = s.types.find((x: any) => x.id === en.typeId);
@@ -322,6 +332,7 @@ export const HrSetup: React.FC<{ onChanged: () => void }> = ({ onChanged }) => {
                               <td className="p-1"><select className={input} value={en.accrual} onChange={(e) => setEntry({ accrual: e.target.value })}><option value="UPFRONT">All at start of year</option><option value="MONTHLY">A little every month</option><option value="QUARTERLY">Every 3 months</option><option value="NONE">Only when HR adds them</option></select></td>
                               <td className="p-1"><select className={input} value={en.carryForward ? '1' : '0'} onChange={(e) => setEntry({ carryForward: e.target.value === '1' })}><option value="0">Expire at year end</option><option value="1">Carry to next year</option></select></td>
                               <td className="p-1 w-24"><input type="number" min={0} className={input} disabled={!en.carryForward} value={en.carryCap} onChange={(e) => setEntry({ carryCap: num(e.target.value) })} title="0 = no limit" /></td>
+                              <td className="p-1 w-24"><input type="number" min={0} className={input} value={en.encashCap || 0} onChange={(e) => setEntry({ encashCap: num(e.target.value) })} title="Days above the carry limit that are paid out at year end instead of expiring. 0 = none" /></td>
                               <td className="p-1"><button className="text-rose-600 font-semibold" onClick={() => setPolicy(pi, { entries: p.entries.filter((_: any, j: number) => j !== ei) })}>Remove</button></td>
                             </tr>
                           );

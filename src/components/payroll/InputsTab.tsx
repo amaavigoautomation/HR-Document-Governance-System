@@ -16,8 +16,8 @@ export const InputsTab: React.FC = () => {
   }, [month]);
 
   const exportCsv = () => data && downloadCsv(`payroll-inputs-${month}.csv`, [
-    ['Employee ID', 'Name', 'Email', 'Days in month', 'Days basis', 'Paid days', 'Loss of pay days', 'Unpaid leave days', 'Absent days', 'Half-day cut', 'Paid leave days', 'Leave days to encash'],
-    ...data.rows.map((r: any) => [r.empId, r.name, r.email, r.monthDays, r.payDays, r.paidDays, r.lopDays, r.lop.unpaidLeave, r.lop.absent, r.lop.halfDay, r.paidLeaveDays, r.encashDays]),
+    ['Employee ID', 'Name', 'Email', 'Days in month', 'Days basis', 'Paid days', 'Loss of pay days', 'Unpaid leave days', 'Absent days', 'Half-day cut', 'Paid leave days', 'Leave adjustments', 'Earlier-month corrections', 'Leave waiting approval', 'Leave days to encash', 'Payroll status'],
+    ...data.rows.map((r: any) => [r.empId, r.name, r.email, r.monthDays, r.payDays, r.paidDays, r.lopDays, r.lop.unpaidLeave, r.lop.absent, r.lop.halfDay, r.paidLeaveDays, r.leave?.adjustments ?? 0, r.lop.corrections, r.leave?.pending ?? 0, r.encashDays, data.runStatus]),
   ]);
 
   return (
@@ -27,6 +27,7 @@ export const InputsTab: React.FC = () => {
         <input type="month" className={`${input} max-w-[11rem]`} value={month} onChange={(e) => e.target.value && setMonth(e.target.value)} />
         <button className={btnGhost} onClick={() => setMonth(shiftMonth(month, 1))}>›</button>
         <span className="text-sm font-bold text-slate-800 ml-1">{monthLabel(month)}</span>
+        {data && <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 border border-slate-200">{({ NOT_RUN: 'Payroll not run', DRAFT: 'Draft', APPROVED: 'Approved', LOCKED: 'Locked', PAID: 'Paid' } as Record<string, string>)[data.runStatus] || data.runStatus}</span>}
         <div className="ml-auto"><button className={btnGhost} disabled={!data} onClick={exportCsv}>Export CSV</button></div>
       </div>
       {error && <Notice tone="error">{error}</Notice>}
@@ -40,11 +41,11 @@ export const InputsTab: React.FC = () => {
             <table className="text-xs min-w-[900px] w-full">
               <thead className="text-left text-slate-500"><tr>
                 <th className="p-1.5">Person</th><th className="p-1.5 text-right">Paid days</th><th className="p-1.5 text-right">Loss of pay</th><th className="p-1.5">Why</th>
-                <th className="p-1.5 text-right">Paid leave</th><th className="p-1.5 text-right">Encash (days)</th><th className="p-1.5">Notes</th></tr></thead>
+                <th className="p-1.5 text-right">Paid leave</th><th className="p-1.5 text-right">Adjusted</th><th className="p-1.5 text-right">Waiting approval</th><th className="p-1.5 text-right">Encash (days)</th><th className="p-1.5">Notes</th></tr></thead>
               <tbody>
                 {data.rows.map((r: any) => {
                   const why = [r.lop.unpaidLeave ? `unpaid leave ${r.lop.unpaidLeave}` : '', r.lop.absent ? `absent ${r.lop.absent}` : '', r.lop.halfDay ? `half days ${r.lop.halfDay}` : '',
-                    r.lop.late ? `late ${r.lop.late}` : '', r.lop.manual ? `manual ${r.lop.manual}` : '', r.preJoinDays ? `before joining ${r.preJoinDays}` : ''].filter(Boolean).join(', ');
+                    r.lop.late ? `late ${r.lop.late}` : '', r.lop.manual ? `manual ${r.lop.manual}` : '', r.lop.corrections ? `earlier-month correction ${r.lop.corrections > 0 ? '+' : ''}${r.lop.corrections}` : '', r.preJoinDays ? `before joining ${r.preJoinDays}` : ''].filter(Boolean).join(', ');
                   return (
                     <tr key={r.uid} className="border-t border-slate-100 align-top">
                       <td className="p-1.5"><div className="font-semibold text-slate-800">{r.name}</div><div className="text-slate-400">{r.empId} · {r.department || '-'}</div></td>
@@ -52,6 +53,8 @@ export const InputsTab: React.FC = () => {
                       <td className="p-1.5 text-right tabular-nums">{r.lopDays}</td>
                       <td className="p-1.5 text-slate-500">{why || '-'}</td>
                       <td className="p-1.5 text-right tabular-nums">{r.paidLeaveDays}</td>
+                      <td className="p-1.5 text-right tabular-nums">{r.leave?.adjustments || '-'}</td>
+                      <td className="p-1.5 text-right tabular-nums text-amber-700">{r.leave?.pending || '-'}</td>
                       <td className="p-1.5 text-right tabular-nums">{r.encashDays || '-'}</td>
                       <td className="p-1.5 text-amber-700">{[!r.hasStructure ? 'No salary set' : '', ...r.warnings].filter(Boolean).join(' ')}</td>
                     </tr>

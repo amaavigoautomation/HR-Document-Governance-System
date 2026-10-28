@@ -19,6 +19,8 @@ export function diffSettings(before: LeaveSettings, after: LeaveSettings): Polic
   const g = (text: string) => out.push({ area: 'General', text });
 
   if (before.yearStartMonth !== after.yearStartMonth) g(`Leave year starts in month ${after.yearStartMonth} (was ${before.yearStartMonth}).`);
+  if ((before.probationDays || 0) !== (after.probationDays || 0)) g(`Probation is ${after.probationDays || 0} day(s) (was ${before.probationDays || 0}).`);
+  if ((before.yearEndSignoff === true) !== (after.yearEndSignoff === true)) g(`Year-end sign-off is now ${yn(after.yearEndSignoff)}.`);
   if (before.sandwichRule !== after.sandwichRule) g(`Sandwich rule is now ${yn(after.sandwichRule)}.`);
   if (before.escalateAfterDays !== after.escalateAfterDays) g(`Escalate pending requests after ${after.escalateAfterDays} day(s) (was ${before.escalateAfterDays}).`);
   if (before.hrApprovalAboveDays !== after.hrApprovalAboveDays) g(`HR approval above ${after.hrApprovalAboveDays} day(s) (was ${before.hrApprovalAboveDays}).`);
@@ -43,6 +45,8 @@ export function diffSettings(before: LeaveSettings, after: LeaveSettings): Polic
     if (o.docRequiredAfterDays !== t.docRequiredAfterDays) ch.push(`document needed after ${o.docRequiredAfterDays} → ${t.docRequiredAfterDays} day(s)`);
     if (o.minServiceDays !== t.minServiceDays) ch.push(`minimum service ${o.minServiceDays} → ${t.minServiceDays} day(s)`);
     if (o.allowNegative !== t.allowNegative) ch.push(`negative balance ${yn(t.allowNegative)}`);
+    if ((o.blockInProbation === true) !== (t.blockInProbation === true)) ch.push(`${t.blockInProbation ? 'not allowed' : 'allowed'} during probation`);
+    if ((o.blockInNotice === true) !== (t.blockInNotice === true)) ch.push(`${t.blockInNotice ? 'not allowed' : 'allowed'} during notice period`);
     if (o.approval !== t.approval) ch.push(`approval ${o.approval} → ${t.approval}`);
     if (o.halfDay !== t.halfDay) ch.push(`half day ${yn(t.halfDay)}`);
     if (o.dayCounting !== t.dayCounting) ch.push(`counts ${t.dayCounting.toLowerCase()} days`);
@@ -64,6 +68,7 @@ export function diffSettings(before: LeaveSettings, after: LeaveSettings): Polic
       if (x.quota !== e.quota) ch.push(`${n} entitlement ${x.quota} → ${e.quota}`);
       if (x.accrual !== e.accrual) ch.push(`${n} accrual ${x.accrual.toLowerCase()} → ${e.accrual.toLowerCase()}`);
       if (x.carryForward !== e.carryForward || x.carryCap !== e.carryCap) ch.push(`${n} carry-forward ${e.carryForward ? (e.carryCap ? `up to ${e.carryCap}` : 'no cap') : 'off'}`);
+      if ((x.encashCap || 0) !== (e.encashCap || 0)) ch.push(`${n} year-end encashment up to ${e.encashCap || 0} day(s)`);
     }
     for (const x of o.entries) if (!p.entries.some((e) => e.typeId === x.typeId)) ch.push(`${typeName(before, x.typeId)} removed`);
     if (ch.length) out.push({ area: 'Policy', text: `${p.name}: ${ch.join('; ')}.`, policyIds: [p.id] });

@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { AlertTriangle, BellRing, CheckCircle2, ClipboardList, ScrollText } from 'lucide-react';
+import { BellRing, CalendarCheck, CheckCircle2, ScrollText } from 'lucide-react';
 import { leaveService } from '../../services/leaveService';
 import { Card, EmptyState, Notice, Skeleton, btnGhost, btnPrimary, input, niceDate, useRunner } from './ui';
 
@@ -162,5 +162,55 @@ export const Updates: React.FC<{ onOpen?: (link: string) => void; refreshKey?: n
         ))}
       </ul>
     </Card>
+  );
+};
+
+const Num: React.FC<{ v: number; tone?: string }> = ({ v, tone }) => <td className={`p-1.5 text-right tabular-nums ${tone || ''}`}>{v === 0 ? '-' : v}</td>;
+
+/** Year end: see what carries forward, lapses or is paid out, then sign it off. A closed year can no longer be changed. */
+export const HrYearEnd: React.FC<{ onChanged?: () => void }> = ({ onChanged }) => {
+  const [d, setD] = useState<any | null>(null);
+  const [note, setNote] = useState('');
+  const { busy, note: msg, run } = useRunner();
+  const load = useCallback(() => leaveService.yearEnd().then(setD).catch(() => setD({ error: true })), []);
+  useEffect(() => { load(); }, [load]);
+  if (!d) return <Skeleton rows={4} />;
+  if (d.error) return <Notice tone="error">Year end could not be loaded. Set up leave first.</Notice>;
+  const rows: any[] = d.rows;
+  return (
+    <div className="space-y-3">
+      {msg && <Notice tone={msg.tone === 'ok' ? 'ok' : 'error'}>{msg.text}</Notice>}
+      <Card title={`Leave year ${d.cycle.label}`} subtitle={`${niceDate(d.cycle.start)} to ${niceDate(d.cycle.end)}`}
+        right={d.closed ? <span className="text-xs font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-full px-2 py-0.5">Closed</span> : undefined}>
+        {d.closed ? (
+          <div className="text-xs text-slate-600">Signed off by <b>{d.closed.closedBy}</b> on {niceDate(d.closed.closedAt.slice(0, 10))}{d.closed.note ? ` · ${d.closed.note}` : ''}. Carried {d.closed.summary.carry}, lapsed {d.closed.summary.lapse}, paid out {d.closed.summary.encash} day(s). Balances for this year can no longer be changed; post corrections in the current year.</div>
+        ) : (
+          <div className="text-xs text-slate-600">{d.signoffRequired ? 'Carry-forward, lapse and pay-out are on hold until you sign off.' : 'Year-end is processed automatically. You can still review it here.'} Check the figures below, then sign off.</div>
+        )}
+        <div className="mt-3 grid grid-cols-3 gap-2 max-w-md">
+          <div className="bg-slate-50 rounded-lg p-2"><div className="text-[11px] text-slate-500">Carried forward</div><div className="font-black">{d.totals.carry}</div></div>
+          <div className="bg-slate-50 rounded-lg p-2"><div className="text-[11px] text-slate-500">Lapse</div><div className="font-black">{d.totals.lapse}</div></div>
+          <div className="bg-slate-50 rounded-lg p-2"><div className="text-[11px] text-slate-500">Paid out</div><div className="font-black">{d.totals.encash}</div></div>
+        </div>
+        {!d.closed && (
+          <div className="mt-4 flex flex-wrap gap-2">
+            <input className={`${input} max-w-sm`} placeholder="Note for the record (optional)" value={note} onChange={(e) => setNote(e.target.value)} />
+            <button className={btnPrimary} disabled={busy || rows.length === 0} onClick={() => run(async () => { await leaveService.closeYear(d.cycle.key, note); await load(); onChanged?.(); }, 'Year signed off. Balances have been carried forward.')}><CalendarCheck className="w-4 h-4 inline mr-1" />Sign off the year</button>
+          </div>
+        )}
+      </Card>
+      <Card title="Balances at year end">
+        {rows.length === 0 ? <EmptyState icon={CalendarCheck} title="Nothing to process" text="No balances were found for this leave year." /> : (
+          <div className="overflow-x-auto"><table className="text-xs w-full min-w-[560px]">
+            <thead className="text-left text-slate-500"><tr><th className="p-1.5">Person</th><th className="p-1.5">Leave type</th><th className="p-1.5 text-right">Closing</th><th className="p-1.5 text-right">Carry</th><th className="p-1.5 text-right">Lapse</th><th className="p-1.5 text-right">Pay out</th></tr></thead>
+            <tbody>{rows.map((r) => (
+              <tr key={`${r.uid}-${r.typeId}`} className="border-t border-slate-100">
+                <td className="p-1.5 font-semibold text-slate-800">{r.name}</td><td className="p-1.5 text-slate-600">{r.type}</td>
+                <Num v={r.closing} tone={r.closing < 0 ? 'text-rose-600' : ''} /><Num v={r.carry} /><Num v={r.lapse} tone="text-amber-700" /><Num v={r.encash} tone="text-emerald-700" />
+              </tr>))}</tbody>
+          </table></div>
+        )}
+      </Card>
+    </div>
   );
 };

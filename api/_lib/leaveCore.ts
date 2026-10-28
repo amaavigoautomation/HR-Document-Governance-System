@@ -333,6 +333,13 @@ export async function planRequest(opts: {
   const warnings: string[] = [];
 
   if (!relaxed) {
+    if (type.blockInProbation && (settings.probationDays || 0) > 0 && profile.joinDate && daysBetween(profile.joinDate, input.from) < (settings.probationDays || 0)) {
+      throw new LeaveError(400, `${type.name} is not available during probation (the first ${settings.probationDays} days after joining).`);
+    }
+    if (type.blockInNotice) {
+      const exit = (await db().collection('lifecycleExits').doc(`${opts.companyId}__${person.uid}`).get()).data() as { status?: string } | undefined;
+      if (exit?.status === 'APPROVED') throw new LeaveError(400, `${type.name} is not available while you are serving your notice period.`);
+    }
     if (daysBetween(today, input.from) < -30) throw new LeaveError(400, 'Leave can be applied up to 30 days back. Ask HR to record older leave.');
     if (!input.emergency && input.from >= today && daysBetween(today, input.from) < type.minNoticeDays) {
       throw new LeaveError(400, `${type.name} needs ${type.minNoticeDays} day(s) notice.`);
@@ -410,11 +417,18 @@ export interface AccrualResult {
   employees: number;
   credits: number;
   rollovers: number;
+  /** Leave years whose carry-forward is waiting for HR to sign off. */
+  awaitingSignoff: string[];
 }
 
 export async function runAccrual(companyId: string, asOf = istToday()): Promise<AccrualResult> {
   const { settings, configured } = await loadSettings(companyId);
-  const out: AccrualResult = { employees: 0, credits: 0, rollovers: 0 };
+  const out: AccrualResult = { employees: 0, credits: 0, rollovers: 0, awaitingSignoff: [] };
+  const closedCache = new Map<string, boolean>();
+  const yearClosed = async (cycleKey: string) => {
+    if (!closedCache.has(cycleKey)) closedCache.set(cycleKey, (await db().collection('leaveYearClose').doc(`${companyId}__${cycleKey}`).get()).exists);
+    return closedCache.get(cycleKey)!;
+  };
   if (!configured) return out;
   const [people, profiles, ledger] = await Promise.all([loadPeople(companyId), loadProfiles(companyId), companyLedger(companyId)]);
   const byUser = new Map<string, LedgerEntry[]>();
@@ -439,10 +453,14 @@ export async function runAccrual(companyId: string, asOf = istToday()): Promise<
 
       const marker = `ROLL_${person.uid}_${type.id}_${cycle.key}`;
       const prevEntries = entries.filter((e) => e.typeId === type.id && e.cycle === prev.key);
-      if (prevEntries.length > 0 && !have.has(`${marker}_IN`)) {
+      if (prevEntries.length > 0 && !have.has(`${marker}_IN`) && settings.yearEndSignoff && !(await yearClosed(prev.key))) {
+        // HR has asked to review the year end first: nothing is carried, lapsed or paid out until they sign it off.
+        if (!out.awaitingSignoff.includes(prev.key)) out.awaitingSignoff.push(prev.key);
+      } else if (prevEntries.length > 0 && !have.has(`${marker}_IN`)) {
         const bal = r2(prevEntries.reduce((n, e) => n + e.delta, 0));
-        const { carry, lapse } = rollover(bal, entry);
+        const { carry, lapse, encash } = rollover(bal, entry);
         const base = { companyId, uid: person.uid, typeId: type.id, date: cycle.start, by: 'System' };
+        if (encash > 0) writes.push({ id: `${marker}_ENC`, data: entryData({ ...base, cycle: prev.key, delta: -encash, kind: 'ENCASH', note: `Year-end encashment from ${prev.label}` }) });
         if (lapse > 0) writes.push({ id: `${marker}_LAPSE`, data: entryData({ ...base, cycle: prev.key, delta: -lapse, kind: 'LAPSE', note: `Lapsed at end of ${prev.label}` }) });
         if (carry !== 0) writes.push({ id: `${marker}_OUT`, data: entryData({ ...base, cycle: prev.key, delta: -carry, kind: 'CARRY_OUT', note: `Carried to ${cycle.label}` }) });
         writes.push({ id: `${marker}_IN`, data: entryData({ ...base, cycle: cycle.key, delta: carry, kind: 'CARRY_IN', note: `Carried from ${prev.label}` }) });
@@ -529,6 +547,7 @@ export async function audit(companyId: string, entity: string, entityId: string,
 }
 
 export type ExceptionCategory =
+  | 'YEAR_END_PENDING'
   | 'NO_MANAGER' | 'NO_POLICY' | 'MANAGER_AWAY' | 'OVERDUE_APPROVAL' | 'BALANCE_NEGATIVE' | 'ATTENDANCE_MISMATCH'
   | 'PAYROLL_LOCKED_CHANGE' | 'POLICY_CHANGED' | 'RETRO_LEAVE' | 'EMERGENCY_REVIEW' | 'UNAUTHORIZED';
 

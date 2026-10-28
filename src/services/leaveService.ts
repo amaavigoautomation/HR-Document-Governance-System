@@ -38,6 +38,8 @@ export const leaveService = {
   // HR
   settings: () => get('settings'),
   saveSettings: (settings: unknown) => post('save-settings', { settings }),
+  yearEnd: (cycle = '') => get('year-end', cycle ? { cycle } : {}),
+  closeYear: (cycle: string, note: string) => post('year-end-close', { cycle, note }),
   exceptions: () => get('exceptions'),
   resolveException: (id: string, resolution: string) => post('exception-resolve', { id, resolution }),
   auditLog: (entity = '') => get('audit-log', entity ? { entity } : {}),

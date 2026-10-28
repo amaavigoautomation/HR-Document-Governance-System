@@ -19,7 +19,8 @@
  */
 import { authErrorResponse } from './authContext.js';
 import { monthRange } from './leaveApi.js';
-import { db, loadPeople, nowIso, personByUid, str } from './leaveCore.js';
+import { companyLedger, companyRequests, db, loadPeople, nowIso, personByUid, str } from './leaveCore.js';
+import { markCorrectionsApplied } from './leavePayroll.js';
 import { isIsoDate, istToday } from '../../shared/leaveEngine.js';
 import {
   INDIAN_STATES, calculateLine, isTdsComponent, lineFacts, maskAccount, r2, splitCtc, starterPayrollSettings, totalsOf,
@@ -294,7 +295,19 @@ async function inputs(who: Who, q: any): Promise<Result> {
   const run = await db().collection('payrollRuns').doc(runId(who.cid, month)).get();
   const overrides = run.exists ? (run.get('overrides') || {}) : {};
   const { rows, notes } = await loadInputs(who.cid, month, settings, overrides);
-  return ok({ month, attendanceMode: settings.attendanceMode, daysBasis: settings.daysBasis, notes, rows });
+  // The HR-reviewed leave summary: what feeds payroll, what is still pending, and the approval state of the month.
+  const { from, to } = monthRange(month);
+  const [ledger, requests] = await Promise.all([companyLedger(who.cid), companyRequests(who.cid)]);
+  const summary = rows.map((r) => {
+    const mine = requests.filter((q) => q.uid === r.uid);
+    const pendingLeave = Math.round(mine.filter((q) => ['PENDING', 'INFO_REQUESTED'].includes(q.status))
+      .reduce((n, q) => n + q.detail.filter((d) => d.date >= from && d.date <= to).reduce((m, d) => m + d.value, 0), 0) * 100) / 100;
+    const adjustments = Math.round(ledger.filter((e) => e.uid === r.uid && (e.kind === 'ADJUST') && e.date >= from && e.date <= to).reduce((n, e) => n + e.delta, 0) * 100) / 100;
+    return { ...r, leave: { paid: r.paidLeaveDays, unpaid: r.lop.unpaidLeave, adjustments, corrections: r.lop.corrections, pending: pendingLeave } };
+  });
+  const monthRun = await runOf(who.cid, month);
+  const pendingNote = summary.some((r) => r.leave.pending > 0) ? ['Some leave for this month is still waiting for approval. It is not counted yet; decide it before locking payroll.'] : [];
+  return ok({ month, attendanceMode: settings.attendanceMode, daysBasis: settings.daysBasis, notes: [...notes, ...pendingNote], rows: summary, runStatus: monthRun?.status || 'NOT_RUN' });
 }
 
 // ------------------------------------------------------------------ adjustments and loans
@@ -574,6 +587,7 @@ async function lock(who: Who, body: any): Promise<Result> {
     if (cs.exists && cs.get('status') === 'APPROVED') ops.push({ ref: cs.ref, data: { ...(cs.data() as any), status: 'PAID', paidMonth: month } });
   }
   await commitChunks(ops);
+  await markCorrectionsApplied(who.cid, month);
   const { next } = await pushEvent(who, month, { status: 'LOCKED', lockedAt: nowIso(), lockedBy: await actorName(who) }, 'LOCKED', 'payslips released');
   return ok({ run: next });
 }

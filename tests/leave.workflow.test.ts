@@ -2,7 +2,8 @@ import assert from 'node:assert/strict';
 import { __useFakeAdmin } from '../api/_lib/firebaseAdmin.ts';
 import { FakeFirestore } from './fakeFirestore.ts';
 import { routeLeave } from '../api/_lib/leaveApi.ts';
-import { addDays, istToday, weekday } from '../shared/leaveEngine.ts';
+import { addDays, cycleOf, istToday, previousCycle, weekday } from '../shared/leaveEngine.ts';
+import { routePayroll } from '../api/_lib/payrollApi.ts';
 
 const fdb = new FakeFirestore();
 __useFakeAdmin({ db: fdb, auth: { verifyIdToken: async (t: string) => JSON.parse(Buffer.from(t, 'base64').toString()) } });
@@ -10,6 +11,7 @@ const CID = 'c1';
 const tokenFor = (uid: string, perms: string[] = [], adm = false) =>
   ({ authorization: `Bearer ${Buffer.from(JSON.stringify({ uid, email: `${uid}@acme.com`, cid: CID, cs: 'ACTIVE', perms, adm })).toString('base64')}` });
 const ADMIN = tokenFor('u_admin', [], true);
+const PAY = tokenFor('u_hr', ['leave.manage', 'payroll.manage']);
 const HR = tokenFor('u_hr', ['leave.manage']);
 const MGR = tokenFor('u_mgr');
 const EMP = tokenFor('u_emp');
@@ -23,6 +25,7 @@ const ok = async (h: any, method: string, action: string, body?: any, query?: an
   assert.equal(r.status, 200, `${action}: ${JSON.stringify(r.json)}`);
   return r.json;
 };
+process.env.CRON_SECRET = 's3cret';
 const today = istToday();
 const workday = (from: number) => { let d = addDays(today, from); while (weekday(d) === 0 || weekday(d) === 6) d = addDays(d, 1); return d; };
 
@@ -82,6 +85,101 @@ if (clType.minNoticeDays > 0) {
   assert.equal(em.status, 'PENDING');
 }
 
+// ================================================================ probation and notice-period rules
+{
+  const st = (await ok(HR, 'GET', 'settings')).settings;
+  const next = JSON.parse(JSON.stringify(st));
+  next.probationDays = 90;
+  next.types.find((t: any) => t.code === 'CL').blockInProbation = true;
+  next.types.find((t: any) => t.code === 'CL').blockInNotice = true;
+  await ok(HR, 'POST', 'save-settings', { settings: next });
+  fdb.seed('employees', 'u_new', { companyId: CID, authUid: 'u_new', name: 'Nia New', email: 'u_new@acme.com', active: true, createdAt: '2020-01-01T00:00:00Z' });
+  await ok(HR, 'POST', 'save-profiles', { profiles: [{ uid: 'u_new', managerUid: 'u_mgr', joinDate: addDays(today, -10) }] });
+  const NEW = tokenFor('u_new');
+  const dn = workday(25);
+  const pr = await call(NEW, 'POST', 'apply', { typeId: 'cl', from: dn, to: dn });
+  assert.equal(pr.status, 400);
+  assert.match(pr.json.error, /probation/);
+  assert.equal((await call(EMP, 'POST', 'apply', { typeId: 'cl', from: workday(28), to: workday(28) })).status, 200, 'a long-serving employee is not affected');
+  fdb.seed('lifecycleExits', `${CID}__u_emp`, { companyId: CID, uid: 'u_emp', status: 'APPROVED' });
+  const nr = await call(EMP, 'POST', 'apply', { typeId: 'cl', from: workday(30), to: workday(30) });
+  assert.equal(nr.status, 400);
+  assert.match(nr.json.error, /notice period/);
+  fdb.seed('lifecycleExits', `${CID}__u_emp`, { companyId: CID, uid: 'u_emp', status: 'WITHDRAWN' });
+  assert.equal((await call(EMP, 'POST', 'apply', { typeId: 'cl', from: workday(30), to: workday(30) })).status, 200, 'a withdrawn resignation lifts the restriction');
+}
+
+// ================================================================ payroll: leave changed after its month was locked
+{
+  const prevMonth = (() => { const d = new Date(`${today.slice(0, 7)}-01T00:00:00Z`); d.setUTCMonth(d.getUTCMonth() - 1); return d.toISOString().slice(0, 7); })();
+  const thisMonth = today.slice(0, 7);
+  fdb.seed('payrollRuns', `${CID}__${prevMonth}`, { companyId: CID, month: prevMonth, status: 'LOCKED', overrides: {}, events: [] });
+  // a loss-of-pay day in the locked month, recorded by HR afterwards
+  let pastDay = `${prevMonth}-10`;
+  while (weekday(pastDay) === 0) pastDay = addDays(pastDay, 1);
+  const made = await ok(HR, 'POST', 'hr-create', { uid: 'u_emp', typeId: 'lop', from: pastDay, to: pastDay, reason: 'late entry' });
+  const corr = fdb.all('leavePayrollInputs').filter((c) => c.requestId === made.id);
+  assert.equal(corr.length, 1, 'one correction for the locked month');
+  assert.equal(corr[0].lopDelta, 1);
+  assert.equal(corr[0].applyMonth, thisMonth, 'carried by the next open month');
+  assert.ok((await ok(HR, 'GET', 'exceptions')).items.some((e: any) => e.category === 'PAYROLL_LOCKED_CHANGE'), 'HR is told');
+  await ok(HR, 'POST', 'hr-create', { uid: 'u_emp', typeId: 'lop', from: pastDay, to: pastDay, reason: 'again' }).catch(() => undefined);
+  assert.equal(fdb.all('leavePayrollInputs').filter((c) => c.requestId === made.id).length, 1, 'never posted twice');
+  // the next month's payroll inputs carry it
+  const pay = await routePayroll({ method: 'GET', action: 'inputs', query: { month: thisMonth }, body: {}, headers: PAY });
+  assert.equal(pay.status, 200, JSON.stringify(pay.json));
+  const row = pay.json.rows.find((r: any) => r.uid === 'u_emp');
+  assert.equal(row.lop.corrections, 1);
+  assert.ok(row.lopDays >= 1);
+  assert.equal(pay.json.runStatus, 'NOT_RUN');
+  // cancelling that leave gives the day back in the same open month
+  await ok(HR, 'POST', 'hr-cancel', { id: made.id, note: 'entered by mistake' });
+  const back = fdb.all('leavePayrollInputs').filter((c) => c.requestId === made.id);
+  assert.deepEqual(back.map((c) => c.lopDelta).sort(), [-1, 1]);
+  const pay2 = await routePayroll({ method: 'GET', action: 'inputs', query: { month: thisMonth }, body: {}, headers: PAY });
+  assert.equal(pay2.json.rows.find((r: any) => r.uid === 'u_emp').lop.corrections, 0, 'net effect is zero');
+}
+
+// ================================================================ year-end review, carry-forward and encashment
+{
+  const st = (await ok(HR, 'GET', 'settings')).settings;
+  const next = JSON.parse(JSON.stringify(st));
+  next.yearEndSignoff = true;
+  const e = next.policies[0].entries.find((x: any) => x.typeId === 'cl');
+  e.carryForward = true; e.carryCap = 4; e.encashCap = 3;
+  await ok(HR, 'POST', 'save-settings', { settings: next });
+  const cur = cycleOf(today, next.yearStartMonth);
+  const prev = previousCycle(cur, next.yearStartMonth);
+  const stamp = new Date().toISOString();
+  fdb.seed('leaveLedger', 'seed_open_prev', { companyId: CID, uid: 'u_emp', typeId: 'cl', cycle: prev.key, delta: 10, kind: 'OPENING', date: prev.start, createdAt: stamp });
+  const before = fdb.all('leaveLedger').length;
+  await ok(HR, 'POST', 'run-accrual');
+  assert.equal(fdb.all('leaveLedger').filter((x) => x.kind === 'CARRY_IN').length, 0, 'nothing is carried before sign-off');
+  assert.equal(fdb.all('leaveLedger').filter((x) => x.kind === 'LAPSE').length, 0);
+  const prevw = await ok(HR, 'GET', 'year-end');
+  const row = prevw.rows.find((r: any) => r.uid === 'u_emp' && r.typeId === 'cl');
+  assert.equal(row.closing, 10);
+  assert.deepEqual([row.carry, row.encash, row.lapse], [4, 3, 3]);
+  assert.equal(prevw.closed, null);
+  assert.ok((await ok(HR, 'POST', 'run-accrual')) && true);
+  const cronRun = await ok({}, 'GET', 'cron', {}, { key: 's3cret' });
+  assert.ok((await ok(HR, 'GET', 'exceptions')).items.some((x: any) => x.category === 'YEAR_END_PENDING'), 'HR is reminded to sign off');
+  assert.equal((await call(EMP, 'POST', 'year-end-close', {})).status, 403);
+  const closed = await ok(HR, 'POST', 'year-end-close', { note: 'checked with finance' });
+  assert.equal(closed.summary.encash >= 3, true);
+  const after = fdb.all('leaveLedger');
+  assert.equal(after.filter((x) => x.uid === 'u_emp' && x.typeId === 'cl' && x.kind === 'CARRY_IN' && x.delta === 4).length, 1, '4 days carried');
+  assert.equal(after.filter((x) => x.uid === 'u_emp' && x.kind === 'ENCASH' && x.delta === -3).length, 1, '3 days paid out');
+  assert.equal(after.filter((x) => x.uid === 'u_emp' && x.kind === 'LAPSE' && x.delta === -3).length, 1, '3 days lapse');
+  assert.equal((await call(HR, 'POST', 'year-end-close', {})).status, 409, 'closing twice is refused');
+  await ok(HR, 'POST', 'run-accrual');
+  assert.equal(fdb.all('leaveLedger').filter((x) => x.uid === 'u_emp' && x.kind === 'CARRY_IN' && x.delta === 4).length, 1, 'a rerun never carries twice');
+  const prevCycleBalance = fdb.all('leaveLedger').filter((x) => x.uid === 'u_emp' && x.typeId === 'cl' && x.cycle === prev.key).reduce((n, x) => n + x.delta, 0);
+  assert.equal(prevCycleBalance, 0, 'the closed year ends at zero');
+  assert.equal((await call(HR, 'POST', 'adjust', { uid: 'u_emp', typeId: 'cl', delta: 1, note: 'late fix', date: prev.end })).status, 409, 'a closed year cannot be changed');
+  assert.ok(before > 0);
+}
+
 // ================================================================ private documents
 const pdf = 'data:application/pdf;base64,' + Buffer.from('%PDF-1.4 test').toString('base64');
 const d3 = workday(40);
@@ -99,26 +197,27 @@ assert.ok(fdb.all('leaveAudit').some((a) => a.action === 'DOCUMENT_OPENED'), 'HR
 
 // ================================================================ policy versions
 let st = await ok(HR, 'GET', 'policy-state');
-assert.equal(st.version, 1);
-assert.equal(st.versions.length, 1);
+const v0 = st.version; // earlier sections changed settings, so count from here
+assert.ok(v0 >= 1);
+assert.equal(st.versions.length, v0, 'every version is archived');
 assert.equal((await call(EMP, 'GET', 'policy-state')).status, 403, 'employees cannot see policy history');
 
 // a real change through the direct save bumps the version and records what changed; a no-op does not
 const live = (await ok(HR, 'GET', 'settings')).settings;
 const same = await ok(HR, 'POST', 'save-settings', { settings: live });
-assert.equal(same.version, 1, 'no change, no new version');
+assert.equal(same.version, v0, 'no change, no new version');
 const tweaked = JSON.parse(JSON.stringify(live));
 tweaked.policies[0].entries[0].quota += 3;
 const saved = await ok(HR, 'POST', 'save-settings', { settings: tweaked });
-assert.equal(saved.version, 2);
+assert.equal(saved.version, v0 + 1);
 assert.ok(saved.changes.some((t: string) => /entitlement/.test(t)), 'change list explains the entitlement change');
 st = await ok(HR, 'GET', 'policy-state');
-assert.equal(st.version, 2);
-assert.equal(st.versions.length, 2);
+assert.equal(st.version, v0 + 1);
+assert.equal(st.versions.length, v0 + 1);
 
 // an old approved request keeps the version it was made under
 const oldReq = (await ok(EMP, 'GET', 'my-requests')).items[0];
-assert.equal(oldReq.policyVersion, 1);
+assert.ok(oldReq.policyVersion < v0 + 1, 'made under an earlier version');
 
 // with approval switched on, direct saves are refused and the draft flow is used
 assert.equal((await call(HR, 'POST', 'policy-require', { value: true })).status, 403, 'only an admin switches approval on');
@@ -140,10 +239,10 @@ await ok(HR, 'POST', 'policy-submit');
 const pub = await ok(ADMIN, 'POST', 'policy-decide', { decision: 'APPROVE' });
 assert.equal(pub.status, 'PUBLISHED');
 st = await ok(HR, 'GET', 'policy-state');
-assert.equal(st.version, 3);
+assert.equal(st.version, v0 + 2);
 assert.equal(st.draft, null);
 assert.equal(st.governanceRef, 'AMA-HR-LEAVE-001 v2');
-assert.ok((await ok(HR, 'GET', 'policy-version', undefined, { v: '3' })).version.settings.policies.length > 0);
+assert.ok((await ok(HR, 'GET', 'policy-version', undefined, { v: String(v0 + 2) })).version.settings.policies.length > 0);
 
 // a future-dated change waits for its date
 const future = JSON.parse(JSON.stringify(edit));
@@ -151,7 +250,7 @@ future.policies[0].entries[0].quota += 1;
 await ok(HR, 'POST', 'policy-draft-save', { settings: future, governanceRef: 'AMA-HR-LEAVE-001 v3', effectiveFrom: addDays(today, 30) });
 await ok(HR, 'POST', 'policy-submit');
 assert.equal((await ok(ADMIN, 'POST', 'policy-decide', { decision: 'APPROVE' })).status, 'SCHEDULED');
-assert.equal((await ok(HR, 'GET', 'policy-state')).version, 3, 'not live yet');
+assert.equal((await ok(HR, 'GET', 'policy-state')).version, v0 + 2, 'not live yet');
 
 // every policy event is in the company audit trail
 assert.ok(fdb.all('leaveAudit').some((a) => a.action === 'POLICY_PUBLISHED'));

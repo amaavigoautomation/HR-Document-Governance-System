@@ -45,6 +45,10 @@ export interface LeaveType {
   gender: 'ANY' | 'F' | 'M';
   minServiceDays: number;
   allowNegative: boolean;
+  /** Not available while the person is still in the company's probation period. */
+  blockInProbation?: boolean;
+  /** Not available once the person has an approved exit and is serving notice. */
+  blockInNotice?: boolean;
   approval: ApprovalFlow;
   /** Overrides the company leave-year start month for this type (1-12). */
   startMonth?: number;
@@ -58,6 +62,8 @@ export interface PolicyEntry {
   carryForward: boolean;
   /** Maximum days carried into the next year (0 with carryForward = no cap). */
   carryCap: number;
+  /** Days above the carry-forward limit that are paid out at year end instead of lapsing (0 = none). */
+  encashCap?: number;
 }
 
 export interface LeavePolicy {
@@ -78,6 +84,10 @@ export interface Shift {
 
 export interface LeaveSettings {
   yearStartMonth: number; // 1 = calendar year, 4 = financial year
+  /** Probation length in days from joining (0 = no probation rule). */
+  probationDays?: number;
+  /** When on, carry-forward, lapse and encashment wait for HR to review and sign off the year end. */
+  yearEndSignoff?: boolean;
   sandwichRule: boolean;
   locations: LeaveLocation[];
   types: LeaveType[];
@@ -310,12 +320,13 @@ export function plannedCredits(entry: PolicyEntry, cycle: Cycle, joinDate: strin
 }
 
 /** What happens to a balance when its cycle ends. */
-export function rollover(balance: number, entry: Pick<PolicyEntry, 'carryForward' | 'carryCap'>): { carry: number; lapse: number } {
-  if (balance === 0) return { carry: 0, lapse: 0 };
-  if (balance < 0) return { carry: balance, lapse: 0 }; // an overdrawn balance is recovered next year
-  if (!entry.carryForward) return { carry: 0, lapse: balance };
-  const carry = entry.carryCap > 0 ? Math.min(balance, entry.carryCap) : balance;
-  return { carry: round2(carry), lapse: round2(balance - carry) };
+export function rollover(balance: number, entry: Pick<PolicyEntry, 'carryForward' | 'carryCap'> & { encashCap?: number }): { carry: number; lapse: number; encash: number } {
+  if (balance === 0) return { carry: 0, lapse: 0, encash: 0 };
+  if (balance < 0) return { carry: balance, lapse: 0, encash: 0 }; // an overdrawn balance is recovered next year
+  const carry = !entry.carryForward ? 0 : entry.carryCap > 0 ? Math.min(balance, entry.carryCap) : balance;
+  const rest = round2(balance - carry);
+  const encash = Math.min(rest, Math.max(0, entry.encashCap || 0));
+  return { carry: round2(carry), lapse: round2(rest - encash), encash: round2(encash) };
 }
 
 // ------------------------------------------------------------------ approval chain

@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { diffSettings } from '../shared/leavePolicyDiff.ts';
 import {
   cycleOf, countLeaveDays, plannedCredits, rollover, entitledMonths, approvalSteps, computeDayStatus,
   summarizeMonth, istToInstant, istParts, isWeeklyOff, dayKind, starterSettings, DEFAULT_SHIFT, previousCycle, halves,
@@ -50,10 +51,27 @@ assert.deepEqual(quarterly.map((x) => x.period), ['Q1', 'Q2', 'Q3']);
 assert.equal(plannedCredits({ typeId: 'x', quota: 0, accrual: 'MONTHLY', carryForward: false, carryCap: 0 }, cy, undefined, '2026-10-22').length, 0);
 
 // rollover
-assert.deepEqual(rollover(10, { carryForward: false, carryCap: 0 }), { carry: 0, lapse: 10 });
-assert.deepEqual(rollover(40, { carryForward: true, carryCap: 30 }), { carry: 30, lapse: 10 });
-assert.deepEqual(rollover(12, { carryForward: true, carryCap: 0 }), { carry: 12, lapse: 0 });
-assert.deepEqual(rollover(-2, { carryForward: false, carryCap: 0 }), { carry: -2, lapse: 0 });
+assert.deepEqual(rollover(10, { carryForward: false, carryCap: 0 }), { carry: 0, lapse: 10, encash: 0 });
+assert.deepEqual(rollover(40, { carryForward: true, carryCap: 30 }), { carry: 30, lapse: 10, encash: 0 });
+assert.deepEqual(rollover(12, { carryForward: true, carryCap: 0 }), { carry: 12, lapse: 0, encash: 0 });
+assert.deepEqual(rollover(-2, { carryForward: false, carryCap: 0 }), { carry: -2, lapse: 0, encash: 0 });
+// encashment pays out part of what would lapse, never more than the cap and never more than is left
+assert.deepEqual(rollover(40, { carryForward: true, carryCap: 30, encashCap: 6 }), { carry: 30, lapse: 4, encash: 6 });
+assert.deepEqual(rollover(33, { carryForward: true, carryCap: 30, encashCap: 6 }), { carry: 30, lapse: 0, encash: 3 });
+assert.deepEqual(rollover(10, { carryForward: false, carryCap: 0, encashCap: 4 }), { carry: 0, lapse: 6, encash: 4 });
+assert.deepEqual(rollover(5, { carryForward: true, carryCap: 30, encashCap: 6 }), { carry: 5, lapse: 0, encash: 0 });
+
+// policy change summary
+{
+  const a = starterSettings(2026);
+  const b = JSON.parse(JSON.stringify(a));
+  assert.equal(diffSettings(a, b).length, 0, 'identical setups have no changes');
+  b.policies[0].entries[0].quota += 2;
+  b.sandwichRule = !a.sandwichRule;
+  const changes = diffSettings(a, b);
+  assert.ok(changes.some((c) => c.area === 'Policy' && /entitlement/.test(c.text) && c.policyIds?.includes(a.policies[0].id)));
+  assert.ok(changes.some((c) => /Sandwich/.test(c.text)));
+}
 
 // approval chain
 const s = starterSettings(2026);
