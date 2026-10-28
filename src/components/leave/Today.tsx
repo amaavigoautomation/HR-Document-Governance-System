@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { CalendarPlus, Inbox, Palmtree, Sun, Users, Wrench } from 'lucide-react';
 import { leaveService } from '../../services/leaveService';
 import { PunchCard } from './AttendanceTab';
+import { Updates } from './HrGovernance';
 import { btnBig, btnGhost, Card, days, EmptyState, halfNote, relDay, shortDate, shortRange, Skeleton, StatusPill } from './ui';
 
 const greeting = () => {
@@ -74,6 +75,8 @@ export const Today: React.FC<{ me: any; reload: () => void; onApply: (typeId?: s
           <span className="text-xs font-bold text-[#FA7014]">Review →</span>
         </button>
       )}
+
+      <Updates refreshKey={refreshKey} onOpen={(link) => onOpen(link as any)} />
 
       <PunchCard me={me} reload={reload} />
 

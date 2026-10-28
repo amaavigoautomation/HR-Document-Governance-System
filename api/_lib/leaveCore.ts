@@ -213,6 +213,11 @@ export interface LeaveRequest {
   byCycle: Record<string, number>;
   reason: string;
   docUrl: string;
+  /** Id of a privately stored upload (only the employee and HR can open it). */
+  privateDocId?: string;
+  privateDocName?: string;
+  /** Notes from the checks the approver should know about (for example: balance goes below zero). */
+  warnings?: string[];
   /** Policy version in force when the request was made (history stays traceable after the policy changes). */
   policyVersion?: number;
   /** Policy version in force when the final decision was made. */
@@ -224,6 +229,7 @@ export interface LeaveRequest {
   stepIndex: number;
   onBehalfOf?: boolean;
   escalatedOn?: string;
+  remindedOn?: string;
   createdBy?: string;
   createdAt: string;
   updatedAt: string;
@@ -253,6 +259,9 @@ export interface ApplyInput {
   halfPart: 'FIRST' | 'SECOND';
   reason: string;
   docUrl: string;
+  /** A document uploaded with the request (kept private; see leaveDocs). */
+  docData: string;
+  docName: string;
   /** Emergency leave: no advance notice is needed; the request stays provisional until approved. */
   emergency: boolean;
 }
@@ -270,6 +279,8 @@ export function parseApplyInput(body: any): ApplyInput {
     halfPart: body?.halfPart === 'FIRST' ? 'FIRST' : 'SECOND',
     reason: str(body?.reason, 600),
     docUrl: str(body?.docUrl, 500),
+    docData: typeof body?.docData === 'string' ? body.docData : '',
+    docName: str(body?.docName, 120),
     emergency: body?.emergency === true,
   };
 }
@@ -329,7 +340,7 @@ export async function planRequest(opts: {
     if (type.maxDaysPerRequest > 0 && counted.days > type.maxDaysPerRequest) {
       throw new LeaveError(400, `${type.name} allows at most ${type.maxDaysPerRequest} days in one request.`);
     }
-    if (type.docRequiredAfterDays > 0 && counted.days > type.docRequiredAfterDays && !input.docUrl) {
+    if (type.docRequiredAfterDays > 0 && counted.days > type.docRequiredAfterDays && !input.docUrl && !input.docData) {
       throw new LeaveError(400, `Add a link to the supporting document (needed for ${type.name} longer than ${type.docRequiredAfterDays} day(s)).`);
     }
   }
@@ -552,6 +563,35 @@ export async function raiseException(companyId: string, e: { category: Exception
     requestId: e.requestId || '', uid: e.uid || '', assignedTo: e.assignedTo || 'HR', status: 'OPEN', createdAt: nowIso(),
   };
   await ref.set(doc);
+}
+
+// ------------------------------------------------------------------ in-app notifications
+
+export interface LeaveNotification {
+  id: string;
+  companyId: string;
+  uid: string;
+  title: string;
+  body: string;
+  /** Where the screen should take the person (a leave section key). */
+  link: string;
+  read: boolean;
+  createdAt: string;
+}
+
+/**
+ * Puts a message in people's in-app inbox (the email is sent separately by notify). Pass a key to make a message
+ * that must only ever appear once (a low-balance alert, a reminder) idempotent.
+ */
+export async function inApp(companyId: string, uids: string[], title: string, body: string, link = '', key = ''): Promise<void> {
+  const now = nowIso();
+  await Promise.all([...new Set(uids.filter(Boolean))].map(async (uid) => {
+    const id = key ? `${companyId}__${uid}__${key}`.replace(/[^A-Za-z0-9_-]/g, '_').slice(0, 200) : db().collection('leaveNotifications').doc().id;
+    const ref = db().collection('leaveNotifications').doc(id);
+    if (key && (await ref.get()).exists) return;
+    const doc: LeaveNotification = { id, companyId, uid, title: title.slice(0, 160), body: body.slice(0, 400), link, read: false, createdAt: now };
+    await ref.set(doc);
+  }));
 }
 
 export { addDays, FieldValue };

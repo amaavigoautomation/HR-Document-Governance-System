@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { CalendarDays, CheckCircle2 } from 'lucide-react';
+import { DocAttach, type Picked } from './DocAttach';
 import { leaveService } from '../../services/leaveService';
 import { halves, type LeaveValue } from '../../../shared/leaveEngine';
 import { addDaysIso, btnBig, btnGhost, days, Drawer, Field, input, Notice, shortDate, useRunner } from './ui';
@@ -27,6 +28,7 @@ export const ApplyLeaveDrawer: React.FC<{ me: any; open: boolean; onClose: () =>
   const [preview, setPreview] = useState<any | null>(null);
   const [checking, setChecking] = useState(false);
   const [emergency, setEmergency] = useState(false);
+  const [file, setFile] = useState<Picked | null>(null);
   // One key per opening of the form: a double click or a retry can never create the request twice.
   const idemKey = useRef('');
   const { busy, note, setNote, run } = useRunner();
@@ -36,7 +38,7 @@ export const ApplyLeaveDrawer: React.FC<{ me: any; open: boolean; onClose: () =>
     if (!open) return;
     setTypeId(firstUsable?.typeId || '');
     setFrom(initialFrom || me.today); setTo(initialFrom || me.today);
-    setFromValue('FULL'); setToValue('FULL'); setReason(''); setDocUrl(''); setNote(null); setEmergency(false);
+    setFromValue('FULL'); setToValue('FULL'); setReason(''); setDocUrl(''); setNote(null); setEmergency(false); setFile(null);
     idemKey.current = (globalThis.crypto?.randomUUID?.() || `${Date.now()}${Math.random().toString(36).slice(2)}`).replace(/-/g, '');
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
@@ -57,20 +59,20 @@ export const ApplyLeaveDrawer: React.FC<{ me: any; open: boolean; onClose: () =>
   const halfPart = h.halfPart;
   // The server refuses the preview while the document is missing, so also show the field when that is the reason.
   const docError = preview?.valid === false && /supporting document/i.test(preview.error || '');
-  const needsDoc = (meta?.docRequiredAfterDays || 0) > 0 && ((preview?.days || 0) > meta.docRequiredAfterDays || docError || !!docUrl);
+  const needsDoc = (meta?.docRequiredAfterDays || 0) > 0 && ((preview?.days || 0) > meta.docRequiredAfterDays || docError || !!docUrl || !!file);
 
   useEffect(() => {
     if (!open || !typeId || !from || !to || to < from) { setPreview(null); return; }
     setChecking(true);
     const t = setTimeout(() => {
-      leaveService.calc({ typeId, from, to, halfFrom, halfTo, halfPart, reason, docUrl, emergency })
+      leaveService.calc({ typeId, from, to, halfFrom, halfTo, halfPart, reason, docUrl, emergency, docData: file ? 'attached' : '' })
         .then(setPreview).catch(() => setPreview(null)).finally(() => setChecking(false));
     }, 250);
     return () => clearTimeout(t);
-  }, [open, typeId, from, to, halfFrom, halfTo, halfPart, docUrl, reason, emergency]);
+  }, [open, typeId, from, to, halfFrom, halfTo, halfPart, docUrl, reason, emergency, file]);
 
   const submit = () => run(async () => {
-    await leaveService.apply({ typeId, from, to, halfFrom, halfTo, halfPart, reason, docUrl, emergency, idempotencyKey: idemKey.current });
+    await leaveService.apply({ typeId, from, to, halfFrom, halfTo, halfPart, reason, docUrl, emergency, idempotencyKey: idemKey.current, ...(file ? { docData: file.dataUrl, docName: file.name } : {}) });
     onSent();
     onClose();
   }, 'Leave request sent. You will get an email when it is decided.');
@@ -156,8 +158,11 @@ export const ApplyLeaveDrawer: React.FC<{ me: any; open: boolean; onClose: () =>
           </label>
           {needsDoc && (
             <div className="mt-2">
-              <Field label="Link to a document (required)" hint={`${bal?.name} longer than ${days(meta.docRequiredAfterDays)} needs a supporting document, e.g. a Google Drive link to a medical note.`}>
-                <input className={input} placeholder="https://drive.google.com/…" value={docUrl} onChange={(e) => setDocUrl(e.target.value)} />
+              <Field label="Supporting document (required)" hint={`${bal?.name} longer than ${days(meta.docRequiredAfterDays)} needs a supporting document, such as a medical note. Attach it here or paste a link.`}>
+                <div className="space-y-2">
+                  <DocAttach value={file} onChange={setFile} />
+                  {!file && <input className={input} placeholder="or paste a link, e.g. https://drive.google.com/…" value={docUrl} onChange={(e) => setDocUrl(e.target.value)} />}
+                </div>
               </Field>
             </div>
           )}

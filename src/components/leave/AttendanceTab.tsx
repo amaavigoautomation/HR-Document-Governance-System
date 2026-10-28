@@ -165,6 +165,7 @@ export const MonthView: React.FC<{ uid?: string; onPickDay?: (d: any) => void; o
                     {!na && Icon && <Icon className="w-3.5 h-3.5" />}
                   </div>
                   {!na && <div className="hidden sm:block text-[10px] font-semibold leading-tight mt-1 truncate">{STATUS_LABEL[d.status]}</div>}
+                  {d.provisionalLeave && <div className="text-[9px] sm:text-[10px] font-bold leading-tight mt-0.5 text-amber-700">Emergency leave (provisional)</div>}
                   {d.checkIn && <div className="hidden sm:block text-[10px] leading-tight opacity-75">{d.checkIn}{d.checkOut ? `–${d.checkOut}` : ''}</div>}
                 </button>
               );

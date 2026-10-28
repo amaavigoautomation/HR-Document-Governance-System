@@ -26,11 +26,13 @@ const ok = async (h: any, method: string, action: string, body?: any, query?: an
 const today = istToday();
 const workday = (from: number) => { let d = addDays(today, from); while (weekday(d) === 0 || weekday(d) === 6) d = addDays(d, 1); return d; };
 
-await ok(HR, 'POST', 'apply-starter', { yearStartMonth: 1 });
+// The leave year starts this month, so every date used below falls in the same year whenever the test runs.
+await ok(HR, 'POST', 'apply-starter', { yearStartMonth: Number(today.slice(5, 7)) });
 await ok(HR, 'POST', 'save-profiles', { profiles: [
   { uid: 'u_emp', managerUid: 'u_mgr', gender: 'F', joinDate: '2020-01-01' }, { uid: 'u_mgr', joinDate: '2020-01-01' },
 ] });
 await ok(HR, 'POST', 'run-accrual');
+for (const uid of ['u_emp', 'u_mgr']) await ok(HR, 'POST', 'adjust', { uid, typeId: 'cl', delta: 25, note: 'test balance' });
 
 // --- two requests for the same day sent at the same moment: exactly one is created
 const d1 = workday(12);
@@ -79,6 +81,21 @@ if (clType.minNoticeDays > 0) {
   assert.equal(em.emergency, true);
   assert.equal(em.status, 'PENDING');
 }
+
+// ================================================================ private documents
+const pdf = 'data:application/pdf;base64,' + Buffer.from('%PDF-1.4 test').toString('base64');
+const d3 = workday(40);
+assert.equal((await call(EMP, 'POST', 'apply', { typeId: 'cl', from: d3, to: d3, docData: 'data:text/html;base64,PGI+', docName: 'x' })).status, 400, 'only PDF or JPEG');
+const withDoc = await ok(EMP, 'POST', 'apply', { typeId: 'cl', from: d3, to: d3, docData: pdf, docName: 'note.pdf' });
+const listed = (await ok(EMP, 'GET', 'my-requests')).items.find((r: any) => r.id === withDoc.id);
+assert.equal(listed.hasPrivateDoc, true);
+assert.equal(JSON.stringify(listed).includes('base64'), false, 'the file itself is never in a list');
+assert.equal((await ok(EMP, 'GET', 'doc-get', undefined, { id: withDoc.id })).dataUrl, pdf, 'the employee can open it');
+assert.equal((await ok(HR, 'GET', 'doc-get', undefined, { id: withDoc.id })).name, 'note.pdf', 'HR can open it');
+assert.equal((await call(MGR, 'GET', 'doc-get', undefined, { id: withDoc.id })).status, 403, 'the manager cannot open it');
+assert.equal((await ok(MGR, 'GET', 'inbox')).leaves.find((l: any) => l.id === withDoc.id).hasPrivateDoc, true, 'but sees one is attached');
+assert.ok(fdb.all('leaveAudit').some((a) => a.action === 'DOCUMENT_ACCESS_DENIED'), 'refused access is logged');
+assert.ok(fdb.all('leaveAudit').some((a) => a.action === 'DOCUMENT_OPENED'), 'HR access is logged');
 
 // ================================================================ policy versions
 let st = await ok(HR, 'GET', 'policy-state');
@@ -138,4 +155,51 @@ assert.equal((await ok(HR, 'GET', 'policy-state')).version, 3, 'not live yet');
 
 // every policy event is in the company audit trail
 assert.ok(fdb.all('leaveAudit').some((a) => a.action === 'POLICY_PUBLISHED'));
+
+// ================================================================ exceptions, audit trail, notifications, dashboard
+const inboxMgr = (await ok(MGR, 'GET', 'notifications')).items;
+assert.ok(inboxMgr.some((n: any) => /requested/.test(n.title)), 'the manager gets an in-app message for a new request');
+const empNotes = await ok(EMP, 'GET', 'notifications');
+assert.ok(empNotes.unread > 0, 'the employee was told about the question and the decision');
+await ok(EMP, 'POST', 'notifications-read', { all: true });
+assert.equal((await ok(EMP, 'GET', 'notifications')).unread, 0);
+
+let exc = await ok(HR, 'GET', 'exceptions');
+const dM = workday(15);
+await ok(MGR, 'POST', 'apply', { typeId: 'cl', from: dM, to: dM });
+exc = await ok(HR, 'GET', 'exceptions');
+assert.ok(exc.items.some((e: any) => e.category === 'NO_MANAGER'), 'a request from someone with no manager is flagged for HR');
+assert.equal((await call(EMP, 'GET', 'exceptions')).status, 403);
+assert.equal((await call(EMP, 'GET', 'audit-log')).status, 403);
+
+// an overdue request: reminder, escalation, an exception for HR, and no repeats on a second run
+const stale = workday(60);
+const sr = await ok(EMP, 'POST', 'apply', { typeId: 'cl', from: stale, to: stale, reason: 'old' });
+await fdb.collection('leaveRequests').doc(sr.id).update({ createdAt: new Date(Date.now() - 9 * 86400000).toISOString() });
+process.env.CRON_SECRET = 's3cret';
+const run1 = await ok({}, 'GET', 'cron', {}, { key: 's3cret' });
+assert.ok(run1.companies[0].escalated >= 1, 'overdue request escalated');
+exc = await ok(HR, 'GET', 'exceptions');
+const overdue = exc.items.find((e: any) => e.category === 'OVERDUE_APPROVAL' && e.requestId === sr.id);
+assert.ok(overdue, 'the overdue request is in the exception register');
+const run2 = await ok({}, 'GET', 'cron', {}, { key: 's3cret' });
+assert.equal(run2.companies[0].escalated, 0, 'a second run does not escalate again');
+assert.equal(exc.items.filter((e: any) => e.category === 'OVERDUE_APPROVAL' && e.requestId === sr.id).length, 1, 'one open item per problem');
+assert.equal((await call(HR, 'POST', 'exception-resolve', { id: overdue.id })).status, 400, 'resolution needed');
+await ok(HR, 'POST', 'exception-resolve', { id: overdue.id, resolution: 'Spoke to the manager' });
+assert.equal((await ok(HR, 'GET', 'exceptions')).items.find((e: any) => e.id === overdue.id).status, 'RESOLVED');
+
+// HR adjustments leave an audit entry with who, what and why
+await ok(HR, 'POST', 'adjust', { uid: 'u_emp', typeId: 'cl', delta: 1, note: 'goodwill' });
+const trail = (await ok(HR, 'GET', 'audit-log')).items;
+assert.ok(trail.some((a: any) => a.action === 'BALANCE_ADJUSTED' && a.newValue.note === 'goodwill' && a.actor === 'Hema HR'));
+assert.ok(trail.some((a: any) => a.action === 'PROFILE_CHANGED'), 'manager/policy assignments are audited');
+
+// dashboard: HR sees names, the management view only counts
+const dash = await ok(HR, 'GET', 'leave-summary');
+assert.ok(dash.headcount >= 3 && typeof dash.pendingApprovals === 'number');
+const mgmt = await ok(HR, 'GET', 'leave-summary', undefined, { view: 'management' });
+assert.equal(mgmt.onLeave, undefined, 'management view carries no names');
+assert.equal((await call(EMP, 'GET', 'leave-summary')).status, 403);
+
 console.log('leave workflow tests passed');

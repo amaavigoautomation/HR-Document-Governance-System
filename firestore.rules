@@ -474,6 +474,16 @@ service cloud.firestore {
     match /leaveRequests/{id} { allow read, write: if false; }
     match /leaveAttendance/{id} { allow read, write: if false; }
     match /leaveRegularizations/{id} { allow read, write: if false; }
+    match /leaveLocks/{id} { allow read, write: if false; }
+    match /leaveDocs/{id} { allow read, write: if false; }
+    match /leaveDocData/{id} { allow read, write: if false; }
+    match /leavePolicyDrafts/{id} { allow read, write: if false; }
+    match /leavePolicyVersions/{id} { allow read, write: if false; }
+    match /leaveAudit/{id} { allow read, write: if false; }
+    match /leaveExceptions/{id} { allow read, write: if false; }
+    match /leaveNotifications/{id} { allow read, write: if false; }
+    match /leavePayrollInputs/{id} { allow read, write: if false; }
+    match /leaveYearClose/{id} { allow read, write: if false; }
     // Payroll: salary data is server-only. Browsers never read or write these directly.
     match /payrollSettings/{id} { allow read, write: if false; }
     match /payrollStructures/{id} { allow read, write: if false; }

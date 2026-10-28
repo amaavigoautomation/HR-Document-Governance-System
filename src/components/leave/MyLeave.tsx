@@ -33,13 +33,17 @@ const Timeline: React.FC<{ r: any; managerName?: string }> = ({ r, managerName }
   );
 };
 
-const ReplyBox: React.FC<{ busy: boolean; onSend: (message: string) => void }> = ({ busy, onSend }) => {
+import { DocAttach, OpenDoc, type Picked } from './DocAttach';
+
+const ReplyBox: React.FC<{ busy: boolean; onSend: (message: string, file: Picked | null) => void }> = ({ busy, onSend }) => {
   const [text, setText] = useState('');
+  const [file, setFile] = useState<Picked | null>(null);
   return (
     <div className="mt-2 rounded-lg border border-violet-200 bg-violet-50 p-3 space-y-2">
       <div className="text-xs font-semibold text-violet-800">Your approver asked for more information. Reply to put the request back in their queue.</div>
       <textarea rows={2} className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm" value={text} onChange={(e) => setText(e.target.value)} placeholder="Your reply" />
-      <button className="px-4 py-1.5 rounded-lg bg-[#FA7014] text-white text-xs font-bold disabled:opacity-50" disabled={busy || !text.trim()} onClick={() => { onSend(text.trim()); setText(''); }}>Send reply</button>
+      <DocAttach value={file} onChange={setFile} label="Attach a document with your reply" />
+      <button className="px-4 py-1.5 rounded-lg bg-[#FA7014] text-white text-xs font-bold disabled:opacity-50" disabled={busy || !text.trim()} onClick={() => { onSend(text.trim(), file); setText(''); setFile(null); }}>Send reply</button>
     </div>
   );
 };
@@ -105,7 +109,7 @@ export const MyLeave: React.FC<{ me: any; reload: () => void; onApply: (typeId?:
                         {canAskCancel && <ConfirmButton className={quiet} disabled={busy} question="Ask to cancel?" yes="Ask" onConfirm={() => cancel(r)}>Cancel leave</ConfirmButton>}
                       </div>
                     </div>
-                    {r.status === 'INFO_REQUESTED' && <ReplyBox busy={busy} onSend={(message) => run(async () => { await leaveService.respond({ id: r.id, message }); await Promise.all([loadRequests(), reload()]); }, 'Reply sent. Your request is back with the approver.')} />}
+                    {r.status === 'INFO_REQUESTED' && <ReplyBox busy={busy} onSend={(message, file) => run(async () => { if (file) await leaveService.docSet(r.id, file.name, file.dataUrl); await leaveService.respond({ id: r.id, message }); await Promise.all([loadRequests(), reload()]); }, 'Reply sent. Your request is back with the approver.')} />}
                     {r.emergency && r.status === 'PENDING' && <div className="mt-1 text-[11px] font-semibold text-amber-700">Emergency leave: provisional until approved.</div>}
                     {r.status !== 'CANCELLED' && r.status !== 'WITHDRAWN' && <div className="mt-1.5"><Timeline r={r} managerName={me.profile.manager} /></div>}
                     {expanded && (
@@ -114,6 +118,7 @@ export const MyLeave: React.FC<{ me: any; reload: () => void; onApply: (typeId?:
                           <div key={i} className="text-[11px] text-slate-600"><span className="text-slate-400">{niceDate(e.at.slice(0, 10))} · </span><b>{e.by}</b>: {e.message}</div>
                         ))}
                         {r.docUrl && <a className="text-[11px] text-[#FA7014] font-bold underline" href={r.docUrl} target="_blank" rel="noopener noreferrer">Attached document</a>}
+                        {r.hasPrivateDoc && <div><OpenDoc requestId={r.id} name={r.privateDocName} canOpen /></div>}
                       </div>
                     )}
                   </div>

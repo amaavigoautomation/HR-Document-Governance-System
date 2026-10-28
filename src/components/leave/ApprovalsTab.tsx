@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { ChevronLeft, ChevronRight, Clock, FileText, PartyPopper, Users } from 'lucide-react';
 import { leaveService } from '../../services/leaveService';
+import { OpenDoc } from './DocAttach';
 import { CoverPanel } from './CoverPanel';
 import {
   addDaysIso, btnDanger, btnGhost, btnPrimary, Card, ConfirmButton, days, EmptyState, halfNote, input, niceDate, Notice, range, Segmented,
@@ -96,6 +97,7 @@ const ApprovalsList: React.FC<{ reload: () => void }> = ({ reload }) => {
   }, `Approved ${bulk.length} request(s).`);
 
   if (!data) return <Skeleton rows={3} />;
+  const canSeeDocs = !!(data as any).canManage;
   const nLeave = data.leaves.length;
   const nFix = data.regularizations.length;
   if (nLeave + nFix === 0) {
@@ -141,6 +143,7 @@ const ApprovalsList: React.FC<{ reload: () => void }> = ({ reload }) => {
                     <Users className="w-3.5 h-3.5" />{away.length ? `Also away: ${away.slice(0, 4).join(', ')}${away.length > 4 ? ` +${away.length - 4}` : ''}` : 'No one else away then'}
                   </span>
                   {r.docUrl && <a className="flex items-center gap-1 text-[#FA7014] font-bold underline" href={r.docUrl} target="_blank" rel="noopener noreferrer"><FileText className="w-3.5 h-3.5" />Document</a>}
+                  {r.hasPrivateDoc && <OpenDoc requestId={r.id} name={r.privateDocName} canOpen={!!canSeeDocs} />}
                 </div>
                 <Decide busy={busy} cancel={r.stage === 'CANCEL'} onDecide={(d, c) => act(r.id, d, c)} />
               </div>
