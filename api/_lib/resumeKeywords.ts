@@ -8,7 +8,7 @@
  * This is a keyword match, not an understanding of the resume: the UI labels it "Resume match" and offers
  * "Evaluate with AI" for a deeper reading.
  */
-import { applyEvidence, readResume, type Evidence, type ScorableCandidate } from './aiScoring.js';
+import { applyEvidence, cleanJd, readResume, type Evidence, type ScorableCandidate } from './aiScoring.js';
 
 type Status = 'MET' | 'PARTIAL' | 'NOT_EVIDENCED';
 
@@ -123,7 +123,7 @@ export async function applyKeywordScoring<C extends ScorableCandidate>(args: {
   results: C[];
   budgetMs?: number;
 }): Promise<{ results: C[]; summary: KeywordPassSummary }> {
-  const { jd } = args;
+  const jd = cleanJd(args.jd);
   const results = [...args.results];
   const summary: KeywordPassSummary = { scored: 0, pending: 0, failed: 0 };
   const reasons = new Map<string, number>();
