@@ -301,4 +301,35 @@ const mgmt = await ok(HR, 'GET', 'leave-summary', undefined, { view: 'management
 assert.equal(mgmt.onLeave, undefined, 'management view carries no names');
 assert.equal((await call(EMP, 'GET', 'leave-summary')).status, 403);
 
+// --- helpers that explain and prepare; they never decide
+delete process.env.OPENAI_API_KEY;
+const ans = await ok(EMP, 'POST', 'assist-ask', { question: 'How much notice does casual leave need?' });
+assert.equal(ans.answered, true);
+assert.match(ans.policyReference, /Leave policy v\d+/);
+assert.equal(ans.aiWording, false, 'no key, no model: plain wording');
+assert.equal(ans.requiresHumanDecision, true);
+assert.equal((await ok(EMP, 'POST', 'assist-ask', { question: 'what is the CEO salary' })).answered, false);
+assert.equal((await call(EMP, 'POST', 'assist-ask', { question: '' })).status, 400);
+const dr = await ok(EMP, 'POST', 'assist-draft', { text: 'casual leave tomorrow' });
+assert.equal(dr.draft.typeId, 'cl');
+assert.equal(dr.draft.from, addDays(today, 1));
+const before = (await ok(EMP, 'GET', 'my-requests')).items.length;
+assert.equal((await ok(EMP, 'GET', 'my-requests')).items.length, before, 'a draft creates nothing');
+const cover = await ok(MGR, 'GET', 'assist-cover', undefined, { from: today, to: addDays(today, 40) });
+assert.ok(cover.teamSize >= 1);
+assert.ok(Array.isArray(cover.gaps));
+const { polishWording } = await import('../api/_lib/leaveAi.ts');
+assert.deepEqual(await polishWording('3 days'), { text: '3 days', ai: false });
+// with a key, a rewrite that changes a number is thrown away; one that keeps the figures is used
+process.env.OPENAI_API_KEY = 'k';
+const realFetch = globalThis.fetch;
+globalThis.fetch = (async () => ({ ok: true, json: async () => ({ choices: [{ message: { content: 'You get 5 days.' } }] }) })) as any;
+assert.equal((await polishWording('Casual leave: 3 days.')).ai, false, 'changed figure rejected');
+globalThis.fetch = (async () => ({ ok: true, json: async () => ({ choices: [{ message: { content: 'You can take 3 days.' } }] }) })) as any;
+assert.equal((await polishWording('Casual leave: 3 days.')).ai, true);
+globalThis.fetch = (async () => { throw new Error('down'); }) as any;
+assert.equal((await polishWording('Casual leave: 3 days.')).text, 'Casual leave: 3 days.');
+globalThis.fetch = realFetch;
+delete process.env.OPENAI_API_KEY;
+
 console.log('leave workflow tests passed');

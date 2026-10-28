@@ -5,6 +5,8 @@
  * A manager approves the requests of the people who report to them. leave.manage is HR (setup, balances,
  * every request); leave.report can read the company-wide reports.
  */
+import { answerPolicyQuestion, coverageGaps, parseLeaveText } from '../../shared/leaveAssist.js';
+import { polishWording } from './leaveAi.js';
 import { authErrorResponse, requireActiveTenant, type AuthContext } from './authContext.js';
 import { hasPerm } from '../../shared/permissions.js';
 import { diffSettings } from '../../shared/leavePolicyDiff.js';
@@ -793,6 +795,51 @@ async function hrCreate(who: Who, body: any): Promise<Result> {
 }
 
 // ------------------------------------------------------------------ team calendar
+
+// ------------------------------------------------------------------ helpers that explain and prepare (they never decide)
+
+async function assistAsk(who: Who, body: any): Promise<Result> {
+  const c = await loadCtx(who);
+  needConfigured(c);
+  const question = String(body?.question || '').trim().slice(0, 300);
+  if (!question) return fail(400, 'Ask a question about the leave policy.');
+  const profiles = await loadProfiles(who.cid);
+  const prof = effectiveProfile(c.settings, c.me, profiles.get(c.me.uid));
+  const a = answerPolicyQuestion(question, c.settings, prof.policyId);
+  const w = a.answered ? await polishWording(a.answer) : { text: a.answer, ai: false };
+  return ok({ answer: w.text, policyReference: a.reference, policyVersion: c.settings.policyVersion || 1, answered: a.answered, aiWording: w.ai, requiresHumanDecision: true });
+}
+
+/** Turns a sentence into a draft form. The employee checks it and sends it through the normal apply. */
+async function assistDraft(who: Who, body: any): Promise<Result> {
+  const c = await loadCtx(who);
+  needConfigured(c);
+  const profiles = await loadProfiles(who.cid);
+  const prof = effectiveProfile(c.settings, c.me, profiles.get(c.me.uid));
+  const policy = findPolicy(c.settings, prof.policyId);
+  const types = (policy?.entries || []).flatMap((e) => { const t = findType(c.settings, e.typeId); return t && t.active && (t.gender === 'ANY' || t.gender === prof.gender) ? [t] : []; });
+  const loc = findLocation(c.settings, prof.locationId);
+  const parsed = parseLeaveText(String(body?.text || ''), istToday(), types, [0, 1, 2, 3, 4, 5, 6].filter((w) => !loc?.weeklyOff?.[String(w)]));
+  return ok({ ...parsed, policyVersion: c.settings.policyVersion || 1, requiresHumanDecision: true, note: 'This is only a draft. Check it, then send it; days and balance are worked out when you apply.' });
+}
+
+/** Days when part of a person's team is away at the same time (for a manager or HR). */
+async function assistCover(who: Who, q: any): Promise<Result> {
+  const c = await loadCtx(who);
+  const from = isIsoDate(q.from) ? q.from : istToday();
+  const to = isIsoDate(q.to) ? q.to : addDays(from, 30);
+  if (daysBetween(from, to) > 100) return fail(400, 'Choose a shorter range.');
+  const [profiles, requests] = await Promise.all([loadProfiles(who.cid), companyRequests(who.cid)]);
+  const team = Array.from(profiles.values()).filter((p) => p.managerUid === c.me.uid && p.uid !== c.me.uid).map((p) => p.uid);
+  if (!who.canReport && team.length === 0) return ok({ from, to, teamSize: 0, gaps: [] });
+  const scope = who.canReport && team.length === 0 ? Array.from(profiles.keys()) : team;
+  const away = new Map<string, string[]>();
+  for (const r of requests) {
+    if (!scope.includes(r.uid) || !['PENDING', 'APPROVED', 'CANCEL_REQUESTED', 'INFO_REQUESTED'].includes(r.status) || r.from > to || r.to < from) continue;
+    for (let d = r.from < from ? from : r.from; d <= r.to && d <= to; d = addDays(d, 1)) away.set(d, [...(away.get(d) || []), r.name]);
+  }
+  return ok({ from, to, teamSize: scope.length, gaps: coverageGaps(scope.length, away, from, to) });
+}
 
 async function teamCalendar(who: Who, q: any): Promise<Result> {
   const c = await loadCtx(who);
@@ -1881,6 +1928,9 @@ export async function routeLeave(r: LeaveRequestIn): Promise<Result> {
       case 'audit-log': if (GET) return await auditLog(who, r.query); break;
       case 'notifications': if (GET) return await notificationsList(who); break;
       case 'notifications-read': if (POST) return await notificationsRead(who, body); break;
+      case 'assist-ask': if (POST) return await assistAsk(who, body); break;
+      case 'assist-draft': if (POST) return await assistDraft(who, body); break;
+      case 'assist-cover': if (GET) return await assistCover(who, r.query); break;
       case 'leave-summary': if (GET) return await leaveDashboard(who, r.query); break;
       case 'year-end': if (GET) return await yearEndPreview(who, r.query); break;
       case 'year-end-close': if (POST) return await yearEndClose(who, body); break;
