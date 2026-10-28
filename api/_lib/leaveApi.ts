@@ -728,6 +728,18 @@ async function attendance(who: Who, q: any): Promise<Result> {
   return ok({ month, person: { uid, name: person.name }, ...buildMonth(c.settings, prof.locationId, prof.joinDate, month, records, requests) });
 }
 
+/** Whose attendance this person may open: themselves, their direct reports, or everyone when they run reports. */
+async function attendancePeople(who: Who): Promise<Result> {
+  const c = await loadCtx(who);
+  const [people, profiles] = await Promise.all([loadPeople(who.cid), loadProfiles(who.cid)]);
+  const mayOpen = (uid: string) => uid === c.me.uid || who.canReport || profiles.get(uid)?.managerUid === c.me.uid;
+  const items = people
+    .filter((p) => p.active && !profiles.get(p.uid)?.hidden && mayOpen(p.uid))
+    .sort((a, b) => (a.uid === c.me.uid ? -1 : b.uid === c.me.uid ? 1 : a.name.localeCompare(b.name)))
+    .map((p) => ({ uid: p.uid, name: p.name, empId: p.empId, department: p.department }));
+  return ok({ items, me: c.me.uid });
+}
+
 async function regularize(who: Who, body: any): Promise<Result> {
   const c = await loadCtx(who);
   const date = str(body?.date, 10);
@@ -1136,6 +1148,7 @@ export async function routeLeave(r: LeaveRequestIn): Promise<Result> {
       case 'check-in': if (POST) return await punch(who, 'in', r.ip, body); break;
       case 'check-out': if (POST) return await punch(who, 'out', r.ip, body); break;
       case 'attendance': if (GET) return await attendance(who, r.query); break;
+      case 'attendance-people': if (GET) return await attendancePeople(who); break;
       case 'regularize': if (POST) return await regularize(who, body); break;
       case 'my-regularizations': if (GET) return await myRegularizations(who); break;
       case 'decide-regularization': if (POST) return await decideRegularization(who, body); break;

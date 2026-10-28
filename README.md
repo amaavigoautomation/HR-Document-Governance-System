@@ -59,6 +59,7 @@ Everyone lands on Home after signing in. It shows a profile card (reporting and 
 - New server-only collections (`homeSettings`, `announcements`, `moodCheckins`, `loginDaily`, `personalDates`). Deploy the rules: `firebase deploy --only firestore:rules`.
 - Privacy: birth and marriage dates are kept in `personalDates`, never on the employee document. Colleagues see only day and month, marriage only if the person turns it on, mood only as company-wide counts, and leave only as names and dates.
 - Attendance: people can punch in and out many times a day (washroom, lunch). Worked time is the sum of the stretches; the gaps are not counted. Records keep `checkIn` (first in) and `checkOut` (last out) plus a `sessions` list; old one-pair records still work. A stretch left open on a past day shows Incomplete until corrected. Any worked time is at least a half day, never Absent.
+- Leave & Attendance > Regularization: a full table for one month and one person (own, direct reports for managers, everyone for HR/report viewers): punch in/out, total hours, "less hours worked", approved corrections (AR columns), info panel with every punch, CSV export. The pencil asks for a fix on your own days, or lets HR set the real times for someone else.
 - Not built yet: Help Desk, Survey, dependent files.
 
 ## Job descriptions and candidate scoring

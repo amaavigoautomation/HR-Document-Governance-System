@@ -4,6 +4,7 @@ import { User } from '../types';
 import { hasPerm } from '../../shared/permissions';
 import { leaveService } from '../services/leaveService';
 import { AttendanceTab, FixDayDrawer } from './leave/AttendanceTab';
+import { RegularizationPage } from './leave/RegularizationPage';
 import { ApprovalsTab, TeamCalendar } from './leave/ApprovalsTab';
 import { ApplyLeaveDrawer } from './leave/ApplyLeaveDrawer';
 import { HrBalances, HrPeople, HrReports, HrRequests } from './leave/HrOps';
@@ -90,6 +91,7 @@ const LeaveScreens: React.FC<{ currentUser: User; inlineNav?: boolean }> = ({ cu
         {active === 'today' && <Today me={me} reload={reload} refreshKey={refreshKey} onApply={(typeId) => setApply({ open: true, typeId })} onFix={() => setFixOpen(true)} onOpen={(t) => leaveNav.setSection(t as LeaveSection)} />}
         {active === 'my' && <MyLeave me={me} reload={reload} refreshKey={refreshKey} onApply={(typeId) => setApply({ open: true, typeId })} />}
         {active === 'attendance' && <AttendanceTab me={me} reload={reload} />}
+        {active === 'regularization' && <RegularizationPage me={me} onChanged={reload} />}
         {active === 'team' && <TeamCalendar />}
         {active === 'approvals' && <ApprovalsTab reload={reload} />}
         {active === 'manage' && (
