@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
 import { CalendarDays, ChevronDown } from 'lucide-react';
 import { addDaysIso, input } from './ui';
 
@@ -47,18 +47,30 @@ export const RangePicker: React.FC<{
   from: string; to: string; today: string;
 }> = ({ preset, onPreset, custom, onCustom, from, to, today }) => {
   const [menu, setMenu] = useState(false);
+  const btn = useRef<HTMLButtonElement>(null);
+  // The list is placed on the screen itself (not inside the card), so a card that clips its contents cannot cut it off.
+  const [pos, setPos] = useState<{ left: number; top: number }>({ left: 0, top: 0 });
+  const toggle = () => {
+    if (!menu && btn.current) {
+      const r = btn.current.getBoundingClientRect();
+      const listHeight = PRESETS.length * 40 + 8;
+      const top = r.bottom + 4 + listHeight > window.innerHeight && r.top - listHeight - 4 > 0 ? r.top - listHeight - 4 : r.bottom + 4;
+      setPos({ left: Math.max(8, Math.min(r.left, window.innerWidth - 184)), top });
+    }
+    setMenu(!menu);
+  };
   const range = from === to ? fmtLong(from) : `${fmtLong(from)} - ${fmtLong(to)}`;
   return (
     <>
         <div className="relative">
-          <button type="button" aria-haspopup="listbox" aria-expanded={menu} onClick={() => setMenu(!menu)}
+          <button type="button" aria-haspopup="listbox" aria-expanded={menu} ref={btn} onClick={toggle}
             className="flex items-center gap-2 border border-slate-300 rounded-lg px-3 py-2 bg-white text-sm text-slate-700 min-w-[15rem] hover:border-slate-400">
             <CalendarDays className="w-4 h-4 text-slate-400" /><span className="flex-1 text-left">{range}</span><ChevronDown className="w-3.5 h-3.5 text-slate-400" />
           </button>
           {menu && (
             <>
-              <div className="fixed inset-0 z-10" onClick={() => setMenu(false)} aria-hidden />
-              <ul role="listbox" className="absolute z-20 mt-1 w-44 bg-white border border-slate-200 rounded-lg shadow-lg py-1 text-sm">
+              <div className="fixed inset-0 z-40" onClick={() => setMenu(false)} aria-hidden />
+              <ul role="listbox" style={{ left: pos.left, top: pos.top }} className="fixed z-50 w-44 bg-white border border-slate-200 rounded-lg shadow-lg py-1 text-sm max-h-[70vh] overflow-auto">
                 {PRESETS.map((p) => (
                   <li key={p.value} role="option" aria-selected={preset === p.value}>
                     <button type="button" className={`w-full text-left px-4 py-2 ${preset === p.value ? 'bg-blue-500 text-white font-semibold' : 'text-slate-700 hover:bg-slate-50'}`}
