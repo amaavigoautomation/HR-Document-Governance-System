@@ -578,7 +578,7 @@ export interface DevPlan {
 export type ExceptionCategory =
   | 'NO_KRA' | 'NO_MANAGER' | 'NO_FRAMEWORK' | 'NO_ROLE_FAMILY' | 'SOP_GAP' | 'SOP_NOT_ACKNOWLEDGED' | 'SOP_VERSION_CHANGED'
   | 'MANAGER_CHANGED' | 'DEPARTMENT_TRANSFER' | 'EVIDENCE_MISSING' | 'EVIDENCE_UNMAPPED' | 'REVIEW_DISPUTED' | 'REVIEW_OVERDUE'
-  | 'AI_UNSUPPORTED' | 'EXTENDED_LEAVE' | 'DUPLICATE_EXECUTION' | 'REVIEW_AMENDED' | 'CONFIDENTIAL_REFERRAL' | 'FAIRNESS';
+  | 'AI_UNSUPPORTED' | 'EXTENDED_LEAVE' | 'DUPLICATE_EXECUTION' | 'REVIEW_AMENDED' | 'CONFIDENTIAL_REFERRAL' | 'FAIRNESS' | 'MOOD_LOW';
 
 export const EXCEPTION_LABEL: Record<ExceptionCategory, string> = {
   NO_KRA: 'No KRA/KPI', NO_MANAGER: 'No reporting manager', NO_FRAMEWORK: 'No approved framework', NO_ROLE_FAMILY: 'No role family',
@@ -586,7 +586,7 @@ export const EXCEPTION_LABEL: Record<ExceptionCategory, string> = {
   MANAGER_CHANGED: 'Manager changed', DEPARTMENT_TRANSFER: 'Department transfer', EVIDENCE_MISSING: 'Evidence unavailable',
   EVIDENCE_UNMAPPED: 'Unmapped task evidence', REVIEW_DISPUTED: 'Review disputed', REVIEW_OVERDUE: 'Review overdue',
   AI_UNSUPPORTED: 'AI output excluded', EXTENDED_LEAVE: 'Extended approved leave', DUPLICATE_EXECUTION: 'Duplicate event ignored',
-  REVIEW_AMENDED: 'Finalised review amended', CONFIDENTIAL_REFERRAL: 'Referred to confidential process', FAIRNESS: 'Fairness check',
+  REVIEW_AMENDED: 'Finalised review amended', CONFIDENTIAL_REFERRAL: 'Referred to confidential process', FAIRNESS: 'Fairness check', MOOD_LOW: 'Low team mood',
 };
 
 export interface PerfException {

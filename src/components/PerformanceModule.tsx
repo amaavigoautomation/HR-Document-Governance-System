@@ -14,6 +14,7 @@ import { PlansAdmin } from './perf/PlansAdmin';
 import { Dashboard } from './perf/Dashboard';
 import { SetupTab } from './perf/SetupTab';
 import { Governance } from './perf/Governance';
+import { MoodTab } from './perf/MoodTab';
 import { useLoad } from './perf/shared';
 
 const TeamReviews: React.FC<{ me: any; onChanged: () => void }> = ({ me, onChanged }) => {
@@ -69,6 +70,7 @@ export const PerformanceModule: React.FC<{ currentUser: User; inlineNav?: boolea
         {active === 'myreviews' && <ReviewsTab scope="me" me={me} onChanged={reload} />}
         {active === 'sops' && <MySops onChanged={reload} />}
         {active === 'dev' && <DevTab />}
+        {active === 'mood' && <MoodTab me={me} />}
         {active === 'team' && <TeamTab me={me} onChanged={reload} />}
         {active === 'teamreviews' && <TeamReviews me={me} onChanged={reload} />}
         {active === 'plans' && <PlansAdmin me={me} onChanged={reload} />}

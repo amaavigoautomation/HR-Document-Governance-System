@@ -8,6 +8,7 @@ import * as setup from './perfSetup.js';
 import * as plans from './perfPlans.js';
 import * as reviews from './perfReviews.js';
 import * as ops from './perfOps.js';
+import * as mood from './perfMood.js';
 
 export interface PerfRequestIn {
   method: string;
@@ -113,6 +114,9 @@ export async function routePerf(r: PerfRequestIn): Promise<Result> {
       case 'dashboard': if (GET) return await ops.dashboard(w, q); break;
       case 'ai-review-draft': if (POST) return await ops.aiReviewDraft(w, body); break;
       case 'ai-kpi-wording': if (POST) return await ops.aiKpiWording(w, body); break;
+      case 'mood-me': if (GET) return await mood.myMood(w); break;
+      case 'mood-save': if (POST) return await mood.saveMood(w, body); break;
+      case 'mood-report': if (GET) return await mood.moodReport(w, q); break;
       case 'audit-log': if (GET) return await ops.auditLog(w, q); break;
       case 'exceptions': if (GET) return await ops.getExceptions(w, q); break;
       case 'exception-resolve': if (POST) return await ops.resolveException(w, body); break;

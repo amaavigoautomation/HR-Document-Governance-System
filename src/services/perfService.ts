@@ -78,6 +78,9 @@ export const perfService = {
   auditLog: (entity?: string, entityId?: string) => get('audit-log', { entity, entityId }),
   exceptions: (status?: string) => get('exceptions', { status }),
   resolveException: (id: string, resolution: string) => post('exception-resolve', { id, resolution }),
+  moodMe: () => get('mood-me'),
+  saveMood: (mood: string) => post('mood-save', { mood }),
+  moodReport: (days: number, scope: 'team' | 'company') => get('mood-report', { days: String(days), scope }),
   notifications: () => get('notifications'),
   readNotifications: (ids?: string[]) => post('notifications-read', { ids }),
 };

@@ -13,6 +13,7 @@ import { C, PerfError, audit, db, getOne, list, loadDirectory, loadSettings, now
 import { needHrOrApprover, needManage, relationTo, type Who } from './perfSetup.js';
 import { generatePlan, planContext, syncSops } from './perfPlans.js';
 import { createReviews } from './perfReviews.js';
+import { checkLowMood } from './perfMood.js';
 
 // ------------------------------------------------------------------ monthly check-ins
 
@@ -340,7 +341,8 @@ export async function runPerfCron(): Promise<Result> {
         if (age >= 7) { await tell(cid, [a.uid], 'SOP waiting for your acknowledgement', `${a.sopTitle} has been waiting ${age} days.`, 'performance:sops', `sopr__${a.id}`, dir); sopReminded++; }
         if (age >= 14) await raise(cid, { category: 'SOP_NOT_ACKNOWLEDGED', severity: 'LOW', message: `${dir.nameOf(a.uid)} has not acknowledged ${a.sopTitle}.`, uid: a.uid, refId: a.id, key: a.id });
       }
-      out.push({ companyId: cid, sync, plans, checkins, reminded, overdue, sopReminded });
+      const lowMood = await checkLowMood(cid, dir, () => peopleWithPerm(cid, 'perf.manage'));
+      out.push({ companyId: cid, sync, plans, checkins, reminded, overdue, sopReminded, lowMood });
     } catch (err: any) {
       out.push({ companyId: cid, error: err?.message || String(err) });
     }

@@ -91,6 +91,14 @@ Approver templates).
 - The reporting manager comes from the leave profile (Leave > Setup > People). The 5-point scale and competency
   list are starting points from the framework document; confirm with HR and leadership.
 
+**Moodometer** (Performance → Moodometer)
+- Voluntary and self-reported. Reuses the Home mood check-ins (`moodCheckins`, one answer per person per day, changeable until midnight). There is no free-text note.
+- Employees see their own answer and last 30 days. Managers see a combined result for their direct reports; HR (`perf.manage` / `perf.approve` / `perf.view`) sees company-wide trend (7/30/90 days), department breakdown, participation and a CSV export.
+- Anonymous: results are only shown for groups of at least 3 different people. No names anywhere.
+- If a department averages low for 3 days in a row, HR gets a group-level "Low team mood" exception from the daily cron.
+- Never used in ratings, scores, reviews or AI drafts.
+
+
 ## Home page
 
 Everyone lands on Home after signing in. It shows a profile card (reporting and approving manager, or the manager covering today), a mood check-in, a leave calendar, online attendance (punch in/out with remarks), quick links and reports, employees on leave, birthdays and anniversaries, important files, CEO speak, announcements, acknowledgements and (for people who manage users) a web/mobile login chart. The old "needs your attention" widgets stay on top.

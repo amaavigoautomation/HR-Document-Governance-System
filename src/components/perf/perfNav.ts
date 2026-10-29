@@ -1,11 +1,11 @@
-import { BarChart3, ClipboardCheck, FileText, Gauge, GraduationCap, Settings, ShieldCheck, Target, Users, UserCheck, ListChecks } from 'lucide-react';
+import { BarChart3, ClipboardCheck, FileText, Gauge, GraduationCap, Settings, ShieldCheck, Target, Users, UserCheck, ListChecks, Smile } from 'lucide-react';
 import { createModuleNav, NavItem } from '../moduleNav';
 
-export const PERF_SECTIONS = ['me', 'myreviews', 'sops', 'dev', 'team', 'teamreviews', 'plans', 'allreviews', 'dashboard', 'sopadmin', 'setup', 'governance'] as const;
+export const PERF_SECTIONS = ['me', 'myreviews', 'sops', 'dev', 'mood', 'team', 'teamreviews', 'plans', 'allreviews', 'dashboard', 'sopadmin', 'setup', 'governance'] as const;
 export type PerfSection = (typeof PERF_SECTIONS)[number];
 
 export const perfNav = createModuleNav('amaavigo_perf_tab', [...PERF_SECTIONS], 'me', {
-  me: Target, myreviews: ClipboardCheck, sops: FileText, dev: GraduationCap, team: Users, teamreviews: UserCheck, plans: ListChecks,
+  me: Target, myreviews: ClipboardCheck, sops: FileText, dev: GraduationCap, mood: Smile, team: Users, teamreviews: UserCheck, plans: ListChecks,
   allreviews: Gauge, dashboard: BarChart3, sopadmin: FileText, setup: Settings, governance: ShieldCheck,
 });
 
@@ -18,6 +18,7 @@ export function perfNavItems(me: any | null): NavItem[] {
     { key: 'myreviews', label: 'My reviews', group: 'My performance', show: true },
     { key: 'sops', label: 'My SOPs', group: 'My performance', show: true },
     { key: 'dev', label: 'Check-ins & growth', group: 'My performance', show: true },
+    { key: 'mood', label: 'Moodometer', group: 'My performance', show: true },
     { key: 'team', label: 'My team', group: 'My team', show: !!me.isManager, badge: me.todo?.teamPlansToCustomise || undefined },
     { key: 'teamreviews', label: 'Team reviews', group: 'My team', show: !!me.isManager, badge: me.todo?.teamReviewsDue || undefined },
     { key: 'plans', label: 'KRA/KPI plans', group: 'Manage performance', show: hr, badge: me.todo?.plansToApprove || undefined },

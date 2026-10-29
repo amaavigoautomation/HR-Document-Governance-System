@@ -7,7 +7,7 @@ const LABEL: Record<string, string> = {
   NO_KRA: 'No KRA/KPI', NO_MANAGER: 'No reporting manager', NO_FRAMEWORK: 'No approved framework', NO_ROLE_FAMILY: 'No role family', SOP_GAP: 'SOP gap', SOP_NOT_ACKNOWLEDGED: 'SOP not acknowledged',
   SOP_VERSION_CHANGED: 'SOP version changed', MANAGER_CHANGED: 'Manager changed', DEPARTMENT_TRANSFER: 'Department transfer', EVIDENCE_MISSING: 'Evidence unavailable', EVIDENCE_UNMAPPED: 'Unmapped task evidence',
   REVIEW_DISPUTED: 'Review disputed', REVIEW_OVERDUE: 'Review overdue', AI_UNSUPPORTED: 'AI output excluded', EXTENDED_LEAVE: 'Extended leave', DUPLICATE_EXECUTION: 'Duplicate ignored', REVIEW_AMENDED: 'Review amended',
-  CONFIDENTIAL_REFERRAL: 'Confidential referral', FAIRNESS: 'Fairness check',
+  CONFIDENTIAL_REFERRAL: 'Confidential referral', FAIRNESS: 'Fairness check', MOOD_LOW: 'Low team mood',
 };
 
 export const Governance: React.FC<{ me: any }> = ({ me }) => {
