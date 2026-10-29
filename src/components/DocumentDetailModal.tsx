@@ -25,7 +25,7 @@ import { DocumentViewer } from './DocumentViewer';
 import { governanceEngine } from '../services/governance';
 import { auditService } from '../services/audit';
 import { formatIST } from '../utils/dateFormat';
-import { formatDDMMYYYY } from '../utils/documentHeaderFooter';
+import { formatDDMMYYYY, calculateDynamicReReviewDate } from '../utils/documentHeaderFooter';
 import { downloadDocumentWithIntactFormat } from '../utils/documentStamper';
 
 interface DocumentDetailModalProps {
@@ -53,12 +53,13 @@ export const DocumentDetailModal: React.FC<DocumentDetailModalProps> = ({
   const handleDownloadVersion = async (ver: DocumentVersion, forcedFormat?: 'pdf' | 'docx') => {
     try {
       setDownloadingVersionId(ver.id);
+      const verReviewDue = calculateDynamicReReviewDate(ver.reviewDueDate, ver.effectiveFrom || ver.createdAt);
       await downloadDocumentWithIntactFormat({
         fileName: ver.fileName || `${ver.documentId || document.documentId}_v${ver.versionNumber}.pdf`,
         documentTitle: ver.documentTitle || document.title,
         versionNumber: ver.versionNumber,
         effectiveDate: formatDDMMYYYY(ver.effectiveFrom || ver.createdAt),
-        reReviewDate: formatDDMMYYYY(ver.reviewDueDate, ''),
+        reReviewDate: verReviewDue,
         creationDate: formatDDMMYYYY(document.createdAt || ver.createdAt),
         createdByName: ver.createdByName || document.createdByName || 'Amee Shah',
         approvedByName:
@@ -469,7 +470,10 @@ export const DocumentDetailModal: React.FC<DocumentDetailModalProps> = ({
                   documentTitle: document.title || activeVersion.documentTitle,
                   versionNumber: activeVersion.versionNumber,
                   effectiveDate: formatDDMMYYYY(activeVersion.effectiveFrom || activeVersion.createdAt),
-                  reReviewDate: formatDDMMYYYY(activeVersion.reviewDueDate, ''),
+                  reReviewDate: calculateDynamicReReviewDate(
+                    activeVersion.reviewDueDate,
+                    activeVersion.effectiveFrom || activeVersion.createdAt
+                  ),
                   creationDate: formatDDMMYYYY(document.createdAt || activeVersion.createdAt),
                   createdByName: activeVersion.createdByName || document.createdByName || 'Amee Shah',
                   approvedByName:

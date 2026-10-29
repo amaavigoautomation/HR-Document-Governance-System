@@ -16,7 +16,7 @@ import { ConfidentialityLevel, DocumentCategory, User, Department } from '../typ
 import { subscribeToDepartments } from '../services/adminService';
 import { governanceEngine } from '../services/governance';
 import { parseUploadedFile } from '../utils/fileParser';
-import { stripPolicyMetadataHeader } from '../utils/documentHeaderFooter';
+import { stripPolicyMetadataHeader, calculateDynamicReReviewDate, parseAnyDate } from '../utils/documentHeaderFooter';
 import { WysiwygDocumentEditor } from './WysiwygDocumentEditor';
 import { DocumentViewer } from './DocumentViewer';
 import { stampPdfWithHeaderFooter, stampDocxWithHeaderFooter } from '../utils/documentStamper';
@@ -112,7 +112,7 @@ export const CreateDocumentModal: React.FC<CreateDocumentModalProps> = ({
     setEffectiveFrom(newDate);
     if (newDate) {
       try {
-        const d = new Date(newDate);
+        const d = parseAnyDate(newDate) || new Date(newDate);
         d.setFullYear(d.getFullYear() + 1);
         setReviewDueDate(d.toISOString().split('T')[0]);
       } catch {}
@@ -231,7 +231,7 @@ Employees should notify their immediate manager via the HR self-service portal a
             approvedByName: 'Not yet approved',
             approvedDate: 'Not yet approved',
             companyName: currentUser.companyName || 'Amaavigo',
-          });
+          }, { forceRestamp: true });
           effectiveUrl = stamped.dataUrl;
           setUploadStatus(`PDF document ready (${(file.size / 1024).toFixed(1)} KB) • Original structure intact • Header & footer applied`);
         } catch (stampErr) {
@@ -349,7 +349,7 @@ Employees should notify their immediate manager via the HR self-service portal a
 
   return (
     <div className="fixed inset-0 z-50 overflow-y-auto bg-black/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-6">
-      <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-3xl max-h-[92vh] flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+      <div className={`bg-white rounded-2xl shadow-2xl border border-slate-200 w-full ${fileName ? 'max-w-5xl' : 'max-w-3xl'} max-h-[92vh] flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-150`}>
         {/* HEADER */}
         <div className="bg-slate-900 text-white px-6 py-4 flex items-center justify-between border-b border-slate-800 shrink-0">
           <div className="flex items-center space-x-3">
@@ -691,7 +691,7 @@ Employees should notify their immediate manager via the HR self-service portal a
                       documentTitle: title.trim() || fileName.replace(/\.[^/.]+$/, ''),
                       versionNumber: '1.0',
                       effectiveDate: effectiveFrom || new Date().toISOString().split('T')[0],
-                      reReviewDate: reviewDueDate,
+                      reReviewDate: calculateDynamicReReviewDate(reviewDueDate, effectiveFrom),
                       creationDate: creationDate || new Date().toISOString().split('T')[0],
                       createdByName: currentUser.name,
                       approvedByName: 'Not yet approved',

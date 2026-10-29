@@ -21,6 +21,8 @@ import {
   DocumentHeaderFooterData,
   cleanVersionNumber,
   formatDDMMYYYY,
+  calculateDynamicReReviewDate,
+  parseAnyDate,
   extractCleanBody,
   extractHeaderFooterData,
 } from './documentHeaderFooter';
@@ -344,6 +346,8 @@ export async function stampPdfWithHeaderFooter(
 
   const cleanVer = cleanVersionNumber(meta.versionNumber);
   const effective = formatDDMMYYYY(meta.effectiveDate);
+  const reReview = calculateDynamicReReviewDate(meta.reReviewDate, meta.effectiveDate);
+  const creationDate = formatDDMMYYYY(meta.creationDate, formatDDMMYYYY(new Date()));
   const isApproved = Boolean(
     meta.approvedByName &&
     meta.approvedByName !== 'Not yet approved' &&
@@ -361,12 +365,16 @@ export async function stampPdfWithHeaderFooter(
   const title = meta.documentTitle || 'Document';
 
   // Guard against duplicate stamping: If already stamped with Amaavigo header/footer AND has full-width intact layout, return untouched
-  // unless forceRestamp is requested OR approving an unapproved stamped document
+  // unless forceRestamp is requested OR approving an unapproved stamped document OR version/dates have changed on revision
   if (!options?.forceRestamp && isPdfAlreadyStamped(srcDoc)) {
     const keywords = srcDoc.getKeywords() || '';
     const alreadyHadApproval = keywords.includes('approved:true');
     const alreadyHadIntactLayout = keywords.includes('AmaavigoIntactFullWidth');
-    if (alreadyHadIntactLayout && (!isApproved || alreadyHadApproval)) {
+    const hasMatchingVersion = keywords.includes(`v:${cleanVer}`);
+    const hasMatchingEffective = keywords.includes(`eff:${effective}`);
+    const hasMatchingReReview = !reReview || keywords.includes(`rev:${reReview}`);
+
+    if (alreadyHadIntactLayout && hasMatchingVersion && hasMatchingEffective && hasMatchingReReview && (!isApproved || alreadyHadApproval)) {
       const blob = new Blob([sourceBytes], { type: 'application/pdf' });
       const dataUrl =
         typeof sourcePdfInput === 'string' && sourcePdfInput.startsWith('data:')
@@ -385,6 +393,8 @@ export async function stampPdfWithHeaderFooter(
   srcDoc.setKeywords([
     'AmaavigoGovernanceStamped',
     `v:${cleanVer}`,
+    `eff:${effective}`,
+    `rev:${reReview}`,
     `approved:${isApproved}`,
     'corporate-governance',
     'AmaavigoIntactFullWidth',
@@ -400,16 +410,16 @@ export async function stampPdfWithHeaderFooter(
     const page = srcDoc.getPage(i);
     const { width: origW, height: origH } = page.getSize();
 
-    // Dimensions for Header Table (kept compact at top margin to keep document 100% intact without empty space)
+    // Dimensions for Header Table (kept with 20pt breathing margin from top to prevent print cutting)
     const marginX = 36;
     const tableW = origW - marginX * 2;
     const headerH = 46;
-    const topMargin = 8;
+    const topMargin = 20;
     const headerY = origH - topMargin - headerH;
 
     // Dimensions for Footer Table
-    const footerH = 28;
-    const footerY = 8;
+    const footerH = 30;
+    const footerY = 16;
 
     // 1. Draw Header Background & Slate Border (stamped cleanly above content with solid white background)
     page.drawRectangle({
@@ -422,19 +432,21 @@ export async function stampPdfWithHeaderFooter(
       color: rgb(1, 1, 1),
     });
 
-    // Column boundaries:
-    // Balanced allocation: Document Name gets generous space, Col 3 and Col 4 never get clipped
-    const col1W = 108;
-    const col3W = 74;
-    const col4W = 98;
-    const col2W = tableW - col1W - col3W - col4W;
+    // 5 Column boundaries:
+    // Col 1: Logo (86), Col 3: Version (60), Col 4: Effective Date (76), Col 5: Re-review Date (80), Col 2: Document Name (rest)
+    const col1W = 86;
+    const col3W = 60;
+    const col4W = 76;
+    const col5W = 80;
+    const col2W = tableW - col1W - col3W - col4W - col5W;
 
     const col1X = marginX;
     const col2X = col1X + col1W;
     const col3X = col2X + col2W;
     const col4X = col3X + col3W;
+    const col5X = col4X + col4W;
 
-    // Column Divider Lines
+    // Column Divider Lines (4 internal dividers)
     page.drawLine({
       start: { x: col2X, y: headerY },
       end: { x: col2X, y: headerY + headerH },
@@ -453,62 +465,68 @@ export async function stampPdfWithHeaderFooter(
       thickness: 0.8,
       color: rgb(15 / 255, 23 / 255, 42 / 255),
     });
+    page.drawLine({
+      start: { x: col5X, y: headerY },
+      end: { x: col5X, y: headerY + headerH },
+      thickness: 0.8,
+      color: rgb(15 / 255, 23 / 255, 42 / 255),
+    });
 
     // Col 1: Amaavigo Logo
     page.drawText('amaavig', {
-      x: col1X + 8,
+      x: col1X + 7,
       y: headerY + 24,
       font: fontBold,
-      size: 13.5,
+      size: 13,
       color: rgb(24 / 255, 26 / 255, 30 / 255),
     });
     page.drawCircle({
-      x: col1X + 66,
+      x: col1X + 63,
       y: headerY + 28,
-      size: 3.8,
+      size: 3.6,
       borderColor: rgb(250 / 255, 112 / 255, 20 / 255),
-      borderWidth: 2,
+      borderWidth: 1.8,
     });
     page.drawRectangle({
-      x: col1X + 59,
+      x: col1X + 56,
       y: headerY + 34,
-      width: 3,
-      height: 3,
+      width: 2.8,
+      height: 2.8,
       color: rgb(250 / 255, 112 / 255, 20 / 255),
     });
     page.drawText('Where Brand takes Flight', {
-      x: col1X + 8,
+      x: col1X + 7,
       y: headerY + 9,
       font,
-      size: 5.6,
+      size: 5.4,
       color: rgb(100 / 255, 116 / 255, 139 / 255),
     });
 
     // Col 2: Document Name - Full display without any ellipsis or title overlap
     page.drawText('Document Name:', {
-      x: col2X + 8,
+      x: col2X + 7,
       y: headerY + headerH - 12,
       font: fontBold,
       size: 6.8,
       color: rgb(15 / 255, 23 / 255, 42 / 255),
     });
 
-    const maxTitleW = col2W - 16;
-    let titleFontSize = 8.5;
+    const maxTitleW = col2W - 14;
+    let titleFontSize = 8.0;
     let titleLines = wrapPdfText(title, maxTitleW, fontBold, titleFontSize);
 
     if (titleLines.length > 2) {
-      titleFontSize = 7.5;
+      titleFontSize = 7.2;
       titleLines = wrapPdfText(title, maxTitleW, fontBold, titleFontSize);
     }
     if (titleLines.length > 3) {
-      titleFontSize = 6.8;
+      titleFontSize = 6.5;
       titleLines = wrapPdfText(title, maxTitleW, fontBold, titleFontSize);
     }
 
     if (titleLines.length === 1) {
       page.drawText(titleLines[0], {
-        x: col2X + 8,
+        x: col2X + 7,
         y: headerY + 15,
         font: fontBold,
         size: titleFontSize,
@@ -516,14 +534,14 @@ export async function stampPdfWithHeaderFooter(
       });
     } else if (titleLines.length === 2) {
       page.drawText(titleLines[0], {
-        x: col2X + 8,
+        x: col2X + 7,
         y: headerY + 21,
         font: fontBold,
         size: titleFontSize,
         color: rgb(30 / 255, 41 / 255, 59 / 255),
       });
       page.drawText(titleLines[1], {
-        x: col2X + 8,
+        x: col2X + 7,
         y: headerY + 10,
         font: fontBold,
         size: titleFontSize,
@@ -534,7 +552,7 @@ export async function stampPdfWithHeaderFooter(
       const startY = headerY + 23;
       titleLines.slice(0, 3).forEach((line, idx) => {
         page.drawText(line, {
-          x: col2X + 8,
+          x: col2X + 7,
           y: startY - idx * lineH,
           font: fontBold,
           size: titleFontSize,
@@ -543,32 +561,48 @@ export async function stampPdfWithHeaderFooter(
       });
     }
 
-    // Col 3: Version - Cleanly centered
+    // Col 3: Version
     page.drawText(`Version: ${cleanVer}`, {
-      x: col3X + 8,
+      x: col3X + 6,
       y: headerY + 18,
       font: fontBold,
-      size: 8,
+      size: 7.8,
       color: rgb(15 / 255, 23 / 255, 42 / 255),
     });
 
-    // Col 4: Effective Date - Positioned without label/date collision
+    // Col 4: Effective Date
     page.drawText('Effective date :', {
-      x: col4X + 8,
+      x: col4X + 6,
       y: headerY + headerH - 12,
       font: fontBold,
       size: 6.8,
       color: rgb(15 / 255, 23 / 255, 42 / 255),
     });
     page.drawText(effective, {
-      x: col4X + 8,
+      x: col4X + 6,
       y: headerY + 15,
       font,
-      size: 8,
+      size: 7.8,
       color: rgb(30 / 255, 41 / 255, 59 / 255),
     });
 
-    // Dimensions for Footer Table
+    // Col 5: Re-review Date (beside effective date on right!)
+    page.drawText('Re-review date :', {
+      x: col5X + 6,
+      y: headerY + headerH - 12,
+      font: fontBold,
+      size: 6.8,
+      color: rgb(15 / 255, 23 / 255, 42 / 255),
+    });
+    page.drawText(reReview, {
+      x: col5X + 6,
+      y: headerY + 15,
+      font,
+      size: 7.8,
+      color: rgb(30 / 255, 41 / 255, 59 / 255),
+    });
+
+    // Dimensions for Footer Table (4 balanced columns)
     page.drawRectangle({
       x: marginX,
       y: footerY,
@@ -579,65 +613,92 @@ export async function stampPdfWithHeaderFooter(
       color: rgb(1, 1, 1),
     });
 
-    const footColW = tableW / 3;
+    const footColW = tableW / 4;
+    const fCol1X = marginX;
+    const fCol2X = fCol1X + footColW;
+    const fCol3X = fCol2X + footColW;
+    const fCol4X = fCol3X + footColW;
+
     page.drawLine({
-      start: { x: marginX + footColW, y: footerY },
-      end: { x: marginX + footColW, y: footerY + footerH },
+      start: { x: fCol2X, y: footerY },
+      end: { x: fCol2X, y: footerY + footerH },
       thickness: 0.8,
       color: rgb(15 / 255, 23 / 255, 42 / 255),
     });
     page.drawLine({
-      start: { x: marginX + footColW * 2, y: footerY },
-      end: { x: marginX + footColW * 2, y: footerY + footerH },
+      start: { x: fCol3X, y: footerY },
+      end: { x: fCol3X, y: footerY + footerH },
+      thickness: 0.8,
+      color: rgb(15 / 255, 23 / 255, 42 / 255),
+    });
+    page.drawLine({
+      start: { x: fCol4X, y: footerY },
+      end: { x: fCol4X, y: footerY + footerH },
       thickness: 0.8,
       color: rgb(15 / 255, 23 / 255, 42 / 255),
     });
 
     // Col 1: Created by
     page.drawText('Created by:', {
-      x: marginX + 8,
-      y: footerY + footerH - 10,
+      x: fCol1X + 7,
+      y: footerY + footerH - 11,
       font: fontBold,
       size: 6.8,
       color: rgb(15 / 255, 23 / 255, 42 / 255),
     });
     page.drawText(creator, {
-      x: marginX + 8,
+      x: fCol1X + 7,
       y: footerY + 6,
       font,
-      size: 7.8,
+      size: 7.6,
       color: rgb(30 / 255, 41 / 255, 59 / 255),
     });
 
-    // Col 2: Approved by
+    // Col 2: Creation date (in between Created by and Approved by!)
+    page.drawText('Creation date:', {
+      x: fCol2X + 7,
+      y: footerY + footerH - 11,
+      font: fontBold,
+      size: 6.8,
+      color: rgb(15 / 255, 23 / 255, 42 / 255),
+    });
+    page.drawText(creationDate, {
+      x: fCol2X + 7,
+      y: footerY + 6,
+      font,
+      size: 7.6,
+      color: rgb(30 / 255, 41 / 255, 59 / 255),
+    });
+
+    // Col 3: Approved by
     page.drawText('Approved by:', {
-      x: marginX + footColW + 8,
-      y: footerY + footerH - 10,
+      x: fCol3X + 7,
+      y: footerY + footerH - 11,
       font: fontBold,
       size: 6.8,
       color: rgb(15 / 255, 23 / 255, 42 / 255),
     });
     page.drawText(approver, {
-      x: marginX + footColW + 8,
+      x: fCol3X + 7,
       y: footerY + 6,
       font,
-      size: 7.8,
+      size: 7.6,
       color: isApproved ? rgb(22 / 255, 101 / 255, 52 / 255) : rgb(148 / 255, 163 / 255, 184 / 255),
     });
 
-    // Col 3: Approved Date
+    // Col 4: Approved Date
     page.drawText('Approved Date:', {
-      x: marginX + footColW * 2 + 8,
-      y: footerY + footerH - 10,
+      x: fCol4X + 7,
+      y: footerY + footerH - 11,
       font: fontBold,
       size: 6.8,
       color: rgb(15 / 255, 23 / 255, 42 / 255),
     });
     page.drawText(approvedDt, {
-      x: marginX + footColW * 2 + 8,
+      x: fCol4X + 7,
       y: footerY + 6,
       font,
-      size: 7.8,
+      size: 7.6,
       color: isApproved ? rgb(22 / 255, 101 / 255, 52 / 255) : rgb(148 / 255, 163 / 255, 184 / 255),
     });
   }
@@ -954,7 +1015,7 @@ export async function stampDocxWithHeaderFooter(
   const approver = isDocxApproved ? meta.approvedByName : 'Not yet approved';
   const creator = meta.createdByName || 'HR Author';
   const title = meta.documentTitle || 'Document';
-  const reReview = formatDDMMYYYY(meta.reReviewDate, '');
+  const reReview = calculateDynamicReReviewDate(meta.reReviewDate, meta.effectiveDate);
   const creationDate = formatDDMMYYYY(meta.creationDate, formatDDMMYYYY(new Date()));
 
   // 1. Generate Header & Footer XML
@@ -1554,7 +1615,7 @@ function parseHtmlOrMarkdownToDocxChildren(rawContent: string): (Paragraph | Tab
 export async function generateCorporateDocxBlob(options: CorporateDocxOptions): Promise<Blob> {
   const cleanVer = cleanVersionNumber(options.versionNumber);
   const effective = formatDDMMYYYY(options.effectiveDate);
-  const reReview = formatDDMMYYYY(options.reReviewDate, '');
+  const reReview = calculateDynamicReReviewDate(options.reReviewDate, options.effectiveDate);
   const creationDate = formatDDMMYYYY(options.creationDate, formatDDMMYYYY(new Date()));
   const isDocxApproved = Boolean(
     options.approvedByName &&
@@ -1674,7 +1735,7 @@ export async function generateCorporateDocxBlob(options: CorporateDocxOptions): 
               new Paragraph({
                 spacing: { before: 0, after: 0 },
                 children: [
-                  new TextRun({ text: reReview || 'Annual / As req.', size: 16, color: '1E293B', font: 'Arial' }),
+                  new TextRun({ text: reReview, size: 16, color: '1E293B', font: 'Arial' }),
                 ],
               }),
             ],
@@ -1927,7 +1988,7 @@ export async function downloadDocumentWithIntactFormat(params: {
     documentTitle: params.documentTitle || params.headerFooterData?.documentTitle || originalName.replace(/\.[^/.]+$/, ''),
     versionNumber: params.versionNumber || params.headerFooterData?.versionNumber || '1.0',
     effectiveDate: params.effectiveDate || params.headerFooterData?.effectiveDate || new Date().toISOString(),
-    reReviewDate: params.reReviewDate || params.headerFooterData?.reReviewDate || '',
+    reReviewDate: calculateDynamicReReviewDate(params.reReviewDate || params.headerFooterData?.reReviewDate, params.effectiveDate || params.headerFooterData?.effectiveDate),
     creationDate: params.creationDate || params.headerFooterData?.creationDate || '',
     createdByName: params.createdByName || params.headerFooterData?.createdByName || 'Amee Shah',
     approvedByName: params.approvedByName || params.headerFooterData?.approvedByName || 'Vishal Shah',

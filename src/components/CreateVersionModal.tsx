@@ -18,7 +18,7 @@ import {
 import { DocumentMaster, DocumentVersion, User, VersionStatus, VersionType } from '../types';
 import { governanceEngine } from '../services/governance';
 import { parseUploadedFile, extractTextFromRawPdfStream, isRawPdfStream } from '../utils/fileParser';
-import { stripPolicyMetadataHeader, extractCleanBody, formatDDMMYYYY, DocumentHeaderTable } from '../utils/documentHeaderFooter';
+import { stripPolicyMetadataHeader, extractCleanBody, formatDDMMYYYY, calculateDynamicReReviewDate, parseAnyDate, DocumentHeaderTable } from '../utils/documentHeaderFooter';
 import { WysiwygDocumentEditor } from './WysiwygDocumentEditor';
 import { DocumentViewer } from './DocumentViewer';
 import { stampPdfWithHeaderFooter, stampDocxWithHeaderFooter } from '../utils/documentStamper';
@@ -77,7 +77,7 @@ export const CreateVersionModal: React.FC<CreateVersionModalProps> = ({
     setEffectiveFrom(newDate);
     if (newDate) {
       try {
-        const d = new Date(newDate);
+        const d = parseAnyDate(newDate) || new Date(newDate);
         d.setFullYear(d.getFullYear() + 1);
         setReviewDueDate(d.toISOString().split('T')[0]);
       } catch {}
@@ -146,17 +146,17 @@ export const CreateVersionModal: React.FC<CreateVersionModalProps> = ({
 
     // Default effective date for this new revision to today's date (or rejected draft's date if future)
     const todayStr = new Date().toISOString().split('T')[0];
-    const defaultReviewDate = () => {
-      const d = new Date();
+    const defaultReviewDate = (eff?: string) => {
+      const d = eff ? (parseAnyDate(eff) || new Date()) : new Date();
       d.setFullYear(d.getFullYear() + 1);
       return d.toISOString().split('T')[0];
     };
     if (rejectedVersion?.effectiveFrom && rejectedVersion.effectiveFrom >= todayStr) {
       setEffectiveFrom(rejectedVersion.effectiveFrom);
-      setReviewDueDate(rejectedVersion.reviewDueDate || defaultReviewDate());
+      setReviewDueDate(rejectedVersion.reviewDueDate || defaultReviewDate(rejectedVersion.effectiveFrom));
     } else {
       setEffectiveFrom(todayStr);
-      setReviewDueDate(defaultReviewDate());
+      setReviewDueDate(defaultReviewDate(todayStr));
     }
 
     if (rejectedVersion?.reviewerComments) {
@@ -246,7 +246,7 @@ export const CreateVersionModal: React.FC<CreateVersionModalProps> = ({
             approvedByName: 'Not yet approved',
             approvedDate: 'Not yet approved',
             companyName: selectedMaster?.companyName || currentUser.companyName || 'Amaavigo',
-          });
+          }, { forceRestamp: true });
           effectiveUrl = stamped.dataUrl;
           setUploadStatus(`Revision PDF ready (${(file.size / 1024).toFixed(1)} KB) • Multi-page structure intact • Header & footer applied`);
         } catch (stampErr) {
@@ -356,7 +356,7 @@ export const CreateVersionModal: React.FC<CreateVersionModalProps> = ({
 
   return (
     <div className="fixed inset-0 z-[70] overflow-y-auto bg-black/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-6">
-      <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-3xl max-h-[92vh] flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+      <div className={`bg-white rounded-2xl shadow-2xl border border-slate-200 w-full ${fileName ? 'max-w-5xl' : 'max-w-3xl'} max-h-[92vh] flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-150 transition-all`}>
         {/* HEADER */}
         <div className="bg-slate-900 text-white px-6 py-4 flex items-center justify-between border-b border-slate-800 shrink-0">
           <div className="flex items-center space-x-3">
@@ -601,7 +601,7 @@ export const CreateVersionModal: React.FC<CreateVersionModalProps> = ({
                   <button
                     type="button"
                     onClick={() => {
-                      const base = effectiveFrom ? new Date(effectiveFrom) : new Date();
+                      const base = effectiveFrom ? (parseAnyDate(effectiveFrom) || new Date()) : new Date();
                       base.setFullYear(base.getFullYear() + 1);
                       setReviewDueDate(base.toISOString().split('T')[0]);
                     }}
@@ -612,7 +612,7 @@ export const CreateVersionModal: React.FC<CreateVersionModalProps> = ({
                   <button
                     type="button"
                     onClick={() => {
-                      const base = effectiveFrom ? new Date(effectiveFrom) : new Date();
+                      const base = effectiveFrom ? (parseAnyDate(effectiveFrom) || new Date()) : new Date();
                       base.setFullYear(base.getFullYear() + 2);
                       setReviewDueDate(base.toISOString().split('T')[0]);
                     }}
@@ -798,7 +798,7 @@ export const CreateVersionModal: React.FC<CreateVersionModalProps> = ({
                     documentTitle: selectedMaster.title,
                     versionNumber: calculatedNextVersion,
                     effectiveDate: formatDDMMYYYY(effectiveFrom),
-                    reReviewDate: formatDDMMYYYY(reviewDueDate, ''),
+                    reReviewDate: calculateDynamicReReviewDate(reviewDueDate, effectiveFrom),
                     creationDate: formatDDMMYYYY(selectedMaster.createdAt, formatDDMMYYYY(new Date())),
                     createdByName: currentUser.name,
                     approvedByName: 'Pending Review',
@@ -890,7 +890,7 @@ export const CreateVersionModal: React.FC<CreateVersionModalProps> = ({
                       documentTitle: selectedMaster?.title || fileName.replace(/\.[^/.]+$/, ''),
                       versionNumber: calculatedNextVersion || '1.1',
                       effectiveDate: effectiveFrom || new Date().toISOString().split('T')[0],
-                      reReviewDate: reviewDueDate,
+                      reReviewDate: calculateDynamicReReviewDate(reviewDueDate, effectiveFrom),
                       creationDate: formatDDMMYYYY(selectedMaster?.createdAt, formatDDMMYYYY(new Date())),
                       createdByName: currentUser.name,
                       approvedByName: 'Not yet approved',
