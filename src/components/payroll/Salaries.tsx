@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { csvToObjects } from '../../../shared/csv';
 import { inr, payrollService } from '../../services/payrollService';
+import { downloadCsv } from '../../services/leaveService';
 import { Card, Field, Notice, btnGhost, btnPrimary, input, useRunner } from '../leave/ui';
 
 const blank = { amounts: {} as Record<string, number>, annualCtc: 0, state: '', pfApplicable: true, esicApplicable: true, pfOnActualWage: false, pan: '', uan: '', esicNo: '', bankName: '', bankAccount: '', ifsc: '' };
@@ -108,6 +109,13 @@ export const Salaries: React.FC<{ canManage: boolean }> = ({ canManage }) => {
   if (!data.configured) return <Notice>Set up payroll first (Setup tab).</Notice>;
   const shown = rows.filter((r) => !q || `${r.name} ${r.email} ${r.empId}`.toLowerCase().includes(q.toLowerCase()));
   const missing = rows.filter((r) => !r.hasStructure).length;
+  // The exact columns the importer reads, with one row for each employee who has no salary yet (name is for reference only; it is ignored on import).
+  const downloadTemplate = () => {
+    const codes: string[] = data.settings.components.filter((c: any) => c.active).map((c: any) => c.code);
+    const header = ['email', 'name', ...codes, 'annual_ctc', 'state', 'pan', 'uan', 'esic_no', 'bank_name', 'bank_account', 'ifsc', 'pf', 'esic'];
+    const body = rows.filter((r) => !r.hasStructure).map((r) => [r.email, r.name, ...codes.map(() => ''), '', '', '', '', '', '', '', '', 'yes', 'yes']);
+    downloadCsv('salary-import-template.csv', [header, ...body]);
+  };
 
   return (
     <div className="space-y-4">
@@ -117,12 +125,15 @@ export const Salaries: React.FC<{ canManage: boolean }> = ({ canManage }) => {
         </div>
       )}
       <Card title={`Salaries (${rows.length})`} right={canManage && (
+        <div className="flex items-center gap-2">
+        <button type="button" className={btnGhost} onClick={downloadTemplate}>Download template</button>
         <label className={`${btnGhost} cursor-pointer`}>Import CSV
           <input type="file" accept=".csv" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ''; if (f) run(async () => { setImportResult(await payrollService.importStructures(csvToObjects(await f.text()))); await load(); }, 'Import finished.'); }} />
-        </label>)}>
+        </label>
+        </div>)}>
         {note && <div className="mb-2"><Notice tone={note.tone === 'ok' ? 'ok' : 'error'}>{note.text}</Notice></div>}
         {importResult && <div className="mb-2"><Notice tone={importResult.errors.length ? 'info' : 'ok'}>Saved {importResult.saved}. {importResult.errors.slice(0, 6).map((e: any) => `Row ${e.row}: ${e.error}. `)}</Notice></div>}
-        {canManage && <p className="text-[11px] text-slate-400 mb-2">CSV columns: <b>email</b>, then one column per component code ({data.settings.components.filter((c: any) => c.active).map((c: any) => c.code).join(', ')}) or <b>annual_ctc</b> to use the CTC template. Optional: state, pan, uan, esic_no, bank_name, bank_account, ifsc, pf (yes/no), esic (yes/no). Importing again replaces that person's salary.</p>}
+        {canManage && <p className="text-[11px] text-slate-400 mb-2">CSV columns: <b>email</b>, then one column per component code ({data.settings.components.filter((c: any) => c.active).map((c: any) => c.code).join(', ')}) or <b>annual_ctc</b> to use the CTC template (fill one or the other). Use <b>Download template</b> for a file with every column and your employees listed. Optional: state, pan, uan, esic_no, bank_name, bank_account, ifsc, pf (yes/no), esic (yes/no). Importing again replaces that person's salary.</p>}
         {missing > 0 && <div className="mb-2"><Notice>{missing} active employee(s) have no salary yet and will be left out of payroll runs.</Notice></div>}
         <input className={`${input} max-w-xs mb-2`} placeholder="Search name, email, ID" value={q} onChange={(e) => setQ(e.target.value)} />
         <div className="overflow-x-auto">
