@@ -893,8 +893,6 @@ async function punch(who: Who, kind: 'in' | 'out', ip?: string, body?: any): Pro
   if (kind === 'in') {
     if (open) return fail(409, `You are already checked in since ${istParts(open.in).time}.`);
     if (sessions.length >= MAX_SESSIONS) return fail(409, `You can check in at most ${MAX_SESSIONS} times a day.`);
-    const last = sessions[sessions.length - 1];
-    if (last?.out && new Date(now).getTime() - new Date(last.out).getTime() < 60_000) return fail(409, 'Please wait a minute before checking in again.');
     sessions.push({ in: now, out: null, inNote: remarks });
     await ref.set({
       companyId: who.cid, uid: c.me.uid, date, month: date.slice(0, 7), checkIn: sessions[0].in, checkOut: null, sessions,
