@@ -50,6 +50,10 @@ gives read-only company reports. Existing roles need `leave.manage` / `leave.rep
 - Collections: `leaveSettings`, `leaveProfiles`, `leaveLedger`, `leaveRequests`, `leaveAttendance`,
   `leaveRegularizations` (server-only; deploy the updated `firestore.rules`).
 
+## Employee 360
+
+Employee → Reports → **Employee 360** (Company Admin, `lifecycle.manage` or `leave.manage` only). Searchable list of all employees (filter by department, include former staff, CSV of the basic list). Opening a row shows that person's employment details, identity documents (numbers masked until revealed, photos viewable), personal information, family and qualifications (with certificates) on one read-only page. It reuses the existing profile endpoints, so the server-side permission checks are unchanged.
+
 ## Performance Management
 
 Sidebar item "Performance". Everyone sees their own goals (KRA/KPI), reviews, SOPs, check-ins and development plans;

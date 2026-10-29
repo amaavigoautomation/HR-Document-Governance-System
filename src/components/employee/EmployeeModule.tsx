@@ -11,6 +11,7 @@ import { QualificationPage } from './QualificationPage';
 import { SeparationPage } from './SeparationPage';
 import { WeekoffReportPage } from './WeekoffReportPage';
 import { ExitClearanceReportPage } from './ExitClearanceReportPage';
+import { Employee360Page } from './Employee360Page';
 import { EmployeePicker } from './EmployeePicker';
 import type { HRAgentModule } from '../HRAgentShell';
 
@@ -23,10 +24,10 @@ export const EmployeeModule: React.FC<{ currentUser: User; canPick?: boolean; on
   const { section } = employeeNav.useNav();
   const [pickedUid, setPickedUid] = useState<string | undefined>(undefined);
   const [tab, setTab] = useState<'Transaction' | 'Reports'>('Transaction');
-  useEffect(() => { employeeNav.publish(employeeNavItems()); }, []);
+  useEffect(() => { employeeNav.publish(employeeNavItems(canPick)); }, [canPick]);
   useEffect(() => () => employeeNav.publish([]), []);
 
-  const active = employeeNav.resolve(section, employeeNavItems());
+  const active = employeeNav.resolve(section, employeeNavItems(canPick));
   const entry = EMPLOYEE_ENTRIES.find((e) => e.key === active);
   const link = entry ? EXISTING[entry.key] : undefined;
 
@@ -47,7 +48,7 @@ export const EmployeeModule: React.FC<{ currentUser: User; canPick?: boolean; on
             </div>
             <h2 className="text-sm font-black text-slate-800 uppercase pb-1 border-b border-slate-500 max-w-md">{tab === 'Transaction' ? 'All' : 'Employees'}</h2>
             <ul className="max-w-md divide-y divide-slate-200">
-              {EMPLOYEE_ENTRIES.filter((e) => e.group === tab).map((e) => (
+              {EMPLOYEE_ENTRIES.filter((e) => e.group === tab && (canPick || e.key !== 'all360')).map((e) => (
                 <li key={e.key}>
                   <button type="button" onClick={() => employeeNav.setSection(e.key)} className="w-full text-left py-3 hover:bg-slate-50 px-1">
                     <span className="block text-sm font-bold text-slate-800">{e.label}</span>
@@ -65,11 +66,12 @@ export const EmployeeModule: React.FC<{ currentUser: User; canPick?: boolean; on
         {entry?.key === 'personal' && <PersonalInfoPage uid={pickedUid} />}
         {entry?.key === 'family' && <FamilyDetailsPage uid={pickedUid} />}
         {entry?.key === 'qualification' && <QualificationPage uid={pickedUid} />}
+        {entry?.key === 'all360' && canPick && <Employee360Page />}
         {entry?.key === 'weekoff' && <WeekoffReportPage />}
         {entry?.key === 'exitclearance' && <ExitClearanceReportPage />}
         {entry?.key === 'separation' && <SeparationPage uid={pickedUid} onOpenModule={onOpenModule} />}
 
-        {entry && !['master', 'identity', 'personal', 'family', 'qualification', 'separation', 'weekoff', 'exitclearance'].includes(entry.key) && (
+        {entry && !['master', 'identity', 'personal', 'family', 'qualification', 'separation', 'weekoff', 'exitclearance', 'all360'].includes(entry.key) && (
           <div className="bg-white border border-slate-200 rounded-2xl p-8 text-center">
             <h2 className="text-base font-black text-slate-800">{entry.label}</h2>
             <p className="text-xs text-slate-500 mt-1">{entry.hint}</p>
