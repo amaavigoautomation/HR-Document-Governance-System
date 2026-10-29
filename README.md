@@ -50,6 +50,47 @@ gives read-only company reports. Existing roles need `leave.manage` / `leave.rep
 - Collections: `leaveSettings`, `leaveProfiles`, `leaveLedger`, `leaveRequests`, `leaveAttendance`,
   `leaveRegularizations` (server-only; deploy the updated `firestore.rules`).
 
+## Performance Management
+
+Sidebar item "Performance". Everyone sees their own goals (KRA/KPI), reviews, SOPs, check-ins and development plans;
+managers get their team (set targets, verify evidence, review); HR (`perf.manage`) sets everything up and runs
+calibration; `perf.approve` gives plan and final review approval; `perf.view` gives read-only aggregated dashboards.
+Existing roles need these permissions added in Administration (new companies get them in the Head HR, HR and
+Approver templates).
+
+- Three pillars are scored separately: KRA/KPI (results), Behaviour (competencies) and SOP compliance. Default weights
+  60 / 25 / 15 are a proposal: HR edits and approves a framework (weights must total 100) before it is used.
+- Never guessed: no role family, framework, approved template or manager means the plan or review waits as
+  "Needs configuration" with the reason, and an exception is raised for HR. KPI targets are always entered by people.
+- "Not observed" and "insufficient evidence" are left out of the score, never counted as 0 or 3. Task counts and
+  login hours never become ratings. Critical SOP misses are reported separately from the average.
+- Review flow: self-assessment, manager assessment, feedback discussion, HR review/calibration (every change needs a
+  reason), final approval, publish, employee acknowledges or disagrees (disputes go to someone other than the manager).
+  Nobody approves their own review and the evaluating manager cannot give the final approval. Employees only see
+  scores after publication. Finalised reviews can be amended only by an authorised person, with a reason and an audit record.
+- Plans, frameworks, SOP versions and competency versions are copied into each review, so later changes never
+  rewrite history. Plans are effective-dated; a manager or department change starts a new plan.
+- SOPs link to published documents in Document Governance. A minor revision keeps the earlier acknowledgement; a
+  major one needs it again.
+- AI (optional, `OPENAI_API_KEY`, `PERF_AI=off` to disable) only restates cited evidence for the manager to edit
+  and suggests clearer KPI wording without changing numbers. Sentences without evidence references or that infer
+  personality, health, family and similar are dropped. Conduct and safety concerns are referred to the confidential HR
+  process; only the fact of the referral is recorded.
+- Daily job: schedule `GET /api/perf/cron?key=$CRON_SECRET` (same `CRON_SECRET` as leave). It builds missing plans,
+  syncs SOP assignments and versions, creates monthly check-ins, retries reviews waiting on configuration, sends
+  reminders and raises overdue items. Every step is idempotent, so a repeat run changes nothing.
+- Task tool evidence (optional): Setup > Get started shows a per-company webhook key. `POST /api/perf/evidence-hook`
+  with header `x-webhook-key` and `{externalId, employeeEmail, kpiCode, description, reference, value, occurredAt}`
+  records pending evidence for the manager to verify. Repeated deliveries and unmatched events are logged, not scored.
+- Dashboards show group results only where at least 3 reviews are finished. Consistency checks (uniform scores,
+  manager outliers, large self/final gaps, thin evidence) are prompts for a person to look, not verdicts.
+- Runs as its own Vercel function (`api/perf/[action].ts`, the 12th: the Hobby limit). Notifications are email plus in-app.
+- Collections (server-only; deploy the updated `firestore.rules`): `perfSettings`, `perfFrameworks`, `perfCycles`,
+  `perfSops`, `perfSopAssignments`, `perfTemplates`, `perfPlans`, `perfEvidence`, `perfReviews`, `perfCheckins`,
+  `perfDevPlans`, `perfAudit`, `perfExceptions`, `perfNotifications`.
+- The reporting manager comes from the leave profile (Leave > Setup > People). The 5-point scale and competency
+  list are starting points from the framework document; confirm with HR and leadership.
+
 ## Home page
 
 Everyone lands on Home after signing in. It shows a profile card (reporting and approving manager, or the manager covering today), a mood check-in, a leave calendar, online attendance (punch in/out with remarks), quick links and reports, employees on leave, birthdays and anniversaries, important files, CEO speak, announcements, acknowledgements and (for people who manage users) a web/mobile login chart. The old "needs your attention" widgets stay on top.

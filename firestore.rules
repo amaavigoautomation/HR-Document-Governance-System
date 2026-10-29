@@ -496,6 +496,21 @@ service cloud.firestore {
     match /payrollClaimFiles/{id} { allow read, write: if false; }
     match /payrollSettlements/{id} { allow read, write: if false; }
     match /payrollDeclarations/{id} { allow read, write: if false; }
+    // Performance management: server-only. Browsers never read or write these directly.
+    match /perfSettings/{id} { allow read, write: if false; }
+    match /perfFrameworks/{id} { allow read, write: if false; }
+    match /perfCycles/{id} { allow read, write: if false; }
+    match /perfSops/{id} { allow read, write: if false; }
+    match /perfSopAssignments/{id} { allow read, write: if false; }
+    match /perfTemplates/{id} { allow read, write: if false; }
+    match /perfPlans/{id} { allow read, write: if false; }
+    match /perfEvidence/{id} { allow read, write: if false; }
+    match /perfReviews/{id} { allow read, write: if false; }
+    match /perfCheckins/{id} { allow read, write: if false; }
+    match /perfDevPlans/{id} { allow read, write: if false; }
+    match /perfAudit/{id} { allow read, write: if false; }
+    match /perfExceptions/{id} { allow read, write: if false; }
+    match /perfNotifications/{id} { allow read, write: if false; }
     // People lifecycle: server-only.
     match /lifecycleSettings/{id} { allow read, write: if false; }
     match /lifecycleTasks/{id} { allow read, write: if false; }

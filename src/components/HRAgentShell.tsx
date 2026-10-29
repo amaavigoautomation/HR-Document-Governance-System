@@ -21,6 +21,7 @@ import {
   Settings2,
   CalendarDays,
   Wallet,
+  Target,
   Home,
   FileCheck2,
   ClipboardList,
@@ -33,6 +34,7 @@ import { NavBadge } from './NavBadge';
 import { sumOf, useNavBadges } from '../services/navBadges';
 import { ModuleSubNav } from './moduleNav';
 import { payrollNav } from './payroll/payrollNav';
+import { perfNav } from './perf/perfNav';
 import { peopleNav } from './lifecycle/peopleNav';
 import { employeeNav } from './employee/employeeNav';
 import {
@@ -54,6 +56,7 @@ export type HRAgentModule =
   | 'talent-acquisition-onboarding'
   | 'leave-management'
   | 'payroll'
+  | 'performance'
   | 'people'
   | 'employee'
   | 'administration';
@@ -102,6 +105,7 @@ export const HRAgentShell: React.FC<HRAgentShellProps> = ({
   const [isTalentAcquisitionExpanded, setIsTalentAcquisitionExpanded] = useState<boolean>(true);
   const [isLeaveExpanded, setIsLeaveExpanded] = useState<boolean>(true);
   const [isPayrollExpanded, setIsPayrollExpanded] = useState<boolean>(true);
+  const [isPerfExpanded, setIsPerfExpanded] = useState<boolean>(true);
   const [isPeopleExpanded, setIsPeopleExpanded] = useState<boolean>(true);
   const [isEmployeeExpanded, setIsEmployeeExpanded] = useState<boolean>(true);
   // Counts of what is waiting for this person, shown on the module titles and their sections.
@@ -113,7 +117,7 @@ export const HRAgentShell: React.FC<HRAgentShellProps> = ({
   // Auto-redirect if currently selected module is not permitted
   useEffect(() => {
     if (activeModule === 'home' || activeModule === 'policies') return;
-    if (activeModule === 'administration' || activeModule === 'leave-management' || activeModule === 'payroll' || activeModule === 'people' || activeModule === 'employee') return;
+    if (activeModule === 'administration' || activeModule === 'leave-management' || activeModule === 'payroll' || activeModule === 'performance' || activeModule === 'people' || activeModule === 'employee') return;
     if (activeModule === 'document-version-control' && !hasDocGovAccess && hasTalentAccess) {
       onSelectModule('talent-acquisition-overview');
     } else if (
@@ -650,6 +654,64 @@ export const HRAgentShell: React.FC<HRAgentShellProps> = ({
 
                 {activeModule === 'payroll' && isPayrollExpanded && (
                   <ModuleSubNav nav={payrollNav} counts={badges.payroll} label="Payroll sections" variant="sidebar" idPrefix="nav-submodule-payroll" onNavigate={() => setIsMobileSidebarOpen(false)} />
+                )}
+
+                {/* ---------------------------------------------------- */}
+                {/* PERFORMANCE (everyone sees their goals and reviews; managers and HR see more) */}
+                {/* ---------------------------------------------------- */}
+                <div className="relative">
+                <button
+                  id="nav-module-performance"
+                  type="button"
+                  onClick={() => {
+                    onSelectModule('performance');
+                    setIsPerfExpanded(true);
+                    setIsMobileSidebarOpen(false);
+                  }}
+                  className={`w-full ${activeModule === 'performance' ? 'pl-3 pr-10' : 'px-3'} py-2.5 rounded-xl border flex items-center justify-between text-left transition-all cursor-pointer ${
+                    activeModule === 'performance'
+                      ? 'bg-[#FA7014]/10 border-[#FA7014]/40 text-slate-900 shadow-xs'
+                      : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50 hover:border-slate-300'
+                  }`}
+                >
+                  <div className="flex items-center space-x-2.5 min-w-0">
+                    <div
+                      className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 ${
+                        activeModule === 'performance' ? 'bg-[#FA7014] text-white shadow-xs' : 'bg-slate-100 text-slate-600'
+                      }`}
+                    >
+                      <Target className="w-4 h-4" />
+                    </div>
+                    <div className="truncate">
+                      <span className={`text-xs font-bold block truncate ${activeModule === 'performance' ? 'text-[#FA7014]' : 'text-slate-800'}`}>
+                        Performance
+                      </span>
+                      <span className="text-[10px] text-slate-500 font-medium block truncate">Goals, reviews &amp; SOP compliance</span>
+                    </div>
+                  </div>
+                  {activeModule === 'performance' && (
+                    <div className="w-5 h-5 rounded-full bg-[#FA7014] text-white flex items-center justify-center shrink-0 ml-1.5">
+                      <Check className="w-3 h-3 stroke-[3]" />
+                    </div>
+                  )}
+                </button>
+                {activeModule === 'performance' && (
+                  <button
+                    id="nav-module-performance-toggle"
+                    type="button"
+                    onClick={() => setIsPerfExpanded((v) => !v)}
+                    aria-expanded={isPerfExpanded}
+                    aria-label={isPerfExpanded ? 'Hide performance sections' : 'Show performance sections'}
+                    title={isPerfExpanded ? 'Hide sections' : 'Show sections'}
+                    className="absolute right-1.5 top-1/2 -translate-y-1/2 w-7 h-7 rounded-lg flex items-center justify-center text-[#FA7014] hover:bg-[#FA7014]/15 cursor-pointer"
+                  >
+                    {isPerfExpanded ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
+                  </button>
+                )}
+                </div>
+
+                {activeModule === 'performance' && isPerfExpanded && (
+                  <ModuleSubNav nav={perfNav} label="Performance sections" variant="sidebar" idPrefix="nav-submodule-performance" onNavigate={() => setIsMobileSidebarOpen(false)} />
                 )}
 
                 {/* ---------------------------------------------------- */}

@@ -55,6 +55,11 @@ export const PERMISSIONS: PermissionDef[] = [
   { key: 'announce.manage', label: 'Post announcements and the leadership message on Home', group: 'Home' },
   { key: 'home.manage', label: 'Set up Home: quick links and which cards show', group: 'Home' },
 
+  // Performance (everyone sees their own plan, SOPs and reviews; managers handle the people who report to them)
+  { key: 'perf.manage', label: 'Run performance management: frameworks, cycles, templates, SOP mapping, HR review and calibration', group: 'Performance' },
+  { key: 'perf.approve', label: 'Approve KRA/KPI plans and give the final approval on performance reviews', group: 'Performance' },
+  { key: 'perf.view', label: 'View company-wide performance dashboards (aggregated, read-only)', group: 'Performance' },
+
   // Administration
   { key: 'users.manage', label: 'Add, edit and deactivate users', group: 'Administration' },
   { key: 'departments.manage', label: 'Manage departments', group: 'Administration' },
@@ -115,6 +120,7 @@ export const DEFAULT_ROLE_TEMPLATES: RoleTemplate[] = [
       'talent.view', 'candidate.evaluate', 'onboarding.manage', 'app.manage',
       'users.manage', 'departments.manage', 'doc.acknowledge', 'doc.suggest',
       'leave.manage', 'leave.report', 'lifecycle.manage', 'announce.manage', 'home.manage',
+      'perf.manage', 'perf.view',
     ],
   },
   {
@@ -127,6 +133,7 @@ export const DEFAULT_ROLE_TEMPLATES: RoleTemplate[] = [
       'req.create', 'req.hr_decide', 'req.manage_jd',
       'talent.view', 'candidate.evaluate', 'onboarding.manage', 'app.manage',
       'doc.acknowledge', 'doc.suggest', 'leave.manage', 'leave.report', 'lifecycle.manage', 'announce.manage',
+      'perf.manage', 'perf.view',
     ],
   },
   {
@@ -138,6 +145,7 @@ export const DEFAULT_ROLE_TEMPLATES: RoleTemplate[] = [
       'doc.review', 'doc.publish', 'compliance.view', 'audit.view',
       'req.view_all', 'req.assign', 'req.founder_decide', 'talent.view',
       'doc.acknowledge', 'doc.suggest', 'leave.report', 'announce.manage',
+      'perf.approve', 'perf.view',
     ],
   },
   {
