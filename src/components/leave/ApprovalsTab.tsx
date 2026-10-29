@@ -14,6 +14,24 @@ const Avatar: React.FC<{ name: string }> = ({ name }) => (
 );
 const daysBetween = (a: string, b: string) => Math.round((Date.parse(`${b}T00:00:00Z`) - Date.parse(`${a}T00:00:00Z`)) / 86_400_000);
 
+/** The questions asked and the answers given on a request, oldest first, so the approver sees the reply. */
+const Thread: React.FC<{ events?: { at: string; by: string; message: string }[] }> = ({ events }) => {
+  const items = (events || []).filter((e) => /^(More information needed|Replied):/.test(e.message));
+  if (items.length === 0) return null;
+  return (
+    <div className="mt-2 space-y-1.5">
+      {items.map((e, i) => {
+        const asked = e.message.startsWith('More information needed:');
+        return (
+          <div key={i} className={`text-xs rounded-lg px-2.5 py-1.5 border ${asked ? 'bg-amber-50 border-amber-100 text-amber-900' : 'bg-emerald-50 border-emerald-100 text-emerald-900'}`}>
+            <span className="font-bold">{asked ? `Question from ${e.by}` : `${e.by} replied`}:</span> {e.message.replace(/^(More information needed|Replied):\s*/, '')}
+          </div>
+        );
+      })}
+    </div>
+  );
+};
+
 /** One request card. Approve is one tap; reject needs a reason so the employee knows why. */
 const Decide: React.FC<{ busy: boolean; cancel?: boolean; onDecide: (d: 'APPROVE' | 'REJECT' | 'INFO', comment: string) => void }> = ({ busy, cancel, onDecide }) => {
   const [mode, setMode] = useState<'idle' | 'note' | 'reject' | 'info'>('idle');
@@ -145,6 +163,7 @@ const ApprovalsList: React.FC<{ reload: () => void }> = ({ reload }) => {
                   {r.docUrl && <a className="flex items-center gap-1 text-[#FA7014] font-bold underline" href={r.docUrl} target="_blank" rel="noopener noreferrer"><FileText className="w-3.5 h-3.5" />Document</a>}
                   {r.hasPrivateDoc && <OpenDoc requestId={r.id} name={r.privateDocName} canOpen={!!canSeeDocs} />}
                 </div>
+                <Thread events={(r as any).events} />
                 <Decide busy={busy} cancel={r.stage === 'CANCEL'} onDecide={(d, c) => act(r.id, d, c)} />
               </div>
             </div>
