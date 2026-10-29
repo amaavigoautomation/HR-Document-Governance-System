@@ -401,7 +401,7 @@ async function createRequest(who: Who, c: Ctx, person: Person, body: any, opts: 
   }
 
   // Idempotency: the same submission key never creates a second request (double click, retry, replayed call).
-  const idemKey = str(body?.idempotencyKey, 80).replace(/[^A-Za-z0-9_-]/g, '');
+  const idemKey = str(body?.idempotencyKey, 60).replace(/[^A-Za-z0-9_-]/g, '');
   const id = idemKey ? `${person.uid}_${idemKey}` : db().collection('leaveRequests').doc().id;
   if (idemKey) {
     const dup = await db().collection('leaveRequests').doc(id).get();
@@ -505,7 +505,7 @@ function viewRequest(r: LeaveRequest) {
 }
 
 async function cancel(who: Who, body: any): Promise<Result> {
-  const id = str(body?.id, 60);
+  const id = str(body?.id, 200);
   const ref = db().collection('leaveRequests').doc(id);
   const snap = await ref.get();
   const r = snap.data() as LeaveRequest | undefined;
@@ -577,7 +577,7 @@ async function inbox(who: Who): Promise<Result> {
 
 async function decide(who: Who, body: any): Promise<Result> {
   const c = await loadCtx(who);
-  const id = str(body?.id, 60);
+  const id = str(body?.id, 200);
   const decision = str(body?.decision, 10);
   const comment = str(body?.comment, 400);
   if (decision !== 'APPROVE' && decision !== 'REJECT' && decision !== 'INFO') return fail(400, 'decision must be APPROVE, REJECT or INFO.');
@@ -670,7 +670,7 @@ async function decide(who: Who, body: any): Promise<Result> {
 
 /** The employee answers a request for more information; the request goes back to the approver. */
 async function respond(who: Who, body: any): Promise<Result> {
-  const id = str(body?.id, 80);
+  const id = str(body?.id, 200);
   const message = str(body?.message, 600);
   if (!message) return fail(400, 'Write your reply.');
   const ref = db().collection('leaveRequests').doc(id);
@@ -756,7 +756,7 @@ async function clearDelegation(who: Who, body: any): Promise<Result> {
 async function hrCancel(who: Who, body: any): Promise<Result> {
   needManage(who);
   const c = await loadCtx(who);
-  const ref = db().collection('leaveRequests').doc(str(body?.id, 60));
+  const ref = db().collection('leaveRequests').doc(str(body?.id, 200));
   let cancelled: LeaveRequest | null = null;
   await db().runTransaction(async (tx) => {
     const snap = await tx.get(ref);
@@ -1458,7 +1458,7 @@ async function lowBalanceAlert(cid: string, r: LeaveRequest, settings: LeaveSett
 
 /** Attach or replace the document of a request that is still open. Only the employee can do this. */
 async function docSet(who: Who, body: any): Promise<Result> {
-  const id = str(body?.id, 80);
+  const id = str(body?.id, 200);
   const problem = checkAttachment(body?.dataUrl);
   if (problem) return fail(400, problem);
   const ref = db().collection('leaveRequests').doc(id);
@@ -1477,7 +1477,7 @@ async function docSet(who: Who, body: any): Promise<Result> {
 
 /** The employee and HR can open a document. Managers only see that one is attached (medical papers stay with HR). */
 async function docGet(who: Who, q: any): Promise<Result> {
-  const id = str(q?.id, 80);
+  const id = str(q?.id, 200);
   const r = (await db().collection('leaveRequests').doc(id).get()).data() as LeaveRequest | undefined;
   if (!r || r.companyId !== who.cid || !r.privateDocId) return fail(404, 'Document not found.');
   if (r.uid !== who.ctx.uid && !who.canManage) {

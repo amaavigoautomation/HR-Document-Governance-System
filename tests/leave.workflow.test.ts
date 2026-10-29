@@ -332,4 +332,16 @@ assert.equal((await polishWording('Casual leave: 3 days.')).text, 'Casual leave:
 globalThis.fetch = realFetch;
 delete process.env.OPENAI_API_KEY;
 
+// --- request ids built from a long account id and a submission key still work for every action (ids were once cut at 60 characters)
+const LONGEMP = tokenFor('u_emp_with_a_very_long_account_identifier_0123456789');
+fdb.seed('employees', 'u_emp_with_a_very_long_account_identifier_0123456789', { companyId: CID, authUid: 'u_emp_with_a_very_long_account_identifier_0123456789', name: 'Long Id', email: 'long@acme.com', active: true, createdAt: '2020-01-01T00:00:00Z' });
+await ok(HR, 'POST', 'save-profiles', { profiles: [{ uid: 'u_emp_with_a_very_long_account_identifier_0123456789', managerUid: 'u_mgr', gender: 'F', joinDate: '2020-01-01' }] });
+await ok(HR, 'POST', 'adjust', { uid: 'u_emp_with_a_very_long_account_identifier_0123456789', typeId: 'cl', delta: 5, note: 'x' });
+const dl = workday(30);
+const longReq = await ok(LONGEMP, 'POST', 'apply', { typeId: 'cl', from: dl, to: dl, idempotencyKey: 'a'.repeat(32) });
+assert.ok(longReq.id.length > 80);
+await ok(MGR, 'POST', 'decide', { id: longReq.id, decision: 'INFO', comment: 'why?' });
+await ok(LONGEMP, 'POST', 'respond', { id: longReq.id, message: 'because' });
+await ok(MGR, 'POST', 'decide', { id: longReq.id, decision: 'APPROVE' });
+
 console.log('leave workflow tests passed');
