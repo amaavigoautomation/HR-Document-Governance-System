@@ -1,6 +1,7 @@
 import React from 'react';
 import { Briefcase, CalendarCheck, ClipboardCheck, FilePenLine, FileBarChart, CalendarDays, Home, Inbox, Palmtree } from 'lucide-react';
 import { LeaveSection, resolveSection, useLeaveNav, leaveNav } from './leaveNav';
+import { NavBadge } from '../NavBadge';
 
 export const LEAVE_ICON: Record<LeaveSection, React.FC<{ className?: string }>> = {
   today: Home, my: Palmtree, attendance: CalendarCheck, regularization: ClipboardCheck, application: FilePenLine, reports: FileBarChart, team: CalendarDays, approvals: Inbox, manage: Briefcase,
@@ -11,7 +12,7 @@ export const LEAVE_ICON: Record<LeaveSection, React.FC<{ className?: string }>> 
  * variant "sidebar": indented list under "Leave & Attendance" in the app sidebar (matches the Talent Acquisition sub-menu).
  * variant "pills": horizontal pills at the top of the page, for screens that have no sidebar (employee portal).
  */
-export const LeaveSubNav: React.FC<{ variant: 'sidebar' | 'pills'; onNavigate?: () => void }> = ({ variant, onNavigate }) => {
+export const LeaveSubNav: React.FC<{ variant: 'sidebar' | 'pills'; onNavigate?: () => void; counts?: Partial<Record<LeaveSection, number>> }> = ({ variant, onNavigate, counts }) => {
   const { section, items } = useLeaveNav();
   if (items.length === 0) return null;
   const active = resolveSection(section, items);
@@ -20,14 +21,15 @@ export const LeaveSubNav: React.FC<{ variant: 'sidebar' | 'pills'; onNavigate?: 
   if (variant === 'pills') {
     return (
       <nav className="flex gap-1 overflow-x-auto -mx-1 px-1 pb-1" aria-label="Leave and attendance">
-        {items.map(({ key, label, badge }) => {
+        {items.map(({ key, label, badge: own }) => {
+          const badge = counts?.[key] ?? own;
           const Icon = LEAVE_ICON[key];
           return (
             <button key={key} type="button" onClick={() => go(key)} aria-current={active === key ? 'page' : undefined}
               ref={active === key ? (el) => el?.scrollIntoView?.({ block: 'nearest', inline: 'nearest' }) : undefined}
               className={`shrink-0 inline-flex items-center gap-1.5 px-3.5 py-2 rounded-full text-xs font-bold transition-colors ${active === key ? 'bg-slate-900 text-white' : 'bg-white border border-slate-200 text-slate-600 hover:text-slate-900 hover:border-slate-300'}`}>
               <Icon className="w-4 h-4" />{label}
-              {badge ? <span className="ml-0.5 bg-[#FA7014] text-white rounded-full px-1.5 py-0.5 text-[10px] leading-none">{badge}</span> : null}
+              <NavBadge count={badge} className="ml-0.5" />
             </button>
           );
         })}
@@ -37,7 +39,8 @@ export const LeaveSubNav: React.FC<{ variant: 'sidebar' | 'pills'; onNavigate?: 
 
   return (
     <div className="pl-4 pr-1 pt-1 space-y-1" role="navigation" aria-label="Leave and attendance sections">
-      {items.map(({ key, label, badge }) => {
+      {items.map(({ key, label, badge: own }) => {
+          const badge = counts?.[key] ?? own;
         const Icon = LEAVE_ICON[key];
         const on = active === key;
         return (
@@ -48,7 +51,7 @@ export const LeaveSubNav: React.FC<{ variant: 'sidebar' | 'pills'; onNavigate?: 
               <Icon className={`w-3.5 h-3.5 shrink-0 transition-colors ${on ? 'text-[#FA7014]' : 'text-slate-400'}`} />
               <span className="truncate">{label}</span>
             </div>
-            {badge ? <span className="bg-[#FA7014] text-white rounded-full px-1.5 py-0.5 text-[10px] leading-none font-bold shrink-0">{badge}</span> : null}
+            <NavBadge count={badge} />
           </button>
         );
       })}

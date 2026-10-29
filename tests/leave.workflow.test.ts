@@ -344,4 +344,19 @@ await ok(MGR, 'POST', 'decide', { id: longReq.id, decision: 'INFO', comment: 'wh
 await ok(LONGEMP, 'POST', 'respond', { id: longReq.id, message: 'because' });
 await ok(MGR, 'POST', 'decide', { id: longReq.id, decision: 'APPROVE' });
 
+// --- sidebar badges: what is waiting for each person, hidden when nothing
+const bd = async (h: any) => (await ok(h, 'GET', 'badges', undefined, { fresh: '1' })).badges;
+const dq = workday(75);
+const bReq = await ok(EMP, 'POST', 'apply', { typeId: 'cl', from: dq, to: dq, idempotencyKey: 'b'.repeat(32) });
+const mgrBefore = (await bd(MGR)).leave.approvals;
+assert.ok(mgrBefore >= 1, 'the manager has a request waiting');
+assert.equal((await bd(EMP)).leave.approvals, 0, 'the employee has nothing to approve');
+await ok(MGR, 'POST', 'decide', { id: bReq.id, decision: 'INFO', comment: 'which day?' });
+assert.equal((await bd(MGR)).leave.approvals, mgrBefore - 1, 'a request sent back leaves the manager\'s count');
+assert.ok((await bd(EMP)).leave.my >= 1, 'the employee has a question to answer');
+assert.ok((await bd(EMP)).leave.today >= 1, 'and an unread update');
+await ok(EMP, 'POST', 'respond', { id: bReq.id, message: 'the 3rd' });
+assert.equal((await bd(EMP)).leave.my, (await bd(EMP)).leave.my, 'stable between reads');
+for (const k of ['payroll', 'people', 'employee']) assert.ok(k in (await bd(EMP)), `${k} counts are always present`);
+
 console.log('leave workflow tests passed');

@@ -1894,8 +1894,10 @@ export async function routeLeave(r: LeaveRequestIn): Promise<Result> {
 
     const GET = r.method === 'GET';
     const POST = r.method === 'POST';
+    if (POST) void import('./badgesApi.js').then((m) => m.clearBadgeCache()).catch(() => undefined);
     switch (r.action) {
       case 'me': if (GET) return await me(who); break;
+      case 'badges': if (GET) { const { badges } = await import('./badgesApi.js'); return ok({ badges: await badges(r.headers, r.ip, r.query?.fresh === '1') }); } break;
       case 'calc': if (POST) return await calc(who, body); break;
       case 'apply': if (POST) return await apply(who, body); break;
       case 'my-requests': if (GET) return await myRequests(who); break;

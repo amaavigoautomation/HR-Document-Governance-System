@@ -1,5 +1,6 @@
 import React, { useState, useSyncExternalStore } from 'react';
 import { ChevronDown, ChevronRight } from 'lucide-react';
+import { NavBadge } from './NavBadge';
 
 /**
  * Section menus for modules (Payroll, People, ...).
@@ -63,8 +64,11 @@ const groupItems = (items: NavItem[]) => {
   return groups;
 };
 
-export const ModuleSubNav: React.FC<{ nav: ModuleNav; label: string; variant: 'sidebar' | 'pills'; onNavigate?: () => void; idPrefix?: string }> = ({ nav, label, variant, onNavigate, idPrefix }) => {
-  const { section, items } = nav.useNav();
+export const ModuleSubNav: React.FC<{ nav: ModuleNav; label: string; variant: 'sidebar' | 'pills'; onNavigate?: () => void; idPrefix?: string; counts?: Record<string, number> }> = ({ nav, label, variant, onNavigate, idPrefix, counts }) => {
+  const nav0 = nav.useNav();
+  // Counts given by the app (kept fresh in the background) win over the numbers a screen published when it opened.
+  const items = nav0.items.map((i) => ({ ...i, badge: counts?.[i.key] ?? i.badge }));
+  const section = nav0.section;
   // Groups start closed and only open when the person clicks their header.
   const [opened, setOpened] = useState<Record<string, boolean>>({});
   const active = items.length ? nav.resolve(section, items) : '';
@@ -81,7 +85,7 @@ export const ModuleSubNav: React.FC<{ nav: ModuleNav; label: string; variant: 's
               ref={active === key ? (el) => el?.scrollIntoView?.({ block: 'nearest', inline: 'nearest' }) : undefined}
               className={`shrink-0 inline-flex items-center gap-1.5 px-3.5 py-2 rounded-full text-xs font-bold transition-colors ${active === key ? 'bg-slate-900 text-white' : 'bg-white border border-slate-200 text-slate-600 hover:text-slate-900 hover:border-slate-300'}`}>
               {Icon && <Icon className="w-4 h-4" />}{text}
-              {badge ? <span className="ml-0.5 bg-[#FA7014] text-white rounded-full px-1.5 py-0.5 text-[10px] leading-none">{badge}</span> : null}
+              <NavBadge count={badge} className="ml-0.5" />
             </button>
           );
         })}
@@ -104,7 +108,7 @@ export const ModuleSubNav: React.FC<{ nav: ModuleNav; label: string; variant: 's
                 className={`w-full flex items-center justify-between px-2.5 rounded-lg text-[10px] font-bold uppercase tracking-wider ${isClosed && hasActive ? 'text-[#FA7014]' : 'text-slate-400 hover:text-slate-600'} hover:bg-slate-50 cursor-pointer py-1.5 ${gi > 0 ? 'mt-1' : ''}`}>
                 <span>{g.title}</span>
                 <span className="flex items-center gap-1.5">
-                  {isClosed && hidden ? <span className="bg-[#FA7014] text-white rounded-full px-1.5 py-0.5 text-[10px] leading-none font-bold normal-case tracking-normal">{hidden}</span> : null}
+                  {isClosed ? <NavBadge count={hidden} className="normal-case tracking-normal" /> : null}
                   {isClosed ? <ChevronRight className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
                 </span>
               </button>
@@ -120,7 +124,7 @@ export const ModuleSubNav: React.FC<{ nav: ModuleNav; label: string; variant: 's
                     {Icon && <Icon className={`w-3.5 h-3.5 shrink-0 transition-colors ${on ? 'text-[#FA7014]' : 'text-slate-400'}`} />}
                     <span className="truncate">{text}</span>
                   </div>
-                  {badge ? <span className="bg-[#FA7014] text-white rounded-full px-1.5 py-0.5 text-[10px] leading-none font-bold shrink-0">{badge}</span> : null}
+                  <NavBadge count={badge} />
                 </button>
               );
             })}

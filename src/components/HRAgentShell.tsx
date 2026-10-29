@@ -29,6 +29,8 @@ import {
 import { User, UserRole } from '../types';
 import { AmaavigoLogo } from './AmaavigoLogo';
 import { LeaveSubNav } from './leave/LeaveSubNav';
+import { NavBadge } from './NavBadge';
+import { sumOf, useNavBadges } from '../services/navBadges';
 import { ModuleSubNav } from './moduleNav';
 import { payrollNav } from './payroll/payrollNav';
 import { peopleNav } from './lifecycle/peopleNav';
@@ -102,6 +104,8 @@ export const HRAgentShell: React.FC<HRAgentShellProps> = ({
   const [isPayrollExpanded, setIsPayrollExpanded] = useState<boolean>(true);
   const [isPeopleExpanded, setIsPeopleExpanded] = useState<boolean>(true);
   const [isEmployeeExpanded, setIsEmployeeExpanded] = useState<boolean>(true);
+  // Counts of what is waiting for this person, shown on the module titles and their sections.
+  const badges = useNavBadges();
 
   // Mobile sidebar drawer state
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState<boolean>(false);
@@ -562,6 +566,7 @@ export const HRAgentShell: React.FC<HRAgentShellProps> = ({
                       <span className="text-[10px] text-slate-500 font-medium block truncate">Leave, holidays, attendance &amp; approvals</span>
                     </div>
                   </div>
+                  <NavBadge count={sumOf(badges.leave)} className="ml-1.5" />
                   {activeModule === 'leave-management' && (
                     <div className="w-5 h-5 rounded-full bg-[#FA7014] text-white flex items-center justify-center shrink-0 ml-1.5">
                       <Check className="w-3 h-3 stroke-[3]" />
@@ -585,7 +590,7 @@ export const HRAgentShell: React.FC<HRAgentShellProps> = ({
 
                 {/* Leave sections (Today, My leave, Attendance, Team calendar, Approvals, Manage) */}
                 {activeModule === 'leave-management' && isLeaveExpanded && (
-                  <LeaveSubNav variant="sidebar" onNavigate={() => setIsMobileSidebarOpen(false)} />
+                  <LeaveSubNav variant="sidebar" counts={badges.leave} onNavigate={() => setIsMobileSidebarOpen(false)} />
                 )}
 
                 {/* ---------------------------------------------------- */}
@@ -621,6 +626,7 @@ export const HRAgentShell: React.FC<HRAgentShellProps> = ({
                       <span className="text-[10px] text-slate-500 font-medium block truncate">Payslips, salary runs &amp; statutory setup</span>
                     </div>
                   </div>
+                  <NavBadge count={sumOf(badges.payroll)} className="ml-1.5" />
                   {activeModule === 'payroll' && (
                     <div className="w-5 h-5 rounded-full bg-[#FA7014] text-white flex items-center justify-center shrink-0 ml-1.5">
                       <Check className="w-3 h-3 stroke-[3]" />
@@ -643,7 +649,7 @@ export const HRAgentShell: React.FC<HRAgentShellProps> = ({
                 </div>
 
                 {activeModule === 'payroll' && isPayrollExpanded && (
-                  <ModuleSubNav nav={payrollNav} label="Payroll sections" variant="sidebar" idPrefix="nav-submodule-payroll" onNavigate={() => setIsMobileSidebarOpen(false)} />
+                  <ModuleSubNav nav={payrollNav} counts={badges.payroll} label="Payroll sections" variant="sidebar" idPrefix="nav-submodule-payroll" onNavigate={() => setIsMobileSidebarOpen(false)} />
                 )}
 
                 {/* ---------------------------------------------------- */}
@@ -679,6 +685,7 @@ export const HRAgentShell: React.FC<HRAgentShellProps> = ({
                       <span className="text-[10px] text-slate-500 font-medium block truncate">Directory, onboarding, exits &amp; letters</span>
                     </div>
                   </div>
+                  <NavBadge count={sumOf(badges.people)} className="ml-1.5" />
                   {activeModule === 'people' && (
                     <div className="w-5 h-5 rounded-full bg-[#FA7014] text-white flex items-center justify-center shrink-0 ml-1.5">
                       <Check className="w-3 h-3 stroke-[3]" />
@@ -701,7 +708,7 @@ export const HRAgentShell: React.FC<HRAgentShellProps> = ({
                 </div>
 
                 {activeModule === 'people' && isPeopleExpanded && (
-                  <ModuleSubNav nav={peopleNav} label="People sections" variant="sidebar" idPrefix="nav-submodule-people" onNavigate={() => setIsMobileSidebarOpen(false)} />
+                  <ModuleSubNav nav={peopleNav} counts={badges.people} label="People sections" variant="sidebar" idPrefix="nav-submodule-people" onNavigate={() => setIsMobileSidebarOpen(false)} />
                 )}
 
                 {/* ---------------------------------------------------- */}
@@ -737,6 +744,7 @@ export const HRAgentShell: React.FC<HRAgentShellProps> = ({
                       <span className="text-[10px] text-slate-500 font-medium block truncate">Master data, acknowledgements &amp; reports</span>
                     </div>
                   </div>
+                  <NavBadge count={sumOf(badges.employee)} className="ml-1.5" />
                   {activeModule === 'employee' && (
                     <div className="w-5 h-5 rounded-full bg-[#FA7014] text-white flex items-center justify-center shrink-0 ml-1.5">
                       <Check className="w-3 h-3 stroke-[3]" />
@@ -759,7 +767,7 @@ export const HRAgentShell: React.FC<HRAgentShellProps> = ({
                 </div>
 
                 {activeModule === 'employee' && isEmployeeExpanded && (
-                  <ModuleSubNav nav={employeeNav} label="Employee sections" variant="sidebar" idPrefix="nav-submodule-employee" onNavigate={() => setIsMobileSidebarOpen(false)} />
+                  <ModuleSubNav nav={employeeNav} counts={badges.employee} label="Employee sections" variant="sidebar" idPrefix="nav-submodule-employee" onNavigate={() => setIsMobileSidebarOpen(false)} />
                 )}
 
                 {/* ---------------------------------------------------- */}
