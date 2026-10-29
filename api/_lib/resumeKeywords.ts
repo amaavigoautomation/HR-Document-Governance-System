@@ -62,10 +62,10 @@ function judge(requirement: string, resume: string, resumeTokens: Set<string>, r
   const matched = req.filter((t) => resumeTokens.has(t));
   const ratio = matched.length / req.length;
 
-  if ((phrase.length >= 6 && resumeNorm.includes(` ${phrase} `)) || (matched.length > 0 && ratio >= 0.6)) {
+  if ((phrase.length >= 6 && resumeNorm.includes(` ${phrase} `)) || (matched.length > 0 && ratio >= 0.5)) {
     return { status: 'MET', evidence: snippet(resume, matched) };
   }
-  if (matched.length > 0 && ratio >= 0.2) {
+  if (matched.length > 0 && (ratio >= 0.2 || matched.length >= 2)) {
     return { status: 'PARTIAL', evidence: snippet(resume, matched) };
   }
   return { status: 'NOT_EVIDENCED', evidence: '' };

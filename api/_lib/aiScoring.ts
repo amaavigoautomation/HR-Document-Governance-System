@@ -452,6 +452,21 @@ function usable(e: CacheEntry | null): boolean {
 
 // ------------------------------------------------------------------ scoring (our code, fixed weights)
 
+/**
+ * Experience part of the score (25 of 100). When the job description states a minimum, meeting it earns 22 and
+ * exceeding it 25. When it states none, every candidate "meets" it, so a flat 22 would lift everybody to the same
+ * floor: the points then grow with the years actually documented (fresher 8, 2 years 14, 5+ years 22).
+ */
+export function experiencePoints(status: string, years: number | null, label = ''): number {
+  if (status === 'EXCEEDS') return 25;
+  if (status === 'MEETS') {
+    const noMinimum = !/requirement/i.test(label);
+    return noMinimum ? Math.min(22, 8 + Math.round((years || 0) * 3)) : 22;
+  }
+  if (status === 'BELOW' && years && years > 0) return 12;
+  return 0;
+}
+
 export function applyEvidence<C extends ScorableCandidate>(
   base: C,
   jd: { requiredSkills: string[]; coreResponsibilities: string[] },
@@ -469,11 +484,8 @@ export function applyEvidence<C extends ScorableCandidate>(
     evidence: ev.responsibilities[i].evidence || 'Not provided / Not evidenced',
   }));
 
-  let score = 0;
   const es = base.experienceVsJD.status;
-  if (es === 'EXCEEDS') score += 25;
-  else if (es === 'MEETS') score += 22;
-  else if (es === 'BELOW' && base.experienceNumeric && base.experienceNumeric > 0) score += 12;
+  let score = experiencePoints(es, base.experienceNumeric, base.experienceVsJD.label);
 
   const met = skillsAlignment.filter((s) => s.status === 'MET').length;
   const partial = skillsAlignment.filter((s) => s.status === 'PARTIAL').length;
@@ -485,7 +497,7 @@ export function applyEvidence<C extends ScorableCandidate>(
 
   if (base.resumeUrl) score += 5;
   if (ev.hasMetrics || ev.hasPortfolio) score += 5;
-  score = Math.min(98, Math.max(15, score));
+  score = Math.min(98, Math.max(5, score));
 
   const overallAlignment: C['overallAlignment'] =
     score >= 75 ? 'Strong Evidence' : score >= 55 ? 'Moderate Evidence' : score >= 35 ? 'Limited Evidence' : 'Not Evidenced';

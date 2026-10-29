@@ -1,5 +1,5 @@
 import { fetchSheetData, getSpreadsheetTabNames } from './serverSheets.js';
-import { applyAiScoring } from './aiScoring.js';
+import { applyAiScoring, experiencePoints } from './aiScoring.js';
 import { applyKeywordScoring } from './resumeKeywords.js';
 import { designationKey } from './jobDescriptions.js';
 
@@ -306,11 +306,8 @@ function evaluateCandidateAlgorithmic(
   }
 
   // 6. Score calculation based strictly on evidenced alignment
-  let score = 0;
   // Experience weight: 25%
-  if (expStatus === 'EXCEEDS') score += 25;
-  else if (expStatus === 'MEETS') score += 22;
-  else if (expStatus === 'BELOW' && expNum && expNum > 0) score += 12;
+  let score = experiencePoints(expStatus, expNum, expLabel);
   
   // Skills weight: 45%
   const metSkills = skillsAlignment.filter(s => s.status === 'MET').length;
@@ -322,7 +319,8 @@ function evaluateCandidateAlgorithmic(
   // Responsibilities weight: 20%
   const metResp = responsibilitiesAlignment.filter(r => r.status === 'MET').length;
   const totalResp = Math.max(1, responsibilitiesAlignment.length);
-  score += Math.round((metResp / totalResp) * 20);
+  const partResp = responsibilitiesAlignment.filter(r => r.status === 'PARTIAL').length;
+  score += Math.round(((metResp + partResp * 0.4) / totalResp) * 20);
 
   // Proof / Portfolio weight: 10%
   if (resumeUrl) score += 5;
@@ -334,7 +332,7 @@ function evaluateCandidateAlgorithmic(
     // Blend with sheet score if present
     score = Math.round((score * 0.6) + (baseSheetScore * 0.4));
   }
-  score = Math.min(98, Math.max(15, score));
+  score = Math.min(98, Math.max(5, score));
 
   // Overall alignment category
   let overallAlignment: 'Strong Evidence' | 'Moderate Evidence' | 'Limited Evidence' | 'Not Evidenced' = 'Not Evidenced';
@@ -611,6 +609,12 @@ export async function runCandidateEvaluation(
   aiRun.summary.keywordPending = keywordRun.summary.pending;
   aiRun.summary.keywordFailed = keywordRun.summary.failed;
   aiRun.summary.keywordFailureNote = keywordRun.summary.failureNote;
+  // Several candidates with exactly the same score means the criteria are not telling them apart (for example a
+  // job description whose requirements nothing in the resumes can match). Say so instead of showing a flat list.
+  const scoredNow = evaluatedCandidates.filter(c => c.scored !== false);
+  if (scoredNow.length >= 3 && new Set(scoredNow.map(c => c.alignmentScore)).size === 1 && !aiRun.summary.note) {
+    aiRun.summary.note = `All ${scoredNow.length} scored candidates got ${scoredNow[0].alignmentScore}. The job description's requirements are probably too generic or too specific to match the resumes: open View / edit JD and list concrete skills and responsibilities.`;
+  }
 
   // Scored candidates first (best first); candidates with nothing to score from follow in application order.
   evaluatedCandidates.sort((a, b) => (b.scored === false ? 0 : 1) - (a.scored === false ? 0 : 1) || b.alignmentScore - a.alignmentScore);
