@@ -2,7 +2,7 @@
  * Plain-language comparison of two leave setups. Used for the policy change summary HR approves, the version
  * history, and the impact estimate (which employees are on a policy that changed).
  */
-import type { LeaveSettings, LeavePolicy } from './leaveEngine';
+import type { LeaveSettings, LeavePolicy } from './leaveEngine.js';
 
 export interface PolicyChange {
   area: 'General' | 'Leave type' | 'Policy' | 'Office' | 'Hours';

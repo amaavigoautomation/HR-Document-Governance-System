@@ -6,7 +6,7 @@
  * policy version it quoted), summarises a request for the approver, and finds days a team is short of people.
  * Eligibility, day counts and balances always come from the leave engine, never from this file.
  */
-import { addDays, isIsoDate, weekday, type LeaveSettings, type LeaveType } from './leaveEngine';
+import { addDays, isIsoDate, weekday, type LeaveSettings, type LeaveType } from './leaveEngine.js';
 
 const WEEKDAYS: Record<string, number> = {
   sunday: 0, sun: 0, monday: 1, mon: 1, tuesday: 2, tue: 2, tues: 2, wednesday: 3, wed: 3, thursday: 4, thu: 4, thur: 4, thurs: 4, friday: 5, fri: 5, saturday: 6, sat: 6,
