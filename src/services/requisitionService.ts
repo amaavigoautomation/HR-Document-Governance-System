@@ -386,7 +386,7 @@ export async function founderDecide(
 export async function generateJd(actor: User, req: Requisition): Promise<Requisition> {
   assertAllowed(can(actor, 'editJd', req) && req.status === 'JD_DRAFT', 'only the owning HR can generate the JD while it is in draft.');
 
-  const res = await apiFetch('/api/requisitions/generate-jd', {
+  const res = await apiFetch('/api/recruitment/generate-jd', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({

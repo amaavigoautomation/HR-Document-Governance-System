@@ -25,7 +25,7 @@ test('repeat leave reads are cached, shared while in flight, and cleared by a ch
 test('other endpoints are never cached', async () => {
   const { apiJson } = await import('../src/services/apiClient');
   calls = [];
-  await apiJson('/api/applications/list');
-  await apiJson('/api/applications/list');
+  await apiJson('/api/recruitment/app-list');
+  await apiJson('/api/recruitment/app-list');
   assert.equal(calls.length, 2);
 });

@@ -171,7 +171,7 @@ export const CandidateEvaluationSection: React.FC<CandidateEvaluationSectionProp
     setJdBusy('generate');
     setJdMsg(null);
     try {
-      const r = await apiJson<{ text: string; generatedBy: string; note?: string }>('/api/requisitions/generate-jd', {
+      const r = await apiJson<{ text: string; generatedBy: string; note?: string }>('/api/recruitment/generate-jd', {
         positionTitle: role,
         departmentName: dept && dept !== 'Not specified' ? dept : 'General',
       });
