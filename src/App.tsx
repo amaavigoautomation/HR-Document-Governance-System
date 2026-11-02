@@ -52,6 +52,9 @@ const AuditLogView = lazyPage(() => import('./components/AuditLogView').then((m)
 const TalentAcquisitionOverview = lazyPage(() => import('./components/TalentAcquisitionOverview').then((m) => m.TalentAcquisitionOverview));
 const RequisitionsModule = lazyPage(() => import('./components/RequisitionsModule').then((m) => m.RequisitionsModule));
 const OnboardingModule = lazyPage(() => import('./components/OnboardingModule').then((m) => m.OnboardingModule));
+const HiringPipelineModule = lazyPage(() => import('./components/HiringPipelineModule').then((m) => m.HiringPipelineModule));
+const MyHiringModule = lazyPage(() => import('./components/MyHiringModule').then((m) => m.MyHiringModule));
+const HrbpModule = lazyPage(() => import('./components/HrbpModule').then((m) => m.HrbpModule));
 const ApplicationsModule = lazyPage(() => import('./components/ApplicationsModule').then((m) => m.ApplicationsModule));
 const LeaveModule = lazyPage(() => import('./components/LeaveModule').then((m) => m.LeaveModule));
 const PerformanceModule = lazyPage(() => import('./components/PerformanceModule').then((m) => m.PerformanceModule));
@@ -99,6 +102,7 @@ export default function App() {
       module === 'talent-acquisition-overview' ||
       module === 'talent-acquisition-requisitions' ||
       module === 'talent-acquisition-applications' ||
+      module === 'talent-acquisition-pipeline' ||
       module === 'talent-acquisition-onboarding';
     const hasTalent = hasModulePermission(currentUser, 'talent-acquisition');
     const hasDocGov = hasModulePermission(currentUser, 'document-version-control');
@@ -794,6 +798,25 @@ export default function App() {
                 onToggleSidebar={handleToggleSidebar}
               />
               <ApplicationsModule currentUser={currentUser} />
+            </div>
+          )}
+
+          {hrAgentModule === 'talent-acquisition-pipeline' && currentUser && (
+            <div className="flex-1 flex flex-col min-w-0">
+              <TalentAcquisitionHeader currentUser={currentUser} onLogout={handleLogout} isSidebarOpen={isSidebarOpen} onToggleSidebar={handleToggleSidebar} />
+              <HiringPipelineModule currentUser={currentUser} users={allUsers} />
+            </div>
+          )}
+
+          {hrAgentModule === 'my-hiring' && currentUser && (
+            <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
+              <MyHiringModule currentUser={currentUser} />
+            </div>
+          )}
+
+          {hrAgentModule === 'hrbp' && currentUser && (
+            <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
+              <HrbpModule currentUser={currentUser} users={allUsers} />
             </div>
           )}
 

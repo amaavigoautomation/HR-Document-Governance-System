@@ -28,7 +28,7 @@ export function usesLegacySource(companyId: string | null | undefined): boolean 
 
 export const APPLICATION_STAGES = ['New Applicant', 'Shortlisted', 'Interview Scheduled', 'Interviewed', 'Selected', 'On Hold', 'Rejected'] as const;
 
-export type ApplicationSource = 'WEBHOOK' | 'MANUAL' | 'CSV';
+export type ApplicationSource = 'WEBHOOK' | 'MANUAL' | 'CSV' | 'REFERRAL';
 
 export interface ApplicationDoc {
   id: string;
@@ -55,6 +55,14 @@ export interface ApplicationDoc {
   createdAt: string;
   updatedAt: string;
   reappliedAt?: string;
+  /** Candidate database fields, filled by HR or at screening. */
+  currentCtcLpa?: number;
+  expectedCtcLpa?: number;
+  portfolioUrl?: string;
+  qualification?: string;
+  totalExperienceYears?: number;
+  employersCount?: number;
+  referredByName?: string;
 }
 
 export interface OpeningDoc {

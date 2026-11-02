@@ -53,7 +53,10 @@ export type HRAgentModule =
   | 'talent-acquisition-overview'
   | 'talent-acquisition-requisitions'
   | 'talent-acquisition-applications'
+  | 'talent-acquisition-pipeline'
   | 'talent-acquisition-onboarding'
+  | 'my-hiring'
+  | 'hrbp'
   | 'leave-management'
   | 'payroll'
   | 'performance'
@@ -117,7 +120,7 @@ export const HRAgentShell: React.FC<HRAgentShellProps> = ({
   // Auto-redirect if currently selected module is not permitted
   useEffect(() => {
     if (activeModule === 'home' || activeModule === 'policies') return;
-    if (activeModule === 'administration' || activeModule === 'leave-management' || activeModule === 'payroll' || activeModule === 'performance' || activeModule === 'people' || activeModule === 'employee') return;
+    if (activeModule === 'administration' || activeModule === 'leave-management' || activeModule === 'payroll' || activeModule === 'performance' || activeModule === 'people' || activeModule === 'employee' || activeModule === 'my-hiring' || activeModule === 'hrbp') return;
     if (activeModule === 'document-version-control' && !hasDocGovAccess && hasTalentAccess) {
       onSelectModule('talent-acquisition-overview');
     } else if (
@@ -125,6 +128,7 @@ export const HRAgentShell: React.FC<HRAgentShellProps> = ({
         activeModule === 'talent-acquisition-overview' ||
         activeModule === 'talent-acquisition-requisitions' ||
         activeModule === 'talent-acquisition-applications' ||
+        activeModule === 'talent-acquisition-pipeline' ||
         activeModule === 'talent-acquisition-onboarding') &&
       !hasTalentAccess &&
       hasDocGovAccess
@@ -447,6 +451,28 @@ export const HRAgentShell: React.FC<HRAgentShellProps> = ({
                           </div>
                         </button>
 
+                        {/* Sub-item: Hiring pipeline (score, screening, assessments, interviews, postings, referrals) */}
+                        <button
+                          id="nav-submodule-talent-pipeline"
+                          type="button"
+                          onClick={() => {
+                            onSelectModule('talent-acquisition-pipeline');
+                            setIsMobileSidebarOpen(false);
+                          }}
+                          className={`w-full flex items-center justify-between px-2.5 py-2 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+                            activeModule === 'talent-acquisition-pipeline'
+                              ? 'bg-[#FA7014]/15 text-[#FA7014] font-bold shadow-2xs'
+                              : 'text-slate-700 hover:text-[#FA7014] hover:bg-orange-50'
+                          }`}
+                          title="Candidate scores, screening, assessments, interviews, job postings and referrals"
+                        >
+                          <div className="flex items-center space-x-2 min-w-0">
+                            <span className={`w-1.5 h-1.5 rounded-full transition-colors shrink-0 ${activeModule === 'talent-acquisition-pipeline' ? 'bg-[#FA7014]' : 'bg-slate-300'}`} />
+                            <ClipboardList className={`w-3.5 h-3.5 shrink-0 transition-colors ${activeModule === 'talent-acquisition-pipeline' ? 'text-[#FA7014]' : 'text-slate-400'}`} />
+                            <span className="truncate">Hiring pipeline</span>
+                          </div>
+                        </button>
+
                         {/* Sub-item 3: Onboarding (native workflow, replaces the n8n form) */}
                         <button
                           id="nav-submodule-talent-onboarding"
@@ -713,6 +739,42 @@ export const HRAgentShell: React.FC<HRAgentShellProps> = ({
                 {activeModule === 'performance' && isPerfExpanded && (
                   <ModuleSubNav nav={perfNav} label="Performance sections" variant="sidebar" idPrefix="nav-submodule-performance" onNavigate={() => setIsMobileSidebarOpen(false)} />
                 )}
+
+                {/* ---------------------------------------------------- */}
+                {/* MY HIRING (everyone: refer a candidate, interviews you are on) and HRBP (HR business partners) */}
+                {/* ---------------------------------------------------- */}
+                {([
+                  { key: 'my-hiring' as const, title: 'Referrals & interviews', sub: 'Refer people, give interview feedback', Icon: Users, show: true },
+                  { key: 'hrbp' as const, title: 'HR Business Partner', sub: 'Org, talent, engagement & succession', Icon: Layers, show: hasAnyPerm(currentUser.perms, ['hrbp.manage', 'hrbp.view']) || !!currentUser.isCompanyAdmin },
+                ]).filter((m) => m.show).map((m) => (
+                  <button
+                    key={m.key}
+                    id={`nav-module-${m.key}`}
+                    type="button"
+                    onClick={() => {
+                      onSelectModule(m.key);
+                      setIsMobileSidebarOpen(false);
+                    }}
+                    className={`w-full ${activeModule === m.key ? 'pl-3 pr-3' : 'px-3'} py-2.5 rounded-xl border flex items-center justify-between text-left transition-all cursor-pointer ${
+                      activeModule === m.key ? 'bg-[#FA7014]/10 border-[#FA7014]/40 text-slate-900 shadow-xs' : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50 hover:border-slate-300'
+                    }`}
+                  >
+                    <div className="flex items-center space-x-2.5 min-w-0">
+                      <div className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 ${activeModule === m.key ? 'bg-[#FA7014] text-white shadow-xs' : 'bg-slate-100 text-slate-600'}`}>
+                        <m.Icon className="w-4 h-4" />
+                      </div>
+                      <div className="truncate">
+                        <span className={`text-xs font-bold block truncate ${activeModule === m.key ? 'text-[#FA7014]' : 'text-slate-800'}`}>{m.title}</span>
+                        <span className="text-[10px] text-slate-500 font-medium block truncate">{m.sub}</span>
+                      </div>
+                    </div>
+                    {activeModule === m.key && (
+                      <div className="w-5 h-5 rounded-full bg-[#FA7014] text-white flex items-center justify-center shrink-0 ml-1.5">
+                        <Check className="w-3 h-3 stroke-[3]" />
+                      </div>
+                    )}
+                  </button>
+                ))}
 
                 {/* ---------------------------------------------------- */}
                 {/* PEOPLE (directory, joining tasks, exits, letters) */}

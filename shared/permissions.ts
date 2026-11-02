@@ -40,6 +40,10 @@ export const PERMISSIONS: PermissionDef[] = [
   { key: 'app.manage', label: 'Manage candidate applications and the application webhook', group: 'Hiring', module: 'talent-acquisition' },
   { key: 'hiring.budget.manage', label: 'Set department hiring budgets (approved headcount and CTC limit)', group: 'Hiring', module: 'talent-acquisition' },
 
+  // HR Business Partner (manage = run the HRBP modules; view = leadership dashboard only)
+  { key: 'hrbp.manage', label: 'Run HR Business Partner modules: org structure, talent review, PIPs, engagement, learning, succession', group: 'HRBP' },
+  { key: 'hrbp.view', label: 'View the HR Business Partner leadership dashboard', group: 'HRBP' },
+
   // Leave and attendance (everyone can apply for leave and mark attendance; managers approve their own team)
   { key: 'leave.manage', label: 'Manage leave and attendance: policies, holidays, balances, all requests', group: 'Leave & Attendance' },
   { key: 'leave.report', label: 'View leave and attendance reports for everyone', group: 'Leave & Attendance' },
@@ -121,7 +125,7 @@ export const DEFAULT_ROLE_TEMPLATES: RoleTemplate[] = [
       'talent.view', 'candidate.evaluate', 'onboarding.manage', 'app.manage',
       'users.manage', 'departments.manage', 'doc.acknowledge', 'doc.suggest',
       'leave.manage', 'leave.report', 'lifecycle.manage', 'announce.manage', 'home.manage',
-      'perf.manage', 'perf.view', 'hiring.budget.manage',
+      'perf.manage', 'perf.view', 'hiring.budget.manage', 'hrbp.manage', 'hrbp.view',
     ],
   },
   {
@@ -146,7 +150,7 @@ export const DEFAULT_ROLE_TEMPLATES: RoleTemplate[] = [
       'doc.review', 'doc.publish', 'compliance.view', 'audit.view',
       'req.view_all', 'req.assign', 'req.founder_decide', 'talent.view',
       'doc.acknowledge', 'doc.suggest', 'leave.report', 'announce.manage',
-      'perf.approve', 'perf.view', 'hiring.budget.manage',
+      'perf.approve', 'perf.view', 'hiring.budget.manage', 'hrbp.view',
     ],
   },
   {
