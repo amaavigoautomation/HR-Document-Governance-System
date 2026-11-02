@@ -192,6 +192,40 @@ export async function readResume(url: string): Promise<ResumeRead> {
   return value;
 }
 
+/**
+ * The raw resume file, for the cases where there is no text to read (a scanned PDF or a photo of a resume) and a vision model has to do it.
+ * Same download rules as readResume: share links are converted, only public addresses are fetched, 6 MB at most.
+ */
+export async function fetchResumeFile(url: string): Promise<{ buf?: Buffer; mime?: string; error?: string }> {
+  let u: URL;
+  try {
+    u = new URL(normalizeResumeUrl(url));
+  } catch {
+    return { error: 'Resume link is not a valid URL.' };
+  }
+  if (u.protocol !== 'https:' && u.protocol !== 'http:') return { error: 'Resume link must be an http or https address.' };
+  const trusted = hostAllowed(u);
+  const targets: URL[] = [u];
+  if (u.protocol === 'http:' && !trusted) {
+    const secure = new URL(u.toString());
+    secure.protocol = 'https:';
+    targets.unshift(secure);
+  }
+  let lastError = 'Resume could not be downloaded.';
+  for (const target of targets) {
+    const out = await downloadResume(target, trusted);
+    if (out.buf) {
+      const b = out.buf;
+      const mime = b.slice(0, 4).toString('latin1') === '%PDF' ? 'application/pdf'
+        : b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff ? 'image/jpeg'
+        : b[0] === 0x89 && b.slice(1, 4).toString('latin1') === 'PNG' ? 'image/png' : '';
+      return mime ? { buf: b, mime } : { error: 'Only PDF, JPG and PNG resumes can be read by AI.' };
+    }
+    lastError = out.error || lastError;
+  }
+  return { error: lastError };
+}
+
 /** Turns a share link (Google Drive / Docs, Dropbox) into a direct download link; any other link is returned as is. */
 export function normalizeResumeUrl(raw: string): string {
   let u: URL;

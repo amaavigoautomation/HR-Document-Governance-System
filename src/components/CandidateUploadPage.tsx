@@ -11,6 +11,8 @@ export const CandidateUploadPage: React.FC = () => {
   const [busyKey, setBusyKey] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [done, setDone] = useState(false);
+  const [em, setEm] = useState({ name: '', relation: '', phone: '' });
+  const [emBusy, setEmBusy] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -39,6 +41,19 @@ export const CandidateUploadPage: React.FC = () => {
       setError(e.message || 'Upload failed.');
     } finally {
       setBusyKey(null);
+    }
+  };
+
+  const saveEm = async () => {
+    setEmBusy(true);
+    setError(null);
+    try {
+      await onboardingService.saveEmergency(token, em);
+      await load();
+    } catch (e: any) {
+      setError(e.message || 'Could not save the emergency contact.');
+    } finally {
+      setEmBusy(false);
     }
   };
 
@@ -80,6 +95,8 @@ export const CandidateUploadPage: React.FC = () => {
   }
 
   const missing = info.documents.filter((d) => d.required && !d.uploaded);
+  const needEm = !info.emergency;
+  const inputCls = 'w-full border border-slate-300 rounded-lg px-3 py-2 text-sm';
   return wrap(
     <>
       <div>
@@ -115,14 +132,23 @@ export const CandidateUploadPage: React.FC = () => {
           </li>
         ))}
       </ul>
+      <div className="border border-slate-200 rounded-xl p-4 space-y-2">
+        <div className="text-sm font-semibold text-slate-800">Emergency contact {info.emergency && <span className="text-emerald-600 font-normal">✓ saved</span>}</div>
+        <div className="grid gap-2 sm:grid-cols-3">
+          <input className={inputCls} placeholder="Name" value={em.name || info.emergency?.name || ''} onChange={(e) => setEm({ ...em, name: e.target.value })} />
+          <input className={inputCls} placeholder="Relationship" value={em.relation || info.emergency?.relation || ''} onChange={(e) => setEm({ ...em, relation: e.target.value })} />
+          <input className={inputCls} placeholder="Phone" value={em.phone || info.emergency?.phone || ''} onChange={(e) => setEm({ ...em, phone: e.target.value })} />
+        </div>
+        <button type="button" onClick={saveEm} disabled={emBusy} className="text-xs font-bold px-3 py-2 rounded-lg bg-slate-100 hover:bg-slate-200 cursor-pointer">{emBusy ? 'Saving…' : 'Save emergency contact'}</button>
+      </div>
       {error && <p className="text-sm text-rose-600">{error}</p>}
       <button
         type="button"
         onClick={submit}
-        disabled={submitting || missing.length > 0}
+        disabled={submitting || missing.length > 0 || needEm}
         className="w-full py-3 rounded-xl bg-[#FA7014] text-white font-bold text-sm disabled:bg-slate-300 cursor-pointer"
       >
-        {submitting ? 'Submitting…' : missing.length ? `Upload ${missing.length} more required document${missing.length > 1 ? 's' : ''}` : 'Submit documents'}
+        {submitting ? 'Submitting…' : needEm && !missing.length ? 'Add an emergency contact' : missing.length ? `Upload ${missing.length} more required document${missing.length > 1 ? 's' : ''}` : 'Submit documents'}
       </button>
       <p className="text-[11px] text-slate-400">Once submitted you will not be able to change your documents.</p>
     </>

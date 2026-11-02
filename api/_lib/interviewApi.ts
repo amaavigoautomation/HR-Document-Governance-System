@@ -10,6 +10,7 @@
  *   int-send-reminders                          emails the 24-hour and 1-hour reminders that are due (cron or HR)
  *   cand-detail / pipe-board                    one candidate with everything, and the board of all candidates
  */
+import { createTeamsMeeting, sendWhatsApp } from './integrations.js';
 import { adminDb } from './firebaseAdmin.js';
 import { authErrorResponse, requireActiveTenant, type AuthContext } from './authContext.js';
 import { getApplication, listApplications, type ApplicationDoc } from './recruitmentData.js';
@@ -204,9 +205,16 @@ async function intSchedule(ctx: AuthContext, b: any, existing?: Item): Promise<R
   if (conflicts.length && !b.force) return fail(409, 'An interviewer already has an interview at that time.', { conflicts, canForce: true });
   const mode = ['Video', 'Phone', 'In person'].includes(str(b.mode, 20)) ? str(b.mode, 20) : existing?.mode || 'Video';
   const who = await whoIs(ctx);
+  // Video with no link typed in: make a Teams link if Teams is switched on (otherwise HR pastes one, as before).
+  let location = str(b.location, 300) ?? '';
+  let teamsLink = false;
+  if (mode === 'Video' && !location) {
+    const link = await createTeamsMeeting(`${a.designation} interview`, startIso, new Date(new Date(startIso).getTime() + minutes * 60000).toISOString());
+    if (link) { location = link; teamsLink = true; }
+  }
   const it: Item = {
     ...(existing || {}), id: existing?.id || newId(), companyId: cid, kind: 'interview', applicationId: a.id, candidateName: a.name, candidateEmail: a.email, positionTitle: a.designation,
-    round: str(b.round, 60) || existing?.round || 'Interview', mode, location: str(b.location, 300) ?? '', startIso, durationMinutes: minutes, panel,
+    round: str(b.round, 60) || existing?.round || 'Interview', mode, location, teamsLink, candidateMobile: a.mobile || '', startIso, durationMinutes: minutes, panel,
     status: 'SCHEDULED', sequence: existing ? (existing.sequence || 0) + 1 : 0, criteria: existing?.criteria || [...DEFAULT_CRITERIA],
     scorecards: existing?.scorecards || [], reminders: reminderTimes(startIso, nowIso()).map((r) => ({ ...r, sent: false })),
     createdBy: existing?.createdBy || who, createdAt: existing?.createdAt || nowIso(), updatedAt: nowIso(),
@@ -354,7 +362,7 @@ async function intAiSummary(ctx: AuthContext, b: any): Promise<Result> {
 
 // ------------------------------------------------------------------ reminders
 
-async function sendDueReminders(only?: string): Promise<{ sent: number; checked: number }> {
+export async function sendDueReminders(only?: string): Promise<{ sent: number; checked: number }> {
   const snap = await db().collection('hiringItems').where('kind', '==', 'interview').get();
   let sent = 0;
   let checked = 0;
@@ -371,6 +379,7 @@ async function sendDueReminders(only?: string): Promise<{ sent: number; checked:
     const people = [{ name: i.candidateName, email: i.candidateEmail }, ...(i.panel as PanelMember[])];
     for (const p of people) {
       if (!EMAIL_RE.test(p.email)) continue;
+      if (p.email === i.candidateEmail && i.candidateMobile) await sendWhatsApp(i.candidateMobile, `Reminder: ${i.round} for ${i.positionTitle} ${pick.kind === '1h' ? 'in about an hour' : 'tomorrow'} (${whenText(i.startIso)}).${i.location ? ` ${i.location}` : ''}`);
       if (await safeMail(p.email, p.name, `Reminder: ${i.round} with ${i.candidateName} ${pick.kind === '1h' ? 'in about an hour' : 'tomorrow'}`, `Hello ${p.name},\n\nA reminder: ${i.round} for ${i.positionTitle}\nWhen: ${whenText(i.startIso)}\nMode: ${i.mode}${i.location ? ` - ${i.location}` : ''}\n`)) sent++;
     }
     const reminders = (i.reminders || []).map((r: any) => (new Date(r.at).getTime() <= now ? { ...r, sent: true } : r));

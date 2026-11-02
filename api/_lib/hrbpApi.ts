@@ -17,11 +17,13 @@
  *   cert-*     HRBP-013  certification and compliance tracker
  *   retention-*, succ-*   retention and succession planning
  *   dash       leadership dashboard (computed)       me   my own HRBP details (everyone)
+ *   prob-*, okr-*, promo-*, qc-*   probation, OKRs, promotions, quarterly review round (talentCycleApi.ts)
  */
 import { createHash } from 'node:crypto';
 import { adminDb } from './firebaseAdmin.js';
 import { authErrorResponse, requireActiveTenant, type AuthContext } from './authContext.js';
 import { loadPeople, loadProfiles, notify, type Person } from './leaveCore.js';
+import { routeCycle } from './talentCycleApi.js';
 import {
   allocationSummary, certStatus, cleanAllocations, kpiAttainment, kpiStatus, nineBox, pipTransition, successionGap, surveyAggregate, validatePipPlan,
   PIP_FINAL, type PipAction, type PipStatus, type Readiness, type SurveyQuestion,
@@ -606,6 +608,9 @@ for (const [prefix, spec] of Object.entries(SPECS)) {
 }
 
 export async function routeHrbp(r: HrbpRequest): Promise<Result> {
+  // Probation, OKRs, promotions and the quarterly review round live in talentCycleApi.ts.
+  const cycle = await routeCycle(r);
+  if (cycle) return cycle;
   const route = ROUTES[r.action];
   if (!route) return fail(404, 'Unknown HR Business Partner action.');
   try {

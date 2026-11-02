@@ -39,6 +39,7 @@ export const ONBOARDING_DOCUMENTS = [
   { key: 'bank', label: 'Cancelled cheque / bank passbook first page', required: true },
   { key: 'prev_employment', label: 'Previous employment relieving / experience letter', required: false },
   { key: 'payslips', label: 'Last 3 months payslips', required: false },
+  { key: 'signed_docs', label: 'Signed copies of the offer letter, NDA and employment agreement', required: true },
 ] as const;
 
 export const ACCOUNT_ITEMS = [
@@ -352,7 +353,7 @@ async function saveRec(id: string, patch: Record<string, any>, ev?: any) {
 
 // ------------------------------------------------------------------ HR actions
 
-async function startOnboarding(cid: string, body: any, origin?: string): Promise<Result> {
+export async function startOnboarding(cid: string, body: any, origin?: string): Promise<Result> {
   const applicationId = s(body.applicationId);
   const onboardingDate = s(body.onboardingDate);
   if (!applicationId) return fail(400, 'applicationId is required.');
@@ -578,6 +579,7 @@ async function publicInfo(token: string): Promise<Result> {
     employeeId: rec.employeeId,
     status: rec.status,
     open: rec.status === 'DOCS_REQUESTED',
+    emergency: rec.emergency || null,
     documents: ONBOARDING_DOCUMENTS.map((d) => ({
       ...d,
       uploaded: rec.docs?.[d.key]
@@ -641,12 +643,26 @@ export async function handleCandidateUpload(
   return ok({ key: docKey });
 }
 
+async function candidateEmergency(body: any): Promise<Result> {
+  const rec = await recByToken(s(body.token));
+  if (!rec) return fail(404, 'This upload link is not valid.');
+  if (rec.status !== 'DOCS_REQUESTED') return fail(409, 'Documents were already submitted.');
+  const name = s(body.name).slice(0, 100);
+  const phone = s(body.phone).replace(/[^\d+\-\s()]/g, '').slice(0, 20);
+  const relation = s(body.relation).slice(0, 40);
+  if (!name) return fail(400, 'Enter the emergency contact\'s name.');
+  if (phone.replace(/\D/g, '').length < 8) return fail(400, 'Enter a valid phone number.');
+  await saveRec(rec.id, { emergency: { name, relation, phone } });
+  return ok({ emergency: { name, relation, phone } });
+}
+
 async function candidateSubmit(token: string): Promise<Result> {
   const rec = await recByToken(token);
   if (!rec) return fail(404, 'This upload link is not valid.');
   if (rec.status !== 'DOCS_REQUESTED') return fail(409, 'Documents were already submitted.');
   const missing = ONBOARDING_DOCUMENTS.filter((d) => d.required && !rec.docs?.[d.key]).map((d) => d.label);
   if (missing.length) return fail(400, `Please upload: ${missing.join(', ')}.`);
+  if (!rec.emergency?.name || !rec.emergency?.phone) return fail(400, 'Please add an emergency contact (name and phone).');
 
   await saveRec(rec.id, { status: 'DOCS_SUBMITTED', submittedAt: new Date().toISOString() }, event('Candidate submitted documents.', rec.name));
   await mailHr(
@@ -742,6 +758,7 @@ export async function routeOnboarding(r: OnboardingRequest): Promise<Result> {
       );
     }
     if (action === 'submit' && r.method === 'POST') return await candidateSubmit(s(body.token));
+    if (action === 'emergency' && r.method === 'POST') return await candidateEmergency(body);
 
     // ---- cron (cronjob.org)
     if (action === 'cron') {

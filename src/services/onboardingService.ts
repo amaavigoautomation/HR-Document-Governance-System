@@ -131,6 +131,7 @@ export const onboardingService = {
       employeeId: string;
       status: string;
       open: boolean;
+      emergency: { name: string; relation: string; phone: string } | null;
       documents: (DocDef & { uploaded: { fileName: string; uploadedAt: string } | null })[];
     }>(`/api/onboarding/public-info?token=${encodeURIComponent(token)}`, null),
 
@@ -142,4 +143,5 @@ export const onboardingService = {
   },
 
   submit: (token: string) => call('/api/onboarding/submit', null, { method: 'POST', body: { token } }),
+  saveEmergency: (token: string, body: { name: string; relation: string; phone: string }) => call('/api/onboarding/emergency', null, { method: 'POST', body: { token, ...body } }),
 };
