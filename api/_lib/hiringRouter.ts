@@ -8,6 +8,7 @@
  *   app-<action>                                                       candidate applications (was /api/applications/<action>)
  *   careers-publish                                                    publish an approved requisition (was /api/careers/publish)
  *   generate-jd                                                        AI job description draft (was /api/requisitions/generate-jd)
+ *   budget-list, budget-save, budget-check, req-founder-approve        department hiring budgets, budget check, founder approval + Position ID
  *
  * New hiring features (budgets, posting tracker, screening, interviews ...) are added here as further actions, so they never
  * need another serverless function. Shared by server.ts (local) and api/recruitment/[action].ts (Vercel).
@@ -17,6 +18,7 @@ import { routeApplications } from './applicationsApi.js';
 import { routeRecruitment } from './recruitmentApi.js';
 import { publishForCompany } from './careersPublisher.js';
 import { generateJobDescription } from './jdGenerator.js';
+import { routeHiringBudget } from './hiringBudgetApi.js';
 
 export interface HiringRequest {
   method: string;
@@ -69,6 +71,10 @@ export async function routeHiring(r: HiringRequest): Promise<HiringResult> {
       return { status: 500, json: { success: false, error: err?.message || 'Failed to generate job description' } };
     }
   }
+
+  // Department hiring budgets, the budget check and the founder's approval (see hiringBudgetApi.ts).
+  const budget = await routeHiringBudget({ method: r.method, action, query: r.query, body: r.body, headers: r.headers });
+  if (budget) return budget;
 
   // Everything else is the Talent Acquisition overview / job description router.
   return routeRecruitment({ method: r.method, action, query: r.query, body: r.body, headers: r.headers });

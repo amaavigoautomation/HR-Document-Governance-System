@@ -1,7 +1,8 @@
 import { collection, doc, onSnapshot, query, setDoc, where } from 'firebase/firestore';
 import { db } from './firebase';
 import { getCompanyId, tryGetCompanyId } from './tenant';
-import { apiFetch } from './apiClient';
+import { apiFetch, apiJson } from './apiClient';
+import { formatCtcRange } from '../../shared/hiringBudget';
 import { auditService } from './audit';
 import { defaultEmailProvider } from './email';
 import { governanceEngine } from './governance';
@@ -137,6 +138,10 @@ export interface NewRequisitionInput {
   urgency: RequisitionUrgency;
   expectedJoiningDate?: string;
   budgetRange?: string;
+  workMode?: Requisition['workMode'];
+  reportingManager?: User;
+  ctcMinLpa?: number;
+  ctcMaxLpa?: number;
   justification: string;
   keySkills: string;
   /** The department head the request is on behalf of. Defaults to the actor when they are a department head. */
@@ -158,6 +163,11 @@ export async function createRequisition(
     throw new Error('Maximum experience cannot be lower than minimum experience.');
   }
 
+  const ctcMin = Number(input.ctcMinLpa) > 0 ? Number(input.ctcMinLpa) : undefined;
+  const ctcMax = Number(input.ctcMaxLpa) > 0 ? Number(input.ctcMaxLpa) : undefined;
+  if (ctcMin && ctcMax && ctcMin > ctcMax) throw new Error('Minimum CTC cannot be higher than maximum CTC.');
+  if ((ctcMax || 0) > 1000 || (ctcMin || 0) > 1000) throw new Error('CTC must be entered in lakhs per annum (LPA).');
+
   const requester = input.requestedBy || actor;
   const id = `req-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
   const onBehalf = requester.id !== actor.id;
@@ -174,7 +184,11 @@ export async function createRequisition(
     maxExperienceYears: input.maxExperienceYears || 0,
     urgency: input.urgency,
     expectedJoiningDate: input.expectedJoiningDate || undefined,
-    budgetRange: input.budgetRange?.trim() || undefined,
+    budgetRange: formatCtcRange(ctcMin ?? null, ctcMax ?? null) || input.budgetRange?.trim() || undefined,
+    ...(input.workMode ? { workMode: input.workMode } : {}),
+    ...(input.reportingManager ? { reportingManager: toPerson(input.reportingManager) } : {}),
+    ...(ctcMin ? { ctcMinLpa: ctcMin } : {}),
+    ...(ctcMax ? { ctcMaxLpa: ctcMax } : {}),
     justification: input.justification.trim(),
     keySkills: input.keySkills.trim(),
     status: 'PENDING_ASSIGNMENT',
@@ -350,33 +364,36 @@ export async function founderDecide(
   const comments = payload.comments.trim();
   if (payload.decision === 'REJECTED' && !comments) throw new Error('Please give a reason for rejecting.');
 
-  const decision: RequisitionDecision = {
-    decision: payload.decision,
-    byId: actor.id,
-    byName: actor.name,
-    at: nowIso(),
-    comments,
-  };
   const approved = payload.decision === 'APPROVED';
-
-  const saved = await persist({
-    ...req,
-    status: approved ? 'JD_DRAFT' : 'REJECTED',
-    founderDecision: decision,
-    events: [...req.events, event(actor, approved ? 'Founder approved the requisition' : 'Founder rejected the requisition', comments)],
-  });
+  let saved: Requisition;
+  if (approved) {
+    // Approval runs on the server: it checks the department budget and issues the Position ID in one step.
+    const res = await apiJson<{ success: boolean; requisition: Requisition }>('/api/recruitment/req-founder-approve', {
+      requisitionId: req.id,
+      comments,
+    });
+    saved = res.requisition;
+  } else {
+    const decision: RequisitionDecision = { decision: 'REJECTED', byId: actor.id, byName: actor.name, at: nowIso(), comments };
+    saved = await persist({
+      ...req,
+      status: 'REJECTED',
+      founderDecision: decision,
+      events: [...req.events, event(actor, 'Founder rejected the requisition', comments)],
+    });
+  }
   audit(
     approved ? AuditAction.REQUISITION_FOUNDER_APPROVED : AuditAction.REQUISITION_FOUNDER_REJECTED,
     actor,
     saved,
-    `Founder ${approved ? 'approved' : 'rejected'} ${summaryLine(saved)}${comments ? `: ${comments}` : ''}`
+    `Founder ${approved ? 'approved' : 'rejected'} ${summaryLine(saved)}${saved.positionId ? ` (${saved.positionId})` : ''}${comments ? `: ${comments}` : ''}`
   );
 
   const subject = approved
     ? `Hiring requisition ${saved.reqNo} approved - prepare the job description`
     : `Hiring requisition ${saved.reqNo} rejected by founder`;
   const lines = approved
-    ? [`${actor.name} approved ${summaryLine(saved)}.`, comments ? `Comments: ${comments}` : '', 'You can now generate and publish the job description.']
+    ? [`${actor.name} approved ${summaryLine(saved)}.`, saved.positionId ? `Position ID: ${saved.positionId}` : '', comments ? `Comments: ${comments}` : '', 'You can now generate and publish the job description.']
     : [`${actor.name} rejected ${summaryLine(saved)}.`, `Reason: ${comments}`];
   notify(saved.ownerHr, subject, mail(saved.ownerHr?.name || 'HR', lines.filter(Boolean)), saved);
   notify(saved.requestedBy, subject, mail(saved.requestedBy.name, lines.filter(Boolean)), saved);

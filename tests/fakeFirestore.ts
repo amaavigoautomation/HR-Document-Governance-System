@@ -76,7 +76,8 @@ export class FakeFirestore {
       };
       const out = await fn(tx);
       if (reads.some(([r, v]) => r.raw() !== v)) continue;
-      for (const w of writes) await w();
+      // Like Firestore, the commit is atomic: every write lands in the same tick, so nothing else can read half of it.
+      await Promise.all(writes.map((w) => w()));
       return out;
     }
     throw new Error('transaction kept conflicting');

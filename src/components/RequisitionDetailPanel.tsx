@@ -23,6 +23,8 @@ import {
   readAttachment,
   saveJd,
 } from '../services/requisitionService';
+import { checkBudget } from '../services/hiringBudgetService';
+import { RequisitionBudgetCheck } from '../types';
 import { STATUS_LABEL, can, canAssign, isFounder, isHr } from '../utils/requisitionPermissions';
 
 interface Props {
@@ -67,6 +69,15 @@ export const RequisitionDetailPanel: React.FC<Props> = ({ req, currentUser, user
   // JD
   const [jdText, setJdText] = useState(req.jd?.text || '');
   const [closeReason, setCloseReason] = useState('');
+  // budget check shown to the founder before approving
+  const [budget, setBudget] = useState<RequisitionBudgetCheck | null>(null);
+  const founderTurn = can(currentUser, 'founderDecide', req);
+  useEffect(() => {
+    if (!founderTurn) return;
+    let live = true;
+    checkBudget(req.id).then((c) => live && setBudget(c)).catch(() => live && setBudget(null));
+    return () => { live = false; };
+  }, [founderTurn, req.id]);
 
   // Keep the editor in sync when the stored JD changes (generate / save / remote edit),
   // but never overwrite text the user has typed and not yet saved.
@@ -145,7 +156,10 @@ export const RequisitionDetailPanel: React.FC<Props> = ({ req, currentUser, user
               k="Experience"
               v={req.maxExperienceYears ? `${req.minExperienceYears}-${req.maxExperienceYears} yrs` : req.minExperienceYears ? `${req.minExperienceYears}+ yrs` : 'Not specified'}
             />
-            <Row k="Urgency" v={req.urgency} />
+            <Row k="Hiring priority" v={req.urgency} />
+            {req.positionId && <Row k="Position ID" v={req.positionId} />}
+            {req.workMode && <Row k="Work mode" v={req.workMode} />}
+            {req.reportingManager && <Row k="Reporting manager" v={req.reportingManager.name} />}
             <Row k="Expected joining" v={req.expectedJoiningDate} />
             <Row k="Budget" v={req.budgetRange} />
             <Row k="HR owner" v={req.ownerHr ? `${req.ownerHr.name} (assigned by ${req.assignedByName})` : 'Not assigned'} />
@@ -187,6 +201,9 @@ export const RequisitionDetailPanel: React.FC<Props> = ({ req, currentUser, user
                   </div>
                   <div className="text-slate-500">{fmt(req.founderDecision.at)}</div>
                   {req.founderDecision.comments && <p className="mt-1 whitespace-pre-wrap text-slate-800">{req.founderDecision.comments}</p>}
+                  {req.budgetCheck && req.budgetCheck.status !== 'OK' && (
+                    <p className="mt-1 rounded-lg bg-amber-50 px-2 py-1 font-semibold text-amber-800">Approved outside the budget: {req.budgetCheck.messages.join(' ')}</p>
+                  )}
                 </div>
               )}
             </div>
@@ -286,11 +303,19 @@ export const RequisitionDetailPanel: React.FC<Props> = ({ req, currentUser, user
           {can(currentUser, 'founderDecide', req) && (
             <div className={box}>
               <div className="text-sm font-black text-slate-900">Founder decision</div>
-              <textarea className={`${field} mt-3`} rows={3} placeholder="Comments (required when rejecting)" value={comments} onChange={(e) => setComments(e.target.value)} />
+              {budget && (
+                <div className={`mt-3 rounded-xl border p-3 text-xs ${budget.overrideRequired ? 'border-amber-300 bg-amber-50 text-amber-900' : 'border-emerald-200 bg-emerald-50 text-emerald-900'}`}>
+                  <div className="font-black">{budget.overrideRequired ? 'Budget check: needs your reason to approve' : 'Budget check: within budget'}</div>
+                  <ul className="mt-1 list-disc pl-4">
+                    {budget.messages.map((m, i) => <li key={i}>{m}</li>)}
+                  </ul>
+                </div>
+              )}
+              <textarea className={`${field} mt-3`} rows={3} placeholder={budget?.overrideRequired ? 'Reason for approving outside the budget (required)' : 'Comments (required when rejecting)'} value={comments} onChange={(e) => setComments(e.target.value)} />
               <div className="mt-3 flex flex-wrap gap-2">
                 <button
                   className={btnPrimary}
-                  disabled={busy !== null}
+                  disabled={busy !== null || (!!budget?.overrideRequired && !comments.trim())}
                   onClick={() => run('f-approve', () => founderDecide(currentUser, req, { decision: 'APPROVED', comments }), 'Approved. HR can now prepare the job description.')}
                 >
                   {busy === 'f-approve' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
