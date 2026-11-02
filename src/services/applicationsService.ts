@@ -31,16 +31,16 @@ export interface ApplicationSettings {
 }
 
 export const applicationsService = {
-  stages: () => apiJson<{ stages: string[]; legacy: boolean }>('/api/applications/stages'),
-  list: () => apiJson<{ legacy: boolean; items: ApplicationItem[] }>('/api/applications/list'),
-  settings: () => apiJson<{ legacy: boolean } & Partial<ApplicationSettings>>('/api/applications/settings'),
+  stages: () => apiJson<{ stages: string[]; legacy: boolean }>('/api/recruitment/app-stages'),
+  list: () => apiJson<{ legacy: boolean; items: ApplicationItem[] }>('/api/recruitment/app-list'),
+  settings: () => apiJson<{ legacy: boolean } & Partial<ApplicationSettings>>('/api/recruitment/app-settings'),
   saveSettings: (allowedOrigins: string[], employeeIdPrefix: string) =>
-    apiJson<ApplicationSettings>('/api/applications/save-settings', { allowedOrigins, employeeIdPrefix }),
-  rotateKey: () => apiJson<ApplicationSettings>('/api/applications/rotate-key', {}),
-  add: (data: Record<string, string>) => apiJson<{ id: string; duplicate: boolean }>('/api/applications/add', data),
+    apiJson<ApplicationSettings>('/api/recruitment/app-save-settings', { allowedOrigins, employeeIdPrefix }),
+  rotateKey: () => apiJson<ApplicationSettings>('/api/recruitment/app-rotate-key', {}),
+  add: (data: Record<string, string>) => apiJson<{ id: string; duplicate: boolean }>('/api/recruitment/app-add', data),
   importRows: (rows: Record<string, string>[]) =>
-    apiJson<{ created: number; duplicates: number; errors: { row: number; error: string }[] }>('/api/applications/import', { rows }),
+    apiJson<{ created: number; duplicates: number; errors: { row: number; error: string }[] }>('/api/recruitment/app-import', { rows }),
   update: (id: string, patch: { status?: string; interviewDate?: string; interviewComment?: string }) =>
-    apiJson('/api/applications/update', { id, ...patch }),
-  remove: (id: string) => apiJson('/api/applications/delete', { id }),
+    apiJson('/api/recruitment/app-update', { id, ...patch }),
+  remove: (id: string) => apiJson('/api/recruitment/app-delete', { id }),
 };

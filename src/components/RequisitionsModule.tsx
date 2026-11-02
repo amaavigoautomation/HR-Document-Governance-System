@@ -1,9 +1,11 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Plus, Search, Inbox, Users, ClipboardList, AlertCircle } from 'lucide-react';
+import { Plus, Wallet, Search, Inbox, Users, ClipboardList, AlertCircle } from 'lucide-react';
 import { Requisition, RequisitionStatus, User } from '../types';
 import { subscribeToRequisitions } from '../services/requisitionService';
 import { STATUS_LABEL, can, needsMyAction } from '../utils/requisitionPermissions';
 import { NewRequisitionModal } from './NewRequisitionModal';
+import { HiringBudgetsModal } from './HiringBudgetsModal';
+import { hasPerm } from '../../shared/permissions';
 import { RequisitionDetailPanel } from './RequisitionDetailPanel';
 
 interface Props {
@@ -38,6 +40,7 @@ export const RequisitionsModule: React.FC<Props> = ({ currentUser, users, embedd
   const [search, setSearch] = useState('');
   const [view, setView] = useState<'requests' | 'roles'>('requests');
   const [showNew, setShowNew] = useState(false);
+  const [showBudgets, setShowBudgets] = useState(false);
   const [openId, setOpenId] = useState<string | null>(null);
 
   useEffect(() => {
@@ -107,6 +110,14 @@ export const RequisitionsModule: React.FC<Props> = ({ currentUser, users, embedd
           </p>
         </div>
         <div className="flex items-center gap-2">
+          {!embedded && hasPerm(currentUser.perms, 'hiring.budget.manage') && (
+            <button
+              onClick={() => setShowBudgets(true)}
+              className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-xs font-bold text-slate-700 hover:bg-slate-50"
+            >
+              <Wallet className="w-3.5 h-3.5" /> Hiring budgets
+            </button>
+          )}
           {can(currentUser, 'create') && (
             <button
               onClick={() => setShowNew(true)}
@@ -191,6 +202,8 @@ export const RequisitionsModule: React.FC<Props> = ({ currentUser, users, embedd
           </div>
         </>
       )}
+
+      {showBudgets && <HiringBudgetsModal onClose={() => setShowBudgets(false)} />}
 
       {showNew && (
         <NewRequisitionModal

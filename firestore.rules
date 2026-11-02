@@ -468,6 +468,7 @@ service cloud.firestore {
     match /jobDescriptions/{id} { allow read, write: if false; }
     match /applications/{id} { allow read, write: if false; }
     match /recruitmentSettings/{id} { allow read, write: if false; }
+    match /hiringBudgets/{id} { allow read, write: if false; }
     match /leaveSettings/{id} { allow read, write: if false; }
     match /leaveProfiles/{id} { allow read, write: if false; }
     match /leaveLedger/{id} { allow read, write: if false; }

@@ -38,7 +38,10 @@ export const NewRequisitionModal: React.FC<Props> = ({ currentUser, users, exist
   const [maxExp, setMaxExp] = useState(0);
   const [urgency, setUrgency] = useState<NewRequisitionInput['urgency']>('MEDIUM');
   const [joinBy, setJoinBy] = useState('');
-  const [budget, setBudget] = useState('');
+  const [ctcMin, setCtcMin] = useState('');
+  const [ctcMax, setCtcMax] = useState('');
+  const [workMode, setWorkMode] = useState<NonNullable<Requisition['workMode']>>('Office');
+  const [managerId, setManagerId] = useState('');
   const [keySkills, setKeySkills] = useState('');
   const [justification, setJustification] = useState('');
   const [busy, setBusy] = useState(false);
@@ -63,7 +66,10 @@ export const NewRequisitionModal: React.FC<Props> = ({ currentUser, users, exist
           maxExperienceYears: maxExp,
           urgency,
           expectedJoiningDate: joinBy,
-          budgetRange: budget,
+          workMode,
+          reportingManager: users.find((u) => u.id === managerId),
+          ctcMinLpa: ctcMin ? Number(ctcMin) : undefined,
+          ctcMaxLpa: ctcMax ? Number(ctcMax) : undefined,
           justification,
           keySkills,
           requestedBy: requester,
@@ -140,7 +146,7 @@ export const NewRequisitionModal: React.FC<Props> = ({ currentUser, users, exist
             <input className={field} value={location} onChange={(e) => setLocation(e.target.value)} maxLength={120} />
           </div>
           <div>
-            <label className={label}>Urgency</label>
+            <label className={label}>Hiring priority</label>
             <select className={field} value={urgency} onChange={(e) => setUrgency(e.target.value as NewRequisitionInput['urgency'])}>
               <option value="LOW">Low</option>
               <option value="MEDIUM">Medium</option>
@@ -160,8 +166,30 @@ export const NewRequisitionModal: React.FC<Props> = ({ currentUser, users, exist
             <input className={field} type="date" value={joinBy} onChange={(e) => setJoinBy(e.target.value)} />
           </div>
           <div>
-            <label className={label}>Budget range (optional)</label>
-            <input className={field} value={budget} onChange={(e) => setBudget(e.target.value)} maxLength={80} placeholder="e.g. INR 6-8 LPA" />
+            <label className={label}>Work mode</label>
+            <select className={field} value={workMode} onChange={(e) => setWorkMode(e.target.value as NonNullable<Requisition['workMode']>)}>
+              <option>Office</option>
+              <option>Hybrid</option>
+              <option>Remote</option>
+            </select>
+          </div>
+          <div>
+            <label className={label}>Reporting manager</label>
+            <select className={field} value={managerId} onChange={(e) => setManagerId(e.target.value)}>
+              <option value="">Not decided</option>
+              {users.filter((u) => u.active !== false).sort((a, b) => a.name.localeCompare(b.name)).map((u) => (
+                <option key={u.id} value={u.id}>{u.name}{u.departmentName ? ` - ${u.departmentName}` : ''}</option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className={label}>CTC min (LPA)</label>
+            <input className={field} type="number" min={0} step="0.1" value={ctcMin} onChange={(e) => setCtcMin(e.target.value)} placeholder="e.g. 6" />
+          </div>
+          <div>
+            <label className={label}>CTC max (LPA)</label>
+            <input className={field} type="number" min={0} step="0.1" value={ctcMax} onChange={(e) => setCtcMax(e.target.value)} placeholder="e.g. 8" />
+            <p className="mt-1 text-[11px] text-slate-500">Checked against the department budget when the founder approves.</p>
           </div>
           <div className="sm:col-span-2">
             <label className={label}>Key skills (comma separated)</label>

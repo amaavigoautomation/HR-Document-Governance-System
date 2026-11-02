@@ -88,7 +88,7 @@ Approver templates).
   records pending evidence for the manager to verify. Repeated deliveries and unmatched events are logged, not scored.
 - Dashboards show group results only where at least 3 reviews are finished. Consistency checks (uniform scores,
   manager outliers, large self/final gaps, thin evidence) are prompts for a person to look, not verdicts.
-- Runs as its own Vercel function (`api/perf/[action].ts`, the 12th: the Hobby limit). Notifications are email plus in-app.
+- Runs as its own Vercel function (`api/perf/[action].ts`). Notifications are email plus in-app.
 - Collections (server-only; deploy the updated `firestore.rules`): `perfSettings`, `perfFrameworks`, `perfCycles`,
   `perfSops`, `perfSopAssignments`, `perfTemplates`, `perfPlans`, `perfEvidence`, `perfReviews`, `perfCheckins`,
   `perfDevPlans`, `perfAudit`, `perfExceptions`, `perfNotifications`.
@@ -131,6 +131,15 @@ Everyone lands on Home after signing in. It shows a profile card (reporting and 
   Resumes are read a few at a time within a time budget (`KEYWORD_PASS_BUDGET_MS`, default 7000); refresh to continue.
 - Repeat applications by the same person (same email, else mobile, else name) are merged into their latest one in the
   ranking. The raw Overview counts still show every application.
+
+## Vercel function budget
+
+Vercel's Hobby plan allows 12 serverless functions. The app uses 8: `[...catchall]` (also answers `/api/health`), `apply/[webhookId]`,
+`email/[action]`, `leave/[action]`, `onboarding/[action]`, `perf/[action]`, `recruitment/[action]` and `tenant/[action]`.
+All hiring routes share `recruitment/[action]` through `api/_lib/hiringRouter.ts`, told apart by the action name:
+`app-<action>` (candidate applications, was `/api/applications/<action>`), `careers-publish` (was `/api/careers/publish`),
+`generate-jd` (was `/api/requisitions/generate-jd`), plus the overview and job-description actions.
+**Add new hiring features as actions in `hiringRouter.ts`, not as new files under `api/`.**
 
 ## Known limits
 

@@ -1,5 +1,9 @@
-import { routeRecruitment } from '../_lib/recruitmentApi.js';
+import { routeHiring } from '../_lib/hiringRouter.js';
 
+/**
+ * The single serverless function for all hiring routes (see api/_lib/hiringRouter.ts for the action list).
+ * Keeping them in one function is what stays under the Vercel Hobby limit of 12 functions.
+ */
 export default async function handler(req: any, res: any) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET,POST,OPTIONS');
@@ -7,12 +11,15 @@ export default async function handler(req: any, res: any) {
   if (req.method === 'OPTIONS') return res.status(200).end();
 
   try {
-    const { status, json } = await routeRecruitment({
+    const proto = (req.headers['x-forwarded-proto'] as string) || 'https';
+    const origin = req.headers.host ? `${proto}://${req.headers.host}` : undefined;
+    const { status, json } = await routeHiring({
       method: req.method,
       action: String(req.query?.action || ''),
       query: req.query || {},
       body: req.body,
       headers: req.headers,
+      origin,
     });
     return res.status(status).json(json);
   } catch (err: any) {

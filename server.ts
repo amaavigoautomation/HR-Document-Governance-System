@@ -7,8 +7,8 @@ import { auditService } from './src/services/audit';
 import { defaultStorageProvider } from './src/services/storage';
 import { defaultEmailProvider } from './src/services/email';
 import { dispatchLiveEmail, getEmailConfigStatus } from './src/services/serverEmail';
-import { routeRecruitment } from './api/_lib/recruitmentApi';
-import { routeApplications, routeApply } from './api/_lib/applicationsApi';
+import { routeHiring } from './api/_lib/hiringRouter.js';
+import { routeApply } from './api/_lib/applicationsApi';
 import { routePerf } from './api/_lib/perfApi.js';
 import { routeLeave } from './api/_lib/leaveApi';
 import { routePayroll } from './api/_lib/payrollApi';
@@ -16,11 +16,9 @@ import { routeLifecycle } from './api/_lib/lifecycleApi';
 import { routeDashboard } from './api/_lib/dashboardApi';
 import { routeHome } from './api/_lib/homeApi';
 import { UserRole } from './src/types';
-import { generateJobDescription } from './api/_lib/jdGenerator';
-import { publishForCompany } from './api/_lib/careersPublisher';
 import { routeOnboarding } from './api/_lib/onboarding';
 import { routeTenant } from './api/_lib/tenantAdmin';
-import { authErrorResponse, requireActiveTenant, requirePermission } from './api/_lib/authContext';
+import { authErrorResponse, requireActiveTenant } from './api/_lib/authContext';
 import { signStorageToken, verifyStorageToken } from './api/_lib/storageToken';
 import { generateCorporatePdfBlob } from './src/utils/pdfGenerator';
 import { generateCorporateDocxBlob } from './src/utils/documentStamper';
@@ -77,21 +75,6 @@ async function startServer() {
       next(err);
     }
   });
-
-  const guard =
-    (check: (headers: any) => Promise<unknown>, skipPrefix?: string) =>
-    async (req: express.Request, res: express.Response, next: express.NextFunction) => {
-      if (skipPrefix && req.path.startsWith(skipPrefix)) return next();
-      try {
-        await check(req.headers);
-        next();
-      } catch (err) {
-        const known = authErrorResponse(err);
-        if (known) return res.status(known.status).json(known.json);
-        next(err);
-      }
-    };
-  app.use('/api/requisitions', guard((h) => requirePermission(h, 'req.manage_jd')));
 
   // Company signup, approval, users, departments and roles
   app.all('/api/tenant/:action', async (req, res) => {
@@ -167,15 +150,20 @@ async function startServer() {
   // TALENT ACQUISITION: GOOGLE SHEETS OVERVIEW API
   // ----------------------------------------------------
 
-  // Recruitment Overview, built-in data tabs and AI candidate evaluation. Answered from the caller's own company only.
+  // All hiring routes share one router (and one Vercel function): the Talent Acquisition overview, AI candidate evaluation and
+  // job descriptions, candidate applications (app-*), careers publishing and AI job description drafts. Each call is answered
+  // from the caller's own company only. See api/_lib/hiringRouter.ts.
   app.all('/api/recruitment/:action', async (req, res) => {
     try {
-      const { status, json } = await routeRecruitment({
+      const proto = (req.headers['x-forwarded-proto'] as string) || req.protocol;
+      const origin = req.headers.host ? `${proto}://${req.headers.host}` : undefined;
+      const { status, json } = await routeHiring({
         method: req.method,
         action: req.params.action,
         query: req.query as Record<string, any>,
         body: req.body,
         headers: req.headers as Record<string, any>,
+        origin,
       });
       res.status(status).json(json);
     } catch (err: any) {
@@ -244,26 +232,8 @@ async function startServer() {
     }
   });
 
-  // Candidate applications (HR screens) and the public application webhook / jobs feed of each company
-  app.all('/api/applications/:action', async (req, res) => {
-    try {
-      const proto = (req.headers['x-forwarded-proto'] as string) || req.protocol;
-      const origin = req.headers.host ? `${proto}://${req.headers.host}` : undefined;
-      const { status, json } = await routeApplications({
-        method: req.method,
-        action: req.params.action,
-        query: req.query as Record<string, any>,
-        body: req.body,
-        headers: req.headers as Record<string, any>,
-        origin,
-      });
-      res.status(status).json(json);
-    } catch (err: any) {
-      console.error('Error in /api/applications:', err);
-      res.status(500).json({ success: false, error: err?.message || 'Applications request failed' });
-    }
-  });
-
+  // Candidate applications for HR screens are served by /api/recruitment/app-<action> (see hiringRouter.ts).
+  // The public application webhook / jobs feed of each company stays here.
   app.all('/api/apply/:webhookId', async (req, res) => {
     try {
       const { status, json, headers } = await routeApply({
@@ -279,32 +249,6 @@ async function startServer() {
     } catch (err: any) {
       console.error('Error in /api/apply:', err);
       res.status(500).json({ success: false, error: 'Could not save the application.' });
-    }
-  });
-
-  // AI Job Description generation for approved hiring requisitions
-  app.post('/api/requisitions/generate-jd', async (req, res) => {
-    try {
-      const body = req.body || {};
-      if (!body.positionTitle || !body.departmentName) {
-        return res.status(400).json({ success: false, error: 'positionTitle and departmentName are required' });
-      }
-      const result = await generateJobDescription(body);
-      res.json({ success: true, ...result });
-    } catch (err: any) {
-      console.error('Error in /api/requisitions/generate-jd:', err);
-      res.status(500).json({ success: false, error: err.message || 'Failed to generate job description' });
-    }
-  });
-
-  // Publish an approved requisition (the Amaavigo website company posts to its careers API; others are open inside the portal)
-  app.post('/api/careers/publish', async (req, res) => {
-    try {
-      const { status, json } = await publishForCompany(req.headers as Record<string, any>, req.body);
-      res.status(status).json(json);
-    } catch (err: any) {
-      console.error('Error in /api/careers/publish:', err);
-      res.status(500).json({ success: false, error: err?.message || 'Failed to publish opening' });
     }
   });
 

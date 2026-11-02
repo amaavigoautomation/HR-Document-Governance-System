@@ -38,6 +38,7 @@ export const PERMISSIONS: PermissionDef[] = [
   { key: 'candidate.evaluate', label: 'Run AI candidate evaluation', group: 'Hiring', module: 'talent-acquisition' },
   { key: 'onboarding.manage', label: 'Run candidate onboarding', group: 'Hiring', module: 'talent-acquisition' },
   { key: 'app.manage', label: 'Manage candidate applications and the application webhook', group: 'Hiring', module: 'talent-acquisition' },
+  { key: 'hiring.budget.manage', label: 'Set department hiring budgets (approved headcount and CTC limit)', group: 'Hiring', module: 'talent-acquisition' },
 
   // Leave and attendance (everyone can apply for leave and mark attendance; managers approve their own team)
   { key: 'leave.manage', label: 'Manage leave and attendance: policies, holidays, balances, all requests', group: 'Leave & Attendance' },
@@ -120,7 +121,7 @@ export const DEFAULT_ROLE_TEMPLATES: RoleTemplate[] = [
       'talent.view', 'candidate.evaluate', 'onboarding.manage', 'app.manage',
       'users.manage', 'departments.manage', 'doc.acknowledge', 'doc.suggest',
       'leave.manage', 'leave.report', 'lifecycle.manage', 'announce.manage', 'home.manage',
-      'perf.manage', 'perf.view',
+      'perf.manage', 'perf.view', 'hiring.budget.manage',
     ],
   },
   {
@@ -145,7 +146,7 @@ export const DEFAULT_ROLE_TEMPLATES: RoleTemplate[] = [
       'doc.review', 'doc.publish', 'compliance.view', 'audit.view',
       'req.view_all', 'req.assign', 'req.founder_decide', 'talent.view',
       'doc.acknowledge', 'doc.suggest', 'leave.report', 'announce.manage',
-      'perf.approve', 'perf.view',
+      'perf.approve', 'perf.view', 'hiring.budget.manage',
     ],
   },
   {

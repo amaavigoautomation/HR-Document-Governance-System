@@ -444,6 +444,20 @@ export interface RequisitionJD {
   updatedByName: string;
 }
 
+export interface RequisitionBudgetCheck {
+  status: 'OK' | 'OVER_HEADCOUNT' | 'OVER_BUDGET' | 'OVER_BOTH' | 'NO_BUDGET_SET';
+  overrideRequired: boolean;
+  messages: string[];
+  approvedHeadcount: number | null;
+  maxCtcLpa: number | null;
+  currentHeadcount: number;
+  committedVacancies: number;
+  requestedVacancies: number;
+  requestedCtcMaxLpa: number | null;
+  headcountAfter: number;
+  overrideReason?: string;
+}
+
 export interface Requisition {
   id: string;
   reqNo: string; // e.g. REQ-2026-001
@@ -457,6 +471,12 @@ export interface Requisition {
   urgency: RequisitionUrgency;
   expectedJoiningDate?: string;
   budgetRange?: string;
+  workMode?: 'Office' | 'Remote' | 'Hybrid';
+  reportingManager?: RequisitionPerson;
+  ctcMinLpa?: number; // proposed CTC band in lakhs per annum
+  ctcMaxLpa?: number;
+  positionId?: string; // POS-<COMPANY>-<YEAR>-<NNN>, issued at founder approval
+  budgetCheck?: RequisitionBudgetCheck;
   justification: string;
   keySkills: string; // free text, comma separated; seeds the JD
   status: RequisitionStatus;

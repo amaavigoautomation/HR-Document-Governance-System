@@ -3,7 +3,7 @@ import { apiFetch } from './apiClient';
 
 /**
  * Client-side helper for publishing an opening to the live careers page.
- * Calls our own backend (/api/careers/publish); the careers API key never reaches the browser.
+ * Calls our own backend (/api/recruitment/careers-publish); the careers API key never reaches the browser.
  */
 
 export interface CareersPublishInput {
@@ -41,7 +41,7 @@ export async function publishToCareers(
   userRole: string
 ): Promise<CareersPublishResponse> {
   try {
-    const res = await apiFetch('/api/careers/publish', {
+    const res = await apiFetch('/api/recruitment/careers-publish', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(input),
