@@ -9,6 +9,11 @@
       "source": "/((?!api/).*)",
       "destination": "/index.html"
     }
+  ],
+  "crons": [
+    {
+      "path": "/api/recruitment/int-send-reminders",
+      "schedule": "30 3 * * *"
+    }
   ]
 }
-

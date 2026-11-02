@@ -10,6 +10,7 @@ import { dispatchLiveEmail, getEmailConfigStatus } from './src/services/serverEm
 import { routeHiring } from './api/_lib/hiringRouter.js';
 import { routeApply } from './api/_lib/applicationsApi';
 import { routePerf } from './api/_lib/perfApi.js';
+import { routeHrbp } from './api/_lib/hrbpApi.js';
 import { routeLeave } from './api/_lib/leaveApi';
 import { routePayroll } from './api/_lib/payrollApi';
 import { routeLifecycle } from './api/_lib/lifecycleApi';
@@ -59,7 +60,7 @@ async function startServer() {
     /^\/api\/storage\/(file|download)\//, // protected by an HMAC token in the URL (see storageToken.ts)
   ];
   // These routers do their own, finer-grained authentication.
-  const SELF_AUTH_API = [/^\/api\/tenant\//, /^\/api\/onboarding\//, /^\/api\/recruitment\//, /^\/api\/applications\//, /^\/api\/careers\//, /^\/api\/leave\//, /^\/api\/perf\//];
+  const SELF_AUTH_API = [/^\/api\/tenant\//, /^\/api\/onboarding\//, /^\/api\/recruitment\//, /^\/api\/applications\//, /^\/api\/careers\//, /^\/api\/leave\//, /^\/api\/perf\//, /^\/api\/hrbp\//];
 
   app.use('/api', async (req, res, next) => {
     const p = req.originalUrl.split('?')[0];
@@ -229,6 +230,17 @@ async function startServer() {
     } catch (err: any) {
       console.error('Error in /api/perf:', err);
       res.status(500).json({ success: false, error: err?.message || 'Performance request failed' });
+    }
+  });
+
+  // HR Business Partner modules (all roles; the router checks identity, permissions and company)
+  app.all('/api/hrbp/:action', async (req, res) => {
+    try {
+      const { status, json } = await routeHrbp({ method: req.method, action: req.params.action, query: req.query as Record<string, any>, body: req.body, headers: req.headers as Record<string, any> });
+      res.status(status).json(json);
+    } catch (err: any) {
+      console.error('Error in /api/hrbp:', err);
+      res.status(500).json({ success: false, error: err?.message || 'HR Business Partner request failed' });
     }
   });
 

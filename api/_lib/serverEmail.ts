@@ -8,6 +8,8 @@ export interface EmailDispatchPayload {
   subject: string;
   body: string;
   html?: string;
+  /** A calendar invite (.ics text). Sent as a calendar event so mail apps show Accept / Decline. */
+  ics?: { content: string; method: 'REQUEST' | 'CANCEL' };
   metadata?: {
     documentId?: string;
     documentTitle?: string;
@@ -346,6 +348,7 @@ export async function dispatchLiveEmail(payload: EmailDispatchPayload): Promise<
         subject,
         text: body,
         html: formattedHtml,
+        ...(payload.ics ? { icalEvent: { method: payload.ics.method, content: payload.ics.content, filename: 'interview.ics' } } : {}),
       });
 
       console.log(`[Gmail SMTP Success] Message sent to ${to}: ${info.messageId}`);

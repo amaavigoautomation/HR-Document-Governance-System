@@ -9,6 +9,8 @@
  *   careers-publish                                                    publish an approved requisition (was /api/careers/publish)
  *   generate-jd                                                        AI job description draft (was /api/requisitions/generate-jd)
  *   budget-list, budget-save, budget-check, req-founder-approve        department hiring budgets, budget check, founder approval + Position ID
+ *   jdlib-*, post-*, ref-*, cand-*, resume-extract, score-*             JD library, posting tracker, referrals, candidate fields, scoring (pipelineApi.ts)
+ *   screen-*, assess-*, int-*, pipe-board                               screening, assessments, interviews, feedback (interviewApi.ts)
  *
  * New hiring features (budgets, posting tracker, screening, interviews ...) are added here as further actions, so they never
  * need another serverless function. Shared by server.ts (local) and api/recruitment/[action].ts (Vercel).
@@ -19,6 +21,8 @@ import { routeRecruitment } from './recruitmentApi.js';
 import { publishForCompany } from './careersPublisher.js';
 import { generateJobDescription } from './jdGenerator.js';
 import { routeHiringBudget } from './hiringBudgetApi.js';
+import { routePipeline } from './pipelineApi.js';
+import { routeInterview } from './interviewApi.js';
 
 export interface HiringRequest {
   method: string;
@@ -75,6 +79,12 @@ export async function routeHiring(r: HiringRequest): Promise<HiringResult> {
   // Department hiring budgets, the budget check and the founder's approval (see hiringBudgetApi.ts).
   const budget = await routeHiringBudget({ method: r.method, action, query: r.query, body: r.body, headers: r.headers });
   if (budget) return budget;
+
+  // JD library, posting tracker, referrals, candidate fields, resume reading and scoring (pipelineApi.ts), then screening,
+  // assessments, interviews and feedback (interviewApi.ts).
+  const pipe = { method: r.method, action, query: r.query, body: r.body, headers: r.headers, origin: r.origin };
+  const pipeline = (await routePipeline(pipe)) || (await routeInterview(pipe));
+  if (pipeline) return pipeline;
 
   // Everything else is the Talent Acquisition overview / job description router.
   return routeRecruitment({ method: r.method, action, query: r.query, body: r.body, headers: r.headers });

@@ -134,12 +134,39 @@ Everyone lands on Home after signing in. It shows a profile card (reporting and 
 
 ## Vercel function budget
 
-Vercel's Hobby plan allows 12 serverless functions. The app uses 8: `[...catchall]` (also answers `/api/health`), `apply/[webhookId]`,
-`email/[action]`, `leave/[action]`, `onboarding/[action]`, `perf/[action]`, `recruitment/[action]` and `tenant/[action]`.
+Vercel's Hobby plan allows 12 serverless functions. The app uses 9: `[...catchall]` (also answers `/api/health`), `apply/[webhookId]`,
+`email/[action]`, `hrbp/[action]`, `leave/[action]`, `onboarding/[action]`, `perf/[action]`, `recruitment/[action]` and `tenant/[action]`.
 All hiring routes share `recruitment/[action]` through `api/_lib/hiringRouter.ts`, told apart by the action name:
 `app-<action>` (candidate applications, was `/api/applications/<action>`), `careers-publish` (was `/api/careers/publish`),
 `generate-jd` (was `/api/requisitions/generate-jd`), plus the overview and job-description actions.
 **Add new hiring features as actions in `hiringRouter.ts`, not as new files under `api/`.**
+
+## Hiring pipeline (Talent Acquisition)
+
+Everything below is native to the app (no n8n) and per company. Server code is in `api/_lib/`, pure rules in `shared/`, screens in `src/components/hiring/`.
+
+| Step | What it does | Where |
+| --- | --- | --- |
+| Requisition fields, budget, Position ID | Work mode, reporting manager, CTC band; department budget check; founder approval issues `POS-<CO>-<YEAR>-<NNN>` (a reason is required outside budget) | `hiringBudgetApi.ts`, `shared/hiringBudget.ts` |
+| JD library, posting tracker, referrals | Reusable JDs; paste-ready posts per job board plus a tracker (only the careers site is published automatically); employee referral page (**Referrals & interviews**) | `pipelineApi.ts` |
+| Candidate score | Out of 100: Skills 30, Experience 25, Portfolio 15, Communication 10, Stability 10, Salary fit 10 (weights editable per company). A part nobody has judged is "pending", never zero | `shared/hiringScore.ts` |
+| Screening, assessments | HR screening call with pass / hold / fail (moves the stage); tests with a pass mark | `interviewApi.ts` |
+| Interviews | Scheduling with `.ics` invites by email, clash warning for interviewers, reminders (24 h and 1 h), reschedule and cancel | `interviewApi.ts`, `shared/interviewEngine.ts` |
+| Interview feedback | Blind scorecards: an interviewer sees only their own card until the whole panel has submitted; a summary is made after that | `interviewApi.ts` |
+
+Data lives in the server-only collection `hiringItems` (told apart by `kind`). Resume reading handles text-based PDF/DOCX; scanned images need OCR, which is not set up.
+Reminders run from a Vercel cron (`vercel.json`, once a day on the Hobby plan, so the 1-hour reminder is best-effort there); set `CRON_SECRET` so the cron call is accepted, or press "send reminders" as HR.
+WhatsApp reminders and real calendar sync (Google / Microsoft) are not built; the invite is a standard `.ics` attachment.
+
+## HR Business Partner (Phase 3)
+
+`/api/hrbp/<action>` (`api/_lib/hrbpApi.ts`, rules in `shared/hrbpEngine.ts`, screens in `src/components/hrbp/`, sidebar item **HR Business Partner**).
+Permissions: `hrbp.manage` (run the toolkit) and `hrbp.view` (leadership dashboard). Data lives in the server-only collection `hrbpItems`.
+
+Employee business mapping (HRBP-001), org structure, headcount against approved numbers and resource planning (HRBP-002 to 004), quarterly talent review with the 9-box (HRBP-005),
+KPI governance (HRBP-006), performance improvement plans (HRBP-007), anonymous pulse surveys (HRBP-008, results hidden below 5 answers), recognition (HRBP-009), wellness (HRBP-010),
+training needs (HRBP-011), learning paths (HRBP-012), certificate tracker (HRBP-013), retention planning, succession planning and the leadership dashboard.
+Existing companies need `hrbp.manage` / `hrbp.view` / `hiring.budget.manage` granted to the right roles (new companies get them from the role templates).
 
 ## Known limits
 
