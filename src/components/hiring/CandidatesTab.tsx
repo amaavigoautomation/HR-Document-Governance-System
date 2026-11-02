@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { pipelineService } from '../../services/pipelineService';
 import { User } from '../../types';
+import { CandidateAi } from './AiTab';
 import { Card, Drawer, EmptyState, Field, Notice, btnGhost, btnPrimary, input, useRunner } from '../leave/ui';
 import { Loading, Pill, useLoad } from '../perf/shared';
 import { FeedbackPanel } from './InterviewsTab';
@@ -62,6 +63,8 @@ const CandidateDrawer: React.FC<{ id: string; users: User[]; onClose: () => void
             <ScoreBlock score={d.data.score} />
             {d.data.resumeFacts && <p className="mt-2 text-xs text-slate-500">From the resume: {d.data.resumeFacts.years ? `${d.data.resumeFacts.years} years mentioned. ` : ''}Skills found: {d.data.resumeFacts.skillsFound.join(', ') || 'none'}. Missing: {d.data.resumeFacts.skillsMissing.join(', ') || 'none'}.</p>}
           </Card>
+
+          <CandidateAi applicationId={id} onChanged={reload} />
 
           <Card title="Candidate details">
             <div className="grid gap-3 md:grid-cols-2">

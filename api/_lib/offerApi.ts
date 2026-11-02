@@ -8,7 +8,7 @@
  *   offer-tpl-list / offer-tpl-save         the company's own wording for the letter, checklist, NDA and agreement
  *   hcost-list / hcost-save / hcost-delete  hiring costs per requisition (feeds cost per hire)
  *   offer-public-get / offer-public-respond the candidate's own page, opened with the secret link in the email (no sign-in)
- *   sweepOffers                             daily: reminders, ghosted, expired, joining reminders (called by hiringDaily.ts)
+ *   sweepOffers                             daily: reminders, ghosted, expired, joining reminders (called by the hiring-daily action)
  *
  * Approval uses the existing founder permission (req.founder_decide). HR steps use the same permissions as the rest of the hiring pipeline.
  * Everything lives in hiringItems (kind offer / offerTpl / hcost) and carries a companyId.
@@ -21,6 +21,8 @@ import { dispatchLiveEmail } from './serverEmail.js';
 import { startOnboarding } from './onboarding.js';
 import { MANAGE_PERMS, getItem, getRequisition, listItems, newId, putItem, whoIs, type Item, type PipeRequest } from './pipelineApi.js';
 import { welcomeKitFor } from './joiningApi.js';
+import { startProbation } from './talentCycleApi.js';
+import { loadPeople } from './leaveCore.js';
 import { requisitionMaxCtcLpa } from '../../shared/hiringBudget.js';
 import {
   COST_CATEGORIES, DEFAULT_PACK_TEMPLATES, addDay, buildPack, checkRecommendedCtc, dueReminders, isDay, isFinalOffer, offerTransition,
@@ -169,6 +171,7 @@ async function offerAct(ctx: AuthContext, b: any, origin?: string): Promise<Resu
   let res: { offer?: Item; error?: string; status?: number };
   let emailSent: boolean | undefined;
   let link = '';
+  let probationNote = '';
 
   switch (action) {
     case 'submit': {
@@ -237,6 +240,16 @@ async function offerAct(ctx: AuthContext, b: any, origin?: string): Promise<Resu
       const when = str(b.joinedOn, 10) || todayIst();
       if (!isDay(when)) return fail(400, 'Enter a valid joining date.');
       res = await moveOffer(cid, id, 'join', who, note, () => ({ joinedOn: when }));
+      // Best effort: if the person already has a login/employee record (same email), start their probation reviews now.
+      if (!res.error && cur.probationMonths > 0) {
+        try {
+          const person = (await loadPeople(cid)).find((p: any) => String(p.email || '').toLowerCase() === String(cur.email || '').toLowerCase());
+          if (person) {
+            const pr = await startProbation(cid, person.uid, { joinDate: when, months: Number(cur.probationMonths), by: who });
+            probationNote = pr.status === 200 ? 'Probation reviews started.' : pr.status === 409 ? '' : `Probation was not started: ${pr.json?.error || 'unknown reason'}`;
+          } else probationNote = 'Create the employee record, then start probation from HR Business Partner > Probation.';
+        } catch { probationNote = 'Start probation from HR Business Partner > Probation.'; }
+      }
       break;
     }
     case 'withdraw':
@@ -246,7 +259,7 @@ async function offerAct(ctx: AuthContext, b: any, origin?: string): Promise<Resu
       return fail(400, 'Unknown action.');
   }
   if (res.error) return fail(res.status || 400, res.error);
-  return ok({ item: publicView(res.offer!), emailSent, link });
+  return ok({ item: publicView(res.offer!), emailSent, link, probationNote });
 }
 
 /** The candidate's answer, whether given on their page or recorded by HR on their behalf. */

@@ -5,6 +5,7 @@ import { GenericManager, FieldSpec } from './hrbp/GenericManager';
 import { DashboardView, OrgView } from './hrbp/Views';
 import { Pips } from './hrbp/Pips';
 import { Surveys } from './hrbp/Surveys';
+import { Okrs, Probation, Promotions, Quarterly } from './hrbp/TalentCycle';
 import { MyHrbp, MyLearning, Recognition, WellnessList } from './hrbp/SelfService';
 import { hrbpService } from '../services/hrbpService';
 import { useLoad } from './perf/shared';
@@ -12,8 +13,9 @@ import { Card, Field, Notice, btnPrimary, input, useRunner } from './leave/ui';
 
 type Section =
   | 'dash' | 'org' | 'map' | 'talent' | 'kpi' | 'pip' | 'retention' | 'succ' | 'needs' | 'paths' | 'certs' | 'surveysAdmin' | 'wellAdmin'
-  | 'me' | 'learning' | 'pulse' | 'recog' | 'well';
+  | 'probation' | 'okr' | 'promo' | 'quarterly' | 'me' | 'learning' | 'pulse' | 'recog' | 'well';
 
+const CYCLE: { key: Section; label: string }[] = [{ key: 'okr', label: 'OKRs' }, { key: 'probation', label: 'Probation' }, { key: 'promo', label: 'Promotions' }];
 const SELF: { key: Section; label: string }[] = [
   { key: 'me', label: 'My HRBP' }, { key: 'learning', label: 'My learning' }, { key: 'pulse', label: 'Pulse surveys' }, { key: 'recog', label: 'Recognition' }, { key: 'well', label: 'Wellness' },
 ];
@@ -47,7 +49,8 @@ export const HrbpModule: React.FC<{ currentUser: User; users: User[] }> = ({ cur
   const view = manage || hasAnyPerm(currentUser.perms, ['hrbp.view']);
   const groups = [
     ...(view ? [{ title: 'Leadership', items: VIEW }] : []),
-    ...(manage ? [{ title: 'HRBP toolkit', items: MANAGE }] : []),
+    ...(manage ? [{ title: 'HRBP toolkit', items: MANAGE }, { title: 'Probation & growth', items: [...CYCLE, { key: 'quarterly' as Section, label: 'Quarterly round' }] }] : []),
+    ...(!manage ? [{ title: 'Probation & growth', items: CYCLE }] : []),
     { title: 'For everyone', items: SELF },
   ];
   const [section, setSection] = useState<Section>(view ? 'dash' : 'me');
@@ -86,6 +89,10 @@ export const HrbpModule: React.FC<{ currentUser: User; users: User[] }> = ({ cur
           row={(k) => ({ title: `${k.name} - ${k.employeeName || k.department}`, sub: `${k.period} - target ${k.target}${k.unit ? ` ${k.unit}` : ''}, actual ${k.actual ?? 'not entered'}${k.attainment !== null ? ` (${k.attainment}%)` : ''}`, pill: { text: k.status.replace('_', ' ').toLowerCase(), tone: k.status === 'GREEN' ? 'green' : k.status === 'AMBER' ? 'amber' : k.status === 'RED' ? 'red' : 'slate' } })} />
       );
       case 'pip': return <Pips users={users} />;
+      case 'probation': return <Probation users={users} />;
+      case 'okr': return <Okrs users={users} />;
+      case 'promo': return <Promotions users={users} />;
+      case 'quarterly': return <Quarterly />;
       case 'retention': return (
         <GenericManager key="ret" title="Retention planning" subtitle="One plan per person. High-risk people from the talent review belong here." prefix="retention" users={users}
           fields={[

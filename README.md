@@ -168,6 +168,22 @@ KPI governance (HRBP-006), performance improvement plans (HRBP-007), anonymous p
 training needs (HRBP-011), learning paths (HRBP-012), certificate tracker (HRBP-013), retention planning, succession planning and the leadership dashboard.
 Existing companies need `hrbp.manage` / `hrbp.view` / `hiring.budget.manage` granted to the right roles (new companies get them from the role templates).
 
+## Offers, joining, probation, growth, AI and the founder dashboard
+
+All of this is built inside the existing functions (still 9 of 12 on Vercel). Hiring routes are actions of `/api/recruitment/<action>`; probation, OKRs and promotions are actions of `/api/hrbp/<action>`.
+
+- **Offers** (`api/_lib/offerApi.ts`, `shared/offerEngine.ts`): HR raises an offer from a candidate; a CTC above the job's band needs a written reason; the founder approves (or counters); the offer pack (letter, compensation breakup, joining checklist, NDA, employment agreement) is built from editable templates; the candidate answers on a private page (`/?offer=<token>`); accepting starts onboarding automatically. Reminders every 2 days, "no response" after 7 days, expiry on the valid-till date, joining reminders at 7 days and 1 day. **The NDA and employment agreement are generic drafts and must be reviewed by a lawyer.**
+- **Joining board** (`joiningApi.ts`): documents and emergency contact status, welcome kit, IT setup (email, Microsoft 365, Google, Teams, ClickUp, attendance, payroll) and an asset register with unique tags.
+- **Probation, OKRs, promotions, quarterly round** (`talentCycleApi.ts`, `shared/talentCycle.ts`): 30/60/90-day manager reviews with reminders, HR decision (confirm, extend, end); OKRs at company, team and individual level; promotion flow manager -> HR -> founder -> applied; one quarterly checklist. Applying a promotion changes the designation only; the salary revision is created by hand in Payroll. Probation KPI achievement is entered by the manager.
+- **AI** (`aiHiringApi.ts`, `openaiHelper.ts`, `shared/resumeAi.ts`): resume reading (including scanned PDFs and photos), employment gaps and stability, duplicate detection and merge, candidate comparison, hiring recommendation, follow-up email drafts and a dashboard summary. The model only reads and writes language; scores and verdicts are fixed rules. Names are never sent to the AI and interview feedback counts only once the whole panel has submitted. With no key every feature falls back to rules.
+- **Founder dashboard** (`analyticsApi.ts`, `shared/hiringAnalytics.ts`): vacancies, pipeline, time to hire, offer acceptance, cost per hire, upcoming joinings, budget vs actual, source effectiveness, attrition. Visible to company admins, the founder permission, `hrbp.view` and `hrbp.manage`.
+- **Candidate screening link** (`screeningLinkApi.ts`): the candidate fills a short form and picks time slots on `/?screen=<token>`; status is Pending, Completed, Reschedule or No response (after 3 days).
+- **Outside connections** (`integrations.ts`): Microsoft Teams meeting links and WhatsApp reminders switch on when their variables are set; Google Meet and ClickUp are manual. Everything works without them.
+- **Daily job**: one cron, `/api/recruitment/hiring-daily` (needs `CRON_SECRET`), runs offer reminders and expiry, probation and quarterly reminders, interview reminders and the screening-link sweep.
+
+Environment variables: `OPENAI_API_KEY`, `OPENAI_HIRING_MODEL` (optional, default gpt-4o-mini), `AI_MONTHLY_CALLS` (optional limit per company), `APP_BASE_URL` (the public address used in emailed links), `CRON_SECRET`, and optionally `MS_TENANT_ID`, `MS_CLIENT_ID`, `MS_CLIENT_SECRET`, `MS_ORGANIZER_UPN`, `WHATSAPP_TOKEN`, `WHATSAPP_PHONE_ID`.
+Existing roles need the permissions `hrbp.manage`, `hrbp.view` and `hiring.budget.manage` granted where HR and the founder should use these screens.
+
 ## Known limits
 
 - Talent Acquisition, onboarding and AI candidate evaluation are per company. Companies other than
