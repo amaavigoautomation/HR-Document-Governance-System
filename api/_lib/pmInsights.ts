@@ -97,7 +97,7 @@ async function dashboard(c: C, _b: any, q: Record<string, any>): Promise<Result>
     byDepartment: byDept, distribution: scored.length >= MIN_GROUP ? dist : null, distributionHidden: scored.length < MIN_GROUP && scored.length > 0, minGroup: MIN_GROUP,
     sop: { assigned: sopA.length, acknowledged: sopA.filter((a) => a.acknowledgementRequired === false || a.status === 'ACKNOWLEDGED').length, trainingPending: sopA.filter((a) => a.training === 'PENDING').length, verificationPending: sopA.filter((a) => a.managerVerification === 'PENDING').length },
     plans: { active: inScope(plans).filter((p) => p.status === 'ACTIVE').length, waiting: inScope(plans).filter((p) => p.status === 'CONFIGURATION_PENDING').length, none: c.people.filter((p) => p.active && (!ds || ds.has(p.uid)) && !plans.some((x) => x.uid === p.uid && x.status !== 'SUPERSEDED')).length },
-    evidence: { total: inScope(evidence).length, unverified: inScope(evidence).filter((e) => e.status === 'UNVERIFIED' || e.status === 'PENDING').length },
+    evidence: { total: inScope(evidence).length, unverified: inScope(evidence).filter((e) => e.status === 'PENDING_VERIFICATION' || e.status === 'UNMAPPED').length },
     scope: scopeDepts ? scopeDepts.join(', ') : 'Whole company',
   });
 }

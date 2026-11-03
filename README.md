@@ -119,6 +119,19 @@ KPI governance (HRBP-006), performance improvement plans (HRBP-007), anonymous p
 training needs (HRBP-011), learning paths (HRBP-012), certificate tracker (HRBP-013), retention planning, succession planning and the leadership dashboard.
 Existing companies need `hrbp.manage` / `hrbp.view` / `hiring.budget.manage` granted to the right roles (new companies get them from the role templates).
 
+## Performance Management (HR-PM-001 to HR-PM-009)
+
+Built to the "HR Performance Management Automation" specification (Draft v1.0) and meant to be usable without training. Open **Performance** in the sidebar.
+
+- **Everyone** starts on *Today*, a plain to-do list. *My performance* shows their targets (KRA/KPI), processes (SOPs) and reviews; they self-assess, read the result and agree or disagree.
+- **Managers** set targets for their team, rate each target and behaviour, record the feedback discussion, run monthly check-ins and development plans, and verify work evidence.
+- **HR** follows *Start here* (the seven setup steps in the specification's order, with a one-press quick start), then opens review cycles. **Approvers** (`pm.approve`) approve scoring rules, KRA/KPI templates, plans and final reviews, and are the only people who can amend a final review.
+- Permissions: `pm.manage` (HR), `pm.approve`, `pm.view` (grouped dashboards). Managers see their own team automatically.
+- The ten n8n workflows run inside the app: plan assignment (`sync` button and the daily job), SOP assignment, task evidence (manual, CSV upload, or a webhook at `/api/pm/ev-hook?c=<company>&key=<key>`), monthly check-ins, formal reviews, development plans, dashboards, and the exception and audit handler. `/api/pm/daily` is the daily cron (`CRON_SECRET`).
+- Rules enforced on the server: weights 60/25/15 and KRA/KPI weights must total 100; ratings are 1 to 5 plus "Not observed" (never 0); missing evidence is left out, never scored as zero (HR must accept the gap); nothing starts without an approved framework and manager (`CONFIGURATION_PENDING`, no silent defaults); finished reviews change only by an audited, reasoned amendment; nobody approves their own review; opening a cycle twice creates no duplicate; leadership figures hide groups under 3; AI is optional, advisory, and anything inferring personality, motive or health is discarded and logged; serious misconduct is only recorded as a confidential pointer.
+- Data: one server-only collection `pmItems` (told apart by `kind`). Code: `shared/pmEngine.ts`, `api/_lib/pm*.ts` (router `pmApi.ts`), `src/components/pm/`. Tests: `tests/pm.engine.test.ts`, `tests/pm.api.test.ts` (covers the 12 launch checks of section 14).
+- This replaces the earlier Performance module that lived on `sahil-11-performance`. It adds one Vercel function (`api/pm/[action].ts`).
+
 ## Offers, joining, probation, growth, AI and the founder dashboard
 
 All of this is built inside the existing functions (still 9 of 12 on Vercel). Hiring routes are actions of `/api/recruitment/<action>`; probation, OKRs and promotions are actions of `/api/hrbp/<action>`.

@@ -35,7 +35,8 @@ async function request<T>(path: string, body: unknown, method: string): Promise<
     /* non-JSON error body */
   }
   if (!res.ok || json?.success === false) {
-    throw new Error(json?.error || `Request failed (${res.status})`);
+    // `data` keeps the whole answer so a screen can show extra detail (for example a list of problems to fix).
+    throw Object.assign(new Error(json?.error || `Request failed (${res.status})`), { data: json });
   }
   return json as T;
 }

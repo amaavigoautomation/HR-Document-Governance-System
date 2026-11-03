@@ -167,6 +167,7 @@ export async function buildPlan(c: C, p: Person, trigger: PlanTrigger, bd: Bundl
   const existing = replaceId ? bd.plans.find((x) => x.id === replaceId) || null : null;
   const prev = latestPlan(bd.plans, p.uid);
   const id = existing?.id || newId();
+  const needsBody = !existing || existing.status === 'CONFIGURATION_PENDING';   // read before `existing` is overwritten below
   const blocked = cfg.issues.length > 0;
   const from = today();
   const plan: Item = {
@@ -190,7 +191,7 @@ export async function buildPlan(c: C, p: Person, trigger: PlanTrigger, bd: Bundl
     await raise(c, 'CONFIGURATION_PENDING', { refId: `plan_${p.uid}`, subjectUid: p.uid, refLabel: p.name, detail: cfg.issues.map((i) => i.text).join(' '), ownerUid: cfg.mgr || '' });
     if (cfg.issues.some((i) => i.code === 'NO_TEMPLATE')) await raise(c, 'NO_KRA_KPI', { refId: `plan_${p.uid}`, subjectUid: p.uid, refLabel: p.name, ownerUid: cfg.mgr || '', detail: `${p.name} has no KRA/KPI yet. Their final review is blocked until one is approved.` });
   } else {
-    if (!existing || existing.status === 'CONFIGURATION_PENDING') {
+    if (needsBody) {
       await writePlanBody(c, plan, cfg.tpl!);
       await clearException(c, 'CONFIGURATION_PENDING', `plan_${p.uid}`, 'The plan could be built.');
       await tell(c, [cfg.mgr!], `Set targets for ${p.name}`, `${p.name}'s performance plan (${plan.roleName}) is ready. Open Performance > My team and set the targets, then send it for HR validation.`);
@@ -569,7 +570,7 @@ async function planRebuild(c: C, b: any): Promise<Result> {
 export const PLAN_ROUTES: Record<string, Route> = {
   'tpl-list': { method: 'GET', who: 'hr', run: (c, b, q) => tplList(c, b, q) },
   'tpl-save': { method: 'POST', who: 'hr', run: (c, b) => tplSave(c, b) },
-  'tpl-approve': { method: 'POST', who: 'hr', run: (c, b) => tplApprove(c, b) },
+  'tpl-approve': { method: 'POST', who: 'approver', run: (c, b) => tplApprove(c, b) },
   'tpl-delete': { method: 'POST', who: 'hr', run: (c, b) => tplDelete(c, b) },
   'plan-list': { method: 'GET', who: 'any', run: (c, b, q) => planList(c, b, q) },
   'plan-get': { method: 'GET', who: 'any', run: (c, b, q) => planGet(c, b, q) },

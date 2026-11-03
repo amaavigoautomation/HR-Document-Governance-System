@@ -502,7 +502,17 @@ export async function reviewReminders(c: C): Promise<{ reminded: number }> {
   return { reminded };
 }
 
+/** For the manager's SOP check: the processes assigned to this person with their checkpoints, and any check already saved for the cycle. */
+async function sopFor(c: C, _b: any, q: Record<string, any>): Promise<Result> {
+  const uid = str(q.employeeUid, 120);
+  if (!(isMyReport(c, uid) || c.isHr || c.isApprover)) return fail(403, 'Only the reporting manager or HR can assess SOP compliance.');
+  const [assigns, sops, checks] = await Promise.all([listK(c.cid, 'sopAssign'), listK(c.cid, 'sop'), listK(c.cid, 'sopCheck')]);
+  const mine = assigns.filter((a) => a.uid === uid && !['SUPERSEDED', 'ENDED'].includes(a.status));
+  return ok({ items: mine.map((a) => { const sop = sops.find((x) => x.id === a.sopId); return { sopId: a.sopId, title: a.title, criticality: a.criticality, checkpoints: sop?.checkpoints || [], check: checks.find((x) => x.uid === uid && x.sopId === a.sopId && x.cycleId === str(q.cycleId, 80)) || null, acknowledged: !!a.acknowledgedAt }; }) });
+}
+
 export const REVIEW_ROUTES: Record<string, Route> = {
+  'sop-for': { method: 'GET', who: 'any', run: (c, b, q) => sopFor(c, b, q) },
   'cycle-open': { method: 'POST', who: 'hr', run: (c, b) => cycleOpen(c, b) },
   'cycle-lock': { method: 'POST', who: 'hr', run: (c, b) => cycleLock(c, b) },
   'review-list': { method: 'GET', who: 'any', run: (c, b, q) => reviewList(c, b, q) },
