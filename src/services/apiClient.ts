@@ -44,7 +44,15 @@ async function request<T>(path: string, body: unknown, method: string): Promise<
 const cacheable = (path: string) => path.startsWith('/api/leave/') && !path.startsWith('/api/leave/dashboard-') && !path.startsWith('/api/leave/home-') && !path.startsWith('/api/leave/lifecycle-identity-file') && !path.startsWith('/api/leave/lifecycle-qualification-doc') && !path.startsWith('/api/leave/lifecycle-separation-file') && !path.startsWith('/api/leave/doc-get') && !path.startsWith('/api/leave/badges');
 
 export async function apiJson<T = any>(path: string, body?: unknown, method = body === undefined ? 'GET' : 'POST'): Promise<T> {
-  if (!cacheable(path)) return request<T>(path, body, method);
+  if (!cacheable(path)) {
+    // The exclusions above only keep *reads* out of the cache (photos, home, badges). A change made through one of those paths
+    // (adding or removing an identity photo, say) still has to clear the cached lists, or the screen shows the old list.
+    if (method !== 'GET' && path.startsWith('/api/leave/')) {
+      reads.clear();
+      try { return await request<T>(path, body, method); } finally { reads.clear(); }
+    }
+    return request<T>(path, body, method);
+  }
   if (method !== 'GET') {
     reads.clear();
     try {
