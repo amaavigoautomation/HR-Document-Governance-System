@@ -365,7 +365,10 @@ async function surveySave(c: Ctx, b: any): Promise<Result> {
   if (closesOn && !isDate(closesOn)) return fail(400, 'Closing date must look like 2026-12-31.');
   const it: Item = { id: newId(), companyId: c.cid, kind: 'survey', title, questions: qs, closesOn, status: 'OPEN', createdAt: nowIso(), createdBy: c.who };
   await putK(it);
-  return ok({ item: it });
+  // Everyone in the company is asked to answer. Failures to send never undo the survey.
+  const emails = c.people.filter((p) => p.active && p.email).map((p) => p.email);
+  await notify(c.cid, emails, `New pulse survey: ${title}`, `Hello,\n\nA short pulse survey is open: "${title}".\n\nYou can answer it in HR Business Partner > Pulse surveys. It is anonymous: your name is never stored with your answers.${closesOn ? `\n\nIt closes on ${closesOn}.` : ''}\n\nThank you.`).catch(() => undefined);
+  return ok({ item: it, notified: emails.length });
 }
 
 async function surveyClose(c: Ctx, b: any): Promise<Result> {

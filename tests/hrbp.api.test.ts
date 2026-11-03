@@ -112,7 +112,9 @@ async function main() {
 
   // ---- pulse survey is anonymous
   assert.equal((await call(HRBP, 'POST', 'survey-save', { title: 'Pulse', questions: [] })).status, 400);
-  const sv = (await call(HRBP, 'POST', 'survey-save', { title: 'Q4 pulse', questions: [{ text: 'I enjoy my work', type: 'scale' }, { text: 'Anything else?', type: 'text' }] })).json.item;
+  const svRes = (await call(HRBP, 'POST', 'survey-save', { title: 'Q4 pulse', questions: [{ text: 'I enjoy my work', type: 'scale' }, { text: 'Anything else?', type: 'text' }] })).json;
+  const sv = svRes.item;
+  assert.ok(svRes.notified >= 1, 'everyone active in the company is emailed when a survey opens');
   assert.equal((await call(EMP, 'GET', 'survey-list')).json.items.length, 1);
   assert.equal((await call(EMP, 'POST', 'survey-respond', { surveyId: sv.id, answers: { q1: 9 } })).status, 400);
   assert.equal((await call(EMP, 'POST', 'survey-respond', { surveyId: sv.id, answers: { q1: 5, q2: 'secret-comment-xyz' } })).status, 200);

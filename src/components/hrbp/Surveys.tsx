@@ -6,7 +6,7 @@ import { Loading, Pill, useLoad } from '../perf/shared';
 /** Pulse surveys. Managers create them and read results (hidden below 5 answers); everyone answers once, anonymously. */
 export const Surveys: React.FC<{ manage: boolean }> = ({ manage }) => {
   const list = useLoad(() => hrbpService.get('survey-list'), []);
-  const { run, busy, note } = useRunner();
+  const { run, busy, note, setNote } = useRunner();
   const [draft, setDraft] = useState({ title: '', questions: 'I enjoy my work | scale\nI would recommend this company | scale\nWhat should we change? | text' });
   const [answers, setAnswers] = useState<Record<string, Record<string, any>>>({});
   const [results, setResults] = useState<Record<string, any>>({});
@@ -64,7 +64,7 @@ export const Surveys: React.FC<{ manage: boolean }> = ({ manage }) => {
               <Field label="Questions" hint="One per line. Add | scale (1-5 rating) or | text (free comment) at the end.">
                 <textarea className={input} rows={6} value={draft.questions} onChange={(e) => setDraft({ ...draft, questions: e.target.value })} />
               </Field>
-              <button className={btnPrimary} disabled={busy} onClick={() => run(async () => { await hrbpService.post('survey-save', { title: draft.title, questions: draft.questions.split('\n').map((l) => l.trim()).filter(Boolean).map((l) => { const i = l.lastIndexOf('|'); return i > 0 ? { text: l.slice(0, i).trim(), type: l.slice(i + 1).trim() === 'text' ? 'text' : 'scale' } : { text: l, type: 'scale' }; }) }); setDraft({ ...draft, title: '' }); await list.reload(); }, 'Survey opened.')}>Open survey</button>
+              <button className={btnPrimary} disabled={busy} onClick={() => run(async () => { const r = await hrbpService.post('survey-save', { title: draft.title, questions: draft.questions.split('\n').map((l) => l.trim()).filter(Boolean).map((l) => { const i = l.lastIndexOf('|'); return i > 0 ? { text: l.slice(0, i).trim(), type: l.slice(i + 1).trim() === 'text' ? 'text' : 'scale' } : { text: l, type: 'scale' }; }) }); setDraft({ ...draft, title: '' }); await list.reload(); setNote({ tone: 'ok', text: r?.notified ? `Survey opened. ${r.notified} ${r.notified === 1 ? 'person was' : 'people were'} emailed.` : 'Survey opened.' }); })}>Open survey</button>
             </div>
           </Card>
         </div>

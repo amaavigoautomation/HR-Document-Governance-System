@@ -747,7 +747,7 @@ export const HRAgentShell: React.FC<HRAgentShellProps> = ({
                 {/* ---------------------------------------------------- */}
                 {([
                   { key: 'my-hiring' as const, title: 'Referrals & interviews', sub: 'Refer people, give interview feedback', Icon: Users, show: true },
-                  { key: 'hrbp' as const, title: 'HR Business Partner', sub: 'Org, talent, engagement & succession', Icon: Layers, show: hasAnyPerm(currentUser.perms, ['hrbp.manage', 'hrbp.view']) || !!currentUser.isCompanyAdmin },
+                  { key: 'hrbp' as const, title: 'HR Business Partner', sub: (hasAnyPerm(currentUser.perms, ['hrbp.manage', 'hrbp.view']) || !!currentUser.isCompanyAdmin) ? 'Org, talent, engagement & succession' : 'Surveys, recognition, learning & wellness', Icon: Layers, show: true },
                 ]).filter((m) => m.show).map((m) => (
                   <React.Fragment key={m.key}>
                   <div className="relative">
