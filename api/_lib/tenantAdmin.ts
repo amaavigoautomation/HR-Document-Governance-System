@@ -87,6 +87,8 @@ interface EmployeeDoc {
   perms: string[];
   authorizedModules: string;
   isDepartmentHead?: boolean;
+  /** Earlier sign-in emails, newest last (at most 10), so an old address can still be traced to the person. */
+  emailHistory?: { email: string; changedAt: string; changedBy: string }[];
   active: boolean;
   createdAt: string;
   updatedAt: string;
@@ -624,7 +626,7 @@ async function importUsers(headers: Record<string, any>, body: any, origin?: str
   return ok({ imported: results.filter((x) => x.ok).length, failed: results.filter((x) => !x.ok).length, results });
 }
 
-async function updateUser(headers: Record<string, any>, body: any): Promise<TenantResult> {
+async function updateUser(headers: Record<string, any>, body: any, origin?: string): Promise<TenantResult> {
   const actor = await requirePermission(headers, 'users.manage');
   const companyId = actor.companyId!;
   const userId = str(body.userId, 128);
@@ -652,6 +654,37 @@ async function updateUser(headers: Record<string, any>, body: any): Promise<Tena
   }
 
   const adminRoleIds = roles.filter((r) => r.isAdmin).map((r) => r.id);
+
+  // Changing the sign-in email. Everything that can fail is checked here, before anything is written.
+  const oldEmail = String(current.email || '').toLowerCase();
+  const nextEmail = body.email === undefined ? oldEmail : str(body.email, 200).toLowerCase();
+  const emailChanged = !!nextEmail && nextEmail !== oldEmail;
+  if (body.email !== undefined && !nextEmail) return fail(400, 'Email cannot be empty.');
+  let authUser: { metadata?: { lastSignInTime?: string }; customClaims?: Record<string, any> } | undefined;
+  if (emailChanged) {
+    if (!EMAIL_RE.test(nextEmail)) return fail(400, `"${nextEmail}" is not a valid email.`);
+    // Whoever controls a person's email can reset their password, so it needs the same standing as giving them access.
+    const targetIsAdmin = current.roleIds.some((r) => adminRoleIds.includes(r));
+    if (targetIsAdmin && !actor.isCompanyAdmin) return fail(403, 'Only a Company Admin can change the email of another admin.');
+    // Everyone-level permissions (read and acknowledge policies) never count as "more access".
+    const beyondBaseline = (current.perms || []).filter((p) => p !== 'doc.acknowledge' && p !== 'doc.suggest');
+    if (!canGrantPermissions(actor.perms, actor.isCompanyAdmin, beyondBaseline)) {
+      return fail(403, 'You cannot change the email of someone who has access you do not have.');
+    }
+    try {
+      authUser = await adminAuth().getUser(current.authUid);
+    } catch {
+      return fail(404, 'This person has no login account to change.');
+    }
+    if ((authUser.customClaims as TenantClaims | undefined)?.pa === true) return fail(403, 'A platform administrator\'s email cannot be changed here.');
+    try {
+      const taken = await adminAuth().getUserByEmail(nextEmail);
+      if (taken.uid !== current.authUid) return fail(409, `${nextEmail} already has an account.`);
+    } catch (e: any) {
+      if (e?.code !== 'auth/user-not-found') throw e;
+    }
+  }
+
   let nextRoleIds = current.roleIds;
   if (Array.isArray(body.roleIds)) {
     nextRoleIds = body.roleIds.map(String);
@@ -671,10 +704,73 @@ async function updateUser(headers: Record<string, any>, body: any): Promise<Tena
     }
   }
 
-  await ref.update(updates);
+  if (emailChanged) {
+    // Login first (it is the part most likely to be refused), then the directory record; undo the login if the record fails.
+    await adminAuth().updateUser(current.authUid, { email: nextEmail });
+    updates.email = nextEmail;
+    if (String(current.loginId || '').toLowerCase() === oldEmail) updates.loginId = nextEmail;
+    updates.emailHistory = [...(current.emailHistory || []).slice(-9), { email: oldEmail, changedAt: nowIso(), changedBy: actor.email }];
+    try {
+      await ref.update(updates);
+    } catch (err) {
+      await adminAuth().updateUser(current.authUid, { email: oldEmail }).catch(() => {});
+      throw err;
+    }
+  } else {
+    await ref.update(updates);
+  }
   await syncUser(current.authUid, { company, roles });
-  if (!nextActive) await adminAuth().revokeRefreshTokens(current.authUid);
-  return ok({ userId });
+  if (!nextActive || (emailChanged && current.authUid !== actor.uid)) await adminAuth().revokeRefreshTokens(current.authUid);
+
+  let invite: { emailed: boolean; inviteLink?: string } | undefined;
+  if (emailChanged) await afterEmailChange({ companyId, company, current, oldEmail, nextEmail, authUser, origin, onInvite: (i) => { invite = i; } });
+  return ok({ userId, emailChanged, invite });
+}
+
+/**
+ * Keeps the rest of the system pointing at the new address. All of it is best effort: the sign-in email itself has
+ * already changed, so a failure here is logged and never undoes it.
+ */
+async function afterEmailChange(a: {
+  companyId: string; company: CompanyDoc; current: EmployeeDoc; oldEmail: string; nextEmail: string;
+  authUser?: { metadata?: { lastSignInTime?: string } }; origin?: string; onInvite: (i: { emailed: boolean; inviteLink?: string }) => void;
+}): Promise<void> {
+  const { companyId, company, current, oldEmail, nextEmail } = a;
+  // Policy acknowledgements carry a copy of the email that compliance reminders are sent to.
+  try {
+    const ids = [current.empId, current.id].filter((v, i, arr) => v && arr.indexOf(v) === i);
+    for (const id of ids) {
+      const snap = await db().collection('acknowledgments').where('companyId', '==', companyId).where('employeeId', '==', id).get();
+      for (let i = 0; i < snap.docs.length; i += 400) {
+        const batch = db().batch();
+        snap.docs.slice(i, i + 400).forEach((d) => batch.update(d.ref, { employeeEmail: nextEmail }));
+        await batch.commit();
+      }
+    }
+  } catch (e: any) {
+    console.warn('[tenant] could not update acknowledgement emails:', e?.message || e);
+  }
+  // The platform admin's Companies page shows the company's admin email.
+  if (String(company.adminEmail || '').toLowerCase() === oldEmail) {
+    await db().collection('companies').doc(companyId).update({ adminEmail: nextEmail, updatedAt: nowIso() }).catch(() => {});
+  }
+  // Someone who never signed in still has a pending invite at the old address: send a fresh one to the new address.
+  const neverSignedIn = !a.authUser?.metadata?.lastSignInTime;
+  if (neverSignedIn) {
+    const r = await sendInvite(nextEmail, current.name, company.name, a.origin).catch(() => null);
+    a.onInvite(r ? { emailed: r.emailed, inviteLink: r.emailed ? undefined : r.link } : { emailed: false });
+    return;
+  }
+  // Otherwise tell both addresses, so a change nobody asked for does not go unnoticed.
+  const note = (to: string, line: string) =>
+    dispatchLiveEmail({
+      to, recipientName: current.name, subject: 'Your sign-in email for the HR portal was changed',
+      body: `Dear ${current.name},\n\n${line}\n\nIf you did not expect this, contact your company administrator.`,
+    }).catch(() => undefined);
+  await Promise.all([
+    note(oldEmail, `Your sign-in email at ${company.name} was changed from ${oldEmail} to ${nextEmail}. Use ${nextEmail} from now on.`),
+    note(nextEmail, `Your sign-in email at ${company.name} is now ${nextEmail}. Your password has not changed.`),
+  ]);
 }
 
 async function resendInvite(headers: Record<string, any>, body: any, origin?: string): Promise<TenantResult> {
@@ -860,7 +956,7 @@ export async function routeTenant(r: TenantRequest): Promise<TenantResult> {
       case 'delete-company': return await deleteCompany(headers, b);
       case 'create-user': return await createUser(headers, b, origin);
       case 'import-users': return await importUsers(headers, b, origin);
-      case 'update-user': return await updateUser(headers, b);
+      case 'update-user': return await updateUser(headers, b, origin);
       case 'resend-invite': return await resendInvite(headers, b, origin);
       case 'save-department': return await saveDepartment(headers, b);
       case 'delete-department': return await deleteDepartment(headers, b);

@@ -255,8 +255,20 @@ const UserModal: React.FC<{
     setBusy(true);
     try {
       if (user) {
-        await adminApi.updateUser({ userId: user.id, name, title, departmentId, roleIds, active });
-        onDone(`${name} updated.`);
+        const newEmail = email.trim().toLowerCase();
+        const emailChanged = newEmail !== (user.email || '').toLowerCase();
+        const r = await adminApi.updateUser({ userId: user.id, name, title, departmentId, roleIds, active, ...(emailChanged ? { email: newEmail } : {}) });
+        if (r.invite?.inviteLink) {
+          setInviteLink(r.invite.inviteLink);
+          return;
+        }
+        onDone(!emailChanged
+          ? `${name} updated.`
+          : r.invite
+            ? r.invite.emailed
+              ? `${name} updated. A new invite was sent to ${newEmail}, because they had not signed in yet.`
+              : `${name} updated, but the invite email to ${newEmail} was NOT sent. Use Resend invite on their row.`
+            : `${name} updated. Their sign-in email is now ${newEmail}${user.id === currentUser.id ? '.' : ', and they will need to sign in again.'}`);
       } else {
         const r = await adminApi.createUser({ name, email, title, departmentId, roleIds });
         if (r.inviteLink) {
@@ -276,8 +288,8 @@ const UserModal: React.FC<{
 
   if (inviteLink) {
     return (
-      <Modal title="Person added" onClose={() => onDone(`${name} added. Share the invite link with them.`)}>
-        <Banner kind="success">The account was created, but the invite email could not be sent. Share this link with {name} so they can set a password:</Banner>
+      <Modal title={user ? 'Email updated' : 'Person added'} onClose={() => onDone(user ? `${name} updated. Share the invite link with them.` : `${name} added. Share the invite link with them.`)}>
+        <Banner kind="success">{user ? 'The email was changed, but the invite email could not be sent.' : 'The account was created, but the invite email could not be sent.'} Share this link with {name} so they can set a password:</Banner>
         <div className="mt-3 flex items-center gap-2">
           <input readOnly className={`${input} font-mono text-[11px]`} value={inviteLink} onFocus={(e) => e.currentTarget.select()} />
           <button type="button" className={ghostBtn} onClick={() => navigator.clipboard?.writeText(inviteLink)}><Copy className="h-3.5 w-3.5" /></button>
@@ -294,7 +306,12 @@ const UserModal: React.FC<{
           <input className={`${input} mt-1`} value={name} onChange={(e) => setName(e.target.value)} required />
         </label>
         <label className="block text-xs font-bold text-slate-600">Work email
-          <input className={`${input} mt-1`} type="email" value={email} onChange={(e) => setEmail(e.target.value)} required disabled={!!user} />
+          <input className={`${input} mt-1`} type="email" value={email} onChange={(e) => setEmail(e.target.value)} required />
+          {user && email.trim().toLowerCase() !== (user.email || '').toLowerCase() && (
+            <span className="mt-1 block text-[11px] font-medium text-amber-700">
+              This is also their sign-in. Their password stays the same, and they will use the new address from now on.
+            </span>
+          )}
         </label>
         <label className="block text-xs font-bold text-slate-600">Job title
           <input className={`${input} mt-1`} value={title} onChange={(e) => setTitle(e.target.value)} />

@@ -54,8 +54,8 @@ export const adminApi = {
       results: { row: number; email: string; ok: boolean; error?: string; emailed?: boolean; inviteLink?: string; inviteError?: string }[];
     }>('/api/tenant/import-users', { rows }),
 
-  updateUser: (input: { userId: string; name?: string; title?: string; departmentId?: string; roleIds?: string[]; active?: boolean }) =>
-    apiJson('/api/tenant/update-user', input),
+  updateUser: (input: { userId: string; name?: string; email?: string; title?: string; departmentId?: string; roleIds?: string[]; active?: boolean }) =>
+    apiJson<{ success: true; emailChanged: boolean; invite?: { emailed: boolean; inviteLink?: string } }>('/api/tenant/update-user', input),
 
   resendInvite: (userId: string) => apiJson<{ emailed: boolean; inviteLink?: string }>('/api/tenant/resend-invite', { userId }),
 
