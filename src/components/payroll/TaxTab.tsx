@@ -67,6 +67,7 @@ export const DeclarationForm: React.FC<{ uid?: string; canManage: boolean; onSav
   const [d, setD] = useState<any | null>(null);
   const [preview, setPreview] = useState<any | null>(null);
   const [showStatement, setShowStatement] = useState(false);
+  const [statementVersion, setStatementVersion] = useState(0); // bumped on every save so an open statement re-reads
   const { busy, note, run } = useRunner();
 
   const load = useCallback(async () => {
@@ -110,15 +111,15 @@ export const DeclarationForm: React.FC<{ uid?: string; canManage: boolean; onSav
         </div>
         <p className="text-[11px] text-slate-400 mt-3">Proof (rent receipts, investment statements) is checked by HR outside this system.</p>
         <div className="mt-3 flex flex-wrap gap-2">
-          {!locked && <button className={btnPrimary} disabled={busy} onClick={() => run(async () => { await payrollService.saveTaxDeclaration({ uid, declaration: decl }); await load(); onSaved?.(); }, 'Declaration saved.')}>Save declaration</button>}
+          {!locked && <button className={btnPrimary} disabled={busy} onClick={() => run(async () => { await payrollService.saveTaxDeclaration({ uid, declaration: decl }); await load(); setStatementVersion((v) => v + 1); onSaved?.(); }, 'Declaration saved.')}>Save declaration</button>}
           {canManage && uid && d.status !== 'NONE' && (
-            <button className={btnGhost} disabled={busy} onClick={() => run(async () => { await payrollService.verifyDeclaration({ uid, verified: d.status !== 'VERIFIED' }); await load(); onSaved?.(); })}>{d.status === 'VERIFIED' ? 'Remove verification' : 'Mark as verified'}</button>
+            <button className={btnGhost} disabled={busy} onClick={() => run(async () => { await payrollService.verifyDeclaration({ uid, verified: d.status !== 'VERIFIED' }); await load(); setStatementVersion((v) => v + 1); onSaved?.(); })}>{d.status === 'VERIFIED' ? 'Remove verification' : 'Mark as verified'}</button>
           )}
           <button className={btnGhost} onClick={() => setShowStatement(!showStatement)}>{showStatement ? 'Hide' : 'View'} annual tax statement</button>
         </div>
         {locked && <div className="mt-2 text-[11px] text-slate-500">HR has verified this declaration. Ask HR to change it.</div>}
       </Card>
-      {showStatement && <TaxStatement uid={uid} />}
+      {showStatement && <TaxStatement key={statementVersion} uid={uid} />}
     </div>
   );
 };
