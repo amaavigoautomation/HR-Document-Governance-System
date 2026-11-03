@@ -44,6 +44,11 @@ export const PERMISSIONS: PermissionDef[] = [
   { key: 'hrbp.manage', label: 'Run HR Business Partner modules: org structure, talent review, PIPs, engagement, learning, succession', group: 'HRBP' },
   { key: 'hrbp.view', label: 'View the HR Business Partner leadership dashboard', group: 'HRBP' },
 
+  // Performance Management (everyone sees their own; managers see their team automatically)
+  { key: 'pm.manage', label: 'Run Performance Management: framework, SOPs, KRA/KPI templates, plans, review cycles, evidence, audit and exceptions', group: 'Performance' },
+  { key: 'pm.approve', label: 'Approve performance frameworks, KRA/KPI templates and final reviews; amend a final review', group: 'Performance' },
+  { key: 'pm.view', label: 'View company-wide Performance dashboards (grouped, never individual scores)', group: 'Performance' },
+
   // Leave and attendance (everyone can apply for leave and mark attendance; managers approve their own team)
   { key: 'leave.manage', label: 'Manage leave and attendance: policies, holidays, balances, all requests', group: 'Leave & Attendance' },
   { key: 'leave.report', label: 'View leave and attendance reports for everyone', group: 'Leave & Attendance' },
@@ -120,7 +125,7 @@ export const DEFAULT_ROLE_TEMPLATES: RoleTemplate[] = [
       'talent.view', 'candidate.evaluate', 'onboarding.manage', 'app.manage',
       'users.manage', 'departments.manage', 'doc.acknowledge', 'doc.suggest',
       'leave.manage', 'leave.report', 'lifecycle.manage', 'announce.manage', 'home.manage',
-      'hiring.budget.manage', 'hrbp.manage', 'hrbp.view',
+      'hiring.budget.manage', 'hrbp.manage', 'hrbp.view', 'pm.manage', 'pm.approve', 'pm.view',
     ],
   },
   {
@@ -132,7 +137,7 @@ export const DEFAULT_ROLE_TEMPLATES: RoleTemplate[] = [
       'doc.create', 'compliance.view',
       'req.create', 'req.hr_decide', 'req.manage_jd',
       'talent.view', 'candidate.evaluate', 'onboarding.manage', 'app.manage',
-      'doc.acknowledge', 'doc.suggest', 'leave.manage', 'leave.report', 'lifecycle.manage', 'announce.manage',
+      'doc.acknowledge', 'doc.suggest', 'leave.manage', 'leave.report', 'lifecycle.manage', 'announce.manage', 'pm.manage',
     ],
   },
   {
@@ -144,7 +149,7 @@ export const DEFAULT_ROLE_TEMPLATES: RoleTemplate[] = [
       'doc.review', 'doc.publish', 'compliance.view', 'audit.view',
       'req.view_all', 'req.assign', 'req.founder_decide', 'talent.view',
       'doc.acknowledge', 'doc.suggest', 'leave.report', 'announce.manage',
-      'hiring.budget.manage', 'hrbp.view',
+      'hiring.budget.manage', 'hrbp.view', 'pm.approve', 'pm.view',
     ],
   },
   {
