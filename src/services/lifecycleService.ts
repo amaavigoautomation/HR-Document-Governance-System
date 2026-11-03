@@ -72,4 +72,6 @@ export const lifecycleService = {
   // directory
   directory: (all = false) => get('directory', { all: all ? '1' : undefined }),
   setManager: (uid: string, managerUid: string) => post('set-manager', { uid, managerUid }),
+  /** Drop a hand-picked manager: the person reports to their department's head again. */
+  useDepartmentHead: (uid: string) => post('set-manager', { uid, auto: true }),
 };

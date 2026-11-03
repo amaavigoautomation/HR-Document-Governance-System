@@ -193,6 +193,14 @@ await bad(HR, 'POST', 'set-manager', { uid: 'u_mgr', managerUid: 'u_mgr' }, 409)
 const LEAVE = tokenFor('u_hr', ['leave.manage']);
 await ok(LEAVE, 'POST', 'set-manager', { uid: 'u_other', managerUid: '' });
 assert.equal((await ok(EMP, 'GET', 'directory')).people.find((p: any) => p.uid === 'u_other').managerUid, '');
+// a hand-picked manager is marked as such; "use department head" hands the line back to the department
+assert.equal((await ok(EMP, 'GET', 'directory')).people.find((p: any) => p.uid === 'u_other').managerManual, true);
+await ok(HR, 'POST', 'set-manager', { uid: 'u_other', managerUid: 'u_mgr' });
+await ok(HR, 'POST', 'set-manager', { uid: 'u_other', auto: true });
+const auto = (await ok(EMP, 'GET', 'directory')).people.find((p: any) => p.uid === 'u_other');
+assert.equal(auto.managerManual, false);
+assert.equal(auto.managerUid, '', 'no department head here, so nobody');
+await bad(EMP, 'POST', 'set-manager', { uid: 'u_other', auto: true }, 403);
 assert.equal((await ok(FOREIGN, 'GET', 'directory')).people.length, 0, 'another company sees none of these people');
 
 // ---- employee profile

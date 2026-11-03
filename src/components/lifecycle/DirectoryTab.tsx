@@ -3,7 +3,8 @@ import { lifecycleService } from '../../services/lifecycleService';
 import { buildOrgTree, flattenOrg, type OrgNode } from '../../../shared/lifecycleEngine';
 import { Card, Notice, btnGhost, input, useRunner } from '../leave/ui';
 
-type P = { uid: string; name: string; email: string; empId: string; department: string; title: string; active: boolean; managerUid: string; managerName: string; joinDate: string; directReports: number };
+const AUTO = '__auto';
+type P = { uid: string; name: string; email: string; empId: string; department: string; title: string; active: boolean; managerUid: string; managerName: string; managerManual: boolean; joinDate: string; directReports: number };
 
 const initials = (n: string) => n.split(/\s+/).filter(Boolean).slice(0, 2).map((x) => x[0]?.toUpperCase()).join('');
 
@@ -102,10 +103,15 @@ export const DirectoryTab: React.FC<{ canManage: boolean }> = ({ canManage }) =>
                     <td className="p-2">{p.department || '–'}</td>
                     <td className="p-2">
                       {data.canEdit ? (
-                        <select className={`${input} !py-1 text-xs`} disabled={busy} value={p.managerUid} onChange={(e) => run(async () => { await lifecycleService.setManager(p.uid, e.target.value); await load(); }, 'Reporting line updated.')}>
-                          <option value="">No manager</option>
-                          {people.filter((m) => m.active && m.uid !== p.uid).map((m) => <option key={m.uid} value={m.uid}>{m.name}</option>)}
-                        </select>
+                        <>
+                          <select className={`${input} !py-1 text-xs`} disabled={busy} value={p.managerManual ? p.managerUid : AUTO} aria-label={`Manager of ${p.name}`}
+                            onChange={(e) => run(async () => { await (e.target.value === AUTO ? lifecycleService.useDepartmentHead(p.uid) : lifecycleService.setManager(p.uid, e.target.value)); await load(); }, 'Reporting line updated.')}>
+                            <option value={AUTO}>Department head (automatic)</option>
+                            <option value="">No manager</option>
+                            {people.filter((m) => m.active && m.uid !== p.uid).map((m) => <option key={m.uid} value={m.uid}>{m.name}</option>)}
+                          </select>
+                          <div className="mt-0.5 text-[10px] text-slate-400">{p.managerManual ? 'Set by hand' : p.managerName ? `${p.managerName}, head of ${p.department}` : p.department ? `${p.department} has no head yet` : 'No department'}</div>
+                        </>
                       ) : (p.managerName || '–')}
                     </td>
                     <td className="p-2">{p.joinDate || '–'}</td>

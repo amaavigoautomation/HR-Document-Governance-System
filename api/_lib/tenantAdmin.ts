@@ -14,6 +14,7 @@ import { FieldValue, type DocumentReference, type Firestore, type Query } from '
 import { adminApp, adminAuth, adminDb, isAdminConfigured } from './firebaseAdmin.js';
 import { authenticate, requirePermission, requirePlatformAdmin, authErrorResponse, AuthError, type AuthContext } from './authContext.js';
 import { dispatchLiveEmail } from './serverEmail.js';
+import { syncDepartmentManagers, syncDepartmentManagersQuietly } from './deptManager.js';
 import {
   ALL_MODULE_KEYS,
   DEFAULT_ROLE_TEMPLATES,
@@ -554,6 +555,8 @@ async function createUserInternal(actor: AuthContext, companyId: string, body: a
     await db().collection('employees').doc(user.uid).delete().catch(() => {});
     throw err;
   }
+  // A new person in a department reports to that department's head.
+  if (departmentId) await syncDepartmentManagersQuietly(companyId, { uids: [user.uid] });
 
   let invite: { link: string; emailed: boolean } | null = null;
   let inviteError: string | undefined;
@@ -720,6 +723,11 @@ async function updateUser(headers: Record<string, any>, body: any, origin?: stri
     await ref.update(updates);
   }
   await syncUser(current.authUid, { company, roles });
+  // Moving department changes who the person reports to; switching a person on or off can change what their department's members report to.
+  const movedDepartment = body.departmentId !== undefined && String(updates.departmentId ?? '') !== String(current.departmentId || '');
+  const switched = nextActive !== (current.active !== false);
+  if (movedDepartment) await syncDepartmentManagersQuietly(companyId, { uids: [current.authUid] });
+  if (switched && current.departmentId) await syncDepartmentManagersQuietly(companyId, { departmentId: current.departmentId });
   if (!nextActive || (emailChanged && current.authUid !== actor.uid)) await adminAuth().revokeRefreshTokens(current.authUid);
 
   let invite: { emailed: boolean; inviteLink?: string } | undefined;
@@ -812,11 +820,20 @@ async function saveDepartment(headers: Record<string, any>, body: any): Promise<
     const batch = db().batch();
     people.docs.forEach((p) => batch.update(p.ref, { departmentName: name, updatedAt: ts }));
     await batch.commit();
+    // A new head (or none) changes who everyone in the department reports to, unless their manager was picked by hand.
+    await syncDepartmentManagersQuietly(companyId, { departmentId: id });
     return ok({ departmentId: id });
   }
   const newDeptId = newId('dep');
   await db().collection('departments').doc(newDeptId).set({ id: newDeptId, companyId, name, headUserId, createdAt: ts, updatedAt: ts });
   return ok({ departmentId: newDeptId });
+}
+
+/** Applies every department head to the people in their department (those whose manager was not picked by hand). */
+async function syncManagers(headers: Record<string, any>): Promise<TenantResult> {
+  const actor = await requirePermission(headers, 'departments.manage');
+  const updated = await syncDepartmentManagers(actor.companyId!, { all: true });
+  return ok({ updated });
 }
 
 async function deleteDepartment(headers: Record<string, any>, body: any): Promise<TenantResult> {
@@ -960,6 +977,7 @@ export async function routeTenant(r: TenantRequest): Promise<TenantResult> {
       case 'resend-invite': return await resendInvite(headers, b, origin);
       case 'save-department': return await saveDepartment(headers, b);
       case 'delete-department': return await deleteDepartment(headers, b);
+      case 'sync-managers': return await syncManagers(headers);
       case 'save-role': return await saveRole(headers, b);
       case 'delete-role': return await deleteRole(headers, b);
       default: return fail(404, `Unknown tenant action "${action}".`);

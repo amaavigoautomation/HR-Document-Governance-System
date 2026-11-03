@@ -61,6 +61,7 @@ export const adminApi = {
 
   saveDepartment: (input: { departmentId?: string; name: string; headUserId?: string }) => apiJson('/api/tenant/save-department', input),
   deleteDepartment: (departmentId: string) => apiJson('/api/tenant/delete-department', { departmentId }),
+  syncManagers: () => apiJson<{ success: true; updated: number }>('/api/tenant/sync-managers', {}),
 
   saveRole: (input: { roleId?: string; name: string; description?: string; permissions: string[]; portal: string }) =>
     apiJson('/api/tenant/save-role', input),

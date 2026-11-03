@@ -459,6 +459,15 @@ const ImportModal: React.FC<{ onClose: () => void; onDone: (msg: string) => void
 const DepartmentsTab: React.FC<{ users: User[]; departments: Department[] }> = ({ users, departments }) => {
   const [editing, setEditing] = useState<Department | 'new' | null>(null);
   const [flash, setFlash] = useState<{ kind: 'error' | 'success'; text: string } | null>(null);
+  const toast = useToast();
+  const [applying, setApplying] = useState(false);
+  const applyHeads = async () => {
+    setApplying(true);
+    try {
+      const r = await adminApi.syncManagers();
+      toast?.(r.updated ? `Updated the manager of ${r.updated} ${r.updated === 1 ? 'person' : 'people'}.` : 'Everyone already reports to their department head.');
+    } catch (e) { toast?.(message(e), 'error'); } finally { setApplying(false); }
+  };
   const counts = useMemo(() => {
     const m = new Map<string, number>();
     users.forEach((u) => u.departmentId && m.set(u.departmentId, (m.get(u.departmentId) || 0) + 1));
@@ -477,7 +486,10 @@ const DepartmentsTab: React.FC<{ users: User[]; departments: Department[] }> = (
 
   return (
     <div className="space-y-3">
-      <div className="flex justify-end">
+      <div className="flex items-center justify-end gap-2">
+        <button className={ghostBtn} disabled={applying} onClick={applyHeads} title="Make every person report to the head of their department. Managers picked by hand are kept.">
+          {applying && <Loader2 className="h-3.5 w-3.5 animate-spin" />} Apply department heads
+        </button>
         <button className={primaryBtn} onClick={() => setEditing('new')}><Plus className="h-3.5 w-3.5" /> Add department</button>
       </div>
       {flash && <Banner kind={flash.kind}>{flash.text}</Banner>}
@@ -544,6 +556,7 @@ const DepartmentModal: React.FC<{ department: Department | null; users: User[]; 
             <option value="">No head</option>
             {users.filter((u) => u.active !== false).sort((a, b) => a.name.localeCompare(b.name)).map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
           </select>
+          <span className="mt-1 block text-[11px] font-normal text-slate-400">People in this department report to the head. A manager picked by hand for someone is kept.</span>
         </label>
         <div className="flex justify-end gap-2">
           <button type="button" className={ghostBtn} onClick={onClose}>Cancel</button>

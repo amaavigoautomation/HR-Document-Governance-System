@@ -1240,7 +1240,9 @@ async function saveProfiles(who: Who, body: any): Promise<Result> {
     const was = existing.get(p.uid);
     const pick = (q: any) => ({ managerUid: q?.managerUid || '', policyId: q?.policyId || '', locationId: q?.locationId || '', joinDate: q?.joinDate || '' });
     if (JSON.stringify(pick(was)) !== JSON.stringify(pick(p))) changes.push({ uid: p.uid, before: pick(was), after: pick(p) });
-    batch.set(db().collection('leaveProfiles').doc(profileId(who.cid, p.uid)), { ...p, ...(existing.get(p.uid)?.hidden ? { hidden: true } : {}), companyId: who.cid, updatedAt: nowIso() });
+    // Choosing a different manager here is a hand-picked one; saving the screen with the manager untouched keeps whatever it was.
+    const managerManual = (was?.managerUid || '') !== p.managerUid ? true : was?.managerManual;
+    batch.set(db().collection('leaveProfiles').doc(profileId(who.cid, p.uid)), { ...p, ...(managerManual === undefined ? {} : { managerManual }), ...(existing.get(p.uid)?.hidden ? { hidden: true } : {}), companyId: who.cid, updatedAt: nowIso() });
   }
   await batch.commit();
   if (changes.length) {
@@ -1291,7 +1293,7 @@ async function importProfiles(who: Who, body: any): Promise<Result> {
     const next: Profile = {
       ...prev, uid: person.uid,
       locationId: loc?.id ?? prev.locationId ?? '', policyId: pol?.id ?? prev.policyId ?? '',
-      managerUid: mgr?.uid ?? prev.managerUid ?? '', joinDate: join || prev.joinDate || '',
+      managerUid: mgr?.uid ?? prev.managerUid ?? '', ...(mgr && mgr.uid !== (prev.managerUid || '') ? { managerManual: true } : {}), joinDate: join || prev.joinDate || '',
       gender: (['F', 'M', 'O'].includes((r.gender || '').toUpperCase().slice(0, 1)) ? (r.gender.toUpperCase().slice(0, 1) as 'F' | 'M' | 'O') : prev.gender) || '',
     };
     batch.set(db().collection('leaveProfiles').doc(profileId(who.cid, person.uid)), { ...next, ...(prev.hidden ? { hidden: true } : {}), companyId: who.cid, updatedAt: nowIso() });

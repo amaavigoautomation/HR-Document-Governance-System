@@ -55,6 +55,8 @@ export interface Profile {
   locationId?: string;
   policyId?: string;
   managerUid?: string;
+  /** true: someone picked this manager by hand, so the department head no longer applies. false: set from the department head. Missing on older profiles. */
+  managerManual?: boolean;
   joinDate?: string;
   gender?: 'F' | 'M' | 'O' | '';
   /** Removed from the People list by an admin. Nothing is deleted; the person and their records stay. */

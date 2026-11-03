@@ -19,6 +19,7 @@ import { PERSONAL_FIELDS, checkPersonalField } from '../../shared/employeePerson
 import { MAX_QUALIFICATIONS, cleanQualification } from '../../shared/employeeQualification.js';
 import { MAX_FAMILY_MEMBERS, cleanFamilyMember } from '../../shared/employeeFamily.js';
 import { istToday } from '../../shared/leaveEngine.js';
+import { isManualManager, syncDepartmentManagers } from './deptManager.js';
 import {
   ASSIGNEE_LABEL, DEFAULT_CLEARANCE, DEFAULT_LETTERS, DEFAULT_TASK_TEMPLATES, EXIT_REASONS, EXIT_STATUS_LABEL, MERGE_FIELDS,
   addDaysIso, clearanceTotals, dueDateFor, earliestLastDay, fieldsIn, isDate, noticeServed, noticeShortfall, prettyDate, renderTemplate,
@@ -709,7 +710,7 @@ async function directory(w: Who, q: any): Promise<Result> {
     .map((p) => {
       const pr: Profile | undefined = profiles.get(p.uid);
       const mgr = pr?.managerUid && by.has(pr.managerUid) ? pr.managerUid : '';
-      return { uid: p.uid, name: p.name, email: p.email, empId: p.empId, department: p.department, title: p.title, active: p.active, managerUid: mgr, managerName: mgr ? by.get(mgr)!.name : '', joinDate: pr?.joinDate || '' };
+      return { uid: p.uid, name: p.name, email: p.email, empId: p.empId, department: p.department, title: p.title, active: p.active, managerUid: mgr, managerName: mgr ? by.get(mgr)!.name : '', managerManual: isManualManager(pr), joinDate: pr?.joinDate || '' };
     })
     .sort((a, b) => a.name.localeCompare(b.name));
   const counts = new Map<string, number>();
@@ -728,7 +729,14 @@ async function setManager(w: Who, body: any): Promise<Result> {
   const org = people.map((p) => ({ uid: p.uid, name: p.name, managerUid: profiles.get(p.uid)?.managerUid || '' }));
   if (wouldCycle(org, uid, managerUid)) return fail(409, 'That would make a reporting loop (someone would end up reporting to themselves).');
   const prev = profiles.get(uid) || { uid };
-  await db().collection('leaveProfiles').doc(profileId(w.cid, uid)).set(clean({ ...prev, uid, managerUid, companyId: w.cid, updatedAt: nowIso() }));
+  if (body?.auto === true) {
+    // Back to the default: the head of the person's department.
+    await db().collection('leaveProfiles').doc(profileId(w.cid, uid)).set(clean({ ...prev, uid, managerUid: '', managerManual: false, companyId: w.cid, updatedAt: nowIso() }));
+    await syncDepartmentManagers(w.cid, { uids: [uid] });
+    return ok({});
+  }
+  // Picking a manager by hand (including "no manager") sticks: the department head no longer overrides it.
+  await db().collection('leaveProfiles').doc(profileId(w.cid, uid)).set(clean({ ...prev, uid, managerUid, managerManual: true, companyId: w.cid, updatedAt: nowIso() }));
   return ok({});
 }
 
