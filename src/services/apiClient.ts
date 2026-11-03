@@ -11,7 +11,8 @@ export async function authHeaders(extra: Record<string, string> = {}): Promise<R
 /** fetch() that sends the verified identity. Use for every /api call except the public ones. */
 export async function apiFetch(input: string, init: RequestInit = {}): Promise<Response> {
   const headers = await authHeaders((init.headers as Record<string, string>) || {});
-  return fetch(input, { ...init, headers });
+  // These are live data: never let the browser or an edge cache answer a read with an old copy.
+  return fetch(input, { cache: 'no-store', ...init, headers });
 }
 
 // Repeat reads of the Leave / Payroll / People screens are answered from memory for a short while, and identical reads made at the same moment share one request.
