@@ -85,8 +85,8 @@ Everyone lands on Home after signing in. It shows a profile card (reporting and 
 
 ## Vercel function budget
 
-Vercel's Hobby plan allows 12 serverless functions. The app uses 8: `[...catchall]` (also answers `/api/health`), `apply/[webhookId]`,
-`email/[action]`, `hrbp/[action]`, `leave/[action]`, `onboarding/[action]`, `recruitment/[action]` and `tenant/[action]`.
+Vercel's Hobby plan allows 12 serverless functions. The app uses 9: `[...catchall]` (also answers `/api/health`), `apply/[webhookId]`,
+`email/[action]`, `hrbp/[action]`, `leave/[action]`, `onboarding/[action]`, `pm/[action]` (Performance), `recruitment/[action]` and `tenant/[action]`.
 All hiring routes share `recruitment/[action]` through `api/_lib/hiringRouter.ts`, told apart by the action name:
 `app-<action>` (candidate applications, was `/api/applications/<action>`), `careers-publish` (was `/api/careers/publish`),
 `generate-jd` (was `/api/requisitions/generate-jd`), plus the overview and job-description actions.
