@@ -153,16 +153,23 @@ export const hm = (m: number) => (m ? `${Math.floor(m / 60)}h ${String(m % 60).p
 
 // ------------------------------------------------------------------ toasts
 
-type Toast = { id: number; tone: 'ok' | 'error'; text: string };
-const ToastCtx = React.createContext<((text: string, tone?: 'ok' | 'error') => void) | null>(null);
+type ToastAction = { label: string; onClick: () => void };
+type ToastOptions = {
+  /** Stay on screen until dismissed (for messages the person still needs, such as a link to copy). */
+  sticky?: boolean;
+  /** A button shown inside the toast. */
+  action?: ToastAction;
+};
+type Toast = { id: number; tone: 'ok' | 'error'; text: string; action?: ToastAction };
+const ToastCtx = React.createContext<((text: string, tone?: 'ok' | 'error', options?: ToastOptions) => void) | null>(null);
 
 /** Wrap a screen to show short success messages in the corner instead of small inline text. */
 export const ToastProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [items, setItems] = React.useState<Toast[]>([]);
-  const push = React.useCallback((text: string, tone: 'ok' | 'error' = 'ok') => {
+  const push = React.useCallback((text: string, tone: 'ok' | 'error' = 'ok', options?: ToastOptions) => {
     const id = Date.now() + Math.random();
-    setItems((xs) => [...xs.slice(-2), { id, tone, text }]);
-    setTimeout(() => setItems((xs) => xs.filter((x) => x.id !== id)), 4000);
+    setItems((xs) => [...xs.slice(-2), { id, tone, text, action: options?.action }]);
+    if (!options?.sticky) setTimeout(() => setItems((xs) => xs.filter((x) => x.id !== id)), 4000);
   }, []);
   return (
     <ToastCtx.Provider value={push}>
@@ -171,7 +178,12 @@ export const ToastProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         {items.map((t) => (
           <div key={t.id} className={`pointer-events-auto flex items-start gap-2 rounded-xl px-4 py-3 text-sm font-semibold shadow-lg border ${t.tone === 'ok' ? 'bg-slate-900 text-white border-slate-800' : 'bg-rose-600 text-white border-rose-700'}`}>
             {t.tone === 'ok' ? <CheckCircle2 className="w-4 h-4 mt-0.5 text-emerald-400 shrink-0" /> : <XCircle className="w-4 h-4 mt-0.5 shrink-0" />}
-            <span className="flex-1">{t.text}</span>
+            <span className="flex-1 min-w-0 break-words">
+              {t.text}
+              {t.action && (
+                <button className="mt-1 block text-xs font-bold underline underline-offset-2" onClick={t.action.onClick}>{t.action.label}</button>
+              )}
+            </span>
             <button aria-label="Dismiss" onClick={() => setItems((xs) => xs.filter((x) => x.id !== t.id))}><X className="w-4 h-4 opacity-70" /></button>
           </div>
         ))}

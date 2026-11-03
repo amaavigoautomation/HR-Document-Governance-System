@@ -6,6 +6,7 @@ import type { Company, Department, User } from '../types';
 import { adminApi, parseCsv, subscribeToDepartments, subscribeToRoles } from '../services/adminService';
 import { firestoreService } from '../services/firestoreService';
 import { PERMISSIONS, hasPerm, type RoleDef } from '../../shared/permissions';
+import { ToastProvider, useToast } from './leave/ui';
 
 type Tab = 'users' | 'departments' | 'roles';
 
@@ -91,6 +92,7 @@ export const AdminModule: React.FC<Props> = ({ currentUser, company }) => {
   }
 
   return (
+    <ToastProvider>
     <div className="min-w-0 flex-1 space-y-4 p-4 sm:p-6">
       <div>
         <h1 className="text-2xl font-black tracking-tight text-slate-900">Administration</h1>
@@ -115,6 +117,7 @@ export const AdminModule: React.FC<Props> = ({ currentUser, company }) => {
       {tab === 'departments' && canDepts && <DepartmentsTab users={users} departments={departments} />}
       {tab === 'roles' && canRoles && <RolesTab roles={roles} users={users} company={company} currentUser={currentUser} />}
     </div>
+    </ToastProvider>
   );
 };
 
@@ -135,12 +138,22 @@ const PeopleTab: React.FC<{ users: User[]; departments: Department[]; roles: Rol
       .sort((a, b) => a.name.localeCompare(b.name));
   }, [users, search]);
 
+  const toast = useToast();
   const resend = async (u: User) => {
     try {
       const r = await adminApi.resendInvite(u.id);
-      setFlash({ kind: 'success', text: r.emailed ? `Invite sent to ${u.email}.` : `Email could not be sent. Share this link with ${u.name}: ${r.inviteLink}` });
+      if (r.emailed) {
+        toast?.(`Invite sent to ${u.email}.`);
+      } else {
+        // The email did not go out, so the person sharing the link still needs it: keep this toast until dismissed.
+        const link = r.inviteLink || '';
+        toast?.(`The email to ${u.name} could not be sent. Share the invite link with them instead.`, 'error', {
+          sticky: true,
+          action: link ? { label: 'Copy invite link', onClick: () => { navigator.clipboard?.writeText(link); toast?.('Invite link copied.'); } } : undefined,
+        });
+      }
     } catch (e) {
-      setFlash({ kind: 'error', text: message(e) });
+      toast?.(message(e), 'error');
     }
   };
 
