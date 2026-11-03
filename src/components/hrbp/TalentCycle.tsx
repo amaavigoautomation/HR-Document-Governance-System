@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { cycleService } from '../../services/hiringExtraService';
 import { User } from '../../types';
 import { Card, ConfirmButton, EmptyState, Field, Notice, btnDanger, btnGhost, btnPrimary, input, useRunner } from '../leave/ui';
-import { Loading, Pill, useLoad } from '../perf/shared';
+import { Loading, Pill, useLoad } from '../common/loadUi';
 
 const staffOf = (users: User[]) => users.filter((u) => u.active !== false).sort((a, b) => a.name.localeCompare(b.name));
 const nowQuarter = () => { const d = new Date(Date.now() + 5.5 * 3600_000); return `${d.getUTCFullYear()}-Q${Math.floor(d.getUTCMonth() / 3) + 1}`; };

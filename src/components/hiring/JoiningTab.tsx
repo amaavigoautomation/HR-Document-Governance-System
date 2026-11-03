@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { joiningService } from '../../services/hiringExtraService';
 import { Card, ConfirmButton, EmptyState, Field, Notice, btnGhost, btnPrimary, input, todayIst, useRunner } from '../leave/ui';
-import { Loading, Pill, useLoad } from '../perf/shared';
+import { Loading, Pill, useLoad } from '../common/loadUi';
 
 const IT_LABEL: Record<string, string> = { email: 'Email', m365: 'Microsoft 365', google: 'Google account', teams: 'Teams', clickup: 'ClickUp', attendance: 'Attendance', payroll: 'Payroll' };
 

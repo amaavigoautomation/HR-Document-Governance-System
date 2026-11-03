@@ -8,7 +8,7 @@
  *   sweepTalentCycle                                       daily: probation and quarterly reminders
  *
  * Records live in hrbpItems (kind prob / okr / promo / qc) and carry a companyId. A manager may act only on their own reports
- * (the reporting line on the leave profile); HR (hrbp.manage, perf.manage or lifecycle.manage) on everyone; the founder
+ * (the reporting line on the leave profile); HR (hrbp.manage or lifecycle.manage) on everyone; the founder
  * (req.founder_decide) approves promotions.
  */
 import { adminDb } from './firebaseAdmin.js';
@@ -33,7 +33,7 @@ const ok = (extra: Record<string, any> = {}): Result => ({ status: 200, json: { 
 const fail = (status: number, error: string, extra: Record<string, any> = {}): Result => ({ status, json: { success: false, error, ...extra } });
 const clean = <T,>(v: T): T => JSON.parse(JSON.stringify(v));
 
-const isHr = (ctx: AuthContext) => ctx.isCompanyAdmin || ['hrbp.manage', 'perf.manage', 'lifecycle.manage'].some((p) => ctx.perms.includes(p));
+const isHr = (ctx: AuthContext) => ctx.isCompanyAdmin || ['hrbp.manage', 'lifecycle.manage'].some((p) => ctx.perms.includes(p));
 const isFounder = (ctx: AuthContext) => ctx.isCompanyAdmin || ctx.perms.includes('req.founder_decide');
 
 // ------------------------------------------------------------------ storage and people

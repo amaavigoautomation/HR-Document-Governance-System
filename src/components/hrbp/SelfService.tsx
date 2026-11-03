@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { hrbpService } from '../../services/hrbpService';
 import { User } from '../../types';
 import { Card, EmptyState, Field, Notice, btnGhost, btnPrimary, input, useRunner } from '../leave/ui';
-import { Loading, Pill, useLoad } from '../perf/shared';
+import { Loading, Pill, useLoad } from '../common/loadUi';
 
 /** My HRBP, my improvement plan (if any), my certificates and training needs. */
 export const MyHrbp: React.FC = () => {

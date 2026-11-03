@@ -3,7 +3,7 @@ import { pipelineService } from '../../services/pipelineService';
 import { User } from '../../types';
 import { CandidateAi } from './AiTab';
 import { Card, Drawer, EmptyState, Field, Notice, btnGhost, btnPrimary, input, useRunner } from '../leave/ui';
-import { Loading, Pill, useLoad } from '../perf/shared';
+import { Loading, Pill, useLoad } from '../common/loadUi';
 import { FeedbackPanel } from './InterviewsTab';
 
 const when = (iso: string) => new Date(iso).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', dateStyle: 'medium', timeStyle: 'short' });

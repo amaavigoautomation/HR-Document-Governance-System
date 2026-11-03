@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { aiService, dashService, screenLinkService } from '../../services/hiringExtraService';
 import { pipelineService } from '../../services/pipelineService';
 import { Card, ConfirmButton, EmptyState, Field, Notice, btnGhost, btnPrimary, input, useRunner } from '../leave/ui';
-import { Loading, Pill, useLoad } from '../perf/shared';
+import { Loading, Pill, useLoad } from '../common/loadUi';
 
 const VTONE: Record<string, 'green' | 'blue' | 'amber' | 'red'> = { HIRE: 'green', CONSIDER: 'blue', HOLD: 'amber', NO_HIRE: 'red' };
 

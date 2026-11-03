@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { pipelineService } from '../../services/pipelineService';
 import { Card, EmptyState, Field, Notice, btnPrimary, input, useRunner } from '../leave/ui';
-import { Loading, Pill, useLoad } from '../perf/shared';
+import { Loading, Pill, useLoad } from '../common/loadUi';
 
 const stageTone = (s: string) => (s === 'Selected' ? 'green' : s === 'Rejected' ? 'red' : s === 'On Hold' ? 'amber' : 'blue') as 'green' | 'red' | 'amber' | 'blue';
 

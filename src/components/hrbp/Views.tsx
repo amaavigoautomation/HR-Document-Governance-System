@@ -1,7 +1,7 @@
 import React from 'react';
 import { hrbpService } from '../../services/hrbpService';
 import { Card, EmptyState, Notice } from '../leave/ui';
-import { Loading, Pill, useLoad } from '../perf/shared';
+import { Loading, Pill, useLoad } from '../common/loadUi';
 
 const Stat: React.FC<{ label: string; value: React.ReactNode; tone?: 'red' | 'amber' | 'green'; sub?: string }> = ({ label, value, tone, sub }) => (
   <div className="rounded-xl border border-slate-200 bg-white p-3">

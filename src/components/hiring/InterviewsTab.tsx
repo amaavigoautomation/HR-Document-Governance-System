@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { pipelineService } from '../../services/pipelineService';
 import { Card, EmptyState, Field, Notice, btnGhost, btnPrimary, input, useRunner } from '../leave/ui';
-import { Loading, Pill, useLoad } from '../perf/shared';
+import { Loading, Pill, useLoad } from '../common/loadUi';
 
 const RECS: [string, string][] = [['STRONG_YES', 'Strong yes'], ['YES', 'Yes'], ['NO', 'No'], ['STRONG_NO', 'Strong no']];
 const when = (iso: string) => new Date(iso).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', dateStyle: 'medium', timeStyle: 'short' });

@@ -1,7 +1,7 @@
 import React from 'react';
 import { dashService } from '../../services/hiringExtraService';
 import { Card, Notice } from '../leave/ui';
-import { Loading, Pill, useLoad } from '../perf/shared';
+import { Loading, Pill, useLoad } from '../common/loadUi';
 
 const Stat: React.FC<{ label: string; value: React.ReactNode; hint?: string }> = ({ label, value, hint }) => (
   <div className="rounded-xl border border-slate-200 bg-white p-3"><div className="text-[11px] font-bold uppercase tracking-wide text-slate-500">{label}</div><div className="mt-1 text-2xl font-black text-slate-900">{value}</div>{hint && <div className="text-[11px] text-slate-500">{hint}</div>}</div>

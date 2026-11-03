@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { offerService } from '../../services/hiringExtraService';
 import { pipelineService } from '../../services/pipelineService';
 import { Card, ConfirmButton, Drawer, EmptyState, Field, Notice, btnDanger, btnGhost, btnPrimary, input, todayIst, useRunner } from '../leave/ui';
-import { Loading, Pill, useLoad } from '../perf/shared';
+import { Loading, Pill, useLoad } from '../common/loadUi';
 
 const LABEL: Record<string, string> = { DRAFT: 'Draft', PENDING_FOUNDER: 'Waiting for founder', APPROVED: 'Approved', REJECTED: 'Rejected', SENT: 'Sent', NEGOTIATION: 'Negotiating', ACCEPTED: 'Accepted', DECLINED: 'Declined', GHOSTED: 'No response', EXPIRED: 'Expired', JOINED: 'Joined', WITHDRAWN: 'Withdrawn' };
 const tone = (s: string) => (['ACCEPTED', 'JOINED'].includes(s) ? 'green' : ['REJECTED', 'DECLINED', 'GHOSTED', 'EXPIRED', 'WITHDRAWN'].includes(s) ? 'red' : ['PENDING_FOUNDER', 'NEGOTIATION'].includes(s) ? 'amber' : 'blue') as 'green' | 'red' | 'amber' | 'blue';

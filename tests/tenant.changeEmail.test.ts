@@ -27,14 +27,14 @@ process.env.FIREBASE_SERVICE_ACCOUNT_JSON = process.env.FIREBASE_SERVICE_ACCOUNT
 
 fdb.seed('companies', 'c1', { id: 'c1', name: 'Acme', status: 'ACTIVE', modules: ['talent-acquisition', 'document-version-control'], adminEmail: 'boss@acme.com', employeeIdPrefix: 'AC', nextEmployeeNumber: 9 });
 const role = (id: string, perms: string[], isAdmin = false) => fdb.seed('roles', `c1_${id}`, { id: `c1_${id}`, companyId: 'c1', name: id, permissions: perms, portal: 'CREATOR', isAdmin });
-role('admin', [], true); role('hr', ['users.manage', 'leave.manage']); role('founder', ['users.manage', 'leave.manage', 'req.founder_decide', 'perf.approve']); role('employee', ['doc.acknowledge']);
+role('admin', [], true); role('hr', ['users.manage', 'leave.manage']); role('founder', ['users.manage', 'leave.manage', 'req.founder_decide', 'hrbp.view']); role('employee', ['doc.acknowledge']);
 const emp = (uid: string, email: string, roleIds: string[], perms: string[], extra: any = {}) => {
   addAuth(uid, email, true);
   fdb.seed('employees', uid, { id: uid, authUid: uid, companyId: 'c1', companyName: 'Acme', empId: `AC-${uid}`, loginId: email, name: uid, email, roleIds, perms, active: true, ...extra });
 };
 emp('boss', 'boss@acme.com', ['c1_admin'], []);
 emp('hr', 'hr@acme.com', ['c1_hr'], ['users.manage', 'leave.manage']);
-emp('founder', 'founder@acme.com', ['c1_founder'], ['users.manage', 'leave.manage', 'req.founder_decide', 'perf.approve']);
+emp('founder', 'founder@acme.com', ['c1_founder'], ['users.manage', 'leave.manage', 'req.founder_decide', 'hrbp.view']);
 emp('ann', 'ann@acme.com', ['c1_employee'], ['doc.acknowledge']);
 emp('pa', 'pa@acme.com', ['c1_employee'], ['doc.acknowledge']); users.get('pa')!.claims = { pa: true };
 emp('legacy', 'legacy@acme.com', ['c1_employee'], ['doc.acknowledge'], { loginId: 'AC-legacy-login' });

@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { hrbpService } from '../../services/hrbpService';
 import { User } from '../../types';
 import { Card, EmptyState, Field, Notice, btnGhost, btnPrimary, input, useRunner } from '../leave/ui';
-import { Loading, Pill, useLoad } from '../perf/shared';
+import { Loading, Pill, useLoad } from '../common/loadUi';
 
 export type FieldSpec =
   | { key: string; label: string; type: 'text' | 'number' | 'date' | 'textarea' | 'checkbox'; hint?: string; wide?: boolean }

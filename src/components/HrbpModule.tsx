@@ -9,7 +9,7 @@ import { Okrs, Probation, Promotions, Quarterly } from './hrbp/TalentCycle';
 import { MyHrbp, MyLearning, Recognition, WellnessList } from './hrbp/SelfService';
 import { hrbpService } from '../services/hrbpService';
 import { hrbpNav, hrbpNavItems, type Section } from './hrbp/hrbpNav';
-import { useLoad } from './perf/shared';
+import { useLoad } from './common/loadUi';
 import { Card, Field, Notice, btnPrimary, input, useRunner } from './leave/ui';
 
 const RISK = ['LOW', 'MEDIUM', 'HIGH'];

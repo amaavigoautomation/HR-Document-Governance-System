@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { pipelineService } from '../../services/pipelineService';
 import { Card, EmptyState, Field, Notice, btnGhost, btnPrimary, input, useRunner } from '../leave/ui';
-import { Loading, useLoad } from '../perf/shared';
+import { Loading, useLoad } from '../common/loadUi';
 
 const blank = { id: '', title: '', department: '', skills: '', text: '' };
 

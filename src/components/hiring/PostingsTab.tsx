@@ -3,7 +3,7 @@ import { Copy } from 'lucide-react';
 import { pipelineService } from '../../services/pipelineService';
 import { Requisition } from '../../types';
 import { Card, EmptyState, Field, Notice, btnGhost, btnPrimary, input, useRunner } from '../leave/ui';
-import { Loading, Pill, useLoad } from '../perf/shared';
+import { Loading, Pill, useLoad } from '../common/loadUi';
 
 /** Where each approved job is posted. Only the careers site is published automatically; for the other boards HR copies a ready-made post and records it here. */
 export const PostingsTab: React.FC<{ requisitions: Requisition[] }> = ({ requisitions }) => {

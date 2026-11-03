@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { pipelineService } from '../../services/pipelineService';
 import { SCORE_LABEL, SCORE_PARTS } from '../../../shared/hiringScore';
 import { Card, Field, Notice, btnGhost, btnPrimary, input, useRunner } from '../leave/ui';
-import { Loading, useLoad } from '../perf/shared';
+import { Loading, useLoad } from '../common/loadUi';
 
 /** The six weights that make up a candidate's score out of 100. They must add up to 100. */
 export const ScoringTab: React.FC = () => {

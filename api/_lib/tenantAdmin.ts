@@ -22,6 +22,7 @@ import {
   claimsFitLimit,
   effectivePermissions,
   isKnownPermission,
+  RETIRED_PERMISSIONS,
   portalForRoles,
   slugify,
   type Portal,
@@ -853,7 +854,7 @@ async function saveRole(headers: Record<string, any>, body: any): Promise<Tenant
   const companyId = actor.companyId!;
   const name = str(body.name, 80);
   if (name.length < 2) return fail(400, 'Role name is required.');
-  const permissions: string[] = Array.from(new Set<string>((Array.isArray(body.permissions) ? body.permissions : []).map(String)));
+  const permissions: string[] = Array.from(new Set<string>((Array.isArray(body.permissions) ? body.permissions : []).map(String))).filter((p) => !RETIRED_PERMISSIONS.includes(p));
   if (permissions.some((p) => !isKnownPermission(p))) return fail(400, 'Unknown permission in role.');
   if (!canGrantPermissions(actor.perms, actor.isCompanyAdmin, permissions)) {
     return fail(403, 'You cannot give a role permissions that you do not have yourself.');

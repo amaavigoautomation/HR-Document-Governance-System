@@ -57,7 +57,6 @@ const MyHiringModule = lazyPage(() => import('./components/MyHiringModule').then
 const HrbpModule = lazyPage(() => import('./components/HrbpModule').then((m) => m.HrbpModule));
 const ApplicationsModule = lazyPage(() => import('./components/ApplicationsModule').then((m) => m.ApplicationsModule));
 const LeaveModule = lazyPage(() => import('./components/LeaveModule').then((m) => m.LeaveModule));
-const PerformanceModule = lazyPage(() => import('./components/PerformanceModule').then((m) => m.PerformanceModule));
 const PayrollModule = lazyPage(() => import('./components/PayrollModule').then((m) => m.PayrollModule));
 const PeopleModule = lazyPage(() => import('./components/PeopleModule').then((m) => m.PeopleModule));
 
@@ -607,12 +606,6 @@ export default function App() {
           {hrAgentModule === 'payroll' && currentUser && (
             <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
               <PayrollModule currentUser={currentUser} />
-            </div>
-          )}
-
-          {hrAgentModule === 'performance' && currentUser && (
-            <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
-              <PerformanceModule currentUser={currentUser} />
             </div>
           )}
 

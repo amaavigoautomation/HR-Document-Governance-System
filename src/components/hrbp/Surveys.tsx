@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { hrbpService } from '../../services/hrbpService';
 import { Card, EmptyState, Field, Notice, btnGhost, btnPrimary, input, useRunner } from '../leave/ui';
-import { Loading, Pill, useLoad } from '../perf/shared';
+import { Loading, Pill, useLoad } from '../common/loadUi';
 
 /** Pulse surveys. Managers create them and read results (hidden below 5 answers); everyone answers once, anonymously. */
 export const Surveys: React.FC<{ manage: boolean }> = ({ manage }) => {

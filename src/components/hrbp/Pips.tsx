@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { hrbpService } from '../../services/hrbpService';
 import { User } from '../../types';
 import { Card, EmptyState, Field, Notice, btnGhost, btnPrimary, input, useRunner } from '../leave/ui';
-import { Loading, Pill, useLoad } from '../perf/shared';
+import { Loading, Pill, useLoad } from '../common/loadUi';
 
 const tone = (s: string) => (s === 'COMPLETED' ? 'green' : s === 'FAILED' ? 'red' : s === 'CANCELLED' ? 'slate' : s === 'DRAFT' ? 'blue' : 'amber') as 'green' | 'red' | 'slate' | 'blue' | 'amber';
 
