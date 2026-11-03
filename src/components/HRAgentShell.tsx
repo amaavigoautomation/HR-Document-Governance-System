@@ -36,6 +36,7 @@ import { ModuleSubNav } from './moduleNav';
 import { payrollNav } from './payroll/payrollNav';
 import { perfNav } from './perf/perfNav';
 import { peopleNav } from './lifecycle/peopleNav';
+import { hrbpNav } from './hrbp/hrbpNav';
 import { employeeNav } from './employee/employeeNav';
 import {
   hasModulePermission,
@@ -111,6 +112,7 @@ export const HRAgentShell: React.FC<HRAgentShellProps> = ({
   const [isPerfExpanded, setIsPerfExpanded] = useState<boolean>(true);
   const [isPeopleExpanded, setIsPeopleExpanded] = useState<boolean>(true);
   const [isEmployeeExpanded, setIsEmployeeExpanded] = useState<boolean>(true);
+  const [isHrbpExpanded, setIsHrbpExpanded] = useState<boolean>(true);
   // Counts of what is waiting for this person, shown on the module titles and their sections.
   const badges = useNavBadges();
 
@@ -747,15 +749,17 @@ export const HRAgentShell: React.FC<HRAgentShellProps> = ({
                   { key: 'my-hiring' as const, title: 'Referrals & interviews', sub: 'Refer people, give interview feedback', Icon: Users, show: true },
                   { key: 'hrbp' as const, title: 'HR Business Partner', sub: 'Org, talent, engagement & succession', Icon: Layers, show: hasAnyPerm(currentUser.perms, ['hrbp.manage', 'hrbp.view']) || !!currentUser.isCompanyAdmin },
                 ]).filter((m) => m.show).map((m) => (
+                  <React.Fragment key={m.key}>
+                  <div className="relative">
                   <button
-                    key={m.key}
                     id={`nav-module-${m.key}`}
                     type="button"
                     onClick={() => {
                       onSelectModule(m.key);
+                      if (m.key === 'hrbp') setIsHrbpExpanded(true);
                       setIsMobileSidebarOpen(false);
                     }}
-                    className={`w-full ${activeModule === m.key ? 'pl-3 pr-3' : 'px-3'} py-2.5 rounded-xl border flex items-center justify-between text-left transition-all cursor-pointer ${
+                    className={`w-full ${activeModule === m.key ? (m.key === 'hrbp' ? 'pl-3 pr-10' : 'pl-3 pr-3') : 'px-3'} py-2.5 rounded-xl border flex items-center justify-between text-left transition-all cursor-pointer ${
                       activeModule === m.key ? 'bg-[#FA7014]/10 border-[#FA7014]/40 text-slate-900 shadow-xs' : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50 hover:border-slate-300'
                     }`}
                   >
@@ -774,6 +778,24 @@ export const HRAgentShell: React.FC<HRAgentShellProps> = ({
                       </div>
                     )}
                   </button>
+                  {m.key === 'hrbp' && activeModule === 'hrbp' && (
+                    <button
+                      id="nav-module-hrbp-toggle"
+                      type="button"
+                      onClick={() => setIsHrbpExpanded((v) => !v)}
+                      aria-expanded={isHrbpExpanded}
+                      aria-label={isHrbpExpanded ? 'Hide HR Business Partner sections' : 'Show HR Business Partner sections'}
+                      title={isHrbpExpanded ? 'Hide sections' : 'Show sections'}
+                      className="absolute right-1.5 top-1/2 -translate-y-1/2 w-7 h-7 rounded-lg flex items-center justify-center text-[#FA7014] hover:bg-[#FA7014]/15 cursor-pointer"
+                    >
+                      {isHrbpExpanded ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
+                    </button>
+                  )}
+                  </div>
+                  {m.key === 'hrbp' && activeModule === 'hrbp' && isHrbpExpanded && (
+                    <ModuleSubNav nav={hrbpNav} label="HR Business Partner sections" variant="sidebar" idPrefix="nav-submodule-hrbp" onNavigate={() => setIsMobileSidebarOpen(false)} />
+                  )}
+                  </React.Fragment>
                 ))}
 
                 {/* ---------------------------------------------------- */}

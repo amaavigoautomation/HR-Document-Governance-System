@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { User } from '../types';
 import { hasAnyPerm } from '../../shared/permissions';
 import { GenericManager, FieldSpec } from './hrbp/GenericManager';
@@ -8,23 +8,9 @@ import { Surveys } from './hrbp/Surveys';
 import { Okrs, Probation, Promotions, Quarterly } from './hrbp/TalentCycle';
 import { MyHrbp, MyLearning, Recognition, WellnessList } from './hrbp/SelfService';
 import { hrbpService } from '../services/hrbpService';
+import { hrbpNav, hrbpNavItems, type Section } from './hrbp/hrbpNav';
 import { useLoad } from './perf/shared';
 import { Card, Field, Notice, btnPrimary, input, useRunner } from './leave/ui';
-
-type Section =
-  | 'dash' | 'org' | 'map' | 'talent' | 'kpi' | 'pip' | 'retention' | 'succ' | 'needs' | 'paths' | 'certs' | 'surveysAdmin' | 'wellAdmin'
-  | 'probation' | 'okr' | 'promo' | 'quarterly' | 'me' | 'learning' | 'pulse' | 'recog' | 'well';
-
-const CYCLE: { key: Section; label: string }[] = [{ key: 'okr', label: 'OKRs' }, { key: 'probation', label: 'Probation' }, { key: 'promo', label: 'Promotions' }];
-const SELF: { key: Section; label: string }[] = [
-  { key: 'me', label: 'My HRBP' }, { key: 'learning', label: 'My learning' }, { key: 'pulse', label: 'Pulse surveys' }, { key: 'recog', label: 'Recognition' }, { key: 'well', label: 'Wellness' },
-];
-const VIEW: { key: Section; label: string }[] = [{ key: 'dash', label: 'Leadership dashboard' }, { key: 'org', label: 'Org & resources' }];
-const MANAGE: { key: Section; label: string }[] = [
-  { key: 'map', label: 'People mapping' }, { key: 'talent', label: 'Talent review' }, { key: 'kpi', label: 'KPIs' }, { key: 'pip', label: 'Improvement plans' },
-  { key: 'retention', label: 'Retention' }, { key: 'succ', label: 'Succession' }, { key: 'needs', label: 'Training needs' }, { key: 'paths', label: 'Learning paths' },
-  { key: 'certs', label: 'Certificates' }, { key: 'surveysAdmin', label: 'Survey admin' }, { key: 'wellAdmin', label: 'Wellness admin' },
-];
 
 const RISK = ['LOW', 'MEDIUM', 'HIGH'];
 const riskTone = (r: string) => (r === 'HIGH' ? 'red' : r === 'MEDIUM' ? 'amber' : 'green') as 'red' | 'amber' | 'green';
@@ -47,13 +33,14 @@ const succFormat = (v: any[]) => (v || []).map((s) => `${s.employeeName} | ${s.r
 export const HrbpModule: React.FC<{ currentUser: User; users: User[] }> = ({ currentUser, users }) => {
   const manage = !!currentUser.isCompanyAdmin || hasAnyPerm(currentUser.perms, ['hrbp.manage']);
   const view = manage || hasAnyPerm(currentUser.perms, ['hrbp.view']);
-  const groups = [
-    ...(view ? [{ title: 'Leadership', items: VIEW }] : []),
-    ...(manage ? [{ title: 'HRBP toolkit', items: MANAGE }, { title: 'Probation & growth', items: [...CYCLE, { key: 'quarterly' as Section, label: 'Quarterly round' }] }] : []),
-    ...(!manage ? [{ title: 'Probation & growth', items: CYCLE }] : []),
-    { title: 'For everyone', items: SELF },
-  ];
-  const [section, setSection] = useState<Section>(view ? 'dash' : 'me');
+  const items = hrbpNavItems(view, manage);
+  const { section: chosen } = hrbpNav.useNav();
+  // The sections live in the app sidebar (like Payroll and Employee); this page publishes which ones this person may open.
+  const itemsKey = items.map((i) => i.key).join(',');
+  useEffect(() => { hrbpNav.publish(items); }, [itemsKey]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => () => hrbpNav.publish([]), []);
+  const section = hrbpNav.resolve(chosen, items) as Section;
+  const sectionLabel = items.find((i) => i.key === section)?.label || '';
 
   const Body = () => {
     switch (section) {
@@ -152,22 +139,11 @@ export const HrbpModule: React.FC<{ currentUser: User; users: User[] }> = ({ cur
     <div className="flex-1 min-w-0 overflow-y-auto">
       <div className="mx-auto w-full max-w-7xl space-y-4 p-4 md:p-6">
         <div>
+          <div className="mb-1 text-xs font-semibold text-slate-400">HR Business Partner{sectionLabel ? <> <span aria-hidden>&gt;</span> <span className="text-slate-700">{sectionLabel}</span></> : null}</div>
           <h1 className="text-2xl font-black tracking-tight text-slate-900">HR Business Partner</h1>
           <p className="text-xs text-slate-500 sm:text-sm">Organisation, talent, performance governance, engagement, learning and succession in one place.</p>
         </div>
-        <div className="flex flex-col gap-4 lg:flex-row">
-          <nav className="shrink-0 space-y-3 lg:w-52" aria-label="HR Business Partner sections">
-            {groups.map((g) => (
-              <div key={g.title}>
-                <div className="mb-1 text-[11px] font-bold uppercase tracking-wide text-slate-400">{g.title}</div>
-                <div className="flex flex-wrap gap-1 lg:flex-col">
-                  {g.items.map((i) => <button key={i.key} onClick={() => setSection(i.key)} className={`rounded-lg px-2.5 py-1.5 text-left text-xs font-semibold ${section === i.key ? 'bg-[#FA7014]/15 text-[#FA7014]' : 'text-slate-600 hover:bg-slate-100'}`}>{i.label}</button>)}
-                </div>
-              </div>
-            ))}
-          </nav>
-          <div className="min-w-0 flex-1"><Body /></div>
-        </div>
+        <div className="min-w-0"><Body /></div>
       </div>
     </div>
   );
