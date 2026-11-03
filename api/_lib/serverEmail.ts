@@ -148,7 +148,13 @@ export async function dispatchLiveEmail(payload: EmailDispatchPayload): Promise<
     .replace(/data:image\/[a-zA-Z0-9.+-]+;base64,[a-zA-Z0-9+/=]+/g, '')
     .trim();
 
-  const noticeType = metadata?.acknowledgementRequired
+  // Only policy / document emails carry the "secure Employee Portal" box and the governance wording.
+  // Everything else (invites, offers, interviews, reminders, leave) is sent as an ordinary message.
+  const isDocumentEmail = !!(metadata?.documentId || metadata?.acknowledgementRequired || /Action Required: Review|Revision Required|Policy/i.test(subject));
+  const senderLabel = (payload.fromName || '').replace(/["<>\r\n]/g, '').trim().slice(0, 80) || 'Amaavigo HR';
+  const noticeType = !isDocumentEmail
+    ? subject
+    : metadata?.acknowledgementRequired
     ? 'Official HR Policy Notice'
     : subject.includes('Action Required: Review')
     ? 'HR Document Review Required'
@@ -255,6 +261,7 @@ export async function dispatchLiveEmail(payload: EmailDispatchPayload): Promise<
                   ${bodyHtmlContent}
                 </div>
 
+                ${isDocumentEmail ? `
                 <!-- Call to Action Box (Table-based for Outlook) -->
                 <table border="0" cellpadding="0" cellspacing="0" width="100%" bgcolor="#0B0E14" style="background-color: #0B0E14; border-radius: 8px; margin: 24px 0 16px 0; border: 1px solid #222836;">
                   <tr>
@@ -276,6 +283,8 @@ export async function dispatchLiveEmail(payload: EmailDispatchPayload): Promise<
                     </td>
                   </tr>
                 </table>
+
+` : ''}
 
                 <!-- Meta Details -->
                 ${
@@ -301,7 +310,7 @@ export async function dispatchLiveEmail(payload: EmailDispatchPayload): Promise<
             <tr>
               <td bgcolor="#f8fafc" style="background-color: #f8fafc; padding: 18px 24px; border-top: 1px solid #e2e8f0; font-family: Arial, Helvetica, sans-serif; font-size: 12px; color: #64748b; line-height: 18px; text-align: center;">
                 <p style="margin: 0 0 6px 0; font-family: Arial, Helvetica, sans-serif; font-size: 12px; color: #64748b; line-height: 18px; mso-line-height-rule: exactly;">
-                  This is an automated governance dispatch from the <strong>Amaavigo HR Document Governance &amp; Version Control System</strong>.
+                  ${isDocumentEmail ? `This is an automated governance dispatch from the <strong>Amaavigo HR Document Governance &amp; Version Control System</strong>.` : `This is an automated message from <strong>${escapeHtml(senderLabel)}</strong>.`}
                 </p>
                 <p style="margin: 0; font-family: Arial, Helvetica, sans-serif; font-size: 12px; color: #64748b; line-height: 18px; mso-line-height-rule: exactly;">
                   Recipient: <strong style="color: #334155;">${escapeHtml(recipientName)}</strong> (${escapeHtml(to)})
