@@ -73,6 +73,9 @@ export const platformApi = {
   suspend: (companyId: string) => apiJson('/api/tenant/suspend-company', { companyId }),
   updateModules: (companyId: string, modules: string[], plan?: string) =>
     apiJson('/api/tenant/update-company-modules', { companyId, modules, plan }),
+  /** Permanently deletes a company and all its data. Call again while `done` is false (the server works in time-limited chunks). */
+  deleteCompany: (companyId: string, confirmName: string) =>
+    apiJson<{ success: true; done: boolean; deleted: Record<string, number> }>('/api/tenant/delete-company', { companyId, confirmName }),
 };
 
 /** Minimal CSV parser (quoted fields, commas, newlines). Header names are matched case-insensitively. */

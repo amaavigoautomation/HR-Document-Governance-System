@@ -10,7 +10,7 @@
  * but it can never write users, roles, departments or companies - only this file can.
  */
 import { randomBytes } from 'node:crypto';
-import { FieldValue, type DocumentReference, type Firestore } from 'firebase-admin/firestore';
+import { FieldValue, type DocumentReference, type Firestore, type Query } from 'firebase-admin/firestore';
 import { adminApp, adminAuth, adminDb, isAdminConfigured } from './firebaseAdmin.js';
 import { authenticate, requirePermission, requirePlatformAdmin, authErrorResponse, AuthError, type AuthContext } from './authContext.js';
 import { dispatchLiveEmail } from './serverEmail.js';
@@ -352,6 +352,122 @@ async function setCompanyStatus(headers: Record<string, any>, body: any, status:
   await db().collection('companies').doc(companyId).update(update);
   const updated = await syncCompanyUsers(companyId);
   return ok({ companyId, status, usersUpdated: updated });
+}
+
+// ------------------------------------------------------------------ delete a whole company
+
+/** Collections that are never swept by company id: the company record is removed last, employees have their own phase. */
+const PURGE_SKIP = new Set(['companies', 'employees', 'platformAudit']);
+/** Stay under the serverless time limit; the screen calls again until the server says it is done. */
+const purgeBudgetMs = () => Number(process.env.TENANT_PURGE_BUDGET_MS) || 7000;
+
+async function drainQuery(q: Query, deadline: number): Promise<{ deleted: number; more: boolean }> {
+  let deleted = 0;
+  for (;;) {
+    const snap = await q.limit(400).get();
+    if (snap.empty) return { deleted, more: false };
+    const batch = db().batch();
+    snap.docs.forEach((d) => batch.delete(d.ref));
+    await batch.commit();
+    deleted += snap.size;
+    if (Date.now() > deadline) return { deleted, more: true };
+  }
+}
+
+/**
+ * Permanently deletes a company: its login accounts, its employees and every record that carries its company id
+ * in every collection (leave, payroll, hiring, documents, files...), then the company itself.
+ * It is resumable: the first call suspends the company (so nobody can use it while it is wiped), each call works for
+ * about seven seconds, and the screen calls again while `done` is false. A repeat call after a failure carries on.
+ */
+async function deleteCompany(headers: Record<string, any>, body: any): Promise<TenantResult> {
+  const actor = await requirePlatformAdmin(headers);
+  const companyId = str(body.companyId, 128);
+  const company = await loadCompany(companyId);
+
+  if ((process.env.HOME_COMPANY_ID || '').trim() === companyId) {
+    return fail(400, 'This is the home company (HOME_COMPANY_ID). Unset that setting before deleting it, because older records without a company id belong to it.');
+  }
+  if (actor.companyId === companyId) return fail(400, 'You cannot delete the company your own account belongs to.');
+  const own = await db().collection('employees').where('companyId', '==', companyId).where('authUid', '==', actor.uid).limit(1).get();
+  if (!own.empty) return fail(400, 'You cannot delete the company your own account belongs to.');
+  if (str(body.confirmName, 200) !== company.name) return fail(400, 'Type the company name exactly to confirm the deletion.');
+
+  const deadline = Date.now() + purgeBudgetMs();
+  const progress = ((company as any).deleteProgress || {}) as { employeesDone?: boolean; purged?: string[]; counts?: Record<string, number> };
+  const purged = new Set<string>(progress.purged || []);
+  const counts: Record<string, number> = { ...(progress.counts || {}) };
+  const add = (k: string, n: number) => { if (n) counts[k] = (counts[k] || 0) + n; };
+
+  // 1. Lock the company first so nobody can sign in or write while it is being wiped.
+  if (company.status !== 'SUSPENDED') {
+    await db().collection('companies').doc(companyId).update({ status: 'SUSPENDED', updatedAt: nowIso(), deleting: true, deleteRequestedBy: actor.email, deleteRequestedAt: nowIso() });
+    await syncCompanyUsers(companyId);
+  }
+
+  const save = async () => {
+    await db().collection('companies').doc(companyId).update({ deleteProgress: { employeesDone: !!progress.employeesDone, purged: [...purged], counts } }).catch(() => {});
+  };
+  const finish = async (done: boolean) => {
+    await save();
+    return ok({ companyId, done, deleted: counts });
+  };
+
+  // 2. Login accounts and employee records.
+  if (!progress.employeesDone) {
+    for (;;) {
+      const snap = await db().collection('employees').where('companyId', '==', companyId).limit(200).get();
+      if (snap.empty) { progress.employeesDone = true; break; }
+      const uids = snap.docs.map((d) => String((d.data() as EmployeeDoc).authUid || d.id)).filter(Boolean);
+      // Never delete a platform administrator's login, even if they also have an employee record here.
+      const protectedUids = new Set<string>();
+      for (let i = 0; i < uids.length; i += 100) {
+        const found = await adminAuth().getUsers(uids.slice(i, i + 100).map((uid) => ({ uid })));
+        found.users.forEach((u) => { if ((u.customClaims as TenantClaims | undefined)?.pa === true) protectedUids.add(u.uid); });
+      }
+      const res = await adminAuth().deleteUsers(uids.filter((u) => !protectedUids.has(u)));
+      if (res.failureCount) console.warn('[tenant] deleteCompany: some login accounts were already gone or could not be deleted', res.errors.slice(0, 3));
+      const batch = db().batch();
+      snap.docs.forEach((d) => batch.delete(d.ref));
+      await batch.commit();
+      add('employees', snap.size);
+      if (Date.now() > deadline) return finish(false);
+    }
+  }
+
+  // 3. Every other collection, discovered at run time so new features are covered without changing this code.
+  const names = (await db().listCollections()).map((c) => c.id).filter((n) => !PURGE_SKIP.has(n) && !purged.has(n));
+  let timedOut = false;
+  for (let i = 0; i < names.length && !timedOut; i += 8) {
+    const group = names.slice(i, i + 8);
+    await Promise.all(group.map(async (name) => {
+      const col = db().collection(name);
+      const r = await drainQuery(col.where('companyId', '==', companyId), deadline);
+      add(name, r.deleted);
+      // Settings-style documents are keyed by the company id itself.
+      const keyed = await col.doc(companyId).get();
+      if (keyed.exists) {
+        const cid = (keyed.data() as any)?.companyId;
+        if (cid === undefined || cid === companyId) { await keyed.ref.delete(); add(name, 1); }
+      }
+      if (r.more) timedOut = true; else purged.add(name);
+    }));
+    if (Date.now() > deadline) timedOut = true;
+  }
+  if (timedOut) return finish(false);
+
+  // 4. The company itself, then a record of who deleted what.
+  await db().collection('platformAudit').doc(newId('aud')).set({
+    action: 'DELETE_COMPANY',
+    companyId,
+    companyName: company.name,
+    adminEmail: company.adminEmail,
+    deletedBy: actor.email,
+    deletedAt: nowIso(),
+    deleted: counts,
+  });
+  await db().collection('companies').doc(companyId).delete();
+  return ok({ companyId, done: true, deleted: counts });
 }
 
 async function updateCompanyModules(headers: Record<string, any>, body: any): Promise<TenantResult> {
@@ -741,6 +857,7 @@ export async function routeTenant(r: TenantRequest): Promise<TenantResult> {
       case 'approve-company': return await setCompanyStatus(headers, b, 'ACTIVE');
       case 'suspend-company': return await setCompanyStatus(headers, b, 'SUSPENDED');
       case 'update-company-modules': return await updateCompanyModules(headers, b);
+      case 'delete-company': return await deleteCompany(headers, b);
       case 'create-user': return await createUser(headers, b, origin);
       case 'import-users': return await importUsers(headers, b, origin);
       case 'update-user': return await updateUser(headers, b);

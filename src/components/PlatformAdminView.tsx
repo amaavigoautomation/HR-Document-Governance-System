@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { AlertCircle, Check, Loader2, LogOut, Pause, Play, RefreshCw } from 'lucide-react';
+import { AlertCircle, Check, Loader2, LogOut, Pause, Play, RefreshCw, Trash2, X } from 'lucide-react';
 import type { Company } from '../types';
 import { platformApi } from '../services/adminService';
 import { MODULES } from '../../shared/permissions';
@@ -23,6 +23,45 @@ export const PlatformAdminView: React.FC<Props> = ({ email, onLogout }) => {
   const [busyId, setBusyId] = useState('');
   // Module choices per company that are being edited but not saved yet
   const [draft, setDraft] = useState<Record<string, string[]>>({});
+  // Company being deleted, the name typed to confirm, and what the server has removed so far
+  const [toDelete, setToDelete] = useState<Company | null>(null);
+  const [typedName, setTypedName] = useState('');
+  const [deleting, setDeleting] = useState(false);
+  const [deleteMsg, setDeleteMsg] = useState('');
+  const [deleteError, setDeleteError] = useState('');
+
+  const closeDelete = () => {
+    if (deleting) return;
+    setToDelete(null);
+    setTypedName('');
+    setDeleteMsg('');
+    setDeleteError('');
+  };
+
+  /** The server wipes in time-limited chunks, so keep calling until it reports it is finished. */
+  const confirmDelete = async () => {
+    if (!toDelete) return;
+    setDeleting(true);
+    setDeleteError('');
+    setDeleteMsg('Deleting...');
+    try {
+      let result = await platformApi.deleteCompany(toDelete.id, typedName);
+      while (!result.done) {
+        const removed = Object.values(result.deleted || {}).reduce((a, b) => a + b, 0);
+        setDeleteMsg(`Deleting... ${removed} records removed so far`);
+        result = await platformApi.deleteCompany(toDelete.id, typedName);
+      }
+      setToDelete(null);
+      setTypedName('');
+      setDeleteMsg('');
+      await load();
+    } catch (e: any) {
+      setDeleteError(`${e?.message || 'Delete failed.'} You can press Delete again to carry on.`);
+      setDeleteMsg('');
+    } finally {
+      setDeleting(false);
+    }
+  };
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -153,6 +192,13 @@ export const PlatformAdminView: React.FC<Props> = ({ email, onLogout }) => {
                           <Play className="h-3.5 w-3.5" /> Reactivate
                         </button>
                       )}
+                      <button
+                        disabled={busy}
+                        onClick={() => { setToDelete(c); setTypedName(''); setDeleteError(''); }}
+                        className="inline-flex items-center gap-1.5 rounded-lg border border-rose-200 px-3 py-1.5 text-xs font-bold text-rose-700 hover:bg-rose-50 disabled:opacity-50"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" /> Delete
+                      </button>
                     </div>
                   </div>
                   <div className="mt-3 flex flex-wrap gap-3 border-t border-slate-100 pt-3">
@@ -170,6 +216,43 @@ export const PlatformAdminView: React.FC<Props> = ({ email, onLogout }) => {
           </div>
         )}
       </main>
+
+      {toDelete && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4" role="dialog" aria-modal="true">
+          <div className="w-full max-w-md rounded-2xl bg-white p-5 shadow-xl">
+            <div className="flex items-start justify-between gap-3">
+              <h2 className="text-base font-black text-slate-900">Delete {toDelete.name} permanently?</h2>
+              <button onClick={closeDelete} disabled={deleting} aria-label="Close" className="text-slate-400 hover:text-slate-600 disabled:opacity-50"><X className="h-4 w-4" /></button>
+            </div>
+            <p className="mt-2 text-sm text-slate-600">
+              This removes every login, employee, document, leave, payroll, hiring and onboarding record of this company, and the company itself.
+              It cannot be undone. The company is locked first, so nobody can use it while it is being deleted.
+            </p>
+            <label className="mt-4 block text-xs font-bold text-slate-700">
+              Type <span className="font-black text-rose-700">{toDelete.name}</span> to confirm
+              <input
+                autoFocus
+                value={typedName}
+                onChange={(e) => setTypedName(e.target.value)}
+                disabled={deleting}
+                className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-normal focus:border-rose-500 focus:outline-none focus:ring-2 focus:ring-rose-200"
+              />
+            </label>
+            {deleteMsg && <div className="mt-3 flex items-center gap-2 text-xs font-medium text-slate-600"><Loader2 className="h-3.5 w-3.5 animate-spin" /> {deleteMsg}</div>}
+            {deleteError && <div className="mt-3 flex items-start gap-2 rounded-lg border border-rose-200 bg-rose-50 p-2.5 text-xs font-medium text-rose-700"><AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0" /> {deleteError}</div>}
+            <div className="mt-5 flex justify-end gap-2">
+              <button onClick={closeDelete} disabled={deleting} className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-bold text-slate-700 hover:bg-slate-50 disabled:opacity-50">Cancel</button>
+              <button
+                onClick={confirmDelete}
+                disabled={deleting || typedName.trim() !== toDelete.name}
+                className="inline-flex items-center gap-1.5 rounded-lg bg-rose-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-rose-700 disabled:opacity-50"
+              >
+                <Trash2 className="h-3.5 w-3.5" /> Delete everything
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

@@ -55,6 +55,7 @@ export class FakeFirestore {
   stores = new Map<string, Map<string, Doc>>();
   private store(name: string) { if (!this.stores.has(name)) this.stores.set(name, new Map()); return this.stores.get(name)!; }
   collection(name: string) { return new Collection(this.store(name)); }
+  async listCollections() { return [...this.stores.keys()].map((id) => ({ id })); }
   batch() {
     const ops: (() => Promise<void>)[] = [];
     return {
