@@ -193,7 +193,7 @@ function fromStored(d: ApplicationDoc): any {
   };
 }
 
-async function loadLegacyApplications(force: boolean): Promise<Application[]> {
+export async function loadLegacyApplications(force: boolean): Promise<Application[]> {
   if (!force && appsCache && Date.now() - appsCache.at < CACHE_TTL_MS) return appsCache.data;
 
   const json = await getJson(APPLICATIONS_URL());

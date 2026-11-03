@@ -14,6 +14,7 @@
  *   joining-board, asset-*, kit-*, it-set                                joiner checklist, asset register, welcome kit (joiningApi.ts)
  *   ai-*, dup-*                                                         recruitment AI: resume reading, duplicates, comparison, recommendation, drafts (aiHiringApi.ts)
  *   scrlink-*                                                           candidate screening link: form, available slots, status (screeningLinkApi.ts)
+ *   website-sync                                                        home company only: copy website candidates into stored applications
  *   hiring-daily, integrations                                          the one daily cron job, and which outside connections are switched on
  *   hdash                                                               founder hiring dashboard (analyticsApi.ts)
  *   offer-*, hcost-*                                                    salary approval, offer pack, acceptance, hiring costs (offerApi.ts)
@@ -38,6 +39,7 @@ import { sweepOffers } from './offerApi.js';
 import { sweepProbation, sweepQuarterly } from './talentCycleApi.js';
 import { sendDueReminders } from './interviewApi.js';
 import { integrationStatus } from './integrations.js';
+import { syncWebsiteApplications, sweepWebsiteApplications } from './homeSync.js';
 
 export interface HiringRequest {
   method: string;
@@ -97,10 +99,24 @@ export async function routeHiring(r: HiringRequest): Promise<HiringResult> {
     const auth = String(r.headers?.authorization || r.headers?.Authorization || '');
     if (!secret || auth !== `Bearer ${secret}`) return { status: 401, json: { success: false, error: 'Not allowed.' } };
     const out: Record<string, any> = {};
-    for (const [name, fn] of [['offers', sweepOffers], ['probation', sweepProbation], ['quarterly', sweepQuarterly], ['interviews', () => sendDueReminders()], ['screeningLinks', sweepScreeningLinks]] as const) {
+    for (const [name, fn] of [['offers', sweepOffers], ['probation', sweepProbation], ['quarterly', sweepQuarterly], ['interviews', () => sendDueReminders()], ['screeningLinks', sweepScreeningLinks], ['websiteCandidates', sweepWebsiteApplications]] as const) {
       try { out[name] = await (fn as () => Promise<any>)(); } catch (e: any) { out[name] = { error: e?.message || 'failed' }; }
     }
     return { status: 200, json: { success: true, ...out } };
+  }
+
+  // Home company only: copy the website's candidates into the stored candidate records the pipeline tabs use.
+  if (action === 'website-sync') {
+    if (r.method !== 'POST') return { status: 405, json: { success: false, error: 'Method not allowed. Use POST.' } };
+    try {
+      const ctx = await requirePermission(r.headers, 'app.manage');
+      if (!ctx.companyId) return { status: 403, json: { success: false, error: 'Open this as a company user.' } };
+      return { status: 200, json: { success: true, ...(await syncWebsiteApplications(ctx.companyId)) } };
+    } catch (err: any) {
+      const known = authErrorResponse(err);
+      if (known) return { status: known.status, json: known.json };
+      return { status: 500, json: { success: false, error: err?.message || 'Could not bring in website candidates.' } };
+    }
   }
 
   if (action === 'integrations') {

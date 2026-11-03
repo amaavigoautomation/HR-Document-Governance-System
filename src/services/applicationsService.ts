@@ -42,5 +42,6 @@ export const applicationsService = {
     apiJson<{ created: number; duplicates: number; errors: { row: number; error: string }[] }>('/api/recruitment/app-import', { rows }),
   update: (id: string, patch: { status?: string; interviewDate?: string; interviewComment?: string }) =>
     apiJson('/api/recruitment/app-update', { id, ...patch }),
+  syncWebsite: () => apiJson<{ skipped?: boolean; seen: number; created: number; existing: number; invalid: number }>('/api/recruitment/website-sync', {}),
   remove: (id: string) => apiJson('/api/recruitment/app-delete', { id }),
 };

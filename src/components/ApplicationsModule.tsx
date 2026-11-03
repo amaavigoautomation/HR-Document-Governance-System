@@ -68,8 +68,27 @@ export const ApplicationsModule: React.FC<{ currentUser: User }> = ({ currentUse
   if (error) return <div className="p-6 text-sm text-rose-600">{error}</div>;
   if (legacy) {
     return (
-      <div className="p-6 text-sm text-slate-600">
-        This company reads candidates from its existing website, so applications are not managed here.
+      <div className="p-6 space-y-3 text-sm text-slate-600">
+        <p>This company reads candidates from its existing website, so applications are not managed here.</p>
+        {canManage && (
+          <>
+            <p className="text-xs text-slate-500">
+              To use the Hiring pipeline tabs (screening, interviews, offers, joining), copy the website's candidates in. It only adds new people,
+              never changes the website, and never overwrites a stage you already moved. This also runs once a day.
+            </p>
+            <button
+              disabled={busy}
+              className={`${btnCls} border-slate-300 bg-white text-slate-700`}
+              onClick={() => run(async () => {
+                const r = await applicationsService.syncWebsite();
+                setNote(`Brought in ${r.created} new candidate${r.created === 1 ? '' : 's'} (${r.existing} already here).`);
+              })}
+            >
+              <RefreshCw className="w-3.5 h-3.5" /> Bring in website candidates
+            </button>
+            {note && <div className="text-xs rounded-lg bg-amber-50 border border-amber-200 text-amber-800 px-3 py-2">{note}</div>}
+          </>
+        )}
       </div>
     );
   }
