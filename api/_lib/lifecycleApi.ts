@@ -931,6 +931,20 @@ async function identityFileAdd(w: Who, body: any): Promise<Result> {
   return ok({ id: ref.id });
 }
 
+async function identityFileReplace(w: Who, body: any): Promise<Result> {
+  const uid = await identityFileAccess(w, body?.uid);
+  const id = str(body?.id, 128);
+  const meta = await db().collection('employeeIdentityFiles').doc(id).get();
+  const m: any = meta.exists ? meta.data() : null;
+  if (!m || m.companyId !== w.cid || m.uid !== uid) return fail(404, 'Photo not found.');
+  const problem = checkIdentityImage(body?.dataUrl);
+  if (problem) return fail(400, problem);
+  const dataUrl = body.dataUrl as string;
+  await db().collection('employeeIdentityData').doc(id).set({ companyId: w.cid, uid, dataUrl });
+  await db().collection('employeeIdentityFiles').doc(id).update({ kb: Math.round((dataUrl.length * 3) / 4 / 1024), updatedAt: nowIso(), updatedBy: w.uid });
+  return ok({ id });
+}
+
 async function identityFileGet(w: Who, q: any): Promise<Result> {
   const uid = await identityFileAccess(w, q?.uid);
   const id = str(q?.id, 128);
@@ -1284,6 +1298,7 @@ export async function routeLifecycle(r: LifecycleRequestIn): Promise<Result> {
       case 'identity-file-add': return POST ? await identityFileAdd(w, body) : wrong;
       case 'identity-file': return GET ? await identityFileGet(w, r.query) : wrong;
       case 'identity-file-delete': return POST ? await identityFileDelete(w, body) : wrong;
+      case 'identity-file-replace': return POST ? await identityFileReplace(w, body) : wrong;
       case 'identity-decide': return POST ? await identityDecide(w, body) : wrong;
       case 'personal': return GET ? await personalGet(w, r.query) : wrong;
       case 'personal-save': return POST ? await personalSave(w, body) : wrong;

@@ -324,6 +324,14 @@ assert.equal((await call(FOREIGN, 'GET', 'profile', {}, { uid: 'u_emp' })).statu
   assert.equal((await call(OTHER, 'GET', 'identity-file', {}, { id: a.id, uid: 'u_emp' })).status, 403);
   assert.equal((await call(OTHER, 'GET', 'identity-file', {}, { id: a.id })).status, 404, 'cannot reach it by id either');
   assert.equal((await call(FOREIGN, 'GET', 'identity-file', {}, { id: a.id, uid: 'u_emp' })).status, 404, 'another company cannot read it');
+  // replace keeps the same photo slot and swaps the picture
+  const jpeg2 = 'data:image/jpeg;base64,' + Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0, 16, 0x4a, 0x46, 0x49, 0x46, 1, 2, 3]).toString('base64');
+  assert.equal((await call(OTHER, 'POST', 'identity-file-replace', { id: a.id, dataUrl: jpeg2 })).status, 404, 'cannot replace someone else\'s photo');
+  assert.equal((await call(EMP, 'POST', 'identity-file-replace', { id: a.id, dataUrl: 'data:image/png;base64,AAAA' })).status, 400, 'jpeg only');
+  await ok(EMP, 'POST', 'identity-file-replace', { id: a.id, dataUrl: jpeg2 });
+  assert.equal((await call(EMP, 'GET', 'identity-file', {}, { id: a.id })).json.dataUrl, jpeg2);
+  assert.equal((await files(EMP)).length, 2, 'still two photos');
+  await ok(EMP, 'POST', 'identity-file-replace', { id: a.id, dataUrl: jpeg });
   assert.equal((await call(OTHER, 'POST', 'identity-file-delete', { id: a.id })).status, 404);
   await ok(EMP, 'POST', 'identity-file-delete', { id: a.id });
   assert.equal((await files(EMP)).length, 1);
