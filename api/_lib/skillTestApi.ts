@@ -150,6 +150,9 @@ async function deleteTest(ctx: AuthContext, b: any): Promise<Result> {
 
 // ------------------------------------------------------------------ the engine side: invite, wait, mark
 
+/** Only this applicant's assessments are read, to keep Firestore reads low. */
+const forApplicant = async (cid: string, applicationId: string): Promise<Item[]> => (await db().collection('hiringItems').where('companyId', '==', cid).where('kind', '==', 'assessment').where('applicationId', '==', applicationId).get()).docs.map((d: any) => d.data() as Item);
+
 const attemptsOf = (list: Item[], runId: string, stepId: string) => list.filter((x) => x.mode === 'AI_TEST' && x.runId === runId && x.stepId === stepId).sort((a, b) => String(b.assignedAt).localeCompare(String(a.assignedAt)));
 
 async function createOnce(it: Item): Promise<boolean> {
@@ -218,7 +221,7 @@ export async function observeAiTest(
 ): Promise<AiTestSeen> {
   const s = testSettings(step as any);
   for (let pass = 0; pass < 3; pass++) {
-    const list = attemptsOf((await listItems(cid, 'assessment')).filter((x) => x.applicationId === a.id), run.id, step.id);
+    const list = attemptsOf(await forApplicant(cid, a.id), run.id, step.id);
     const cur = list.find((x) => x.status !== 'SUPERSEDED');   // replaced links still count for numbering the next one
     if (!cur) {
       const t = await getItem(cid, testId(cid, a.designation), 'skillTest');
@@ -260,7 +263,7 @@ export async function observeAiTest(
 
 /** HR pressed Retry on a test step: an expired or lost invite is replaced by a fresh one on the next look. */
 export async function retryAiTest(cid: string, runId: string, stepId: string, applicationId: string): Promise<void> {
-  const list = attemptsOf((await listItems(cid, 'assessment')).filter((x) => x.applicationId === applicationId), runId, stepId);
+  const list = attemptsOf(await forApplicant(cid, applicationId), runId, stepId);
   const cur = list.find((x) => x.status !== 'SUPERSEDED');
   if (cur && cur.status !== 'SCORED' && !cur.startedAt && (cur.status === 'EXPIRED' || nowFn().toISOString() > cur.expiresAt)) await putItem({ ...cur, status: 'SUPERSEDED', expiresAt: nowIso() });
   else if (cur && cur.status !== 'SCORED' && !cur.mailedAt) await putItem({ ...cur, mailClaim: '' });

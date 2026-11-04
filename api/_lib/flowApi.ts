@@ -121,6 +121,12 @@ function pickFlow(fams: FamilyRec[], all: FlowDoc[], designation: string): { flo
   return dflt ? { flow: dflt, name: fams.find((f) => f.isDefault)?.name || 'Default flow' } : null;
 }
 
+/** One applicant's items of a kind. Asking Firestore for just that applicant keeps reads low: scanning the whole company's items for every applicant used up the daily quota. */
+async function listFor(cid: string, kind: string, applicationId: string): Promise<Item[]> {
+  const snap = await db().collection('hiringItems').where('companyId', '==', cid).where('kind', '==', kind).where('applicationId', '==', applicationId).get();
+  return snap.docs.map((d: any) => d.data() as Item);
+}
+
 async function people(cid: string): Promise<{ uid: string; name: string; title: string; email: string }[]> {
   const snap = await db().collection('employees').where('companyId', '==', cid).get();
   return snap.docs.map((d) => d.data() as any).filter((e) => e.authUid && e.active !== false)
@@ -170,7 +176,18 @@ function cleanSteps(raw: unknown, staff: { uid: string; name: string }[]): FlowS
   return out;
 }
 
+const optionsCache = new Map<string, { at: number; list: string[] }>();
+/** Tests (and anything that adds job titles in bulk) can drop the remembered lists. */
+export const __clearOptionsCache = () => optionsCache.clear();
+/** Scans requisitions, every application and employees, so the answer is remembered for 5 minutes per company. */
 async function designationOptions(cid: string): Promise<string[]> {
+  const hit = optionsCache.get(cid);
+  if (hit && Date.now() - hit.at < 5 * 60_000) return hit.list;
+  const list = await scanDesignations(cid);
+  optionsCache.set(cid, { at: Date.now(), list });
+  return list;
+}
+async function scanDesignations(cid: string): Promise<string[]> {
   const seen = new Map<string, string>();
   const add = (v: unknown) => { const t = typeof v === 'string' ? v.trim().replace(/\s+/g, ' ') : ''; if (t && !seen.has(designationKey(t))) seen.set(designationKey(t), t); };
   for (const r of (await db().collection('requisitions').where('companyId', '==', cid).get()).docs) add(r.get('positionTitle'));
@@ -397,9 +414,9 @@ type Seen = { kind: 'wait'; why: string; ask?: string } | { kind: 'move'; result
 async function gatherFacts(cid: string, a: ApplicationDoc, run: RunDoc): Promise<Facts> {
   const facts: Facts = { expectedCtcLpa: a.expectedCtcLpa ?? null };
   try { const s = await scoreFor(cid, a); facts.aiScore = s.score?.normalised ?? null; facts.experienceYears = s.years ?? null; } catch { /* unknown */ }
-  const scr = (await listItems(cid, 'screening')).find((s) => s.applicationId === a.id);
+  const scr = (await listFor(cid, 'screening', a.id)).find((s) => s.applicationId === a.id);
   facts.screeningOutcome = scr?.outcome || null;
-  const ints = (await listItems(cid, 'interview')).filter((i) => i.applicationId === a.id && i.status === 'COMPLETED').sort((x, y) => String(y.updatedAt).localeCompare(String(x.updatedAt)));
+  const ints = (await listFor(cid, 'interview', a.id)).filter((i) => i.applicationId === a.id && i.status === 'COMPLETED').sort((x, y) => String(y.updatedAt).localeCompare(String(x.updatedAt)));
   if (ints[0]?.scorecards?.length) facts.interviewAverage = summarise(ints[0].scorecards as Scorecard[]).average;
   return facts;
 }
@@ -434,7 +451,7 @@ async function observe(cid: string, run: RunDoc, flow: FlowDoc, step: FlowStep, 
       return { kind: 'move', result: 'done', note: step.settings.sendEmail ? `Rejected. Email sent to ${a.email}.` : 'Rejected.' };
     }
     case 'screen': {
-      const s = (await listItems(cid, 'screening')).find((x) => x.applicationId === a.id);
+      const s = (await listFor(cid, 'screening', a.id)).find((x) => x.applicationId === a.id);
       if (!s) return { kind: 'wait', why: 'Waiting for the phone screening result.' };
       if (s.outcome === 'PASS') return { kind: 'move', result: 'done', note: 'Phone screening passed.' };
       if (s.outcome === 'FAIL') return { kind: 'move', result: 'fail', note: 'Phone screening failed.' };
@@ -442,13 +459,13 @@ async function observe(cid: string, run: RunDoc, flow: FlowDoc, step: FlowStep, 
     }
     case 'test': {
       if (isAiTest(step)) return (await import('./skillTestApi.js')).observeAiTest(cid, run, step, a);
-      const t = (await listItems(cid, 'assessment')).filter((x) => x.applicationId === a.id && x.mode !== 'AI_TEST').sort((x, y) => String(y.assignedAt).localeCompare(String(x.assignedAt)))[0];
+      const t = (await listFor(cid, 'assessment', a.id)).filter((x) => x.applicationId === a.id && x.mode !== 'AI_TEST').sort((x, y) => String(y.assignedAt).localeCompare(String(x.assignedAt)))[0];
       if (!t || t.status !== 'SCORED') return { kind: 'wait', why: t ? 'Waiting for the test to be scored.' : 'Waiting for a test to be given.' };
       return t.result === 'PASS' ? { kind: 'move', result: 'done', note: `Test passed (${t.score}).` } : { kind: 'move', result: 'fail', note: `Test not passed (${t.score}).` };
     }
     case 'interview': {
       const k = interviewRound(flow, step.id);
-      const list = (await listItems(cid, 'interview')).filter((x) => x.applicationId === a.id && x.status !== 'CANCELLED').sort((x, y) => String(x.createdAt).localeCompare(String(y.createdAt)));
+      const list = (await listFor(cid, 'interview', a.id)).filter((x) => x.applicationId === a.id && x.status !== 'CANCELLED').sort((x, y) => String(x.createdAt).localeCompare(String(y.createdAt)));
       const it = list[k - 1];
       if (!it) return { kind: 'wait', why: `Waiting for interview round ${k} to be scheduled.` };
       if (it.status !== 'COMPLETED') return { kind: 'wait', why: `Waiting for the panel's feedback on round ${k}.` };
@@ -463,14 +480,14 @@ async function observe(cid: string, run: RunDoc, flow: FlowDoc, step: FlowStep, 
       return d.result === 'yes' ? { kind: 'move', result: 'done', note: `${d.by || 'Someone'} said yes.` } : { kind: 'move', result: 'fail', note: `${d.by || 'Someone'} said no${d.note ? `: ${d.note}` : ''}.` };
     }
     case 'offer': {
-      const o = latestOffer(await listItems(cid, 'offer'), a.id);
+      const o = latestOffer(await listFor(cid, 'offer', a.id), a.id);
       if (!o) return { kind: 'wait', why: 'Waiting for HR to make the offer.' };
       if (OFFER_GOOD.includes(o.status)) return { kind: 'move', result: 'done', note: 'Candidate accepted the offer.' };
       if (OFFER_BAD.includes(o.status)) return { kind: 'move', result: 'fail', note: `Offer ended: ${String(o.status).toLowerCase()}.` };
       return { kind: 'wait', why: 'Waiting for the offer to be approved, sent and answered.' };
     }
     case 'onboard': {
-      const o = latestOffer(await listItems(cid, 'offer'), a.id);
+      const o = latestOffer(await listFor(cid, 'offer', a.id), a.id);
       if (o && (o.onboardingId || o.status === 'JOINED')) return { kind: 'move', result: 'done', note: 'Joining has started.' };
       return { kind: 'wait', why: 'Waiting for joining to start.' };
     }
