@@ -82,6 +82,8 @@ export interface RunDoc extends Item {
 }
 
 const FINAL = ['HIRED', 'REJECTED', 'STOPPED'];
+/** When an applicant reached us. Website-feed applications carry an older applied-on date as createdAt, so receivedAt is used when there is one. */
+const arrivedAt = (a: ApplicationDoc) => a.receivedAt || a.createdAt;
 const runId = (applicationId: string) => `flowrun_${applicationId}`;
 const taskId = (rid: string, stepId: string) => `ftask_${rid}_${stepId}`;
 
@@ -658,7 +660,7 @@ export async function flowStartHook(cid: string, applicationId: string): Promise
     if (!a) return;
     const pick = pickFlow(await families(cid), await flows(cid), a.designation);
     if (!pick || !pick.flow.steps.length) return;
-    if (pick.flow.activatedAt && a.createdAt < pick.flow.activatedAt) return;   // applicants from before the flow was published are not pulled in by surprise
+    if (pick.flow.activatedAt && arrivedAt(a) < pick.flow.activatedAt) return;   // applicants from before the flow was published are not pulled in by surprise
     await enroll(cid, a, pick.flow, pick.name);
     await advanceRun(cid, runId(a.id));
   } catch (e: any) { console.warn('[Flow] start hook failed:', e?.message || e); }
@@ -668,6 +670,22 @@ export async function flowAdvanceHook(cid: string, applicationId: string): Promi
   try {
     if (await getItem(cid, runId(applicationId), 'flowRun')) await advanceRun(cid, runId(applicationId));
   } catch (e: any) { console.warn('[Flow] advance hook failed:', e?.message || e); }
+}
+
+/** Puts applicants who arrived after their flow was published, and are not in any flow yet, into it. Returns how many. */
+async function enrollNew(cid: string): Promise<number> {
+  const all = await flows(cid);
+  if (!all.some((f) => f.status === 'ACTIVE' && !f.adjusted)) return 0;
+  const fams = await families(cid);
+  const have = new Set(((await listItems(cid, 'flowRun')) as RunDoc[]).map((r) => r.applicationId));
+  let n = 0;
+  for (const a of await listApplications(cid)) {
+    if (have.has(a.id) || a.status === 'Rejected') continue;
+    const pick = pickFlow(fams, all, a.designation);
+    if (!pick || (pick.flow.activatedAt && arrivedAt(a) < pick.flow.activatedAt)) continue;
+    await enroll(cid, a, pick.flow, pick.name); n++;
+  }
+  return n;
 }
 
 /** The daily job: pull in new applicants the hook missed, move everyone forward, and nudge late tasks once. */
@@ -682,13 +700,7 @@ export async function sweepFlows(): Promise<Record<string, any>> {
       const runs = (await listItems(cid, 'flowRun')) as RunDoc[];
       if (!all.some((f) => f.status === 'ACTIVE') && !runs.length) continue;
       out.companies++;
-      const have = new Set(runs.map((r) => r.applicationId));
-      for (const a of await listApplications(cid)) {
-        if (have.has(a.id) || a.status === 'Rejected') continue;
-        const pick = pickFlow(fams, all, a.designation);
-        if (!pick || (pick.flow.activatedAt && a.createdAt < pick.flow.activatedAt)) continue;
-        await enroll(cid, a, pick.flow, pick.name); out.enrolled++;
-      }
+      out.enrolled += await enrollNew(cid);
       for (const r of (await listItems(cid, 'flowRun')) as RunDoc[]) {
         if (FINAL.includes(r.status)) continue;
         await advanceRun(cid, r.id); out.advanced++;
@@ -763,10 +775,16 @@ async function enrollRoute(ctx: AuthContext, b: any): Promise<Res> {
 async function checkNow(ctx: AuthContext, b: any): Promise<Res> {
   const cid = ctx.companyId!;
   const one = str(b.runId, 200);
+  let enrolled = 0;
+  if (!one) {
+    // "Check everyone" also fetches new website applications (home company only) and starts the flow for anyone who has arrived.
+    try { await (await import('./homeSync.js')).syncWebsiteApplications(cid); } catch { /* not a website-feed company */ }
+    enrolled = await enrollNew(cid);
+  }
   const runs = one ? [await loadRun(cid, one)].filter(Boolean) as RunDoc[] : (await listItems(cid, 'flowRun')) as RunDoc[];
   let n = 0;
   for (const r of runs) { if (FINAL.includes(r.status)) continue; await advanceRun(cid, r.id); n++; }
-  return ok({ checked: n });
+  return ok({ checked: n, enrolled });
 }
 
 async function runAction(ctx: AuthContext, b: any): Promise<Res> {

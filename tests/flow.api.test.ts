@@ -73,6 +73,7 @@ async function main() {
   cond.ifYes = 'next'; cond.ifNo = rej.id;
   const saved = await post(HR, 'flow-save', { name: 'Acme hiring', steps });
   okc(saved); assert.deepEqual(saved.json.problems, [], JSON.stringify(saved.json.problems));
+  await new Promise((r) => setTimeout(r, 15)); clock = Date.now();   // the pre-existing applicant really did arrive earlier (applications stamp real time)
   const act = await post(HR, 'flow-activate', { note: 'First version' }); okc(act);
   assert.equal(act.json.version, 1);
   st = (await get(HR, 'flow-state')).json;
@@ -81,7 +82,7 @@ async function main() {
 
   // ---- applicants from before the flow was published are not pulled in by surprise, but HR can add them
   assert.equal(await runOf(early), undefined);
-  clock += 60_000;
+  clock += 60_000; await new Promise((r) => setTimeout(r, 15));
 
   // ---- applicant 1: the whole happy path
   const a1 = await newApp('Asha');
@@ -299,6 +300,16 @@ async function main() {
   assert.equal((await runOf(s1)).status !== 'STOPPED', true);
   // the daily job and "add earlier applicants" respect designations too
   const sw2 = await sweepFlows(); assert.ok(sw2.advanced >= 1);
+
+  // ---- applicants that reach the database without going through createApplication (the website feed) are still picked up
+  const feedApp = (id: string, name: string, extra: any) => fdb.seed('applications', id, { id, companyId: CID, name, email: `${name.toLowerCase()}@feed.com`, emailLower: `${name.toLowerCase()}@feed.com`, designation: 'Designer', designationKey: 'designer', status: 'New Applicant', source: 'WEBHOOK', updatedAt: nowIso(), ...extra });
+  feedApp('web_new', 'Webnew', { createdAt: '2020-01-01T00:00:00Z', receivedAt: nowIso() });   // website says applied long ago, but it reached us just now
+  feedApp('web_old', 'Webold', { createdAt: '2020-01-01T00:00:00Z' });                          // genuinely old, from before the flow
+  const cn = await post(HR, 'flow-check-now'); okc(cn);
+  assert.equal(cn.json.enrolled, 1, 'Check everyone now adds new applicants');
+  assert.ok(await runOf('web_new'), 'the website applicant is in the flow'); assert.equal(await runOf('web_old'), undefined, 'old applicants are still not pulled in by surprise');
+  const again2 = await post(HR, 'flow-check-now');
+  assert.equal(again2.json.enrolled, 0, 'nothing is added twice');
 
   // ---- one company never sees another's flow, runs or tasks
   assert.equal((await get(OTHER, 'flow-state')).json.active, null);

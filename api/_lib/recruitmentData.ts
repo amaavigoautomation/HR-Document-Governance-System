@@ -55,6 +55,8 @@ export interface ApplicationDoc {
   createdAt: string;
   updatedAt: string;
   reappliedAt?: string;
+  /** When this application reached our database (the website feed can carry an older applied-on date). The hiring flow uses this, not createdAt. */
+  receivedAt?: string;
   /** Candidate database fields, filled by HR or at screening. */
   currentCtcLpa?: number;
   expectedCtcLpa?: number;
@@ -250,6 +252,7 @@ export async function createApplication(
     interviewComment: '',
     source,
     createdAt: now,
+    receivedAt: now,
     updatedAt: now,
   };
   await ref.set(clean(doc));

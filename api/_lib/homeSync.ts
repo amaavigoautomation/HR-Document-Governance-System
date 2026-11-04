@@ -44,10 +44,12 @@ export async function syncWebsiteApplications(companyId: string): Promise<Websit
       experience: text(row[7], 100), noticePeriod: text(row[8], 100), jobPreference: text(row[9], 100),
       status: a.status || 'New Applicant', interviewDate: text(row[11], 60), message: text(row[12], 4000),
       interviewComment: text(row[13], 2000), resumeUrl: text(row[14], 500), extra: {}, source: 'WEBHOOK',
-      createdAt: a.appliedOn || now, updatedAt: now,
+      createdAt: a.appliedOn || now, receivedAt: now, updatedAt: now,
     };
     await db.collection('applications').doc(id).set(JSON.parse(JSON.stringify(doc)));
     ids.add(id); pairs.add(pair); out.created++;
+    // The website feed writes straight into the database, so give the company's hiring flow its chance to pick the applicant up.
+    try { await (await import('./flowApi.js')).flowStartHook(companyId, id); } catch { /* the daily job picks it up */ }
   }
   return out;
 }

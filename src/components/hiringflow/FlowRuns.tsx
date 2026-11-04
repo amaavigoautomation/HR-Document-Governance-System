@@ -87,7 +87,7 @@ export const FlowRuns: React.FC<{ people: FlowState['people']; onChanged?: () =>
   const [filter, setFilter] = useState('');
   const [flowF, setFlowF] = useState('');
   const { data, error, loading, reload } = useLoad(() => flowService.runs(), []);
-  const { busy, note, run } = useRunner();
+  const { busy, note, setNote, run } = useRunner();
   const [view, setView] = useState<FlowRunRow | null>(null);
   const [adding, setAdding] = useState(false);
   const rows = data?.items || [];
@@ -103,7 +103,7 @@ export const FlowRuns: React.FC<{ people: FlowState['people']; onChanged?: () =>
         <div><h2 className="text-lg font-extrabold text-slate-900">Who is where</h2><p className="text-sm text-slate-600">Every applicant in your hiring flow. The app moves them on by itself when the work is done.</p></div>
         <div className="flex gap-2">
           <button className={btnGhost} onClick={() => setAdding(true)}><UserPlus className="w-4 h-4" />Add earlier applicants</button>
-          <button className={btnPrimary} disabled={busy} onClick={() => run(async () => { await flowService.checkNow(); refresh(); }, 'Checked everyone.')}><RefreshCw className="w-4 h-4" />Check everyone now</button>
+          <button className={btnPrimary} disabled={busy} onClick={() => run(async () => { const r = await flowService.checkNow(); refresh(); setNote({ tone: 'ok', text: r.enrolled ? `Checked everyone. ${r.enrolled} new applicant${r.enrolled === 1 ? ' was' : 's were'} added to the flow.` : 'Checked everyone. No new applicants were waiting.' }); })}><RefreshCw className="w-4 h-4" />Check everyone now</button>
         </div>
       </div>
       {note && <Notice tone={note.tone === 'ok' ? 'ok' : 'error'}>{note.text}</Notice>}

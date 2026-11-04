@@ -42,7 +42,7 @@ export const flowService = {
   runs: (status?: string) => get<{ items: FlowRunRow[] }>('flow-runs', status ? { status } : {}),
   run: (id: string) => get<{ run: any; flow: { steps: FlowStep[]; version: number } | null }>('flow-run', { id }),
   enroll: (applicationIds: string[]) => post<{ added: number; already: number; skipped: number }>('flow-enroll', { applicationIds }),
-  checkNow: (runId?: string) => post<{ checked: number }>('flow-check-now', { runId }),
+  checkNow: (runId?: string) => post<{ checked: number; enrolled: number }>('flow-check-now', { runId }),
   runAction: (runId: string, action: 'retry' | 'skip' | 'reject' | 'stop' | 'reassign', extra: { note?: string; ownerUid?: string } = {}) => post('flow-run-action', { runId, action, ...extra }),
   tasks: (all = false) => get<{ open: FlowTask[]; recent: FlowTask[] }>('flow-my-tasks', all ? { all: '1' } : {}),
   decide: (taskId: string, decision: 'yes' | 'no', note?: string) => post('flow-task-decide', { taskId, decision, note }),
