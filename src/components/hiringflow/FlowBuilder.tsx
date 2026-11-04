@@ -1,8 +1,8 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { AlertTriangle, ArrowDown, ArrowUp, CheckCircle2, ChevronDown, ChevronUp, Lock, Play, Plus, Trash2, X } from 'lucide-react';
+import { AlertTriangle, ArrowDown, ArrowLeft, ArrowUp, CheckCircle2, ChevronDown, ChevronUp, Lock, Play, Plus, Trash2, X } from 'lucide-react';
 import { Card, Field, Notice, btnBig, btnGhost, btnPrimary, input, niceDate, useRunner } from '../leave/ui';
 import { Loading, Pill, useLoad } from '../common/loadUi';
-import { flowService, type FlowState } from '../../services/flowService';
+import { flowService, type FamilyView, type FlowState } from '../../services/flowService';
 import {
   CONDITION_FIELDS, CONDITION_OPS, MAX_INTERVIEW_ROUNDS, OUTCOME_WORDS, PLACEHOLDERS, STEP_INFO, STEP_ORDER, UNKNOWN_CHOICES,
   makeStep, simulate, stepSentence, validateFlow, type FlowDoc, type FlowStep, type Problem, type SimOutput, type StepType,
@@ -266,8 +266,11 @@ const useDebounced = (fn: () => void, deps: unknown[], ms: number, enabled: bool
   useEffect(() => { if (!enabled) return; const t = setTimeout(fn, ms); return () => clearTimeout(t); }, deps);
 };
 
-export const FlowBuilder: React.FC<{ onChanged?: () => void }> = ({ onChanged }) => {
-  const { data, error, loading, reload } = useLoad(() => flowService.state(), []);
+interface BodyProps { family: FamilyView; state: FlowState; reload: () => Promise<unknown> | void; onChanged?: () => void }
+
+/** Builds and publishes one flow (the Default flow, or the flow for some designations). */
+const FlowEditorBody: React.FC<BodyProps> = ({ family, state, reload, onChanged }) => {
+  const fid = family.familyId;
   const { busy, note, setNote, run } = useRunner();
   const [name, setName] = useState('');
   const [steps, setSteps] = useState<FlowStep[]>([]);
@@ -279,16 +282,16 @@ export const FlowBuilder: React.FC<{ onChanged?: () => void }> = ({ onChanged })
   const [confirming, setConfirming] = useState(false);
   const loadedDraft = useRef<string | null>(null);
 
-  const st = data as (FlowState & { success: true }) | null;
-  const draft = st?.draft || null;
-  const live = st?.active || null;
-  const people = st?.people || [];
+  const st = state;
+  const draft = family.draft;
+  const live = family.active;
+  const people = st.people;
 
   // Pick up the draft from the server once (and again when a different draft appears).
   useEffect(() => {
-    if (draft && loadedDraft.current !== draft.id) { loadedDraft.current = draft.id; setName(draft.name); setSteps(draft.steps); setDirty(false); setSaved('idle'); }
+    if (draft && loadedDraft.current !== `${fid}:${draft.id}`) { loadedDraft.current = `${fid}:${draft.id}`; setName(draft.name); setSteps(draft.steps); setDirty(false); setSaved('idle'); }
     if (!draft) loadedDraft.current = null;
-  }, [draft]);
+  }, [draft, fid]);
 
   const flowNow = useMemo(() => ({ name, steps }), [name, steps]);
   const problems = useMemo(() => validateFlow(flowNow), [flowNow]);
@@ -300,17 +303,12 @@ export const FlowBuilder: React.FC<{ onChanged?: () => void }> = ({ onChanged })
   // Everything is saved by itself a moment after the last change, so nothing is ever lost.
   const save = useCallback(async () => {
     setSaved('saving');
-    try { await flowService.save(name, steps); setSaved('saved'); setDirty(false); } catch { setSaved('error'); }
-  }, [name, steps]);
+    try { await flowService.save(fid, name, steps); setSaved('saved'); setDirty(false); } catch { setSaved('error'); }
+  }, [fid, name, steps]);
   useDebounced(save, [name, steps], 900, dirty && !!draft);
 
   const finish = async () => { onChanged?.(); await reload(); };
-  const publishLabel = `Publish as Version ${(Math.max(0, ...(st?.versions.map((v) => v.version) || [0]))) + 1}`;
-
-  if (loading && !st) return <Loading loading />;
-  if (error && !st) return <Loading error={error} />;
-  if (!st) return null;
-  if (!st.canManage) return <Notice tone="info">Only the people who manage hiring can change the hiring flow. You can see your own tasks under "My tasks".</Notice>;
+  const publishLabel = `Publish as Version ${(Math.max(0, ...family.versions.map((v) => v.version))) + 1}`;
 
   // ---------------- nothing built yet
   if (!draft && !live) {
@@ -328,8 +326,8 @@ export const FlowBuilder: React.FC<{ onChanged?: () => void }> = ({ onChanged })
           <p className="text-xs text-slate-500 mt-2">This is the standard process. You can add, remove and change anything afterwards.</p>
           {note && <div className="mt-3"><Notice tone={note.tone === 'ok' ? 'ok' : 'error'}>{note.text}</Notice></div>}
           <div className="mt-4 flex flex-wrap gap-3">
-            <button className={btnBig} disabled={busy} onClick={() => run(async () => { await flowService.startStandard(); await finish(); })}>Start with the standard process (easiest)</button>
-            <button className={btnGhost} disabled={busy} onClick={() => run(async () => { await flowService.save('Our hiring flow', []); await finish(); })}>Start with an empty flow</button>
+            <button className={btnBig} disabled={busy} onClick={() => run(async () => { await flowService.startStandard(fid); await finish(); })}>Start with the standard process (easiest)</button>
+            <button className={btnGhost} disabled={busy} onClick={() => run(async () => { await flowService.save(fid, family.isDefault ? 'Our hiring flow' : family.name, []); await finish(); })}>Start with an empty flow</button>
           </div>
         </Card>
       </div>
@@ -342,7 +340,7 @@ export const FlowBuilder: React.FC<{ onChanged?: () => void }> = ({ onChanged })
       <div className="space-y-4 max-w-3xl">
         <FixedPart />
         <Card title={<>{live.name} <Pill tone="green">Version {live.version} is live</Pill></>} subtitle={live.activatedAt ? `Published ${niceDate(live.activatedAt.slice(0, 10))}${live.activatedBy ? ` by ${live.activatedBy}` : ''}. Every new applicant follows these steps.` : undefined}
-          right={<button className={btnPrimary} disabled={busy} onClick={() => run(async () => { await flowService.edit(); await finish(); })}>Change this flow</button>}>
+          right={<button className={btnPrimary} disabled={busy} onClick={() => run(async () => { await flowService.edit(fid); await finish(); })}>Change this flow</button>}>
           {note && <Notice tone={note.tone === 'ok' ? 'ok' : 'error'}>{note.text}</Notice>}
           <div className="space-y-0">
             <Marker tone="start" text="Applicant applies" />
@@ -351,10 +349,10 @@ export const FlowBuilder: React.FC<{ onChanged?: () => void }> = ({ onChanged })
           </div>
           <p className="text-xs text-slate-500 mt-4">When you change the flow, you work on a copy. Nothing changes for anyone until you publish it, and applicants already in the flow finish on the version they started with.</p>
         </Card>
-        {st.versions.length > 1 && (
+        {family.versions.length > 1 && (
           <Card title="Earlier versions">
             <ul className="divide-y divide-slate-100 text-sm">
-              {st.versions.map((v) => (<li key={v.id} className="py-2 flex flex-wrap gap-x-3"><b>Version {v.version}</b><span className="text-slate-500">{v.activatedAt ? niceDate(v.activatedAt.slice(0, 10)) : ''}{v.activatedBy ? ` · ${v.activatedBy}` : ''} · {v.steps} steps</span>{v.note && <span className="text-slate-600">"{v.note}"</span>}{v.status === 'ACTIVE' && <Pill tone="green">Live</Pill>}</li>))}
+              {family.versions.map((v) => (<li key={v.id} className="py-2 flex flex-wrap gap-x-3"><b>Version {v.version}</b><span className="text-slate-500">{v.activatedAt ? niceDate(v.activatedAt.slice(0, 10)) : ''}{v.activatedBy ? ` · ${v.activatedBy}` : ''} · {v.steps} steps</span>{v.note && <span className="text-slate-600">"{v.note}"</span>}{v.status === 'ACTIVE' && <Pill tone="green">Live</Pill>}</li>))}
             </ul>
           </Card>
         )}
@@ -391,7 +389,7 @@ export const FlowBuilder: React.FC<{ onChanged?: () => void }> = ({ onChanged })
               {saved === 'idle' && <span className="text-slate-400">Saves by itself</span>}
             </div>
           </div>
-          <p className="text-xs text-slate-500 mt-2"><b>This is a draft.</b> {live ? `Applicants keep following Version ${live.version} until you publish.` : 'Nobody follows it until you publish it.'}</p>
+          <p className="text-xs text-slate-500 mt-2"><b>This is a draft.</b> {live ? `Applicants keep following Version ${live.version} until you publish.` : family.isDefault ? 'Nobody follows it until you publish it.' : 'Until you publish it, applicants for these designations follow the Default flow.'}</p>
         </Card>
 
         <div className="space-y-0">
@@ -438,7 +436,7 @@ export const FlowBuilder: React.FC<{ onChanged?: () => void }> = ({ onChanged })
                 <p className="text-slate-600">New applicants will follow this flow. {live ? `Applicants already in the flow finish on Version ${live.version}.` : ''}</p>
                 <div className="flex gap-2">
                   <button className={btnPrimary} disabled={busy} onClick={() => run(async () => {
-                    try { await flowService.save(name, steps); await flowService.activate(); setConfirming(false); await finish(); }
+                    try { await flowService.save(fid, name, steps); await flowService.activate(fid); setConfirming(false); await finish(); }
                     catch (e: any) { setConfirming(false); throw e; }
                   }, 'Published. Your new applicants will follow this flow.')}>Yes, publish</button>
                   <button className={btnGhost} onClick={() => setConfirming(false)}>Not yet</button>
@@ -448,9 +446,9 @@ export const FlowBuilder: React.FC<{ onChanged?: () => void }> = ({ onChanged })
             {!ready && <p className="text-[11px] text-slate-500">Publishing unlocks when everything on the list above is fixed.</p>}
             <div className="pt-1 text-center">
               {live ? (
-                <button className="text-xs font-bold text-slate-500 hover:text-rose-700 hover:underline" disabled={busy} onClick={() => { if (window.confirm('Throw away your changes and keep the live flow as it is?')) run(async () => { await flowService.discard(); loadedDraft.current = null; await finish(); }); }}>Throw away my changes</button>
+                <button className="text-xs font-bold text-slate-500 hover:text-rose-700 hover:underline" disabled={busy} onClick={() => { if (window.confirm('Throw away your changes and keep the live flow as it is?')) run(async () => { await flowService.discard(fid); loadedDraft.current = null; await finish(); }); }}>Throw away my changes</button>
               ) : (
-                <button className="text-xs font-bold text-slate-500 hover:text-rose-700 hover:underline" disabled={busy} onClick={() => { if (window.confirm('Delete this draft and start again?')) run(async () => { await flowService.discard(); loadedDraft.current = null; await finish(); }); }}>Delete this draft</button>
+                <button className="text-xs font-bold text-slate-500 hover:text-rose-700 hover:underline" disabled={busy} onClick={() => { if (window.confirm('Delete this draft and start again?')) run(async () => { await flowService.discard(fid); loadedDraft.current = null; await finish(); }); }}>Delete this draft</button>
               )}
             </div>
           </div>
@@ -458,6 +456,166 @@ export const FlowBuilder: React.FC<{ onChanged?: () => void }> = ({ onChanged })
       </aside>
 
       {trying && <TryItOut flow={flowNow} onClose={() => setTrying(false)} />}
+    </div>
+  );
+};
+
+
+// ------------------------------------------------------------------ designations
+
+/** Tick the designations a flow is for. Ones that already have their own flow are greyed out and say which. */
+const DesignationPicker: React.FC<{ options: string[]; value: string[]; onChange: (v: string[]) => void; takenBy: Record<string, string> }> = ({ options, value, onChange, takenBy }) => {
+  const [extra, setExtra] = useState('');
+  const key = (d: string) => d.toLowerCase().replace(/\s+/g, ' ').trim();
+  const all = [...options, ...value.filter((v) => !options.some((o) => key(o) === key(v)))];
+  const has = (d: string) => value.some((v) => key(v) === key(d));
+  const toggle = (d: string) => onChange(has(d) ? value.filter((v) => key(v) !== key(d)) : [...value, d]);
+  const addExtra = () => { const t = extra.trim().replace(/\s+/g, ' '); if (t && !has(t)) onChange([...value, t]); setExtra(''); };
+  return (
+    <div>
+      <div className="grid gap-1.5 sm:grid-cols-2 max-h-56 overflow-y-auto rounded-lg border border-slate-200 p-2 bg-white">
+        {all.length === 0 && <p className="text-xs text-slate-500 p-1">No designations found yet. Type one below.</p>}
+        {all.map((d) => {
+          const taken = takenBy[key(d)];
+          return (
+            <label key={d} className={`flex items-center gap-2 rounded-lg px-2 py-1.5 text-sm ${taken && !has(d) ? 'opacity-50' : 'hover:bg-orange-50 cursor-pointer'}`}>
+              <input type="checkbox" className="w-4 h-4" checked={has(d)} disabled={!!taken && !has(d)} onChange={() => toggle(d)} />
+              <span className="min-w-0 truncate">{d}{taken && !has(d) && <span className="text-[11px] text-slate-500"> (in "{taken}")</span>}</span>
+            </label>
+          );
+        })}
+      </div>
+      <div className="flex gap-2 mt-2">
+        <input className={input} placeholder="Not in the list? Type the designation exactly as it appears on applications" value={extra} onChange={(e) => setExtra(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addExtra(); } }} />
+        <button type="button" className={btnGhost} disabled={!extra.trim()} onClick={addExtra}>Add</button>
+      </div>
+    </div>
+  );
+};
+
+/** Like Field, but a plain block: Field is a <label>, and a label around many checkboxes would tick the first one when its text is clicked. */
+const Block: React.FC<{ label: string; hint?: string; children: React.ReactNode }> = ({ label, hint, children }) => (
+  <div role="group" aria-label={label}><p className="text-xs font-bold text-slate-700">{label}</p>{hint && <p className="text-[11px] text-slate-500 mb-1">{hint}</p>}<div className="mt-1">{children}</div></div>
+);
+
+const takenMap = (families: FamilyView[], except?: string) => {
+  const m: Record<string, string> = {};
+  for (const f of families) if (!f.isDefault && f.familyId !== except) for (const d of f.designations) m[d.toLowerCase().replace(/\s+/g, ' ').trim()] = f.name;
+  return m;
+};
+
+const NewFlowForm: React.FC<{ state: FlowState; onCancel: () => void; onCreated: (familyId: string) => void }> = ({ state, onCancel, onCreated }) => {
+  const { busy, note, run } = useRunner();
+  const [des, setDes] = useState<string[]>([]);
+  const [name, setName] = useState('');
+  const [from, setFrom] = useState<'standard' | 'copy' | 'empty'>('standard');
+  const copyable = state.families.filter((f) => f.active || f.draft);
+  const [copyFrom, setCopyFrom] = useState(copyable[0]?.familyId || '');
+  return (
+    <Card title="New flow for specific designations" subtitle="Applicants for these designations will follow this flow. Everyone else keeps following the Default flow.">
+      <div className="space-y-4">
+        <Block label="1. Which designations is it for?" hint="You can tick more than one. A designation can only be in one flow.">
+          <DesignationPicker options={state.designationOptions} value={des} onChange={setDes} takenBy={takenMap(state.families)} />
+        </Block>
+        <Block label="2. Where should it start from?">
+          <div className="space-y-1.5 text-sm">
+            <label className="flex items-center gap-2"><input type="radio" checked={from === 'standard'} onChange={() => setFrom('standard')} />The standard process (score, phone screen, interview, offer, joining)</label>
+            {copyable.length > 0 && (
+              <label className="flex flex-wrap items-center gap-2"><input type="radio" checked={from === 'copy'} onChange={() => setFrom('copy')} />A copy of another flow:
+                <select className={`${input} !w-auto`} value={copyFrom} onChange={(e) => { setCopyFrom(e.target.value); setFrom('copy'); }}>{copyable.map((f) => <option key={f.familyId} value={f.familyId}>{f.name}</option>)}</select></label>
+            )}
+            <label className="flex items-center gap-2"><input type="radio" checked={from === 'empty'} onChange={() => setFrom('empty')} />Empty (I will add every step myself)</label>
+          </div>
+        </Block>
+        <Field label="3. Name (optional)" hint="If you leave this empty, the designations are used as the name."><input className={input} value={name} maxLength={100} onChange={(e) => setName(e.target.value)} /></Field>
+        {note && <Notice tone={note.tone === 'ok' ? 'ok' : 'error'}>{note.text}</Notice>}
+        <div className="flex gap-2">
+          <button className={btnBig} disabled={busy || des.length === 0} onClick={() => run(async () => { const r = await flowService.newFlow({ name, designations: des, from, copyFrom: from === 'copy' ? copyFrom : undefined }); onCreated(r.familyId); })}>Create the flow</button>
+          <button className={btnGhost} onClick={onCancel}>Cancel</button>
+        </div>
+        {des.length === 0 && <p className="text-[11px] text-slate-500">Tick at least one designation to continue.</p>}
+      </div>
+    </Card>
+  );
+};
+
+// ------------------------------------------------------------------ one flow, with its designations
+
+const FlowEditor: React.FC<BodyProps & { onBack: () => void }> = ({ family, state, reload, onChanged, onBack }) => {
+  const { busy, note, run } = useRunner();
+  const [editing, setEditing] = useState(false);
+  const [des, setDes] = useState<string[]>(family.designations);
+  const [nm, setNm] = useState(family.name);
+  return (
+    <div className="space-y-3">
+      <div className="flex flex-wrap items-center gap-3">
+        <button className={btnGhost} onClick={onBack}><ArrowLeft className="w-4 h-4" />All flows</button>
+        <h2 className="text-lg font-extrabold text-slate-900">{family.name}</h2>
+        {family.isDefault ? <Pill tone="slate">For every designation without its own flow</Pill> : <Pill tone="blue">{family.designations.join(', ')}</Pill>}
+        {!family.isDefault && !editing && <button className="text-xs font-bold text-[#FA7014] hover:underline" onClick={() => { setDes(family.designations); setNm(family.name); setEditing(true); }}>Change designations or name</button>}
+      </div>
+      {editing && (
+        <Card title="Which designations is this flow for?" subtitle="This takes effect straight away for new applicants. Applicants already in a flow are not moved.">
+          <div className="space-y-3">
+            <Field label="Name"><input className={input} value={nm} maxLength={100} onChange={(e) => setNm(e.target.value)} /></Field>
+            <DesignationPicker options={state.designationOptions} value={des} onChange={setDes} takenBy={takenMap(state.families, family.familyId)} />
+            {note && <Notice tone={note.tone === 'ok' ? 'ok' : 'error'}>{note.text}</Notice>}
+            <div className="flex flex-wrap items-center gap-2">
+              <button className={btnPrimary} disabled={busy || des.length === 0 || !nm.trim()} onClick={() => run(async () => { await flowService.setDesignations(family.familyId, des, nm); setEditing(false); onChanged?.(); await reload(); }, 'Saved.')}>Save</button>
+              <button className={btnGhost} onClick={() => setEditing(false)}>Cancel</button>
+              <span className="ml-auto" />
+              <ConfirmButtonLite label="Stop using this flow" question="Applicants for these designations will follow the Default flow from now on. Sure?" onConfirm={() => run(async () => { await flowService.retire(family.familyId); onChanged?.(); await reload(); onBack(); })} />
+            </div>
+          </div>
+        </Card>
+      )}
+      <FlowEditorBody family={family} state={state} reload={reload} onChanged={onChanged} />
+    </div>
+  );
+};
+
+const ConfirmButtonLite: React.FC<{ label: string; question: string; onConfirm: () => void }> = ({ label, question, onConfirm }) => {
+  const [ask, setAsk] = useState(false);
+  if (!ask) return <button className="text-xs font-bold text-rose-700 hover:underline" onClick={() => setAsk(true)}>{label}</button>;
+  return <span className="text-xs inline-flex flex-wrap items-center gap-2"><span className="font-semibold text-slate-600">{question}</span><button className="font-bold text-rose-700" onClick={() => { setAsk(false); onConfirm(); }}>Yes, stop it</button><button className="font-bold text-slate-600" onClick={() => setAsk(false)}>No</button></span>;
+};
+
+// ------------------------------------------------------------------ the screen: a list of flows, then one flow
+
+export const FlowBuilder: React.FC<{ onChanged?: () => void }> = ({ onChanged }) => {
+  const { data, error, loading, reload } = useLoad(() => flowService.state(), []);
+  const [openId, setOpenId] = useState<string | null>(null);
+  const [adding, setAdding] = useState(false);
+  const st = data as (FlowState & { success: true }) | null;
+  if (loading && !st) return <Loading loading />;
+  if (error && !st) return <Loading error={error} />;
+  if (!st) return null;
+  if (!st.canManage) return <Notice tone="info">Only the people who manage hiring can change the hiring flow. You can see your own tasks under "My tasks".</Notice>;
+  const open = st.families.find((f) => f.familyId === openId);
+  if (open) return <FlowEditor family={open} state={st} reload={reload} onChanged={onChanged} onBack={() => setOpenId(null)} />;
+
+  const status = (f: FamilyView) => (f.active ? <Pill tone="green">Version {f.active.version} is live</Pill> : f.draft ? <Pill tone="amber">Draft, not published</Pill> : <Pill tone="slate">Not built yet</Pill>);
+  return (
+    <div className="space-y-4 max-w-3xl">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div><h2 className="text-lg font-extrabold text-slate-900">Your hiring flows</h2><p className="text-sm text-slate-600">The <b>Default flow</b> is for everyone. Make a separate flow for a designation when its hiring works differently (different steps, people or pass marks).</p></div>
+        {!adding && <button className={btnPrimary} onClick={() => setAdding(true)}><Plus className="w-4 h-4" />New flow for a designation</button>}
+      </div>
+      {adding && <NewFlowForm state={st} onCancel={() => setAdding(false)} onCreated={async (id) => { setAdding(false); onChanged?.(); await reload(); setOpenId(id); }} />}
+      <ul className="space-y-2">
+        {st.families.map((f) => (
+          <li key={f.familyId} className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+              <button className="text-base font-extrabold text-slate-900 hover:underline text-left" onClick={() => setOpenId(f.familyId)}>{f.name}</button>
+              {status(f)}
+              <span className="ml-auto text-xs text-slate-500">{f.inFlight} applicant{f.inFlight === 1 ? '' : 's'} in this flow now</span>
+            </div>
+            <p className="text-xs text-slate-600 mt-1">{f.isDefault ? 'Used for every designation that does not have its own flow.' : <>For: <b>{f.designations.join(', ')}</b></>}</p>
+            {f.draft && f.active && <p className="text-xs text-amber-800 mt-1 font-semibold">You have unpublished changes.</p>}
+            <div className="mt-2"><button className={btnGhost} onClick={() => setOpenId(f.familyId)}>{f.active || f.draft ? 'Open' : 'Set it up'}</button></div>
+          </li>
+        ))}
+      </ul>
     </div>
   );
 };

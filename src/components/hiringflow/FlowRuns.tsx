@@ -85,13 +85,15 @@ const Enroll: React.FC<{ open: boolean; onClose: () => void; inFlow: Set<string>
 /** Where every applicant is in the flow, who they are waiting for, and what to do about the stuck ones. */
 export const FlowRuns: React.FC<{ people: FlowState['people']; onChanged?: () => void }> = ({ people, onChanged }) => {
   const [filter, setFilter] = useState('');
+  const [flowF, setFlowF] = useState('');
   const { data, error, loading, reload } = useLoad(() => flowService.runs(), []);
   const { busy, note, run } = useRunner();
   const [view, setView] = useState<FlowRunRow | null>(null);
   const [adding, setAdding] = useState(false);
   const rows = data?.items || [];
   const counts = useMemo(() => rows.reduce<Record<string, number>>((m, r) => ({ ...m, [r.status]: (m[r.status] || 0) + 1 }), {}), [rows]);
-  const shown = filter ? rows.filter((r) => r.status === filter) : rows;
+  const flowNames = [...new Set(rows.map((r) => r.flowName))].sort();
+  const shown = rows.filter((r) => (!filter || r.status === filter) && (!flowF || r.flowName === flowF));
   const refresh = () => { onChanged?.(); reload(); };
   if (loading && !data) return <Loading loading />;
   if (error && !data) return <Loading error={error} />;
@@ -113,6 +115,11 @@ export const FlowRuns: React.FC<{ people: FlowState['people']; onChanged?: () =>
           </button>
         ))}
       </div>
+      {flowNames.length > 1 && (
+        <label className="flex items-center gap-2 text-xs font-bold text-slate-700">Show applicants of
+          <select className={`${input} !w-auto`} value={flowF} onChange={(e) => setFlowF(e.target.value)}><option value="">All flows</option>{flowNames.map((n) => <option key={n} value={n}>{n}</option>)}</select>
+        </label>
+      )}
       {shown.length === 0 ? (
         <Card><p className="text-sm text-slate-500 text-center py-6">{rows.length === 0 ? 'Nobody is in the flow yet. New applicants join it automatically once you publish a flow.' : 'Nobody here.'}</p></Card>
       ) : (
@@ -124,7 +131,7 @@ export const FlowRuns: React.FC<{ people: FlowState['people']; onChanged?: () =>
                 <span className="text-xs text-slate-500">{r.designation}</span>
                 <Pill tone={TONE[r.status] || 'slate'}>{RUN_STATUS_WORDS[r.status] || r.status}</Pill>
                 {r.late && <Pill tone="red"><AlertTriangle className="w-3 h-3 mr-1" />Late</Pill>}
-                <span className="ml-auto text-[11px] text-slate-400">Flow version {r.flowVersion}</span>
+                <span className="ml-auto text-[11px] text-slate-400">{r.flowName} · version {r.flowVersion}</span>
               </div>
               {!['HIRED', 'REJECTED', 'STOPPED'].includes(r.status) && (
                 <p className="text-xs text-slate-600 mt-1">Step {r.stepNumber}: <b>{r.stepTitle}</b>{r.owner ? ` · waiting for ${r.owner}` : ''}{r.dueOn ? ` · due ${niceDate(r.dueOn)}` : ''}{r.waitUntil ? ` · carries on ${niceDate(r.waitUntil.slice(0, 10))}` : ''}</p>

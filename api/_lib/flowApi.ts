@@ -24,7 +24,7 @@
  */
 import { adminDb } from './firebaseAdmin.js';
 import { authErrorResponse, requireActiveTenant, type AuthContext } from './authContext.js';
-import { getApplication, listApplications, updateApplication, type ApplicationDoc } from './recruitmentData.js';
+import { designationKey, getApplication, listApplications, updateApplication, type ApplicationDoc } from './recruitmentData.js';
 import { MANAGE_PERMS, getItem, listItems, putItem, scoreFor, whoIs, type Item } from './pipelineApi.js';
 import { dispatchLiveEmail } from './serverEmail.js';
 import { summarise, type Scorecard } from '../../shared/interviewEngine.js';
@@ -68,6 +68,8 @@ export interface RunDoc extends Item {
   designation: string;
   flowId: string;
   flowVersion: number;
+  familyId?: string;
+  flowName?: string;
   stepId: string;
   status: 'RUNNING' | 'WAITING' | 'STUCK' | 'HIRED' | 'REJECTED' | 'STOPPED';
   stuckReason: string;
@@ -84,11 +86,38 @@ const runId = (applicationId: string) => `flowrun_${applicationId}`;
 const taskId = (rid: string, stepId: string) => `ftask_${rid}_${stepId}`;
 
 const toFlow = (it: Item | null): FlowDoc | null => (it && it.kind === 'flow' ? (it as unknown as FlowDoc) : null);
-async function flows(cid: string): Promise<FlowDoc[]> {
-  return (await listItems(cid, 'flow')).map((i) => i as unknown as FlowDoc).sort((a, b) => b.version - a.version || String(b.updatedAt).localeCompare(String(a.updatedAt)));
+const DEFAULT_FAMILY = 'default';
+const fam = (f: Pick<FlowDoc, 'familyId'>) => f.familyId || DEFAULT_FAMILY;   // flows saved before designations existed belong to the default flow
+
+/** Every stored version of every flow (including private per-applicant copies), newest first. */
+async function flows(cid: string, familyId?: string): Promise<FlowDoc[]> {
+  return (await listItems(cid, 'flow')).map((i) => i as unknown as FlowDoc)
+    .filter((f) => !familyId || fam(f) === familyId)
+    .sort((a, b) => b.version - a.version || String(b.updatedAt).localeCompare(String(a.updatedAt)));
 }
 const activeFlow = (all: FlowDoc[]) => all.find((f) => f.status === 'ACTIVE') || null;
 const draftFlow = (all: FlowDoc[]) => all.find((f) => f.status === 'DRAFT') || null;
+
+/** A flow as HR sees it: the Default flow, or one flow for one or more designations. */
+export interface FamilyRec extends Item { kind: 'flowFamily'; familyId: string; name: string; designations: string[]; isDefault?: boolean; retired?: boolean }
+const famDocId = (cid: string, familyId: string) => `flowfam_${cid}_${familyId}`;
+
+async function families(cid: string): Promise<FamilyRec[]> {
+  const list = ((await listItems(cid, 'flowFamily')) as FamilyRec[]).filter((r) => !r.retired);
+  if (!list.some((r) => r.familyId === DEFAULT_FAMILY)) list.push({ id: famDocId(cid, DEFAULT_FAMILY), companyId: cid, kind: 'flowFamily', familyId: DEFAULT_FAMILY, name: 'Default flow', designations: [], isDefault: true });
+  return list.sort((a, b) => (a.isDefault ? -1 : 0) - (b.isDefault ? -1 : 0) || a.name.localeCompare(b.name));
+}
+
+/** The flow an applicant for this designation follows: the flow that names the designation, otherwise the Default flow. */
+function pickFlow(fams: FamilyRec[], all: FlowDoc[], designation: string): { flow: FlowDoc; name: string } | null {
+  const key = designationKey(designation || '');
+  const live = (id: string) => all.find((f) => f.status === 'ACTIVE' && !f.adjusted && fam(f) === id) || null;
+  const own = fams.find((f) => !f.isDefault && f.designations.some((d) => designationKey(d) === key));
+  const ownLive = own ? live(own.familyId) : null;
+  if (own && ownLive) return { flow: ownLive, name: own.name };
+  const dflt = live(DEFAULT_FAMILY);
+  return dflt ? { flow: dflt, name: fams.find((f) => f.isDefault)?.name || 'Default flow' } : null;
+}
 
 async function people(cid: string): Promise<{ uid: string; name: string; title: string; email: string }[]> {
   const snap = await db().collection('employees').where('companyId', '==', cid).get();
@@ -139,9 +168,21 @@ function cleanSteps(raw: unknown, staff: { uid: string; name: string }[]): FlowS
   return out;
 }
 
+async function designationOptions(cid: string): Promise<string[]> {
+  const seen = new Map<string, string>();
+  const add = (v: unknown) => { const t = typeof v === 'string' ? v.trim().replace(/\s+/g, ' ') : ''; if (t && !seen.has(designationKey(t))) seen.set(designationKey(t), t); };
+  for (const r of (await db().collection('requisitions').where('companyId', '==', cid).get()).docs) add(r.get('positionTitle'));
+  for (const a of await listApplications(cid)) add(a.designation);
+  for (const e of (await db().collection('employees').where('companyId', '==', cid).get()).docs) add(e.get('title') || e.get('designation'));
+  return [...seen.values()].sort((a, b) => a.localeCompare(b));
+}
+
+const versionList = (all: FlowDoc[]) => all.filter((f) => f.status !== 'DRAFT' && !f.adjusted).map((f) => ({ id: f.id, version: f.version, status: f.status, name: f.name, activatedAt: f.activatedAt || '', activatedBy: f.activatedBy || '', note: f.note || '', steps: f.steps.length }));
+
 async function stateRoute(ctx: AuthContext): Promise<Res> {
   const cid = ctx.companyId!;
   const all = await flows(cid);
+  const fams = await families(cid);
   const staff = await people(cid);
   const mgr = canManage(ctx);
   const pub = (f: FlowDoc | null) => (f ? clean(f) : null);
@@ -149,59 +190,81 @@ async function stateRoute(ctx: AuthContext): Promise<Res> {
   const counts: Record<string, number> = {};
   for (const r of runs) counts[r.status] = (counts[r.status] || 0) + 1;
   const myOpen = (await listItems(cid, 'flowTask')).filter((t) => t.ownerUid === ctx.uid && t.status === 'OPEN').length;
+  const familyViews = fams.map((f) => {
+    const mine = all.filter((x) => fam(x) === f.familyId && !x.adjusted);
+    return {
+      familyId: f.familyId, name: f.name, isDefault: !!f.isDefault, designations: f.designations,
+      active: pub(activeFlow(mine)), draft: mgr ? pub(draftFlow(mine)) : null, versions: versionList(mine),
+      inFlight: runs.filter((r) => (r.familyId || DEFAULT_FAMILY) === f.familyId && !FINAL.includes(r.status)).length,
+    };
+  });
+  const dflt = familyViews.find((f) => f.isDefault)!;
   return ok({
-    canManage: mgr, active: pub(activeFlow(all)), draft: mgr ? pub(draftFlow(all)) : null,
-    versions: all.filter((f) => f.status !== 'DRAFT').map((f) => ({ id: f.id, version: f.version, status: f.status, name: f.name, activatedAt: f.activatedAt || '', activatedBy: f.activatedBy || '', note: f.note || '', steps: f.steps.length })),
+    canManage: mgr, families: familyViews, designationOptions: mgr ? await designationOptions(cid) : [],
+    // The Default flow again at the top level, for older screens.
+    active: dflt.active, draft: dflt.draft, versions: dflt.versions,
     people: mgr ? staff.map(({ uid, name, title }) => ({ uid, name, title })) : [], counts, myOpen,
     me: { uid: ctx.uid, name: staff.find((p) => p.uid === ctx.uid)?.name || ctx.email },
   });
 }
 
-async function saveDraft(ctx: AuthContext, name: string, steps: FlowStep[], extra: Partial<FlowDoc> = {}): Promise<FlowDoc> {
+const famIdOf = (b: any) => str(b?.familyId, 100) || DEFAULT_FAMILY;
+async function needFamily(cid: string, id: string): Promise<FamilyRec | null> {
+  return (await families(cid)).find((f) => f.familyId === id) || null;
+}
+
+async function saveDraft(ctx: AuthContext, familyId: string, name: string, steps: FlowStep[], extra: Partial<FlowDoc> = {}): Promise<FlowDoc> {
   const cid = ctx.companyId!;
-  const all = await flows(cid);
+  const all = await flows(cid, familyId);
   const d = draftFlow(all);
   const live = activeFlow(all);
   const doc: FlowDoc = {
-    id: d?.id || db().collection('hiringItems').doc().id, companyId: cid, kind: 'flow', name, version: 0, status: 'DRAFT', steps,
+    id: d?.id || db().collection('hiringItems').doc().id, companyId: cid, kind: 'flow', familyId, name, version: 0, status: 'DRAFT', steps,
     basedOn: d?.basedOn ?? live?.version ?? 0, createdAt: d?.createdAt || nowIso(), updatedAt: nowIso(), createdBy: d?.createdBy || await whoIs(ctx), ...extra,
   };
   await putItem(doc as unknown as Item);
   return doc;
 }
 
-async function startStandard(ctx: AuthContext): Promise<Res> {
-  const staff = await people(ctx.companyId!);
-  const me = staff.find((p) => p.uid === ctx.uid);
-  const draft = await saveDraft(ctx, 'Our hiring flow', standardSteps(ctx.uid, me?.name || ctx.email), { basedOn: 0 });
+async function startStandard(ctx: AuthContext, b: any): Promise<Res> {
+  const cid = ctx.companyId!;
+  const f = await needFamily(cid, famIdOf(b));
+  if (!f) return fail(404, 'That flow does not exist.');
+  const me = (await people(cid)).find((p) => p.uid === ctx.uid);
+  const draft = await saveDraft(ctx, f.familyId, f.isDefault ? 'Our hiring flow' : f.name, standardSteps(ctx.uid, me?.name || ctx.email), { basedOn: 0 });
   return ok({ draft });
 }
 
-async function editLive(ctx: AuthContext): Promise<Res> {
-  const all = await flows(ctx.companyId!);
+async function editLive(ctx: AuthContext, b: any): Promise<Res> {
+  const fid = famIdOf(b);
+  const all = await flows(ctx.companyId!, fid);
   const d = draftFlow(all);
   if (d) return ok({ draft: d });
   const live = activeFlow(all);
   if (!live) return fail(404, 'There is no live flow to edit. Press "Start from the standard process" instead.');
-  return ok({ draft: await saveDraft(ctx, live.name, clean(live.steps), { basedOn: live.version }) });
+  return ok({ draft: await saveDraft(ctx, fid, live.name, clean(live.steps), { basedOn: live.version }) });
 }
 
 async function saveRoute(ctx: AuthContext, b: any): Promise<Res> {
-  const staff = await people(ctx.companyId!);
+  const cid = ctx.companyId!;
+  const fid = famIdOf(b);
+  if (!(await needFamily(cid, fid))) return fail(404, 'That flow does not exist.');
+  const staff = await people(cid);
   const steps = cleanSteps(b.steps, staff);
-  const draft = await saveDraft(ctx, str(b.name, 100), steps, { note: str(b.note, 300) });
+  const draft = await saveDraft(ctx, fid, str(b.name, 100), steps, { note: str(b.note, 300) });
   return ok({ draft, problems: validateFlow(draft) });
 }
 
-async function discard(ctx: AuthContext): Promise<Res> {
-  const d = draftFlow(await flows(ctx.companyId!));
+async function discard(ctx: AuthContext, b: any): Promise<Res> {
+  const d = draftFlow(await flows(ctx.companyId!, famIdOf(b)));
   if (d) await db().collection('hiringItems').doc(d.id).delete();
   return ok();
 }
 
 async function activate(ctx: AuthContext, b: any): Promise<Res> {
   const cid = ctx.companyId!;
-  const all = await flows(cid);
+  const fid = famIdOf(b);
+  const all = await flows(cid, fid);
   const d = draftFlow(all);
   if (!d) return fail(404, 'There is no draft to publish.');
   const staff = await people(cid);
@@ -210,14 +273,89 @@ async function activate(ctx: AuthContext, b: any): Promise<Res> {
     if (s.ownerUid && !staff.some((p) => p.uid === s.ownerUid)) problems.push({ stepId: s.id, message: `Step ${d.steps.indexOf(s) + 1} (${s.title}): ${s.ownerName || 'the chosen person'} is no longer an active employee. Choose someone else.` });
   }
   if (problems.length) return fail(400, 'Fix these first, then publish again.', { problems });
-  const version = Math.max(0, ...all.map((f) => f.version)) + 1;
+  const version = Math.max(0, ...all.filter((f) => !f.adjusted).map((f) => f.version)) + 1;
   const who = await whoIs(ctx);
-  const live = activeFlow(all);
+  const live = activeFlow(all.filter((f) => !f.adjusted));
   const next: FlowDoc = { ...d, status: 'ACTIVE', version, note: str(b.note, 300) || d.note || '', activatedAt: nowIso(), activatedBy: who, updatedAt: nowIso() };
   await putItem(next as unknown as Item);
   // New version first, then retire the old one: at no moment is there no live flow.
   if (live) await putItem({ ...live, status: 'ARCHIVED', updatedAt: nowIso() } as unknown as Item);
   return ok({ version, active: next });
+}
+
+// ------------------------------------------------------------------ one flow per designation
+
+function cleanDesignations(raw: unknown): string[] {
+  const out = new Map<string, string>();
+  for (const v of Array.isArray(raw) ? raw : []) {
+    const t = str(v, 100).replace(/\s+/g, ' ');
+    if (t && !out.has(designationKey(t))) out.set(designationKey(t), t);
+  }
+  return [...out.values()].slice(0, 30);
+}
+
+/** A designation can belong to only one flow, so there is never any doubt which flow an applicant follows. */
+function designationClash(fams: FamilyRec[], familyId: string, list: string[]): string {
+  for (const d of list) {
+    const other = fams.find((f) => f.familyId !== familyId && !f.isDefault && f.designations.some((x) => designationKey(x) === designationKey(d)));
+    if (other) return `"${d}" already has its own flow ("${other.name}"). A designation can only be in one flow. Remove it there first.`;
+  }
+  return '';
+}
+
+async function newFlow(ctx: AuthContext, b: any): Promise<Res> {
+  const cid = ctx.companyId!;
+  const fams = await families(cid);
+  const designations = cleanDesignations(b.designations);
+  if (!designations.length) return fail(400, 'Choose at least one designation for this flow.');
+  const clash = designationClash(fams, '', designations);
+  if (clash) return fail(409, clash);
+  const name = str(b.name, 100) || (designations.length <= 2 ? designations.join(' and ') : `${designations[0]} and ${designations.length - 1} more`);
+  if (fams.some((f) => f.name.toLowerCase() === name.toLowerCase())) return fail(409, `You already have a flow called "${name}". Choose another name.`);
+  const familyId = db().collection('hiringItems').doc().id;
+  let steps: FlowStep[] = [];
+  const from = str(b.from, 20);
+  const me = (await people(cid)).find((p) => p.uid === ctx.uid);
+  if (from === 'standard') steps = standardSteps(ctx.uid, me?.name || ctx.email);
+  else if (from === 'copy') {
+    const src = await needFamily(cid, str(b.copyFrom, 100));
+    if (!src) return fail(404, 'The flow you wanted to copy no longer exists.');
+    const sAll = await flows(cid, src.familyId);
+    const base = activeFlow(sAll.filter((f) => !f.adjusted)) || draftFlow(sAll);
+    if (!base) return fail(409, `"${src.name}" has no steps yet, so there is nothing to copy.`);
+    steps = clean(base.steps);
+  }
+  await putItem({ id: famDocId(cid, familyId), companyId: cid, kind: 'flowFamily', familyId, name, designations, createdAt: nowIso() } as FamilyRec);
+  const draft = await saveDraft(ctx, familyId, name, steps, { basedOn: 0 });
+  return ok({ familyId, draft });
+}
+
+async function setDesignations(ctx: AuthContext, b: any): Promise<Res> {
+  const cid = ctx.companyId!;
+  const fams = await families(cid);
+  const f = fams.find((x) => x.familyId === str(b.familyId, 100));
+  if (!f || f.isDefault) return fail(404, 'Only a flow made for specific designations can be changed here.');
+  const designations = cleanDesignations(b.designations);
+  if (!designations.length) return fail(400, 'A flow needs at least one designation. To stop using it, retire the flow instead.');
+  const clash = designationClash(fams, f.familyId, designations);
+  if (clash) return fail(409, clash);
+  const name = str(b.name, 100) || f.name;
+  if (fams.some((x) => x.familyId !== f.familyId && x.name.toLowerCase() === name.toLowerCase())) return fail(409, `You already have a flow called "${name}". Choose another name.`);
+  await putItem({ ...f, designations, name, updatedAt: nowIso() });
+  return ok({ designations, name });
+}
+
+/** Stops a designation flow for new applicants (they follow the Default flow again). Applicants already in it finish on the version they have. */
+async function retireFlow(ctx: AuthContext, b: any): Promise<Res> {
+  const cid = ctx.companyId!;
+  const f = (await families(cid)).find((x) => x.familyId === str(b.familyId, 100));
+  if (!f || f.isDefault) return fail(404, 'The Default flow cannot be retired.');
+  const all = await flows(cid, f.familyId);
+  const d = draftFlow(all);
+  if (d) await db().collection('hiringItems').doc(d.id).delete();
+  for (const live of all.filter((x) => x.status === 'ACTIVE')) await putItem({ ...live, status: 'ARCHIVED', updatedAt: nowIso() } as unknown as Item);
+  await putItem({ ...f, retired: true, updatedAt: nowIso() });
+  return ok();
 }
 
 // ------------------------------------------------------------------ running applicants
@@ -229,7 +367,7 @@ async function loadRun(cid: string, id: string): Promise<RunDoc | null> {
   return (it as RunDoc) || null;
 }
 
-async function enroll(cid: string, a: ApplicationDoc, flow: FlowDoc): Promise<{ run: RunDoc; created: boolean }> {
+async function enroll(cid: string, a: ApplicationDoc, flow: FlowDoc, flowName = 'Default flow'): Promise<{ run: RunDoc; created: boolean }> {
   const id = runId(a.id);
   const ref = db().collection('hiringItems').doc(id);
   let created = false;
@@ -239,7 +377,7 @@ async function enroll(cid: string, a: ApplicationDoc, flow: FlowDoc): Promise<{ 
     created = true;
     const first = flow.steps[0];
     const run: RunDoc = {
-      id, companyId: cid, kind: 'flowRun', applicationId: a.id, candidateName: a.name, designation: a.designation, flowId: flow.id, flowVersion: flow.version,
+      id, companyId: cid, kind: 'flowRun', applicationId: a.id, candidateName: a.name, designation: a.designation, flowId: flow.id, flowVersion: flow.version, familyId: fam(flow), flowName,
       stepId: first.id, status: 'RUNNING', stuckReason: '', enteredAt: nowIso(), waitUntil: '', decisions: {}, createdAt: nowIso(), updatedAt: nowIso(),
       history: [{ at: nowIso(), stepId: first.id, text: `Applicant entered the flow (version ${flow.version}).`, by: 'Automation' }],
     };
@@ -516,11 +654,12 @@ export async function advanceRun(cid: string, id: string): Promise<RunDoc | null
 
 export async function flowStartHook(cid: string, applicationId: string): Promise<void> {
   try {
-    const live = activeFlow(await flows(cid));
-    if (!live || !live.steps.length) return;
     const a = await getApplication(cid, applicationId);
-    if (!a || (live.activatedAt && a.createdAt < live.activatedAt)) return;   // applicants from before the flow was published are not pulled in by surprise
-    await enroll(cid, a, live);
+    if (!a) return;
+    const pick = pickFlow(await families(cid), await flows(cid), a.designation);
+    if (!pick || !pick.flow.steps.length) return;
+    if (pick.flow.activatedAt && a.createdAt < pick.flow.activatedAt) return;   // applicants from before the flow was published are not pulled in by surprise
+    await enroll(cid, a, pick.flow, pick.name);
     await advanceRun(cid, runId(a.id));
   } catch (e: any) { console.warn('[Flow] start hook failed:', e?.message || e); }
 }
@@ -539,16 +678,16 @@ export async function sweepFlows(): Promise<Record<string, any>> {
     const cid = c.id;
     try {
       const all = await flows(cid);
-      const live = activeFlow(all);
+      const fams = await families(cid);
       const runs = (await listItems(cid, 'flowRun')) as RunDoc[];
-      if (!live && !runs.length) continue;
+      if (!all.some((f) => f.status === 'ACTIVE') && !runs.length) continue;
       out.companies++;
-      if (live) {
-        const have = new Set(runs.map((r) => r.applicationId));
-        for (const a of await listApplications(cid)) {
-          if (have.has(a.id) || (live.activatedAt && a.createdAt < live.activatedAt) || a.status === 'Rejected') continue;
-          await enroll(cid, a, live); out.enrolled++;
-        }
+      const have = new Set(runs.map((r) => r.applicationId));
+      for (const a of await listApplications(cid)) {
+        if (have.has(a.id) || a.status === 'Rejected') continue;
+        const pick = pickFlow(fams, all, a.designation);
+        if (!pick || (pick.flow.activatedAt && a.createdAt < pick.flow.activatedAt)) continue;
+        await enroll(cid, a, pick.flow, pick.name); out.enrolled++;
       }
       for (const r of (await listItems(cid, 'flowRun')) as RunDoc[]) {
         if (FINAL.includes(r.status)) continue;
@@ -590,7 +729,7 @@ async function runsRoute(ctx: AuthContext, q: any): Promise<Res> {
     const f = await getFlow(r.flowId);
     const w = stepWords(f, r.stepId);
     const t = tasks.find((x) => x.runId === r.id && x.status === 'OPEN');
-    items.push({ id: r.id, applicationId: r.applicationId, candidateName: r.candidateName, designation: r.designation, status: r.status, stuckReason: r.stuckReason, flowVersion: r.flowVersion,
+    items.push({ id: r.id, applicationId: r.applicationId, candidateName: r.candidateName, designation: r.designation, status: r.status, stuckReason: r.stuckReason, flowVersion: r.flowVersion, flowName: r.flowName || 'Default flow', familyId: r.familyId || DEFAULT_FAMILY,
       stepId: r.stepId, stepNumber: w.n, stepTitle: w.title, since: r.enteredAt, waitUntil: r.waitUntil, owner: t?.ownerName || '', dueOn: t?.dueOn || '', late: !!t && t.dueOn < today(), updatedAt: r.updatedAt });
   }
   return ok({ items });
@@ -605,15 +744,17 @@ async function runRoute(ctx: AuthContext, q: any): Promise<Res> {
 
 async function enrollRoute(ctx: AuthContext, b: any): Promise<Res> {
   const cid = ctx.companyId!;
-  const live = activeFlow(await flows(cid));
-  if (!live) return fail(409, 'Publish a flow first, then add applicants to it.');
+  const all = await flows(cid);
+  const fams = await families(cid);
+  if (!all.some((f) => f.status === 'ACTIVE' && !f.adjusted)) return fail(409, 'Publish a flow first, then add applicants to it.');
   const ids: string[] = Array.isArray(b.applicationIds) ? b.applicationIds.map((x: any) => str(x, 200)).filter(Boolean).slice(0, 200) : [];
   if (!ids.length) return fail(400, 'Choose at least one applicant.');
   let added = 0; let already = 0; let skipped = 0;
   for (const id of ids) {
     const a = await getApplication(cid, id);
-    if (!a || a.status === 'Rejected') { skipped++; continue; }
-    const r = await enroll(cid, a, live);
+    const pick = a ? pickFlow(fams, all, a.designation) : null;
+    if (!a || !pick || a.status === 'Rejected') { skipped++; continue; }
+    const r = await enroll(cid, a, pick.flow, pick.name);
     if (r.created) { added++; await advanceRun(cid, r.run.id); } else already++;
   }
   return ok({ added, already, skipped });
@@ -665,7 +806,7 @@ async function runAction(ctx: AuthContext, b: any): Promise<Res> {
     if (old) await db().collection('hiringItems').doc(old.id).delete();
     // Only this applicant changes: the published flow itself stays as it is.
     const patched = { ...flow, steps: flow.steps.map((s) => (s.id === step.id ? { ...s, ownerUid: p.uid, ownerName: p.name } : s)) };
-    const custom = { ...patched, id: `${flow.id}__${run.id}`, status: 'ARCHIVED' as const, name: `${flow.name} (adjusted for ${run.candidateName})` };
+    const custom = { ...patched, id: `${flow.id}__${run.id}`, status: 'ARCHIVED' as const, adjusted: true, name: `${flow.name} (adjusted for ${run.candidateName})` };
     await putItem(custom as unknown as Item);
     run.flowId = custom.id; run.status = 'RUNNING'; run.stuckReason = ''; log(run, step.id, `HR gave this step to ${p.name}.`, who); await persist(run);
   } else return fail(400, 'Unknown action.');
@@ -708,10 +849,13 @@ async function taskDecide(ctx: AuthContext, b: any): Promise<Res> {
 type Route = { method: 'GET' | 'POST'; who: 'manage' | 'anyone'; run: (ctx: AuthContext, body: any, q: any) => Promise<Res> };
 const ROUTES: Record<string, Route> = {
   'flow-state': { method: 'GET', who: 'anyone', run: (c) => stateRoute(c) },
-  'flow-start-standard': { method: 'POST', who: 'manage', run: (c) => startStandard(c) },
-  'flow-edit': { method: 'POST', who: 'manage', run: (c) => editLive(c) },
+  'flow-start-standard': { method: 'POST', who: 'manage', run: (c, b) => startStandard(c, b) },
+  'flow-new': { method: 'POST', who: 'manage', run: (c, b) => newFlow(c, b) },
+  'flow-set-designations': { method: 'POST', who: 'manage', run: (c, b) => setDesignations(c, b) },
+  'flow-retire': { method: 'POST', who: 'manage', run: (c, b) => retireFlow(c, b) },
+  'flow-edit': { method: 'POST', who: 'manage', run: (c, b) => editLive(c, b) },
   'flow-save': { method: 'POST', who: 'manage', run: (c, b) => saveRoute(c, b) },
-  'flow-discard': { method: 'POST', who: 'manage', run: (c) => discard(c) },
+  'flow-discard': { method: 'POST', who: 'manage', run: (c, b) => discard(c, b) },
   'flow-activate': { method: 'POST', who: 'manage', run: (c, b) => activate(c, b) },
   'flow-runs': { method: 'GET', who: 'manage', run: (c, _b, q) => runsRoute(c, q) },
   'flow-run': { method: 'GET', who: 'manage', run: (c, _b, q) => runRoute(c, q) },

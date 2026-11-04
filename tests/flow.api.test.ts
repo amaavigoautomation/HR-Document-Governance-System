@@ -243,8 +243,66 @@ async function main() {
   const again = await sweepFlows();
   assert.equal(again.lateReminders, 0, 'but only once a day');
 
+  // ---- one flow per designation
+  clock = Date.now();
+  const desApp = async (name: string, designation: string) => {
+    const { value } = normalizeApplicationInput({ name, email: `${name.toLowerCase()}@mail.com`, designation });
+    return (await createApplication(CID, { ...value!, expectedCtcLpa: 10 } as any, 'MANUAL')).id;
+  };
+  let sn = (await get(HR, 'flow-state')).json;
+  assert.equal(sn.families.length, 1); assert.equal(sn.families[0].isDefault, true);
+  assert.ok(sn.designationOptions.includes('Designer'), 'HR picks from designations that already exist');
+  assert.equal((await post(RANDOM, 'flow-new', { designations: ['Designer'], from: 'standard' })).status, 403);
+  assert.equal((await post(HR, 'flow-new', { designations: [], from: 'standard' })).status, 400, 'a designation flow needs a designation');
+  const sales = await post(HR, 'flow-new', { designations: ['Sales Executive'], from: 'copy', copyFrom: 'default' }); okc(sales);
+  const SF = sales.json.familyId;
+  assert.equal(sales.json.draft.steps.length > 0, true, 'copied from the Default flow');
+  assert.equal((await post(HR, 'flow-new', { designations: ['sales  executive'], from: 'standard' })).status, 409, 'a designation can only be in one flow (ignoring capitals and spaces)');
+  assert.equal((await post(HR, 'flow-new', { name: 'Sales Executive', designations: ['Intern'], from: 'standard' })).status, 409, 'two flows cannot share a name');
+  // not published yet: Sales applicants still follow Default
+  const s0 = await desApp('Sam', 'Sales Executive');
+  assert.equal((await runOf(s0)).familyId, 'default', 'an unpublished designation flow never leaves anyone without a flow');
+  okc(await post(HR, 'flow-activate', { familyId: SF, note: 'Sales v1' }));
+  sn = (await get(HR, 'flow-state')).json;
+  const sv = sn.families.find((f: any) => f.familyId === SF);
+  assert.equal(sv.active.version, 1, 'each flow has its own version numbers'); assert.equal(sn.families[0].active.version, 2);
+  assert.deepEqual(sv.designations, ['Sales Executive']); assert.equal(sn.versions.length, 2, 'top-level versions are the Default flow only');
+  clock += 1000;
+  const s1 = await desApp('Sia', 'Sales Executive'); const s2 = await desApp('Dan', 'Designer');
+  const rs1 = await runOf(s1);
+  assert.equal(rs1.familyId, SF); assert.equal(rs1.flowName, 'Sales Executive'); assert.equal((await runOf(s2)).familyId, 'default');
+  assert.equal((await runOf(s2)).flowVersion, 2);
+  const listed = (await get(HR, 'flow-runs')).json.items;
+  assert.equal(listed.find((r: any) => r.applicationId === s1).flowName, 'Sales Executive');
+  // editing the sales flow does not touch the Default flow
+  const ed3 = await post(HR, 'flow-edit', { familyId: SF }); okc(ed3);
+  assert.equal(ed3.json.draft.familyId, SF);
+  assert.equal((await get(HR, 'flow-state')).json.families[0].draft, null);
+  okc(await post(HR, 'flow-save', { familyId: SF, name: 'Sales Executive', steps: ed3.json.draft.steps.slice(0, -1).concat([]) }));
+  assert.equal((await post(HR, 'flow-activate', { familyId: SF })).status, 400, 'the same checks apply to every flow');
+  okc(await post(HR, 'flow-discard', { familyId: SF }));
+  // add a designation, with the same one-flow rule
+  assert.equal((await post(HR, 'flow-set-designations', { familyId: SF, designations: ['Sales Executive', 'Designer'] })).status, 200, 'Designer has no flow of its own yet, so it can be added');
+  const s3 = await desApp('Gus', 'designer');
+  assert.equal((await runOf(s3)).familyId, SF, 'matching ignores capitals');
+  const other = await post(HR, 'flow-new', { designations: ['Intern'], from: 'standard' }); okc(other);
+  assert.equal((await post(HR, 'flow-set-designations', { familyId: other.json.familyId, designations: ['Intern', 'Designer'] })).status, 409);
+  assert.equal((await post(HR, 'flow-set-designations', { familyId: 'default', designations: ['x'] })).status, 404);
+  // retire: new applicants go back to Default, people already inside carry on
+  assert.equal((await post(HR, 'flow-retire', { familyId: 'default' })).status, 404, 'the Default flow cannot be retired');
+  okc(await post(HR, 'flow-retire', { familyId: SF }));
+  assert.equal((await get(HR, 'flow-state')).json.families.some((f: any) => f.familyId === SF), false);
+  const s4 = await desApp('Tia', 'Sales Executive');
+  assert.equal((await runOf(s4)).familyId, 'default');
+  await advanceRun(CID, rs1.id);
+  assert.equal((await runOf(s1)).flowVersion, 1, 'applicants already in the retired flow keep their version');
+  assert.equal((await runOf(s1)).status !== 'STOPPED', true);
+  // the daily job and "add earlier applicants" respect designations too
+  const sw2 = await sweepFlows(); assert.ok(sw2.advanced >= 1);
+
   // ---- one company never sees another's flow, runs or tasks
   assert.equal((await get(OTHER, 'flow-state')).json.active, null);
+  assert.equal((await get(OTHER, 'flow-state')).json.families.length, 1, 'another company sees only its own (empty) Default flow');
   assert.equal((await get(OTHER, 'flow-runs')).json.items.length, 0);
   assert.equal((await get(OTHER, 'flow-my-tasks')).json.open.length, 0);
   assert.equal((await post(OTHER, 'flow-run-action', { runId: `flowrun_${a6}`, action: 'retry' })).status, 404);

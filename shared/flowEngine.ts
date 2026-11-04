@@ -38,6 +38,10 @@ export interface FlowDoc {
   id: string;
   companyId: string;
   kind: 'flow';
+  /** Which flow this is a version of: 'default' or the id of a designation flow. */
+  familyId?: string;
+  /** A private copy made for one applicant (HR reassigned a step). Never shown as a version. */
+  adjusted?: boolean;
   name: string;
   version: number;
   status: 'DRAFT' | 'ACTIVE' | 'ARCHIVED';

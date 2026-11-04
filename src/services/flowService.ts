@@ -8,14 +8,20 @@ const get = <T = any>(a: string, q: Record<string, string> = {}) => {
   return apiJson<T>(`${base}${a}${s ? `?${s}` : ''}`);
 };
 
+export interface FlowVersionRow { id: string; version: number; status: string; name: string; activatedAt: string; activatedBy: string; note: string; steps: number }
+export interface FamilyView {
+  familyId: string; name: string; isDefault: boolean; designations: string[];
+  active: FlowDoc | null; draft: FlowDoc | null; versions: FlowVersionRow[]; inFlight: number;
+}
 export interface FlowState {
+  families: FamilyView[]; designationOptions: string[];
   canManage: boolean; active: FlowDoc | null; draft: FlowDoc | null; people: { uid: string; name: string; title: string }[];
   versions: { id: string; version: number; status: string; name: string; activatedAt: string; activatedBy: string; note: string; steps: number }[];
   counts: Record<string, number>; myOpen: number; me: { uid: string; name: string };
 }
 export interface FlowRunRow {
   id: string; applicationId: string; candidateName: string; designation: string; status: string; stuckReason: string; flowVersion: number;
-  stepId: string; stepNumber: number; stepTitle: string; since: string; waitUntil: string; owner: string; dueOn: string; late: boolean; updatedAt: string;
+  flowName: string; familyId: string; stepId: string; stepNumber: number; stepTitle: string; since: string; waitUntil: string; owner: string; dueOn: string; late: boolean; updatedAt: string;
 }
 export interface FlowTask {
   id: string; runId: string; applicationId: string; candidateName: string; designation: string; stepId: string; stepType: string; stepTitle: string;
@@ -25,11 +31,14 @@ export interface FlowTask {
 /** Every hiring-flow call. Server side: api/_lib/flowApi.ts. */
 export const flowService = {
   state: () => get<{ success: true } & FlowState>('flow-state'),
-  startStandard: () => post<{ draft: FlowDoc }>('flow-start-standard'),
-  edit: () => post<{ draft: FlowDoc }>('flow-edit'),
-  save: (name: string, steps: FlowStep[]) => post<{ draft: FlowDoc; problems: Problem[] }>('flow-save', { name, steps }),
-  discard: () => post('flow-discard'),
-  activate: (note?: string) => post<{ version: number }>('flow-activate', { note }),
+  startStandard: (familyId: string) => post<{ draft: FlowDoc }>('flow-start-standard', { familyId }),
+  edit: (familyId: string) => post<{ draft: FlowDoc }>('flow-edit', { familyId }),
+  save: (familyId: string, name: string, steps: FlowStep[]) => post<{ draft: FlowDoc; problems: Problem[] }>('flow-save', { familyId, name, steps }),
+  discard: (familyId: string) => post('flow-discard', { familyId }),
+  activate: (familyId: string, note?: string) => post<{ version: number }>('flow-activate', { familyId, note }),
+  newFlow: (b: { name?: string; designations: string[]; from: 'standard' | 'copy' | 'empty'; copyFrom?: string }) => post<{ familyId: string }>('flow-new', b),
+  setDesignations: (familyId: string, designations: string[], name?: string) => post('flow-set-designations', { familyId, designations, name }),
+  retire: (familyId: string) => post('flow-retire', { familyId }),
   runs: (status?: string) => get<{ items: FlowRunRow[] }>('flow-runs', status ? { status } : {}),
   run: (id: string) => get<{ run: any; flow: { steps: FlowStep[]; version: number } | null }>('flow-run', { id }),
   enroll: (applicationIds: string[]) => post<{ added: number; already: number; skipped: number }>('flow-enroll', { applicationIds }),
