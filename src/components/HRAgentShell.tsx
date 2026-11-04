@@ -26,6 +26,7 @@ import {
   FileCheck2,
   ClipboardList,
   Contact,
+  Workflow,
 } from 'lucide-react';
 import { User, UserRole } from '../types';
 import { AmaavigoLogo } from './AmaavigoLogo';
@@ -37,6 +38,7 @@ import { payrollNav } from './payroll/payrollNav';
 import { peopleNav } from './lifecycle/peopleNav';
 import { hrbpNav } from './hrbp/hrbpNav';
 import { pmNav } from './pm/pmNav';
+import { flowNav } from './hiringflow/flowNav';
 import { employeeNav } from './employee/employeeNav';
 import {
   hasModulePermission,
@@ -59,6 +61,7 @@ export type HRAgentModule =
   | 'my-hiring'
   | 'hrbp'
   | 'performance'
+  | 'hiring-automation'
   | 'leave-management'
   | 'payroll'
   | 'people'
@@ -113,6 +116,7 @@ export const HRAgentShell: React.FC<HRAgentShellProps> = ({
   const [isEmployeeExpanded, setIsEmployeeExpanded] = useState<boolean>(true);
   const [isHrbpExpanded, setIsHrbpExpanded] = useState<boolean>(true);
   const [isPmExpanded, setIsPmExpanded] = useState<boolean>(true);
+  const [isFlowExpanded, setIsFlowExpanded] = useState<boolean>(true);
   // Counts of what is waiting for this person, shown on the module titles and their sections.
   const badges = useNavBadges();
 
@@ -122,7 +126,7 @@ export const HRAgentShell: React.FC<HRAgentShellProps> = ({
   // Auto-redirect if currently selected module is not permitted
   useEffect(() => {
     if (activeModule === 'home' || activeModule === 'policies') return;
-    if (activeModule === 'administration' || activeModule === 'leave-management' || activeModule === 'payroll' || activeModule === 'people' || activeModule === 'employee' || activeModule === 'my-hiring' || activeModule === 'hrbp' || activeModule === 'performance') return;
+    if (activeModule === 'administration' || activeModule === 'leave-management' || activeModule === 'payroll' || activeModule === 'people' || activeModule === 'employee' || activeModule === 'my-hiring' || activeModule === 'hrbp' || activeModule === 'performance' || activeModule === 'hiring-automation') return;
     if (activeModule === 'document-version-control' && !hasDocGovAccess && hasTalentAccess) {
       onSelectModule('talent-acquisition-overview');
     } else if (
@@ -691,6 +695,7 @@ export const HRAgentShell: React.FC<HRAgentShellProps> = ({
                   { key: 'my-hiring' as const, title: 'Referrals & interviews', sub: 'Refer people, give interview feedback', Icon: Users, show: true },
                   { key: 'hrbp' as const, title: 'HR Business Partner', sub: (hasAnyPerm(currentUser.perms, ['hrbp.manage', 'hrbp.view']) || !!currentUser.isCompanyAdmin) ? 'Org, talent, engagement & succession' : 'Surveys, recognition, learning & wellness', Icon: Layers, show: true },
                   { key: 'performance' as const, title: 'Performance', sub: 'Targets, reviews, check-ins & growth', Icon: Check, show: true },
+                  { key: 'hiring-automation' as const, title: 'Hiring Automation', sub: 'Your hiring steps, applicants & tasks', Icon: Workflow, show: true },
                 ]).filter((m) => m.show).map((m) => (
                   <React.Fragment key={m.key}>
                   <div className="relative">
@@ -701,9 +706,10 @@ export const HRAgentShell: React.FC<HRAgentShellProps> = ({
                       onSelectModule(m.key);
                       if (m.key === 'hrbp') setIsHrbpExpanded(true);
                       if (m.key === 'performance') setIsPmExpanded(true);
+                      if (m.key === 'hiring-automation') setIsFlowExpanded(true);
                       setIsMobileSidebarOpen(false);
                     }}
-                    className={`w-full ${activeModule === m.key ? (m.key === 'hrbp' || m.key === 'performance' ? 'pl-3 pr-10' : 'pl-3 pr-3') : 'px-3'} py-2.5 rounded-xl border flex items-center justify-between text-left transition-all cursor-pointer ${
+                    className={`w-full ${activeModule === m.key ? (m.key === 'hrbp' || m.key === 'performance' || m.key === 'hiring-automation' ? 'pl-3 pr-10' : 'pl-3 pr-3') : 'px-3'} py-2.5 rounded-xl border flex items-center justify-between text-left transition-all cursor-pointer ${
                       activeModule === m.key ? 'bg-[#FA7014]/10 border-[#FA7014]/40 text-slate-900 shadow-xs' : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50 hover:border-slate-300'
                     }`}
                   >
@@ -748,9 +754,25 @@ export const HRAgentShell: React.FC<HRAgentShellProps> = ({
                       {isPmExpanded ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
                     </button>
                   )}
+                  {m.key === 'hiring-automation' && activeModule === 'hiring-automation' && (
+                    <button
+                      id="nav-module-hiring-automation-toggle"
+                      type="button"
+                      onClick={() => setIsFlowExpanded((v) => !v)}
+                      aria-expanded={isFlowExpanded}
+                      aria-label={isFlowExpanded ? 'Hide Hiring Automation sections' : 'Show Hiring Automation sections'}
+                      title={isFlowExpanded ? 'Hide sections' : 'Show sections'}
+                      className="absolute right-1.5 top-1/2 -translate-y-1/2 w-7 h-7 rounded-lg flex items-center justify-center text-[#FA7014] hover:bg-[#FA7014]/15 cursor-pointer"
+                    >
+                      {isFlowExpanded ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
+                    </button>
+                  )}
                   </div>
                   {m.key === 'performance' && activeModule === 'performance' && isPmExpanded && (
                     <ModuleSubNav nav={pmNav} label="Performance sections" variant="sidebar" idPrefix="nav-submodule-performance" onNavigate={() => setIsMobileSidebarOpen(false)} />
+                  )}
+                  {m.key === 'hiring-automation' && activeModule === 'hiring-automation' && isFlowExpanded && (
+                    <ModuleSubNav nav={flowNav} label="Hiring Automation sections" variant="sidebar" idPrefix="nav-submodule-hiring-automation" onNavigate={() => setIsMobileSidebarOpen(false)} />
                   )}
                   {m.key === 'hrbp' && activeModule === 'hrbp' && isHrbpExpanded && (
                     <ModuleSubNav nav={hrbpNav} label="HR Business Partner sections" variant="sidebar" idPrefix="nav-submodule-hrbp" onNavigate={() => setIsMobileSidebarOpen(false)} />

@@ -54,6 +54,7 @@ const RequisitionsModule = lazyPage(() => import('./components/RequisitionsModul
 const OnboardingModule = lazyPage(() => import('./components/OnboardingModule').then((m) => m.OnboardingModule));
 const HiringPipelineModule = lazyPage(() => import('./components/HiringPipelineModule').then((m) => m.HiringPipelineModule));
 const MyHiringModule = lazyPage(() => import('./components/MyHiringModule').then((m) => m.MyHiringModule));
+const HiringAutomationModule = lazyPage(() => import('./components/HiringAutomationModule').then((m) => m.HiringAutomationModule));
 const PerformanceModule = lazyPage(() => import('./components/PerformanceModule').then((m) => m.PerformanceModule));
 const HrbpModule = lazyPage(() => import('./components/HrbpModule').then((m) => m.HrbpModule));
 const ApplicationsModule = lazyPage(() => import('./components/ApplicationsModule').then((m) => m.ApplicationsModule));
@@ -811,6 +812,12 @@ export default function App() {
           {hrAgentModule === 'performance' && currentUser && (
             <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
               <PerformanceModule currentUser={currentUser} users={allUsers} />
+            </div>
+          )}
+
+          {hrAgentModule === 'hiring-automation' && currentUser && (
+            <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
+              <HiringAutomationModule currentUser={currentUser} onNavigate={(m) => handleSelectHRAgentModule(m)} />
             </div>
           )}
 

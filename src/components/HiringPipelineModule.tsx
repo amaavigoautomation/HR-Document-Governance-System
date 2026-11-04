@@ -12,23 +12,19 @@ import { OffersTab } from './hiring/OffersTab';
 import { JoiningTab } from './hiring/JoiningTab';
 import { DashboardTab } from './hiring/DashboardTab';
 import { AiTab } from './hiring/AiTab';
-import { FlowBuilder } from './hiringflow/FlowBuilder';
-import { FlowRuns } from './hiringflow/FlowRuns';
-import { FlowTasks } from './hiringflow/FlowTasks';
-import { flowService, type FlowState } from '../services/flowService';
 import { hasAnyPerm } from '../../shared/permissions';
 
-type Tab = 'flow' | 'flowRuns' | 'tasks' | 'candidates' | 'interviews' | 'postings' | 'jd' | 'referrals' | 'scoring' | 'offers' | 'joining' | 'ai' | 'dashboard';
+type Tab = 'candidates' | 'interviews' | 'postings' | 'jd' | 'referrals' | 'scoring' | 'offers' | 'joining' | 'ai' | 'dashboard';
 
 /** Hiring pipeline for HR: candidates (score, screening, tests, interviews), interviews, posting tracker, JD library, referrals, scoring weights. */
 export const HiringPipelineModule: React.FC<{ currentUser: User; users: User[] }> = ({ currentUser, users }) => {
   const founder = !!currentUser.isCompanyAdmin || hasAnyPerm(currentUser.perms, ['req.founder_decide']);
   const seeDash = founder || hasAnyPerm(currentUser.perms, ['hrbp.view', 'hrbp.manage']);
-  const [tab, setTab] = useState<Tab>('candidates');
-  const [flow, setFlow] = useState<FlowState | null>(null);
-  const loadFlow = () => { flowService.state().then((r) => setFlow(r as any)).catch(() => undefined); };
-  useEffect(loadFlow, []);
-  const stuck = flow?.counts?.STUCK || 0;
+  // A task in Hiring Automation can open a specific tab here (candidates, interviews, offers, joining).
+  const [tab, setTab] = useState<Tab>(() => {
+    try { const t = sessionStorage.getItem('amaavigo_hiring_open_tab'); sessionStorage.removeItem('amaavigo_hiring_open_tab'); if (t && ['candidates', 'interviews', 'offers', 'joining'].includes(t)) return t as Tab; } catch { /* first tab */ }
+    return 'candidates';
+  });
   const [reqs, setReqs] = useState<Requisition[]>([]);
   useEffect(() => subscribeToRequisitions(setReqs), []);
   return (
@@ -39,16 +35,12 @@ export const HiringPipelineModule: React.FC<{ currentUser: User; users: User[] }
       </div>
       <div className="overflow-x-auto">
         <Segmented<Tab> value={tab} onChange={setTab} options={[
-          { value: 'tasks', label: `My tasks${flow?.myOpen ? ` (${flow.myOpen})` : ''}` }, { value: 'flow', label: 'Hiring flow' }, { value: 'flowRuns', label: `Who is where${stuck ? ` (${stuck} need you)` : ''}` },
           { value: 'candidates', label: 'Candidates' }, { value: 'interviews', label: 'Interviews' }, { value: 'postings', label: 'Job postings' },
           { value: 'jd', label: 'JD library' }, { value: 'referrals', label: 'Referrals' }, { value: 'scoring', label: 'Scoring' },
           { value: 'offers', label: 'Offers' }, { value: 'joining', label: 'Joining' }, { value: 'ai', label: 'AI & duplicates' },
           ...(seeDash ? [{ value: 'dashboard' as Tab, label: 'Founder dashboard' }] : []),
         ]} />
       </div>
-      {tab === 'tasks' && <FlowTasks onOpenTab={(t) => setTab(t as Tab)} onChanged={loadFlow} />}
-      {tab === 'flow' && <FlowBuilder onChanged={loadFlow} />}
-      {tab === 'flowRuns' && <FlowRuns people={flow?.people || []} onChanged={loadFlow} />}
       {tab === 'candidates' && <CandidatesTab users={users} />}
       {tab === 'interviews' && <InterviewsTab />}
       {tab === 'postings' && <PostingsTab requisitions={reqs} />}
