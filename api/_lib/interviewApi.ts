@@ -79,10 +79,13 @@ async function screenSave(ctx: AuthContext, b: any): Promise<Result> {
 
 const ASSESS_TYPES = ['TECHNICAL', 'APTITUDE', 'ASSIGNMENT', 'OTHER'];
 
+/** App-given tests carry a secret link and the answer key. HR sees the result, never those. */
+const assessView = (it: Item): Item => { const { token, questions, answers, mailClaim, ...rest } = it as any; return { ...rest, questionCount: Array.isArray(questions) ? questions.length : rest.totalQuestions }; };
+
 async function assessList(cid: string, q: any): Promise<Result> {
   let items = await listItems(cid, 'assessment');
   if (q.applicationId) items = items.filter((i) => i.applicationId === String(q.applicationId));
-  return ok({ items: items.sort((a, b) => String(b.assignedAt).localeCompare(String(a.assignedAt))) });
+  return ok({ items: items.map(assessView).sort((a, b) => String(b.assignedAt).localeCompare(String(a.assignedAt))) });
 }
 
 async function assessAssign(ctx: AuthContext, b: any): Promise<Result> {
@@ -110,6 +113,7 @@ async function assessResult(ctx: AuthContext, b: any): Promise<Result> {
   const cid = ctx.companyId!;
   const it = await getItem(cid, str(b.id, 100), 'assessment');
   if (!it) return fail(404, 'Assessment not found.');
+  if (it.mode === 'AI_TEST') return fail(400, 'This test is marked automatically when the candidate hands it in.');
   const score = num(b.score);
   if (score === null || score < 0 || score > it.maxScore) return fail(400, `Score must be between 0 and ${it.maxScore}.`);
   const next: Item = { ...it, score, status: 'SCORED', result: score >= it.passScore ? 'PASS' : 'FAIL', notes: str(b.notes, 1000), scoredAt: nowIso(), scoredBy: await whoIs(ctx) };
@@ -413,7 +417,7 @@ async function candDetail(ctx: AuthContext, q: any): Promise<Result> {
   return ok({
     application: a, ...scoring,
     screening: screening.find((s) => s.applicationId === a.id) || null,
-    assessments: assessments.filter((x) => x.applicationId === a.id),
+    assessments: assessments.filter((x) => x.applicationId === a.id).map(assessView),
     interviews: interviews.filter((x) => x.applicationId === a.id).map(({ scorecards, ...rest }) => ({ ...rest, submittedCount: (scorecards || []).length })),
     resumeFacts: resume.find((x) => x.applicationId === a.id)?.facts || null,
     referral: referral.find((x) => x.applicationId === a.id) ? { by: referral.find((x) => x.applicationId === a.id)!.referrerName } : null,

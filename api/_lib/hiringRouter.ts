@@ -32,6 +32,7 @@ import { routeHiringBudget } from './hiringBudgetApi.js';
 import { routePipeline } from './pipelineApi.js';
 import { routeInterview } from './interviewApi.js';
 import { routeOffer } from './offerApi.js';
+import { routeSkillTest } from './skillTestApi.js';
 import { routeJoining } from './joiningApi.js';
 import { routeAnalytics } from './analyticsApi.js';
 import { routeAiHiring } from './aiHiringApi.js';
@@ -141,6 +142,8 @@ export async function routeHiring(r: HiringRequest): Promise<HiringResult> {
   const pipe = { method: r.method, action, query: r.query, body: r.body, headers: r.headers, origin: r.origin };
   const flow = await routeFlow(pipe);
   if (flow) return flow;
+  const stest = await routeSkillTest(pipe);
+  if (stest) return stest;
   const pipeline = (await routePipeline(pipe)) || (await routeInterview(pipe)) || (await routeOffer(pipe)) || (await routeJoining(pipe)) || (await routeAnalytics(pipe)) || (await routeAiHiring(pipe)) || (await routeScreeningLink(pipe));
   if (pipeline) return pipeline;
 

@@ -67,6 +67,8 @@ export interface SettingField {
   required?: boolean;
   min?: number;
   max?: number;
+  /** Only shown (and checked) when another setting of the same step has this value. */
+  when?: { key: string; value: string };
 }
 
 export interface StepInfo {
@@ -116,9 +118,17 @@ export const STEP_INFO: Record<StepType, StepInfo> = {
     defaults: { ...TITLE('Phone screening'), settings: { instruction: 'Call the candidate, confirm salary expectation, notice period and interest, then record the result.' }, deadlineDays: 2 },
   },
   test: {
-    type: 'test', label: 'Skills test', does: 'The candidate is given a test. The step finishes when someone scores it.', icon: '📝', manual: true, canFail: true, group: 'Check the candidate',
-    fields: [{ key: 'instruction', label: 'What should the person do?', kind: 'longtext' }],
-    defaults: { ...TITLE('Skills test'), settings: { instruction: 'Send the test, then enter the score when you have marked it.' }, deadlineDays: 5 },
+    type: 'test', label: 'Skills test', does: 'The app writes a multiple-choice test from the job description, emails it to the candidate, marks it and records the score. Or a person can give and score a test by hand.', icon: '📝', manual: true, canFail: true, group: 'Check the candidate',
+    fields: [
+      { key: 'mode', label: 'Who gives the test?', kind: 'select', options: [{ value: 'ai', label: 'The app (test made from the job description, emailed to the candidate)' }, { value: 'manual', label: 'A person (they send it and type the score)' }] },
+      { key: 'questions', label: 'How many questions?', kind: 'number', min: 5, max: 30, when: { key: 'mode', value: 'ai' } },
+      { key: 'minutes', label: 'Time allowed (minutes)', kind: 'number', min: 5, max: 180, when: { key: 'mode', value: 'ai' } },
+      { key: 'passPercent', label: 'Pass mark (% of questions right)', kind: 'number', min: 10, max: 100, when: { key: 'mode', value: 'ai' } },
+      { key: 'expiryDays', label: 'Days the candidate has to start the test', kind: 'number', min: 1, max: 14, when: { key: 'mode', value: 'ai' } },
+      { key: 'onBelow', label: 'If the score is below the pass mark', kind: 'select', options: [{ value: 'reject', label: 'Follow the "does not work out" path automatically' }, { value: 'ask', label: 'Ask a person to decide' }], when: { key: 'mode', value: 'ai' } },
+      { key: 'instruction', label: 'What should the person do?', kind: 'longtext', when: { key: 'mode', value: 'manual' } },
+    ],
+    defaults: { ...TITLE('Skills test'), settings: { mode: 'ai', questions: 15, minutes: 30, passPercent: 60, expiryDays: 3, onBelow: 'reject', instruction: 'Send the test, then enter the score when you have marked it.' }, deadlineDays: 5 },
   },
   interview: {
     type: 'interview', label: 'Interview', does: 'An interview is scheduled and the panel gives blind feedback. The step finishes when everyone has submitted.', icon: '🗣️', manual: true, canFail: true, group: 'Check the candidate',
@@ -304,10 +314,11 @@ export function validateFlow(flow: Pick<FlowDoc, 'name' | 'steps'>): Problem[] {
     if (ids.has(s.id)) out.push({ stepId: s.id, message: `${label(s, i)} has the same internal id as another step. Delete it and add it again.` });
     ids.add(s.id);
     if (!String(s.title || '').trim()) out.push({ stepId: s.id, message: `${label(s, i)} needs a name.` });
-    if (info.manual && s.type !== 'onboard' && s.type !== 'offer' && !s.ownerUid) out.push({ stepId: s.id, message: `${label(s, i)}: choose the person who does this step.` });
+    if (isManualStep(s) && s.type !== 'onboard' && s.type !== 'offer' && !s.ownerUid) out.push({ stepId: s.id, message: `${label(s, i)}: choose the person who does this step.` });
     if ((s.type === 'offer' || s.type === 'onboard') && !s.ownerUid) out.push({ stepId: s.id, message: `${label(s, i)}: choose the person responsible (usually HR).` });
     if (s.deadlineDays !== undefined && (!Number.isFinite(Number(s.deadlineDays)) || Number(s.deadlineDays) < 1 || Number(s.deadlineDays) > 90)) out.push({ stepId: s.id, message: `${label(s, i)}: the time allowed must be between 1 and 90 days.` });
     for (const f of info.fields) {
+      if (f.when && (s.type === 'test' ? (testSettings(s) as any)[f.when.key] : s.settings?.[f.when.key]) !== f.when.value) continue;
       const v = s.settings?.[f.key];
       if (f.required && (v === undefined || v === null || String(v).trim() === '')) out.push({ stepId: s.id, message: `${label(s, i)}: fill in "${f.label}".` });
       if (f.kind === 'number' && v !== undefined && v !== '' && v !== null) {
@@ -374,6 +385,23 @@ export function reachable(steps: FlowStep[]): Set<string> {
   return seen;
 }
 
+// ------------------------------------------------------------------ the skills test step (made by the app, or given by hand)
+
+export interface TestSettings { mode: 'ai' | 'manual'; questions: number; minutes: number; passPercent: number; expiryDays: number; onBelow: 'reject' | 'ask' }
+/** Steps saved before the app could give tests have no "mode": they stay manual. */
+export function testSettings(s: Pick<FlowStep, 'settings'>): TestSettings {
+  const x = s.settings || {};
+  const n = (v: any, d: number, lo: number, hi: number) => { const k = Number(v); return Number.isFinite(k) && v !== '' && v !== null && v !== undefined ? Math.min(hi, Math.max(lo, Math.round(k))) : d; };
+  return { mode: x.mode === 'ai' ? 'ai' : 'manual', questions: n(x.questions, 15, 5, 30), minutes: n(x.minutes, 30, 5, 180), passPercent: n(x.passPercent, 60, 10, 100), expiryDays: n(x.expiryDays, 3, 1, 14), onBelow: x.onBelow === 'ask' ? 'ask' : 'reject' };
+}
+export const isAiTest = (s: Pick<FlowStep, 'type' | 'settings'>) => s.type === 'test' && testSettings(s).mode === 'ai';
+/** A person has to act on this step. An app-given test needs a person only when a low score is handed to them. */
+export function isManualStep(s: Pick<FlowStep, 'type' | 'settings'>): boolean {
+  const info = STEP_INFO[s.type];
+  if (!info?.manual) return false;
+  return s.type === 'test' && isAiTest(s) ? testSettings(s).onBelow === 'ask' : true;
+}
+
 // ------------------------------------------------------------------ the one-sentence summary of a step
 
 export function stepSentence(s: FlowStep, flow: Pick<FlowDoc, 'steps'>): string {
@@ -382,7 +410,11 @@ export function stepSentence(s: FlowStep, flow: Pick<FlowDoc, 'steps'>): string 
   switch (s.type) {
     case 'ai_score': return 'The app scores the resume out of 100.';
     case 'screen': return `${who} phones the candidate and records Pass, On hold or Fail. ${fail()}`;
-    case 'test': return `${who} sends a test and enters the score. ${fail()}`;
+    case 'test': {
+      if (!isAiTest(s)) return `${who} sends a test and enters the score. ${fail()}`;
+      const t = testSettings(s);
+      return `The app makes a ${t.questions}-question test from the job description, emails it to the candidate (${t.minutes} minutes) and marks it. ${t.passPercent}% passes. ${t.onBelow === 'ask' ? `Below that, ${who} decides.` : fail()}`;
+    }
     case 'interview': return `${s.settings?.round || 'Interview'}: ${who} arranges it and the panel scores the candidate. An average below ${s.settings?.minAverage ?? 3} out of 5 does not pass. ${fail()}`;
     case 'review': return `${who} answers Yes or No: "${s.settings?.question || '...'}". ${fail()}`;
     case 'approval': return `${who} approves or does not approve: "${s.settings?.question || '...'}". ${fail()}`;

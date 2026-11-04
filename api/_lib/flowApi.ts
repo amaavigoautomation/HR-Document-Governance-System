@@ -29,7 +29,7 @@ import { MANAGE_PERMS, getItem, listItems, putItem, scoreFor, whoIs, type Item }
 import { dispatchLiveEmail } from './serverEmail.js';
 import { summarise, type Scorecard } from '../../shared/interviewEngine.js';
 import {
-  STEP_INFO, evalCondition, interviewRound, makeStep, nextTarget, renderText, standardSteps, stepInfo, validateFlow,
+  STEP_INFO, evalCondition, interviewRound, isAiTest, isManualStep, makeStep, nextTarget, renderText, standardSteps, stepInfo, validateFlow,
   type Facts, type FlowDoc, type FlowStep, type Result as StepResult,
 } from '../../shared/flowEngine.js';
 
@@ -392,7 +392,7 @@ async function enroll(cid: string, a: ApplicationDoc, flow: FlowDoc, flowName = 
 const OFFER_BAD = ['DECLINED', 'GHOSTED', 'EXPIRED', 'REJECTED', 'WITHDRAWN'];
 const OFFER_GOOD = ['ACCEPTED', 'JOINED'];
 
-type Seen = { kind: 'wait'; why: string } | { kind: 'move'; result: StepResult; note: string } | { kind: 'stuck'; reason: string };
+type Seen = { kind: 'wait'; why: string; ask?: string } | { kind: 'move'; result: StepResult; note: string } | { kind: 'stuck'; reason: string };
 
 async function gatherFacts(cid: string, a: ApplicationDoc, run: RunDoc): Promise<Facts> {
   const facts: Facts = { expectedCtcLpa: a.expectedCtcLpa ?? null };
@@ -441,7 +441,8 @@ async function observe(cid: string, run: RunDoc, flow: FlowDoc, step: FlowStep, 
       return { kind: 'wait', why: 'Phone screening result is "On hold". Waiting for a final result.' };
     }
     case 'test': {
-      const t = (await listItems(cid, 'assessment')).filter((x) => x.applicationId === a.id).sort((x, y) => String(y.assignedAt).localeCompare(String(x.assignedAt)))[0];
+      if (isAiTest(step)) return (await import('./skillTestApi.js')).observeAiTest(cid, run, step, a);
+      const t = (await listItems(cid, 'assessment')).filter((x) => x.applicationId === a.id && x.mode !== 'AI_TEST').sort((x, y) => String(y.assignedAt).localeCompare(String(x.assignedAt)))[0];
       if (!t || t.status !== 'SCORED') return { kind: 'wait', why: t ? 'Waiting for the test to be scored.' : 'Waiting for a test to be given.' };
       return t.result === 'PASS' ? { kind: 'move', result: 'done', note: `Test passed (${t.score}).` } : { kind: 'move', result: 'fail', note: `Test not passed (${t.score}).` };
     }
@@ -558,19 +559,20 @@ async function createOnce(it: Item): Promise<boolean> {
   return created;
 }
 
-async function ensureTask(cid: string, run: RunDoc, flow: FlowDoc, step: FlowStep, staff: Awaited<ReturnType<typeof people>>): Promise<string | null> {
+async function ensureTask(cid: string, run: RunDoc, flow: FlowDoc, step: FlowStep, staff: Awaited<ReturnType<typeof people>>, ask?: string): Promise<string | null> {
   const info = STEP_INFO[step.type];
-  if (!info.manual) return null;
+  if (!isManualStep(step)) return null;
+  if (isAiTest(step) && !ask) return null;   // an app-given test only needs a person once a low score is handed to them
   const id = taskId(run.id, step.id);
   if (await getItem(cid, id, 'flowTask')) return null;
   const owner = staff.find((p) => p.uid === step.ownerUid);
   if (!owner) return `${step.ownerName || 'The person chosen for this step'} is no longer an active employee. Press "Choose someone else" to reassign.`;
   const due = new Date(Date.parse(run.enteredAt) + (step.deadlineDays || 3) * 86400000).toISOString().slice(0, 10);
-  const decide = step.type === 'review' || step.type === 'approval';
+  const decide = step.type === 'review' || step.type === 'approval' || !!ask;
   const created = await createOnce({
     id, companyId: cid, kind: 'flowTask', runId: run.id, applicationId: run.applicationId, candidateName: run.candidateName, designation: run.designation,
     stepId: step.id, stepType: step.type, stepTitle: step.title, ownerUid: owner.uid, ownerName: owner.name,
-    instruction: String(step.settings.instruction || TASK_WORDS[step.type] || ''), question: decide ? String(step.settings.question || '') : '',
+    instruction: ask ? 'The candidate took the skills test and scored below the pass mark.' : String(step.settings.instruction || TASK_WORDS[step.type] || ''), question: decide ? (ask || String(step.settings.question || '')) : '',
     decide, link: decide ? '' : LINK[step.type] || '', dueOn: due, status: 'OPEN', createdAt: nowIso(),
   });
   if (!created) return null;   // another engine created it a moment ago
@@ -632,7 +634,7 @@ export async function advanceRun(cid: string, id: string): Promise<RunDoc | null
     }
     if (seen.kind === 'wait') {
       staff = staff || await people(cid);
-      const problem = await ensureTask(cid, run, flow, step, staff);
+      const problem = await ensureTask(cid, run, flow, step, staff, seen.ask);
       if (problem) { run.status = 'STUCK'; run.stuckReason = problem; await persist(run); return run; }
       const until = step.type === 'wait' ? (run.waitUntil || new Date(Date.parse(run.enteredAt) + Number(step.settings.days || 1) * 86400000).toISOString()) : '';
       if (run.status !== 'WAITING' || run.stuckReason || run.waitUntil !== until) { run.status = 'WAITING'; run.stuckReason = ''; run.waitUntil = until; await persist(run); }
@@ -799,6 +801,7 @@ async function runAction(ctx: AuthContext, b: any): Promise<Res> {
   if (FINAL.includes(run.status) && action !== 'restart') return fail(409, 'This applicant has already finished the flow.');
   if (!flow || !step) return fail(409, 'The flow step is missing.');
   if (action === 'retry') {
+    if (step.type === 'test' && isAiTest(step)) await (await import('./skillTestApi.js')).retryAiTest(cid, run.id, step.id, run.applicationId);
     await mutateRun(run.id, (f) => { if (f.decisions[step.id]?.email === 'SENDING') delete f.decisions[step.id].email; f.status = 'RUNNING'; f.stuckReason = ''; log(f, step.id, `HR pressed Retry.${note ? ` ${note}` : ''}`, who); });
   }
   else if (action === 'skip') {

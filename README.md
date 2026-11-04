@@ -145,6 +145,11 @@ Everything up to "job posted on the website" stays fixed. From the moment an app
 - Permissions: the people who already manage hiring (`app.manage`, `req.manage_jd`, `req.hr_decide`) build flows and fix stuck applicants; anyone can see and answer their own tasks (**My tasks** in Hiring Automation). Email and in-app tasks only for now.
 - Code: `shared/flowEngine.ts` (steps, validator, routing, try-it-out), `api/_lib/flowApi.ts` (`flow-*` actions in `hiringRouter.ts`, no new Vercel function), `src/components/HiringAutomationModule.tsx`, `src/components/hiringflow/`, `src/services/flowService.ts`. Data: `hiringItems` kinds `flow` (with `familyId`), `flowFamily` (name and designations), `flowRun`, `flowTask`. Tests: `tests/flow.engine.test.ts`, `tests/flow.api.test.ts`.
 
+
+### Automatic skills test
+
+The **Skills test** step can be given by the app (the default for new steps) or by a person. For an app-given test, open the step and, under "The test questions", press **Make the test with AI**. The AI writes a multiple-choice test from the job description (the JD library first, then the requisition's JD). There is one test per job title, so everyone applying for the same job gets the same questions. HR can read and edit every question. When an applicant reaches the step, the flow emails a private link (`/?test=<token>`, needs `APP_BASE_URL`); the candidate takes the timed test once with no sign-in; the server marks it and stores the percentage as a normal assessment, and the flow passes or fails the applicant against the pass mark. Below the pass mark the step either follows the flow's "does not work out" path or asks a named person to decide. Links expire (Retry sends a fresh one), and a test started but never handed in is marked with the answers it has. The answer key and the secret link are never sent to the candidate's browser or to HR screens. API: `stest-*` actions in `skillTestApi.ts`; tests in `tests/skilltest.test.ts`.
+
 ## Offers, joining, probation, growth, AI and the founder dashboard
 
 All of this is built inside the existing functions (still 9 of 12 on Vercel). Hiring routes are actions of `/api/recruitment/<action>`; probation, OKRs and promotions are actions of `/api/hrbp/<action>`.

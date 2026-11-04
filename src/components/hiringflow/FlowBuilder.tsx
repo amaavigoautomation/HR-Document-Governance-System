@@ -3,9 +3,10 @@ import { AlertTriangle, ArrowDown, ArrowLeft, ArrowUp, CheckCircle2, ChevronDown
 import { Card, Field, Notice, btnBig, btnGhost, btnPrimary, input, niceDate, useRunner } from '../leave/ui';
 import { Loading, Pill, useLoad } from '../common/loadUi';
 import { flowService, type FamilyView, type FlowState } from '../../services/flowService';
+import { SkillTestPanel } from './SkillTestPanel';
 import {
   CONDITION_FIELDS, CONDITION_OPS, MAX_INTERVIEW_ROUNDS, OUTCOME_WORDS, PLACEHOLDERS, STEP_INFO, STEP_ORDER, UNKNOWN_CHOICES,
-  makeStep, simulate, stepSentence, validateFlow, type FlowDoc, type FlowStep, type Problem, type SimOutput, type StepType,
+  isAiTest, isManualStep, makeStep, simulate, stepSentence, testSettings, validateFlow, type FlowDoc, type FlowStep, type Problem, type SimOutput, type StepType,
 } from '../../../shared/flowEngine';
 
 type Person = FlowState['people'][number];
@@ -89,11 +90,11 @@ const ChipRow: React.FC<{ onInsert: (t: string) => void }> = ({ onInsert }) => (
 );
 
 interface CardProps {
-  step: FlowStep; index: number; flow: Pick<FlowDoc, 'steps'>; people: Person[]; editing: boolean; open: boolean; problems: Problem[];
+  step: FlowStep; index: number; flow: Pick<FlowDoc, 'steps'>; people: Person[]; jobTitles?: string[]; editing: boolean; open: boolean; problems: Problem[];
   onToggle: () => void; onChange: (s: FlowStep) => void; onMove: (d: -1 | 1) => void; onDelete: () => void;
 }
 
-const StepCard: React.FC<CardProps> = ({ step, index, flow, people, editing, open, problems, onToggle, onChange, onMove, onDelete }) => {
+const StepCard: React.FC<CardProps> = ({ step, index, flow, people, jobTitles = [], editing, open, problems, onToggle, onChange, onMove, onDelete }) => {
   const info = STEP_INFO[step.type];
   const later = flow.steps.slice(index + 1);
   const set = (patch: Partial<FlowStep>) => onChange({ ...step, ...patch });
@@ -108,6 +109,9 @@ const StepCard: React.FC<CardProps> = ({ step, index, flow, people, editing, ope
     </>
   );
   const f = CONDITION_FIELDS.find((x) => x.value === step.settings?.field);
+  const manual = isManualStep(step);
+  const aiTest = isAiTest(step);
+  const eff: Record<string, any> = step.type === 'test' ? testSettings(step) : step.settings || {};
 
   return (
     <div id={`step-${step.id}`} className={`rounded-xl border bg-white ${bad ? 'border-amber-400' : 'border-slate-200'} shadow-sm`}>
@@ -119,7 +123,7 @@ const StepCard: React.FC<CardProps> = ({ step, index, flow, people, editing, ope
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
             <h4 className="text-sm font-extrabold text-slate-900">{step.title || info.label}</h4>
-            <Pill tone={info.manual ? 'blue' : 'slate'}>{info.manual ? (step.ownerName ? `${step.ownerName} does this` : 'A person does this') : 'Automatic'}</Pill>
+            <Pill tone={manual ? 'blue' : 'slate'}>{manual ? (step.ownerName ? `${step.ownerName} ${aiTest ? 'decides if the score is low' : 'does this'}` : 'A person does this') : 'Automatic'}</Pill>
             {bad && <Pill tone="amber">Needs attention</Pill>}
           </div>
           <p className="text-xs text-slate-600 mt-1">{stepSentence(step, flow)}</p>
@@ -141,9 +145,9 @@ const StepCard: React.FC<CardProps> = ({ step, index, flow, people, editing, ope
             <input className={input} value={step.title} maxLength={100} onChange={(e) => set({ title: e.target.value })} />
           </Field>
 
-          {info.manual && (
+          {manual && (
             <div className="grid gap-3 sm:grid-cols-2">
-              <Field label="Who does this step?" hint="They get a task and an email.">
+              <Field label={aiTest ? 'Who decides when the score is too low?' : 'Who does this step?'} hint="They get a task and an email.">
                 <select className={`${input} ${!step.ownerUid ? 'border-amber-400' : ''}`} value={step.ownerUid || ''} onChange={(e) => set({ ownerUid: e.target.value, ownerName: people.find((p) => p.uid === e.target.value)?.name || '' })}>
                   <option value="">Choose a person...</option>
                   {people.map((p) => <option key={p.uid} value={p.uid}>{p.name}{p.title ? ` (${p.title})` : ''}</option>)}
@@ -156,7 +160,8 @@ const StepCard: React.FC<CardProps> = ({ step, index, flow, people, editing, ope
           )}
 
           {step.type !== 'condition' && info.fields.map((fl) => {
-            const v = step.settings?.[fl.key];
+            if (fl.when && eff[fl.when.key] !== fl.when.value) return null;
+            const v = step.type === 'test' && fl.key !== 'instruction' ? eff[fl.key] : step.settings?.[fl.key];
             if (step.type === 'reject' && fl.key !== 'sendEmail' && !step.settings?.sendEmail) return null;
             if (fl.kind === 'bool') return (
               <label key={fl.key} className="flex items-center gap-2 text-sm font-semibold text-slate-700"><input type="checkbox" className="w-4 h-4" checked={!!v} onChange={(e) => setS(fl.key, e.target.checked)} />{fl.label}</label>
@@ -174,6 +179,8 @@ const StepCard: React.FC<CardProps> = ({ step, index, flow, people, editing, ope
               </Field>
             );
           })}
+
+          {aiTest && <SkillTestPanel jobTitles={jobTitles} questions={eff.questions} />}
 
           {step.type === 'condition' && (
             <div className="space-y-3">
@@ -399,7 +406,7 @@ const FlowEditorBody: React.FC<BodyProps> = ({ family, state, reload, onChanged 
           {steps.map((s, i) => (
             <React.Fragment key={s.id}>
               <Line />
-              <StepCard step={s} index={i} flow={flowNow} people={people} editing open={open === s.id} problems={byStep(s.id)}
+              <StepCard step={s} index={i} flow={flowNow} people={people} jobTitles={family.isDefault ? state.designationOptions : family.designations} editing open={open === s.id} problems={byStep(s.id)}
                 onToggle={() => setOpen(open === s.id ? null : s.id)}
                 onChange={(n) => edit((cur) => cur.map((x) => (x.id === s.id ? n : x)))}
                 onMove={(d) => edit((cur) => { const n = [...cur]; const j = i + d; if (j < 0 || j >= n.length) return cur; [n[i], n[j]] = [n[j], n[i]]; return n; })}

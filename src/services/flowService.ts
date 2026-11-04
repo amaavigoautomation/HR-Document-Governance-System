@@ -47,3 +47,19 @@ export const flowService = {
   tasks: (all = false) => get<{ open: FlowTask[]; recent: FlowTask[] }>('flow-my-tasks', all ? { all: '1' } : {}),
   decide: (taskId: string, decision: 'yes' | 'no', note?: string) => post('flow-task-decide', { taskId, decision, note }),
 };
+
+export interface SkillQuestion { id: string; q: string; options: string[]; answer: number; topic?: string }
+export interface SkillTestRow { designation: string; designationKey: string; count: number; source: string; updatedAt: string }
+export interface SkillTest { designation: string; source: string; questions: SkillQuestion[]; updatedAt: string; updatedBy: string }
+
+export const skillTestService = {
+  list: () => get<{ aiOn: boolean; tests: SkillTestRow[] }>('stest-list'),
+  get: (designation: string) => get<{ aiOn: boolean; hasJd: boolean; test: SkillTest | null }>('stest-get', { designation }),
+  generate: (designation: string, count: number) => post<{ test: SkillTest }>('stest-generate', { designation, count }),
+  save: (designation: string, questions: SkillQuestion[]) => post<{ test: SkillTest }>('stest-save', { designation, questions }),
+  remove: (designation: string) => post('stest-delete', { designation }),
+  // candidate (no sign-in, the token is the credential)
+  publicGet: (token: string) => get<any>('stest-public-get', { token }),
+  publicStart: (token: string) => post<any>('stest-public-start', { token }),
+  publicSubmit: (token: string, answers: Record<string, number>) => post<any>('stest-public-submit', { token, answers }),
+};
