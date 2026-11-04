@@ -253,6 +253,8 @@ export async function createApplication(
     updatedAt: now,
   };
   await ref.set(clean(doc));
+  // A company's hiring flow (if it has published one) takes the new applicant from here. Never blocks or fails the application.
+  try { await (await import('./flowApi.js')).flowStartHook(companyId, ref.id); } catch { /* the daily job picks it up */ }
   return { id: ref.id, duplicate: false };
 }
 

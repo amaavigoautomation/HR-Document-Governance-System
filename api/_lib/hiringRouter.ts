@@ -17,6 +17,7 @@
  *   website-sync                                                        home company only: copy website candidates into stored applications
  *   hiring-daily, integrations                                          the one daily cron job, and which outside connections are switched on
  *   hdash                                                               founder hiring dashboard (analyticsApi.ts)
+ *   flow-*                                                              hiring flow builder: custom steps from applicant to onboarding, tasks, stuck applicants (flowApi.ts)
  *   offer-*, hcost-*                                                    salary approval, offer pack, acceptance, hiring costs (offerApi.ts)
  *
  * New hiring features (budgets, posting tracker, screening, interviews ...) are added here as further actions, so they never
@@ -35,6 +36,7 @@ import { routeJoining } from './joiningApi.js';
 import { routeAnalytics } from './analyticsApi.js';
 import { routeAiHiring } from './aiHiringApi.js';
 import { routeScreeningLink, sweepScreeningLinks } from './screeningLinkApi.js';
+import { routeFlow, sweepFlows } from './flowApi.js';
 import { sweepOffers } from './offerApi.js';
 import { sweepProbation, sweepQuarterly } from './talentCycleApi.js';
 import { sendDueReminders } from './interviewApi.js';
@@ -99,7 +101,7 @@ export async function routeHiring(r: HiringRequest): Promise<HiringResult> {
     const auth = String(r.headers?.authorization || r.headers?.Authorization || '');
     if (!secret || auth !== `Bearer ${secret}`) return { status: 401, json: { success: false, error: 'Not allowed.' } };
     const out: Record<string, any> = {};
-    for (const [name, fn] of [['offers', sweepOffers], ['probation', sweepProbation], ['quarterly', sweepQuarterly], ['interviews', () => sendDueReminders()], ['screeningLinks', sweepScreeningLinks], ['websiteCandidates', sweepWebsiteApplications]] as const) {
+    for (const [name, fn] of [['offers', sweepOffers], ['probation', sweepProbation], ['quarterly', sweepQuarterly], ['interviews', () => sendDueReminders()], ['screeningLinks', sweepScreeningLinks], ['websiteCandidates', sweepWebsiteApplications], ['hiringFlows', sweepFlows]] as const) {
       try { out[name] = await (fn as () => Promise<any>)(); } catch (e: any) { out[name] = { error: e?.message || 'failed' }; }
     }
     return { status: 200, json: { success: true, ...out } };
@@ -137,6 +139,8 @@ export async function routeHiring(r: HiringRequest): Promise<HiringResult> {
   // JD library, posting tracker, referrals, candidate fields, resume reading and scoring (pipelineApi.ts), then screening,
   // assessments, interviews and feedback (interviewApi.ts).
   const pipe = { method: r.method, action, query: r.query, body: r.body, headers: r.headers, origin: r.origin };
+  const flow = await routeFlow(pipe);
+  if (flow) return flow;
   const pipeline = (await routePipeline(pipe)) || (await routeInterview(pipe)) || (await routeOffer(pipe)) || (await routeJoining(pipe)) || (await routeAnalytics(pipe)) || (await routeAiHiring(pipe)) || (await routeScreeningLink(pipe));
   if (pipeline) return pipeline;
 

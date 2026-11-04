@@ -13,6 +13,7 @@
  * Approval uses the existing founder permission (req.founder_decide). HR steps use the same permissions as the rest of the hiring pipeline.
  * Everything lives in hiringItems (kind offer / offerTpl / hcost) and carries a companyId.
  */
+import { flowAdvanceHook } from './flowApi.js';
 import { randomBytes } from 'node:crypto';
 import { adminDb } from './firebaseAdmin.js';
 import { authErrorResponse, requireActiveTenant, type AuthContext } from './authContext.js';
@@ -259,6 +260,7 @@ async function offerAct(ctx: AuthContext, b: any, origin?: string): Promise<Resu
       return fail(400, 'Unknown action.');
   }
   if (res.error) return fail(res.status || 400, res.error);
+  await flowAdvanceHook(cid, res.offer!.applicationId);
   return ok({ item: publicView(res.offer!), emailSent, link, probationNote });
 }
 
@@ -282,6 +284,7 @@ async function applyResponse(
     const label = action === 'accept' ? 'accepted' : action === 'decline' ? 'declined' : 'wants to negotiate';
     await mail(res.offer.createdByEmail, '', `${res.offer.candidateName} has ${label} the offer`, `${res.offer.candidateName} (${res.offer.designation}) has ${label} the offer.${note ? `\n\nNote: ${note}` : ''}${expectedCtc !== null ? `\nExpected CTC: ${expectedCtc} LPA` : ''}\n\nOpen the Offers tab in the HR portal to continue.`);
   }
+  await flowAdvanceHook(cid, res.offer.applicationId);
   return res;
 }
 

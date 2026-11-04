@@ -10,6 +10,7 @@
  *   int-send-reminders                          emails the 24-hour and 1-hour reminders that are due (cron or HR)
  *   cand-detail / pipe-board                    one candidate with everything, and the board of all candidates
  */
+import { flowAdvanceHook } from './flowApi.js';
 import { createTeamsMeeting, sendWhatsApp } from './integrations.js';
 import { adminDb } from './firebaseAdmin.js';
 import { authErrorResponse, requireActiveTenant, type AuthContext } from './authContext.js';
@@ -70,6 +71,7 @@ async function screenSave(ctx: AuthContext, b: any): Promise<Result> {
   if (['New Applicant', 'On Hold', 'Shortlisted'].includes(a.status)) patch.status = OUTCOME_STAGE[outcome];
   await db().collection('applications').doc(a.id).update(patch);
   if (comm !== null) await saveRating(ctx, a.id, { communication: comm });
+  await flowAdvanceHook(cid, a.id);
   return ok({ screening: it, stage: patch.status || a.status });
 }
 
@@ -112,6 +114,7 @@ async function assessResult(ctx: AuthContext, b: any): Promise<Result> {
   if (score === null || score < 0 || score > it.maxScore) return fail(400, `Score must be between 0 and ${it.maxScore}.`);
   const next: Item = { ...it, score, status: 'SCORED', result: score >= it.passScore ? 'PASS' : 'FAIL', notes: str(b.notes, 1000), scoredAt: nowIso(), scoredBy: await whoIs(ctx) };
   await putItem(next);
+  await flowAdvanceHook(cid, it.applicationId);
   return ok({ item: next });
 }
 
@@ -300,6 +303,7 @@ async function feedbackSubmit(ctx: AuthContext, b: any): Promise<Result> {
     const a = await getApplication(cid, next.applicationId);
     if (a && a.status === 'Interview Scheduled') await db().collection('applications').doc(a.id).update({ status: 'Interviewed', updatedAt: nowIso() });
   }
+  if (done) await flowAdvanceHook(cid, next.applicationId);
   return ok({ panelComplete: done, view: viewFor(next, ctx) });
 }
 
