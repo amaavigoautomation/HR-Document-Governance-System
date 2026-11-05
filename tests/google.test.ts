@@ -120,6 +120,24 @@ async function main() {
   assert.equal(fb.status, 403);
   assert.equal((await call(HR, 'POST', 'int-schedule', { applicationId: 'a1', startIso: future(60), panel: ['u_i1'], guests: ['not-an-email'] })).status, 400);
 
+  // ---- an interviewer who cannot give feedback is released by HR, so the interview is not stuck
+  const card = { ratings: { 'Technical skills': 4, 'Problem solving': 5, Communication: 4, 'Culture fit': 4, 'Role knowledge': 3 }, recommendation: 'YES', strengths: 'Solid', concerns: '' };
+  assert.equal((await call(tok('u_i1'), 'POST', 'int-panel-skip', { id: iv.id, uid: 'u_i2', reason: 'x' })).status, 403, 'only HR can release someone');
+  assert.equal((await call(HR, 'POST', 'int-panel-skip', { id: iv.id, uid: 'u_i2', reason: '' })).status, 400, 'a reason is required');
+  assert.equal((await call(HR, 'POST', 'int-panel-skip', { id: iv.id, uid: 'nobody', reason: 'x' })).status, 404);
+  assert.deepEqual((await call(HR, 'GET', 'int-list')).json.items.find((i: any) => i.id === iv.id).pending.map((p: any) => p.uid).sort(), ['u_i1', 'u_i2']);
+  assert.equal((await call(tok('u_i1'), 'GET', 'int-list')).json.items[0].pending, undefined, 'interviewers do not see who is pending');
+  assert.equal((await call(tok('u_i1'), 'POST', 'int-feedback-submit', { interviewId: iv.id, scorecard: card })).status, 200);
+  const skip = await call(HR, 'POST', 'int-panel-skip', { id: iv.id, uid: 'u_i2', reason: 'Joined only to observe' });
+  assert.equal(skip.status, 200, JSON.stringify(skip.json));
+  assert.equal(skip.json.panelComplete, true, 'everyone left has submitted, so the interview is complete');
+  assert.equal(skip.json.interview.status, 'COMPLETED');
+  assert.deepEqual(skip.json.interview.panel.map((p: any) => p.uid), ['u_i1']);
+  assert.equal(skip.json.interview.skippedPanel[0].reason, 'Joined only to observe');
+  assert.equal((await call(HR, 'POST', 'int-panel-skip', { id: iv.id, uid: 'u_i1', reason: 'x' })).status, 409, 'someone who already submitted cannot be removed');
+  // the released person can no longer add a scorecard
+  assert.equal((await call(tok('u_i2'), 'POST', 'int-feedback-submit', { interviewId: iv.id, scorecard: card })).status, 403);
+
   // ---- reschedule moves the same event and keeps the link
   calls.length = 0; sent.length = 0;
   const moved = await call(HR, 'POST', 'int-reschedule', { id: iv.id, applicationId: 'a1', startIso: future(72), durationMinutes: 45, mode: 'Video', location: iv.location, round: 'Technical round', panel: ['u_i1', 'u_i2'] });

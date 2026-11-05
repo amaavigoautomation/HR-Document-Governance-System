@@ -64,6 +64,30 @@ export const FeedbackPanel: React.FC<{ interviewId: string; manager: boolean; on
   );
 };
 
+/** HR only: take someone off the feedback list when they cannot give it, so the interview is not stuck waiting for them. */
+const SkipInterviewer: React.FC<{ interview: any; onDone: () => void }> = ({ interview, onDone }) => {
+  const [who, setWho] = useState<string | null>(null);
+  const [why, setWhy] = useState('');
+  const { run, busy, note } = useRunner();
+  return (
+    <div className="mt-2 rounded-lg border border-amber-200 bg-amber-50/60 p-3 text-xs">
+      <p className="font-bold text-slate-700">Waiting for: {(interview.pending as any[]).map((p) => p.name).join(', ')}</p>
+      <p className="text-slate-500">If someone cannot give feedback, you can take them off the list so the interview can finish.</p>
+      <div className="mt-1 flex flex-wrap gap-2">
+        {(interview.pending as any[]).map((p) => <button key={p.uid} className={btnGhost} onClick={() => { setWho(who === p.uid ? null : p.uid); setWhy(''); }}>Skip {p.name}</button>)}
+      </div>
+      {who && (
+        <div className="mt-2 space-y-2">
+          <label className="font-bold text-slate-700" htmlFor={`skip-${interview.id}`}>Why? (kept on record)</label>
+          <input id={`skip-${interview.id}`} className={input} value={why} onChange={(e) => setWhy(e.target.value)} placeholder="For example: joined only to observe" />
+          <button className={btnPrimary} disabled={busy || !why.trim()} onClick={() => run(async () => { await pipelineService.skipInterviewer(interview.id, who, why); setWho(null); setWhy(''); await onDone(); }, 'Taken off the list.')}>Take off the list</button>
+        </div>
+      )}
+      {note && <div className="mt-2"><Notice tone={note.tone}>{note.text}</Notice></div>}
+    </div>
+  );
+};
+
 /** Interviews: HR sees all; an interviewer sees the ones they are on and can open the scorecard. */
 export const InterviewsTab: React.FC = () => {
   const list = useLoad(() => pipelineService.interviews(), []);
@@ -89,6 +113,9 @@ export const InterviewsTab: React.FC = () => {
             {(i.iAmOnPanel || manager) && i.status !== 'CANCELLED' && <button className={btnGhost} onClick={() => setOpen(open === i.id ? null : i.id)}>{open === i.id ? 'Hide' : i.iAmOnPanel && !i.iSubmitted ? 'Give feedback' : 'View feedback'}</button>}
             {manager && i.status === 'SCHEDULED' && <button className={btnGhost} disabled={busy} onClick={() => run(async () => { await pipelineService.cancel(i.id, ''); await list.reload(); }, 'Interview cancelled and everyone notified.')}>Cancel</button>}
           </div>
+          {manager && i.status !== 'CANCELLED' && i.status !== 'COMPLETED' && (i.pending || []).length > 0 && (i.panel as any[]).length > 1 && (
+            <SkipInterviewer interview={i} onDone={list.reload} />
+          )}
           {open === i.id && <div className="mt-3"><FeedbackPanel interviewId={i.id} manager={manager} onChanged={list.reload} /></div>}
         </Card>
       ))}

@@ -44,6 +44,7 @@ export const pipelineService = {
   schedule: (b: unknown) => post('int-schedule', b),
   reschedule: (b: unknown) => post('int-reschedule', b),
   cancel: (id: string, reason: string) => post('int-cancel', { id, reason }),
+  skipInterviewer: (id: string, uid: string, reason: string) => post('int-panel-skip', { id, uid, reason }),
   feedback: (interviewId: string) => get('int-feedback-get', { interviewId }),
   submitFeedback: (interviewId: string, scorecard: unknown) => post('int-feedback-submit', { interviewId, scorecard }),
   aiSummary: (id: string) => post('int-ai-summary', { id }),

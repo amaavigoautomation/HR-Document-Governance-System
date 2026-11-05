@@ -5,6 +5,7 @@
  *   assess-list / assess-assign / assess-result tests and assignments with a pass mark
  *   int-schedule / int-reschedule / int-cancel  interviews with a Google Meet link (when the company connected Google), extra guests, and a calendar invite (.ics) emailed to the candidate, panel and guests
  *   int-list                                    HR sees every interview; an interviewer sees the ones they are on
+ *   int-panel-skip                              HR releases an interviewer who cannot give feedback, so the interview is not stuck (reason kept)
  *   int-feedback-get / int-feedback-submit      blind scorecards (see shared/interviewEngine.ts)
  *   int-ai-summary                              summary of the panel's feedback, once everyone has submitted
  *   int-send-reminders                          emails the 24-hour and 1-hour reminders that are due (cron or HR)
@@ -301,6 +302,7 @@ async function intList(ctx: AuthContext, q: any): Promise<Result> {
   const out = items.sort((a, b) => String(a.startIso).localeCompare(String(b.startIso))).map(({ scorecards, ...rest }) => ({
     ...rest, submittedCount: (scorecards || []).length, iSubmitted: (scorecards || []).some((s: Scorecard) => s.interviewerId === ctx.uid),
     iAmOnPanel: (rest.panel as PanelMember[]).some((p) => p.uid === ctx.uid),
+    ...(mgr ? { pending: (rest.panel as PanelMember[]).filter((p) => !(scorecards || []).some((s: Scorecard) => s.interviewerId === p.uid)).map((p) => ({ uid: p.uid, name: p.name })) } : {}),
   }));
   return ok({ items: out, manager: mgr });
 }
@@ -348,12 +350,53 @@ async function feedbackSubmit(ctx: AuthContext, b: any): Promise<Result> {
   });
   if ('error' in outcome && outcome.error) return outcome.error;
   const { next, done } = outcome as { next: Item; done: boolean };
-  if (done) {
-    const a = await getApplication(cid, next.applicationId);
-    if (a && a.status === 'Interview Scheduled') await db().collection('applications').doc(a.id).update({ status: 'Interviewed', updatedAt: nowIso() });
-  }
-  if (done) await flowAdvanceHook(cid, next.applicationId);
+  if (done) await afterPanelComplete(cid, next);
   return ok({ panelComplete: done, view: viewFor(next, ctx) });
+}
+
+/** Everything that follows once the whole panel has given feedback (or HR released the people who could not). */
+async function afterPanelComplete(cid: string, it: Item): Promise<void> {
+  const a = await getApplication(cid, it.applicationId);
+  if (a && a.status === 'Interview Scheduled') await db().collection('applications').doc(a.id).update({ status: 'Interviewed', updatedAt: nowIso() });
+  await flowAdvanceHook(cid, it.applicationId);
+}
+
+/**
+ * HR releases one interviewer who cannot give feedback (left the company, was only there to listen, never got access...), so the
+ * interview does not wait for them forever. A written reason is required and kept. Their scorecard can no longer be added.
+ */
+async function intPanelSkip(ctx: AuthContext, b: any): Promise<Result> {
+  const cid = ctx.companyId!;
+  const id = str(b.id, 100);
+  const uid = str(b.uid, 128);
+  const reason = str(b.reason, 300);
+  if (!reason) return fail(400, 'Write why this person is being taken off the feedback list. It is kept on record.');
+  const who = await whoIs(ctx);
+  const ref = db().collection('hiringItems').doc(id);
+  const outcome = await db().runTransaction(async (tx: any) => {
+    const snap = await tx.get(ref);
+    const cur = snap.exists ? (snap.data() as Item) : null;
+    if (!cur || cur.companyId !== cid || cur.kind !== 'interview') return { error: fail(404, 'Interview not found.') };
+    if (cur.status === 'CANCELLED') return { error: fail(409, 'This interview was cancelled.') };
+    const panel = cur.panel as PanelMember[];
+    const member = panel.find((p) => p.uid === uid);
+    if (!member) return { error: fail(404, 'That person is not on this interview panel.') };
+    if ((cur.scorecards || []).some((s: Scorecard) => s.interviewerId === uid)) return { error: fail(409, 'This person has already submitted their scorecard.') };
+    const rest = panel.filter((p) => p.uid !== uid);
+    if (!rest.length) return { error: fail(400, 'At least one interviewer must stay on the panel. Cancel or reschedule the interview instead.') };
+    const cards = cur.scorecards || [];
+    const done = cur.status !== 'COMPLETED' && rest.every((p) => cards.some((c: Scorecard) => c.interviewerId === p.uid));
+    const next = {
+      ...cur, panel: rest, status: done ? 'COMPLETED' : cur.status, updatedAt: nowIso(),
+      skippedPanel: [...(cur.skippedPanel || []), { uid, name: member.name, reason, by: who, at: nowIso() }],
+    };
+    tx.set(ref, JSON.parse(JSON.stringify(next)));
+    return { next, done };
+  });
+  if ('error' in outcome && outcome.error) return outcome.error;
+  const { next, done } = outcome as { next: Item; done: boolean };
+  if (done) await afterPanelComplete(cid, next);
+  return ok({ panelComplete: done, interview: next });
 }
 
 // ------------------------------------------------------------------ AI summary
@@ -489,7 +532,7 @@ async function pipeBoard(cid: string, q: any): Promise<Result> {
 const ACTIONS: Record<string, { method: 'GET' | 'POST'; who: 'manage' | 'tenant' }> = {
   'screen-get': { method: 'GET', who: 'manage' }, 'screen-save': { method: 'POST', who: 'manage' },
   'assess-list': { method: 'GET', who: 'manage' }, 'assess-assign': { method: 'POST', who: 'manage' }, 'assess-result': { method: 'POST', who: 'manage' },
-  'int-schedule': { method: 'POST', who: 'manage' }, 'int-reschedule': { method: 'POST', who: 'manage' }, 'int-cancel': { method: 'POST', who: 'manage' },
+  'int-schedule': { method: 'POST', who: 'manage' }, 'int-reschedule': { method: 'POST', who: 'manage' }, 'int-cancel': { method: 'POST', who: 'manage' }, 'int-panel-skip': { method: 'POST', who: 'manage' },
   'int-list': { method: 'GET', who: 'tenant' }, 'int-feedback-get': { method: 'GET', who: 'tenant' }, 'int-feedback-submit': { method: 'POST', who: 'tenant' },
   'int-ai-summary': { method: 'POST', who: 'manage' }, 'int-send-reminders': { method: 'POST', who: 'tenant' },
   'cand-detail': { method: 'GET', who: 'manage' }, 'pipe-board': { method: 'GET', who: 'manage' },
@@ -521,6 +564,7 @@ export async function routeInterview(r: PipeRequest): Promise<Result | null> {
         return await intSchedule(ctx, b, it);
       }
       case 'int-cancel': return await intCancel(ctx, b);
+      case 'int-panel-skip': return await intPanelSkip(ctx, b);
       case 'int-list': return await intList(ctx, r.query);
       case 'int-feedback-get': return await feedbackGet(ctx, r.query);
       case 'int-feedback-submit': return await feedbackSubmit(ctx, b);
