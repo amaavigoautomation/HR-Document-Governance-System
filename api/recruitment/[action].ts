@@ -21,6 +21,7 @@ export default async function handler(req: any, res: any) {
       headers: req.headers,
       origin,
     });
+    if (json && typeof json === 'object' && json.__redirect) return res.redirect(302, String(json.__redirect));
     return res.status(status).json(json);
   } catch (err: any) {
     console.error('[Vercel Serverless API] Error in /api/recruitment:', err);

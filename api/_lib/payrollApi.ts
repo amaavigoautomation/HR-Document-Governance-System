@@ -194,6 +194,27 @@ function buildStructure(cid: string, uid: string, b: any, s: PayrollSettings, pr
   return doc;
 }
 
+/**
+ * Gives a new joiner a salary structure from the approved offer CTC (lakhs per year), unless they already have one.
+ * Used by the automatic joining step. Never throws; the note says what happened.
+ */
+export async function createStructureFromOffer(cid: string, uid: string, ctcLpa: number, by: string): Promise<{ done: boolean; note: string }> {
+  try {
+    const { settings, configured } = await loadPayrollSettings(cid);
+    if (!configured) return { done: false, note: 'Payroll is not set up yet, so no salary structure was created. Add it in Payroll > Salary structures.' };
+    const ref = db().collection('payrollStructures').doc(structureId(cid, uid));
+    if ((await ref.get()).exists) return { done: true, note: 'Salary structure already existed.' };
+    const annual = Math.round(Number(ctcLpa) * 100000);
+    if (!Number.isFinite(annual) || annual <= 0) return { done: false, note: 'The offer has no CTC, so no salary structure was created.' };
+    const split = splitCtc(annual, settings.ctcTemplate, settings.components);
+    if (split.warnings.length) return { done: false, note: `Salary structure not created: ${split.warnings[0]} Set it up in Payroll > Salary structures.` };
+    await ref.set(buildStructure(cid, uid, { amounts: split.amounts, annualCtc: annual }, settings, undefined, by));
+    return { done: true, note: `Salary structure created from the offer (${ctcLpa} LPA). Bank and PAN details are still to be added.` };
+  } catch (e: any) {
+    return { done: false, note: `Salary structure not created: ${e?.message || 'unknown problem'}.` };
+  }
+}
+
 async function structures(who: Who): Promise<Result> {
   needView(who);
   const [{ settings }, people, map] = await Promise.all([loadPayrollSettings(who.cid), loadPeople(who.cid), loadStructures(who.cid)]);

@@ -1,14 +1,20 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
-  AlertCircle, Building2, CheckCircle2, Copy, Loader2, Mail, Pencil, Plus, ShieldCheck, Trash2, Upload, UserPlus, Users, X,
+  AlertCircle, Building2, CalendarDays, CheckCircle2, Copy, Loader2, Mail, Pencil, Plus, ShieldCheck, Trash2, Upload, UserPlus, Users, X,
 } from 'lucide-react';
 import type { Company, Department, User } from '../types';
 import { adminApi, parseCsv, subscribeToDepartments, subscribeToRoles } from '../services/adminService';
+import { pipelineService } from '../services/pipelineService';
 import { firestoreService } from '../services/firestoreService';
 import { PERMISSIONS, hasPerm, type RoleDef } from '../../shared/permissions';
 import { ToastProvider, useToast } from './leave/ui';
 
-type Tab = 'users' | 'departments' | 'roles';
+type Tab = 'users' | 'departments' | 'roles' | 'integrations';
+
+/** Set by App.tsx when Google sends the browser back to /?google=... after the connect screen. */
+const readGoogleFlash = (): { result: string; reason: string } | null => {
+  try { const v = sessionStorage.getItem('googleFlash'); return v ? JSON.parse(v) : null; } catch { return null; }
+};
 
 const input =
   'w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 focus:border-[#FA7014] focus:outline-none focus:ring-2 focus:ring-[#FA7014]/20';
@@ -63,16 +69,18 @@ export const AdminModule: React.FC<Props> = ({ currentUser, company }) => {
   const canUsers = hasPerm(perms, 'users.manage');
   const canDepts = hasPerm(perms, 'departments.manage');
   const canRoles = hasPerm(perms, 'roles.manage');
+  const canIntegrations = !!currentUser.isCompanyAdmin;
 
   const tabs = useMemo(
     () => [
       canUsers && { key: 'users' as Tab, label: 'People', icon: <Users className="h-3.5 w-3.5" /> },
       canDepts && { key: 'departments' as Tab, label: 'Departments', icon: <Building2 className="h-3.5 w-3.5" /> },
       canRoles && { key: 'roles' as Tab, label: 'Roles & permissions', icon: <ShieldCheck className="h-3.5 w-3.5" /> },
+      canIntegrations && { key: 'integrations' as Tab, label: 'Integrations', icon: <CalendarDays className="h-3.5 w-3.5" /> },
     ].filter(Boolean) as { key: Tab; label: string; icon: React.ReactNode }[],
-    [canUsers, canDepts, canRoles]
+    [canUsers, canDepts, canRoles, canIntegrations]
   );
-  const [tab, setTab] = useState<Tab>(tabs[0]?.key || 'users');
+  const [tab, setTab] = useState<Tab>(() => (readGoogleFlash() && canIntegrations ? 'integrations' : tabs[0]?.key || 'users'));
 
   const [users, setUsers] = useState<User[]>([]);
   const [departments, setDepartments] = useState<Department[]>([]);
@@ -116,8 +124,78 @@ export const AdminModule: React.FC<Props> = ({ currentUser, company }) => {
       {tab === 'users' && canUsers && <PeopleTab users={users} departments={departments} roles={roles} currentUser={currentUser} />}
       {tab === 'departments' && canDepts && <DepartmentsTab users={users} departments={departments} />}
       {tab === 'roles' && canRoles && <RolesTab roles={roles} users={users} company={company} currentUser={currentUser} />}
+      {tab === 'integrations' && canIntegrations && <IntegrationsTab />}
     </div>
     </ToastProvider>
+  );
+};
+
+// ----------------------------------------------------------------------------- Integrations
+
+const GOOGLE_REASONS: Record<string, string> = {
+  access_denied: 'Google sign-in was cancelled.',
+  expired: 'The sign-in took too long. Please press Connect again.',
+  scope: 'The calendar permission was not granted. When Google asks, tick the box that lets this app manage calendar events.',
+  norefresh: 'Google did not give a lasting connection. Press Connect again and accept every permission.',
+  notready: 'Google is not set up on this deployment yet. The platform owner must add the Google settings first.',
+  company: 'Your company is not active.',
+};
+
+const IntegrationsTab: React.FC = () => {
+  const [st, setSt] = useState<{ platformReady: boolean; connected: boolean; needsReconnect: boolean; email: string; connectedAt: string } | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [flash, setFlash] = useState<{ kind: 'error' | 'success'; text: string } | null>(null);
+  const load = async () => { try { setSt(await pipelineService.googleStatus()); } catch (e) { setFlash({ kind: 'error', text: message(e) }); } };
+  useEffect(() => {
+    const f = readGoogleFlash();
+    if (f) {
+      try { sessionStorage.removeItem('googleFlash'); } catch { /* nothing to clear */ }
+      setFlash(f.result === 'connected' ? { kind: 'success', text: 'Google Calendar is connected. Video interviews now get a Google Meet link automatically.' } : { kind: 'error', text: GOOGLE_REASONS[f.reason] || 'Google Calendar could not be connected. Please try again.' });
+    }
+    load();
+  }, []);
+  const connect = async () => {
+    setBusy(true); setFlash(null);
+    try { const r = await pipelineService.googleConnect(); window.location.href = r.url; } catch (e) { setFlash({ kind: 'error', text: message(e) }); setBusy(false); }
+  };
+  const disconnect = async () => {
+    if (!window.confirm('Disconnect Google Calendar? New interviews will go back to pasted meeting links. Existing events stay in Google.')) return;
+    setBusy(true); setFlash(null);
+    try { await pipelineService.googleDisconnect(); await load(); setFlash({ kind: 'success', text: 'Google Calendar is disconnected.' }); } catch (e) { setFlash({ kind: 'error', text: message(e) }); } finally { setBusy(false); }
+  };
+  return (
+    <div className="space-y-3">
+      {flash && <Banner kind={flash.kind}>{flash.text}</Banner>}
+      <div className="rounded-2xl border border-slate-200 bg-white p-4">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div className="min-w-0">
+            <div className="text-sm font-black text-slate-900">Google Calendar and Google Meet</div>
+            <p className="mt-1 max-w-xl text-xs text-slate-500">
+              Connect the Google account that should own your interviews (for example hr@yourcompany.com). When HR schedules a video interview, a calendar event with a
+              Google Meet link is created on that account, and the candidate, interviewers and guests get the schedule email. Without it, HR pastes a meeting link as before.
+            </p>
+            {st && (
+              <p className="mt-2 text-xs font-semibold">
+                {st.connected ? <span className="text-emerald-700">Connected as {st.email || 'a Google account'}</span>
+                  : st.needsReconnect ? <span className="text-amber-700">The connection stopped working. Connect again.</span>
+                  : !st.platformReady ? <span className="text-slate-500">Not available yet: the platform owner has not set up Google for this deployment.</span>
+                  : <span className="text-slate-500">Not connected</span>}
+              </p>
+            )}
+          </div>
+          <div className="flex gap-2">
+            {st?.connected ? (
+              <button className={ghostBtn} disabled={busy} onClick={disconnect}>Disconnect</button>
+            ) : (
+              <button className={primaryBtn} disabled={busy || !st?.platformReady} onClick={connect}>
+                {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <CalendarDays className="h-3.5 w-3.5" />} {st?.needsReconnect ? 'Connect again' : 'Connect Google Calendar'}
+              </button>
+            )}
+          </div>
+        </div>
+        <p className="mt-3 text-[11px] text-slate-400">We ask Google only for permission to create and change calendar events. The connection can be removed here at any time, or from your Google account's security page.</p>
+      </div>
+    </div>
   );
 };
 

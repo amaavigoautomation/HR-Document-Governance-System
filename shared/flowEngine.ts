@@ -61,7 +61,7 @@ export interface FlowDoc {
 export interface SettingField {
   key: string;
   label: string;
-  kind: 'text' | 'longtext' | 'number' | 'select' | 'bool';
+  kind: 'text' | 'longtext' | 'number' | 'select' | 'bool' | 'person';
   options?: { value: string; label: string }[];
   hint?: string;
   required?: boolean;
@@ -155,8 +155,14 @@ export const STEP_INFO: Record<StepType, StepInfo> = {
   },
   offer: {
     type: 'offer', label: 'Offer', does: 'HR prepares the offer, the founder approves the salary, the offer is sent and the candidate answers. The step finishes when the candidate accepts.', icon: '💼', manual: true, canFail: true, group: 'Finish',
-    fields: [],
-    defaults: { ...TITLE('Make the offer'), settings: {}, deadlineDays: 7 },
+    fields: [
+      { key: 'mode', label: 'Who makes the offer?', kind: 'select', options: [{ value: 'auto', label: 'The app (drafts it from the job\'s salary band, asks the approver, sends it when approved)' }, { value: 'manual', label: 'HR does it by hand' }] },
+      { key: 'approverUid', label: 'Who approves the offer?', kind: 'person', required: true, hint: 'Usually the founder. They get an email and approve in one click. The responsible person above steps in only if the app cannot draft the offer.', when: { key: 'mode', value: 'auto' } },
+      { key: 'joiningInDays', label: 'Joining date: days after the offer is made', kind: 'number', min: 1, max: 180, when: { key: 'mode', value: 'auto' } },
+      { key: 'probationMonths', label: 'Probation (months, 0 for none)', kind: 'number', min: 0, max: 12, when: { key: 'mode', value: 'auto' } },
+      { key: 'validDays', label: 'Days the candidate has to answer', kind: 'number', min: 1, max: 30, when: { key: 'mode', value: 'auto' } },
+    ],
+    defaults: { ...TITLE('Make the offer'), settings: { mode: 'manual', approverUid: '', approverUidName: '', joiningInDays: 30, probationMonths: 3, validDays: 7 }, deadlineDays: 7 },
   },
   wait: {
     type: 'wait', label: 'Wait', does: 'Pause for a number of days, then carry on by itself.', icon: '⏳', manual: false, canFail: false, group: 'Talk to the candidate',
@@ -173,8 +179,12 @@ export const STEP_INFO: Record<StepType, StepInfo> = {
   },
   onboard: {
     type: 'onboard', label: 'Start joining and onboarding', does: 'The joining checklist, IT setup and welcome kit start. The applicant is marked as hired.', icon: '🎉', manual: true, canFail: false, group: 'Finish',
-    fields: [],
-    defaults: { ...TITLE('Joining and onboarding'), settings: {}, deadlineDays: 3 },
+    fields: [
+      { key: 'mode', label: 'Who sets the joiner up?', kind: 'select', options: [{ value: 'auto', label: 'The app (payroll, leave, probation reviews and tasks for IT and assets)' }, { value: 'manual', label: 'HR does it by hand' }] },
+      { key: 'itOwnerUid', label: 'Who sets up email, Microsoft 365 and attendance?', kind: 'person', hint: 'Optional. They get a task when the offer is accepted.', when: { key: 'mode', value: 'auto' } },
+      { key: 'assetOwnerUid', label: 'Who arranges the laptop and other assets?', kind: 'person', hint: 'Optional. They get a task when the offer is accepted.', when: { key: 'mode', value: 'auto' } },
+    ],
+    defaults: { ...TITLE('Joining and onboarding'), settings: { mode: 'manual', itOwnerUid: '', itOwnerUidName: '', assetOwnerUid: '', assetOwnerUidName: '' }, deadlineDays: 3 },
   },
   reject: {
     type: 'reject', label: 'Reject the candidate', does: 'The application is marked Rejected. You choose whether the candidate also gets an email.', icon: '🚫', manual: false, canFail: false, group: 'Finish',
@@ -198,6 +208,9 @@ export const newStepId = (steps: FlowStep[]): string => {
   while (used.has(`s${n}`)) n++;
   return `s${n}`;
 };
+
+/** What the builder uses when a person adds a step: the finishing steps start in "the app does it" mode. */
+export const BUILDER_START: Partial<Record<StepType, Record<string, any>>> = { offer: { mode: 'auto' }, onboard: { mode: 'auto' } };
 
 export function makeStep(type: StepType, steps: FlowStep[], over: Partial<FlowStep> = {}): FlowStep {
   const info = STEP_INFO[type];
@@ -396,6 +409,9 @@ export function testSettings(s: Pick<FlowStep, 'settings'>): TestSettings {
 }
 export const isAiTest = (s: Pick<FlowStep, 'type' | 'settings'>) => s.type === 'test' && testSettings(s).mode === 'ai';
 /** A person has to act on this step. An app-given test needs a person only when a low score is handed to them. */
+/** The app does the work and a person is only called in when it cannot. */
+export const isAutoMode = (s: Pick<FlowStep, 'type' | 'settings'>): boolean => (s.type === 'offer' || s.type === 'onboard') && s.settings?.mode === 'auto';
+
 export function isManualStep(s: Pick<FlowStep, 'type' | 'settings'>): boolean {
   const info = STEP_INFO[s.type];
   if (!info?.manual) return false;
@@ -422,10 +438,14 @@ export function stepSentence(s: FlowStep, flow: Pick<FlowDoc, 'steps'>): string 
       const t = (x?: string) => (!x || x === 'next' ? 'carries on to the next step' : x === 'reject' ? 'is rejected' : x === 'hold' ? 'waits for HR' : `skips to step ${stepNumber(flow, x)}`);
       return `If ${conditionSentence(s.settings)}: yes, the applicant ${t(s.ifYes)}; no, the applicant ${t(s.ifNo)}.`;
     }
-    case 'offer': return `${who} makes the offer. The step is done when the candidate accepts. ${fail()}`;
+    case 'offer': return s.settings?.mode === 'auto'
+      ? `The app drafts the offer, ${s.settings.approverUidName || 'the approver'} approves it and it is sent automatically. ${who} steps in only if it gets stuck. The step is done when the candidate accepts. ${fail()}`
+      : `${who} makes the offer. The step is done when the candidate accepts. ${fail()}`;
     case 'wait': return `Wait ${s.settings?.days ?? '?'} day(s), then carry on.`;
     case 'email': return `Email the candidate: "${s.settings?.subject || '...'}".`;
-    case 'onboard': return `${who} starts the joining checklist. The applicant is marked as hired.`;
+    case 'onboard': return s.settings?.mode === 'auto'
+      ? `The app sets up the joiner (payroll, leave, probation reviews), gives IT and asset tasks to their owners and starts the checklist. The applicant is marked as hired.`
+      : `${who} starts the joining checklist. The applicant is marked as hired.`;
     case 'reject': return s.settings?.sendEmail ? 'Mark the applicant Rejected and send them an email.' : 'Mark the applicant Rejected (no email is sent).';
     default: return '';
   }
@@ -486,8 +506,8 @@ export function standardSteps(hrUid = '', hrName = ''): FlowStep[] {
   add('ai_score');
   add('screen', owner);
   add('interview', { ...owner, settings: { round: 'Interview', minAverage: 3 } });
-  add('offer', owner);
-  add('onboard', owner);
+  add('offer', { ...owner, settings: {} });
+  add('onboard', { ...owner, settings: {} });
   return out;
 }
 

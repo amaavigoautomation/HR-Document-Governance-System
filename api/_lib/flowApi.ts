@@ -18,6 +18,7 @@
  *   flow-run-action       HR fixes a stuck applicant: retry, skip step, reject, stop
  *   flow-my-tasks         tasks for the signed-in person
  *   flow-task-decide      answer a Yes/No task
+ *   flow-task-done        mark a joining task (IT setup, asset request) as done
  *
  * Records live in hiringItems: kind flow, flowRun (one per applicant, id flowrun_<applicationId>), flowTask.
  * Every move is written once and re-checked inside a transaction, so running the engine twice never does a step twice.
@@ -29,7 +30,7 @@ import { MANAGE_PERMS, getItem, listItems, putItem, scoreFor, whoIs, type Item }
 import { dispatchLiveEmail } from './serverEmail.js';
 import { summarise, type Scorecard } from '../../shared/interviewEngine.js';
 import {
-  STEP_INFO, evalCondition, interviewRound, isAiTest, isManualStep, makeStep, nextTarget, renderText, standardSteps, stepInfo, validateFlow,
+  STEP_INFO, evalCondition, interviewRound, isAiTest, isAutoMode, isManualStep, makeStep, nextTarget, renderText, standardSteps, stepInfo, validateFlow,
   type Facts, type FlowDoc, type FlowStep, type Result as StepResult,
 } from '../../shared/flowEngine.js';
 
@@ -110,15 +111,62 @@ async function families(cid: string): Promise<FamilyRec[]> {
   return list.sort((a, b) => (a.isDefault ? -1 : 0) - (b.isDefault ? -1 : 0) || a.name.localeCompare(b.name));
 }
 
-/** The flow an applicant for this designation follows: the flow that names the designation, otherwise the Default flow. */
-function pickFlow(fams: FamilyRec[], all: FlowDoc[], designation: string): { flow: FlowDoc; name: string } | null {
+/**
+ * The flow an applicant follows. Order: the flow attached to the job they applied for, then the flow that names their
+ * designation, then the Default flow. A job's flow only counts while it has a published version.
+ */
+function pickFlow(fams: FamilyRec[], all: FlowDoc[], designation: string, jobFamilyId = ''): { flow: FlowDoc; name: string } | null {
   const key = designationKey(designation || '');
   const live = (id: string) => all.find((f) => f.status === 'ACTIVE' && !f.adjusted && fam(f) === id) || null;
+  if (jobFamilyId) {
+    const jf = fams.find((f) => f.familyId === jobFamilyId);
+    const jl = jf ? live(jf.familyId) : null;
+    if (jf && jl) return { flow: jl, name: jf.name };
+  }
   const own = fams.find((f) => !f.isDefault && f.designations.some((d) => designationKey(d) === key));
   const ownLive = own ? live(own.familyId) : null;
   if (own && ownLive) return { flow: ownLive, name: own.name };
   const dflt = live(DEFAULT_FAMILY);
   return dflt ? { flow: dflt, name: fams.find((f) => f.isDefault)?.name || 'Default flow' } : null;
+}
+
+/**
+ * Which flow each job uses. HR picks it when publishing (requisition.flowFamilyId). An application is matched to its job by
+ * the job id it carries; website applications often carry none, so they fall back to the newest open job with the same title.
+ * Remembered for 2 minutes per company so enrolling many applicants reads requisitions once.
+ */
+export interface JobFlows { familyFor(a: { requisitionId?: string; designation?: string }): string }
+const jobFlowCache = new Map<string, { at: number; value: JobFlows }>();
+export const __clearJobFlowCache = () => jobFlowCache.clear();
+export function buildJobFlows(reqs: { id?: string; jobId?: string; reqNo?: string; positionTitle?: string; status?: string; flowFamilyId?: string; publishedAt?: string }[]): JobFlows {
+  const byId = new Map<string, string>();
+  const byTitle = new Map<string, { fam: string; at: string }>();
+  for (const r of reqs) {
+    const f = typeof r.flowFamilyId === 'string' ? r.flowFamilyId.trim() : '';
+    if (!f) continue;
+    for (const k of [r.id, r.jobId, r.reqNo]) if (k) byId.set(String(k).trim().toLowerCase(), f);
+    if (r.status === 'JOB_OPEN' && r.positionTitle) {
+      const tk = designationKey(r.positionTitle);
+      const at = String(r.publishedAt || '');
+      const have = byTitle.get(tk);
+      if (!have || at > have.at) byTitle.set(tk, { fam: f, at });
+    }
+  }
+  return {
+    familyFor: (a) => {
+      const id = String(a.requisitionId || '').trim().toLowerCase();
+      if (id && byId.has(id)) return byId.get(id)!;
+      return byTitle.get(designationKey(a.designation || ''))?.fam || '';
+    },
+  };
+}
+async function jobFlows(cid: string): Promise<JobFlows> {
+  const hit = jobFlowCache.get(cid);
+  if (hit && Date.now() - hit.at < 2 * 60_000) return hit.value;
+  const snap = await db().collection('requisitions').where('companyId', '==', cid).get();
+  const value = buildJobFlows(snap.docs.map((d: any) => ({ id: d.id, ...(d.data() as any) })));
+  jobFlowCache.set(cid, { at: Date.now(), value });
+  return value;
 }
 
 /** One applicant's items of a kind. Asking Firestore for just that applicant keeps reads low: scanning the whole company's items for every applicant used up the daily quota. */
@@ -157,6 +205,12 @@ function cleanSteps(raw: unknown, staff: { uid: string; name: string }[]): FlowS
     for (const k of keys) {
       const f = info.fields.find((x) => x.key === k);
       const v = src[k];
+      if (f?.kind === 'person') {
+        const uid = str(v, 128);
+        settings[k] = uid;
+        settings[`${k}Name`] = uid ? (nameOf(uid) || str(src[`${k}Name`], 100)) : '';
+        continue;
+      }
       settings[k] = f?.kind === 'bool' ? !!v : f?.kind === 'number' || k === 'value' ? (v === '' || v === null || v === undefined ? '' : Number.isFinite(Number(v)) && String(v).trim() !== '' && type !== 'condition' ? Number(v) : v) : str(v, f?.kind === 'longtext' ? 4000 : 300);
     }
     if (type === 'condition') {
@@ -409,7 +463,7 @@ async function enroll(cid: string, a: ApplicationDoc, flow: FlowDoc, flowName = 
 const OFFER_BAD = ['DECLINED', 'GHOSTED', 'EXPIRED', 'REJECTED', 'WITHDRAWN'];
 const OFFER_GOOD = ['ACCEPTED', 'JOINED'];
 
-type Seen = { kind: 'wait'; why: string; ask?: string } | { kind: 'move'; result: StepResult; note: string } | { kind: 'stuck'; reason: string };
+type Seen = { kind: 'wait'; why: string; ask?: string; help?: string } | { kind: 'move'; result: StepResult; note: string } | { kind: 'stuck'; reason: string };
 
 async function gatherFacts(cid: string, a: ApplicationDoc, run: RunDoc): Promise<Facts> {
   const facts: Facts = { expectedCtcLpa: a.expectedCtcLpa ?? null };
@@ -481,13 +535,30 @@ async function observe(cid: string, run: RunDoc, flow: FlowDoc, step: FlowStep, 
     }
     case 'offer': {
       const o = latestOffer(await listFor(cid, 'offer', a.id), a.id);
-      if (!o) return { kind: 'wait', why: 'Waiting for HR to make the offer.' };
+      const auto = isAutoMode(step);
+      if (!o) {
+        if (!auto) return { kind: 'wait', why: 'Waiting for HR to make the offer.' };
+        const r = await (await import('./offerApi.js')).flowOfferAuto(cid, a.id, step.settings);
+        return { kind: 'wait', why: r.made ? 'The offer was drafted and is waiting for the approver.' : 'The app could not draft the offer.', ...(r.help ? { help: r.help } : {}) };
+      }
+      if (auto && o.status === 'APPROVED' && o.autoSendError) return { kind: 'wait', why: 'The offer is approved but could not be sent automatically.', help: `The offer is approved but was not sent: ${o.autoSendError}` };
       if (OFFER_GOOD.includes(o.status)) return { kind: 'move', result: 'done', note: 'Candidate accepted the offer.' };
       if (OFFER_BAD.includes(o.status)) return { kind: 'move', result: 'fail', note: `Offer ended: ${String(o.status).toLowerCase()}.` };
       return { kind: 'wait', why: 'Waiting for the offer to be approved, sent and answered.' };
     }
     case 'onboard': {
       const o = latestOffer(await listFor(cid, 'offer', a.id), a.id);
+      if (o && isAutoMode(step) && o.onboardingId && o.status !== 'JOINED') {
+        const auto = await import('./joinerAuto.js');
+        const notes = await auto.runJoinerSetup(cid, o.id, step.settings, step.ownerUid || '', process.env.APP_BASE_URL || undefined);
+        notes.forEach((n) => log(run, step.id, n, 'Automation'));
+        if (notes.length) return { kind: 'wait', why: 'The joiner was set up. Waiting for the joining checklist to finish or for the first day at work.' };
+        const fresh = latestOffer(await listFor(cid, 'offer', a.id), a.id) || o;
+        const j = await auto.joinerHasJoined(cid, fresh);
+        if (!j.joined) return { kind: 'wait', why: 'Waiting for the joining checklist to finish or for the first day at work.' };
+        await (await import('./offerApi.js')).markOfferJoined(cid, o.id, String(fresh.joiningDate || today()));
+        return { kind: 'move', result: 'done', note: `Joined. ${j.why}` };
+      }
       if (o && (o.onboardingId || o.status === 'JOINED')) return { kind: 'move', result: 'done', note: 'Joining has started.' };
       return { kind: 'wait', why: 'Waiting for joining to start.' };
     }
@@ -576,10 +647,11 @@ async function createOnce(it: Item): Promise<boolean> {
   return created;
 }
 
-async function ensureTask(cid: string, run: RunDoc, flow: FlowDoc, step: FlowStep, staff: Awaited<ReturnType<typeof people>>, ask?: string): Promise<string | null> {
+async function ensureTask(cid: string, run: RunDoc, flow: FlowDoc, step: FlowStep, staff: Awaited<ReturnType<typeof people>>, ask?: string, help?: string): Promise<string | null> {
   const info = STEP_INFO[step.type];
   if (!isManualStep(step)) return null;
   if (isAiTest(step) && !ask) return null;   // an app-given test only needs a person once a low score is handed to them
+  if (isAutoMode(step) && !help) return null; // the app does this step; a person is called in only when it gets stuck
   const id = taskId(run.id, step.id);
   if (await getItem(cid, id, 'flowTask')) return null;
   const owner = staff.find((p) => p.uid === step.ownerUid);
@@ -589,7 +661,7 @@ async function ensureTask(cid: string, run: RunDoc, flow: FlowDoc, step: FlowSte
   const created = await createOnce({
     id, companyId: cid, kind: 'flowTask', runId: run.id, applicationId: run.applicationId, candidateName: run.candidateName, designation: run.designation,
     stepId: step.id, stepType: step.type, stepTitle: step.title, ownerUid: owner.uid, ownerName: owner.name,
-    instruction: ask ? 'The candidate took the skills test and scored below the pass mark.' : String(step.settings.instruction || TASK_WORDS[step.type] || ''), question: decide ? (ask || String(step.settings.question || '')) : '',
+    instruction: ask ? 'The candidate took the skills test and scored below the pass mark.' : help || String(step.settings.instruction || TASK_WORDS[step.type] || ''), question: decide ? (ask || String(step.settings.question || '')) : '',
     decide, link: decide ? '' : LINK[step.type] || '', dueOn: due, status: 'OPEN', createdAt: nowIso(),
   });
   if (!created) return null;   // another engine created it a moment ago
@@ -651,7 +723,7 @@ export async function advanceRun(cid: string, id: string): Promise<RunDoc | null
     }
     if (seen.kind === 'wait') {
       staff = staff || await people(cid);
-      const problem = await ensureTask(cid, run, flow, step, staff, seen.ask);
+      const problem = await ensureTask(cid, run, flow, step, staff, seen.ask, seen.help);
       if (problem) { run.status = 'STUCK'; run.stuckReason = problem; await persist(run); return run; }
       const until = step.type === 'wait' ? (run.waitUntil || new Date(Date.parse(run.enteredAt) + Number(step.settings.days || 1) * 86400000).toISOString()) : '';
       if (run.status !== 'WAITING' || run.stuckReason || run.waitUntil !== until) { run.status = 'WAITING'; run.stuckReason = ''; run.waitUntil = until; await persist(run); }
@@ -677,7 +749,7 @@ export async function flowStartHook(cid: string, applicationId: string): Promise
   try {
     const a = await getApplication(cid, applicationId);
     if (!a) return;
-    const pick = pickFlow(await families(cid), await flows(cid), a.designation);
+    const pick = pickFlow(await families(cid), await flows(cid), a.designation, (await jobFlows(cid)).familyFor(a));
     if (!pick || !pick.flow.steps.length) return;
     if (pick.flow.activatedAt && arrivedAt(a) < pick.flow.activatedAt) return;   // applicants from before the flow was published are not pulled in by surprise
     await enroll(cid, a, pick.flow, pick.name);
@@ -697,10 +769,11 @@ async function enrollNew(cid: string): Promise<number> {
   if (!all.some((f) => f.status === 'ACTIVE' && !f.adjusted)) return 0;
   const fams = await families(cid);
   const have = new Set(((await listItems(cid, 'flowRun')) as RunDoc[]).map((r) => r.applicationId));
+  const jobs = await jobFlows(cid);
   let n = 0;
   for (const a of await listApplications(cid)) {
     if (have.has(a.id) || a.status === 'Rejected') continue;
-    const pick = pickFlow(fams, all, a.designation);
+    const pick = pickFlow(fams, all, a.designation, jobs.familyFor(a));
     if (!pick || (pick.flow.activatedAt && arrivedAt(a) < pick.flow.activatedAt)) continue;
     await enroll(cid, a, pick.flow, pick.name); n++;
   }
@@ -781,9 +854,10 @@ async function enrollRoute(ctx: AuthContext, b: any): Promise<Res> {
   const ids: string[] = Array.isArray(b.applicationIds) ? b.applicationIds.map((x: any) => str(x, 200)).filter(Boolean).slice(0, 200) : [];
   if (!ids.length) return fail(400, 'Choose at least one applicant.');
   let added = 0; let already = 0; let skipped = 0;
+  const jobs = await jobFlows(cid);
   for (const id of ids) {
     const a = await getApplication(cid, id);
-    const pick = a ? pickFlow(fams, all, a.designation) : null;
+    const pick = a ? pickFlow(fams, all, a.designation, jobs.familyFor(a)) : null;
     if (!a || !pick || a.status === 'Rejected') { skipped++; continue; }
     const r = await enroll(cid, a, pick.flow, pick.name);
     if (r.created) { added++; await advanceRun(cid, r.run.id); } else already++;
@@ -882,6 +956,17 @@ async function taskDecide(ctx: AuthContext, b: any): Promise<Res> {
   return ok({ run: after && { ...after, decisions: undefined } });
 }
 
+async function taskMarkDone(ctx: AuthContext, b: any): Promise<Res> {
+  const cid = ctx.companyId!;
+  const t = await getItem(cid, str(b.taskId, 200), 'flowTask');
+  if (!t) return fail(404, 'Task not found.');
+  if (!t.manualDone) return fail(400, 'This task finishes by itself when the work is done in the hiring screens.');
+  if (t.status !== 'OPEN') return fail(409, 'This task is already finished.');
+  if (t.ownerUid !== ctx.uid && !canManage(ctx)) return fail(403, 'This task belongs to someone else.');
+  await putItem({ ...t, status: 'DONE', resolution: 'by hand', doneAt: nowIso(), doneBy: await whoIs(ctx) });
+  return ok({});
+}
+
 // ------------------------------------------------------------------ router
 
 type Route = { method: 'GET' | 'POST'; who: 'manage' | 'anyone'; run: (ctx: AuthContext, body: any, q: any) => Promise<Res> };
@@ -902,6 +987,7 @@ const ROUTES: Record<string, Route> = {
   'flow-run-action': { method: 'POST', who: 'manage', run: (c, b) => runAction(c, b) },
   'flow-my-tasks': { method: 'GET', who: 'anyone', run: (c, _b, q) => myTasks(c, q) },
   'flow-task-decide': { method: 'POST', who: 'anyone', run: (c, b) => taskDecide(c, b) },
+  'flow-task-done': { method: 'POST', who: 'anyone', run: (c, b) => taskMarkDone(c, b) },
 };
 
 export async function routeFlow(r: FlowRequest): Promise<Res | null> {

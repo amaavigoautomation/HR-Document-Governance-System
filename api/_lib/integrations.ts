@@ -1,7 +1,7 @@
 /**
  * Outside connections (Microsoft Teams, WhatsApp). Each one is OFF until its credentials are set in Vercel, and everything
- * works without them: HR pastes a meeting link and sends the message by hand. Google Meet and ClickUp are manual (HR
- * pastes the link / ticks the task); nothing is called for them.
+ * works without them: HR pastes a meeting link and sends the message by hand. Google Meet is connected per company (see
+ * googleCalendar.ts); ClickUp is manual (HR ticks the task).
  *
  *   Teams:    MS_TENANT_ID, MS_CLIENT_ID, MS_CLIENT_SECRET, MS_ORGANIZER_UPN  (app permission OnlineMeetings.ReadWrite.All)
  *   WhatsApp: WHATSAPP_TOKEN, WHATSAPP_PHONE_ID  (WhatsApp Cloud API; first messages need an approved template)
@@ -10,11 +10,15 @@ const env = (k: string) => (process.env[k] || '').trim();
 export const teamsOn = () => !!(env('MS_TENANT_ID') && env('MS_CLIENT_ID') && env('MS_CLIENT_SECRET') && env('MS_ORGANIZER_UPN'));
 export const whatsappOn = () => !!(env('WHATSAPP_TOKEN') && env('WHATSAPP_PHONE_ID'));
 
-export function integrationStatus() {
+export function integrationStatus(google?: { platformReady: boolean; connected: boolean; needsReconnect: boolean; email: string } | null) {
+  const gOn = !!google?.connected;
+  const gManual = !google?.platformReady ? 'Manual: paste the Meet link when scheduling. (The platform owner has not set up Google yet.)'
+    : google.needsReconnect ? 'Manual until a Company Admin connects Google Calendar again (the old connection stopped working).'
+    : 'Manual until a Company Admin connects Google Calendar (Administration > Integrations).';
   return [
     { key: 'teams', label: 'Microsoft Teams meeting links', on: teamsOn(), manual: 'HR pastes the meeting link when scheduling.' },
     { key: 'whatsapp', label: 'WhatsApp reminders', on: whatsappOn(), manual: 'Reminders go by email only.' },
-    { key: 'google_meet', label: 'Google Meet / Calendar', on: false, manual: 'Manual: paste the Meet link when scheduling.' },
+    { key: 'google_meet', label: gOn ? `Google Meet / Calendar (${google!.email || 'connected'})` : 'Google Meet / Calendar', on: gOn, manual: gManual },
     { key: 'clickup', label: 'ClickUp tasks', on: false, manual: 'Manual: tick the setup task on the joining board.' },
   ];
 }

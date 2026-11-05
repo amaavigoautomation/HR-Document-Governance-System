@@ -6,7 +6,7 @@ import { flowService, type FamilyView, type FlowState } from '../../services/flo
 import { SkillTestPanel } from './SkillTestPanel';
 import {
   CONDITION_FIELDS, CONDITION_OPS, MAX_INTERVIEW_ROUNDS, OUTCOME_WORDS, PLACEHOLDERS, STEP_INFO, STEP_ORDER, UNKNOWN_CHOICES,
-  isAiTest, isManualStep, makeStep, simulate, stepSentence, testSettings, validateFlow, type FlowDoc, type FlowStep, type Problem, type SimOutput, type StepType,
+  BUILDER_START, isAiTest, isManualStep, makeStep, simulate, stepSentence, testSettings, validateFlow, type FlowDoc, type FlowStep, type Problem, type SimOutput, type StepType,
 } from '../../../shared/flowEngine';
 
 type Person = FlowState['people'][number];
@@ -160,9 +160,17 @@ const StepCard: React.FC<CardProps> = ({ step, index, flow, people, jobTitles = 
           )}
 
           {step.type !== 'condition' && info.fields.map((fl) => {
-            if (fl.when && eff[fl.when.key] !== fl.when.value) return null;
-            const v = step.type === 'test' && fl.key !== 'instruction' ? eff[fl.key] : step.settings?.[fl.key];
+            if (fl.when && (step.type === 'offer' || step.type === 'onboard' ? (step.settings?.mode || 'manual') : eff[fl.when.key]) !== fl.when.value) return null;
+            const v = step.type === 'test' && fl.key !== 'instruction' ? eff[fl.key] : (fl.key === 'mode' && (step.type === 'offer' || step.type === 'onboard') ? (step.settings?.mode || 'manual') : step.settings?.[fl.key]);
             if (step.type === 'reject' && fl.key !== 'sendEmail' && !step.settings?.sendEmail) return null;
+            if (fl.kind === 'person') return (
+              <Field key={fl.key} label={fl.label} hint={fl.hint}>
+                <select className={`${input} ${fl.required && !v ? 'border-amber-400' : ''}`} value={v || ''} onChange={(e) => onChange({ ...step, settings: { ...step.settings, [fl.key]: e.target.value, [`${fl.key}Name`]: people.find((p) => p.uid === e.target.value)?.name || '' } })}>
+                  <option value="">{fl.required ? 'Choose a person...' : 'Nobody'}</option>
+                  {people.map((p) => <option key={p.uid} value={p.uid}>{p.name}{p.title ? ` (${p.title})` : ''}</option>)}
+                </select>
+              </Field>
+            );
             if (fl.kind === 'bool') return (
               <label key={fl.key} className="flex items-center gap-2 text-sm font-semibold text-slate-700"><input type="checkbox" className="w-4 h-4" checked={!!v} onChange={(e) => setS(fl.key, e.target.checked)} />{fl.label}</label>
             );
@@ -171,7 +179,11 @@ const StepCard: React.FC<CardProps> = ({ step, index, flow, people, jobTitles = 
                 {fl.kind === 'longtext' ? (<>
                   <textarea className={input} rows={5} value={v ?? ''} onChange={(e) => setS(fl.key, e.target.value)} />
                   {fl.key === 'body' && <ChipRow onInsert={(t) => setS(fl.key, `${v ?? ''}${t}`)} />}
-                </>) : fl.kind === 'number' ? (
+                </>) : fl.kind === 'select' ? (
+                  <select className={input} value={v ?? ''} onChange={(e) => setS(fl.key, e.target.value)}>
+                    {(fl.options || []).map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+                  </select>
+                ) : fl.kind === 'number' ? (
                   <input className={input} type="number" min={fl.min} max={fl.max} value={v ?? ''} onChange={(e) => setS(fl.key, e.target.value === '' ? '' : Number(e.target.value))} />
                 ) : (
                   <input className={input} value={v ?? ''} onChange={(e) => setS(fl.key, e.target.value)} />
@@ -371,6 +383,7 @@ const FlowEditorBody: React.FC<BodyProps> = ({ family, state, reload, onChanged 
   const ready = problems.length === 0;
   const insertAt = (i: number, t: StepType) => {
     const s = makeStep(t, steps, st.me.uid && STEP_INFO[t].manual ? { ownerUid: st.me.uid, ownerName: st.me.name } : {});
+    if (BUILDER_START[t]) s.settings = { ...s.settings, ...BUILDER_START[t] };
     // A new step that can fail sends people to "reject" by default; a new "Reject" step at the end gives that a real home.
     edit((cur) => { const n = [...cur]; n.splice(i, 0, s); return n; });
     setOpen(s.id); setAdding(null);

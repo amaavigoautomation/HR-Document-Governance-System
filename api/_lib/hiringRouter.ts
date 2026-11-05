@@ -16,6 +16,7 @@
  *   scrlink-*                                                           candidate screening link: form, available slots, status (screeningLinkApi.ts)
  *   website-sync                                                        home company only: copy website candidates into stored applications
  *   hiring-daily, integrations                                          the one daily cron job, and which outside connections are switched on
+ *   google-*                                                           per-company Google Calendar / Meet connection (googleCalendar.ts)
  *   hdash                                                               founder hiring dashboard (analyticsApi.ts)
  *   flow-*                                                              hiring flow builder: custom steps from applicant to onboarding, tasks, stuck applicants (flowApi.ts)
  *   offer-*, hcost-*                                                    salary approval, offer pack, acceptance, hiring costs (offerApi.ts)
@@ -42,6 +43,7 @@ import { sweepOffers } from './offerApi.js';
 import { sweepProbation, sweepQuarterly } from './talentCycleApi.js';
 import { sendDueReminders } from './interviewApi.js';
 import { integrationStatus } from './integrations.js';
+import { routeGoogle, googleStatus } from './googleCalendar.js';
 import { syncWebsiteApplications, sweepWebsiteApplications } from './homeSync.js';
 
 export interface HiringRequest {
@@ -122,10 +124,14 @@ export async function routeHiring(r: HiringRequest): Promise<HiringResult> {
     }
   }
 
+  const google = await routeGoogle({ method: r.method, action, query: r.query, body: r.body, headers: r.headers, origin: r.origin });
+  if (google) return google;
+
   if (action === 'integrations') {
     try {
-      await requirePermission(r.headers, 'app.manage');
-      return { status: 200, json: { success: true, integrations: integrationStatus() } };
+      const ctx = await requirePermission(r.headers, 'app.manage');
+      const g = ctx.companyId ? await googleStatus(ctx.companyId) : null;
+      return { status: 200, json: { success: true, integrations: integrationStatus(g) } };
     } catch (err: any) {
       const known = authErrorResponse(err);
       if (known) return { status: known.status, json: known.json };

@@ -165,6 +165,7 @@ async function startServer() {
         headers: req.headers as Record<string, any>,
         origin,
       });
+      if (json && typeof json === 'object' && json.__redirect) return res.redirect(302, String(json.__redirect));
       res.status(status).json(json);
     } catch (err: any) {
       console.error('Error in /api/recruitment:', err);

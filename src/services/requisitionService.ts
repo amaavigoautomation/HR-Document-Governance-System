@@ -447,7 +447,10 @@ export async function saveJd(actor: User, req: Requisition, text: string): Promi
   return saved;
 }
 
-export async function publishJob(actor: User, req: Requisition): Promise<Requisition> {
+/** The hiring flow chosen for a job. Empty familyId means "pick automatically" (by job title, otherwise the Default flow). */
+export interface JobFlowChoice { familyId: string; name: string }
+
+export async function publishJob(actor: User, req: Requisition, flow?: JobFlowChoice): Promise<Requisition> {
   assertAllowed(can(actor, 'publish', req), 'only the owning HR can publish, and a JD must exist.');
 
   // Post to the live careers page first. If that fails we throw, the requisition stays in JD_DRAFT
@@ -468,9 +471,11 @@ export async function publishJob(actor: User, req: Requisition): Promise<Requisi
     jobId,
     careersPostingId,
     publishedAt: nowIso(),
+    flowFamilyId: flow?.familyId || undefined,
+    flowFamilyName: flow?.familyId ? flow.name : undefined,
     events: [
       ...req.events,
-      event(actor, `Published as ${jobId} and posted to the careers page`, careersPostingId ? `Careers opening #${careersPostingId}` : undefined),
+      event(actor, `Published as ${jobId} and posted to the careers page`, [careersPostingId ? `Careers opening #${careersPostingId}` : '', flow?.familyId ? `Hiring flow: ${flow.name}` : ''].filter(Boolean).join(' · ') || undefined),
     ],
   });
   audit(AuditAction.JOB_PUBLISHED, actor, saved, `Published ${jobId} for ${summaryLine(saved)}`, jobId);
@@ -480,6 +485,18 @@ export async function publishJob(actor: User, req: Requisition): Promise<Requisi
     mail(saved.requestedBy.name, [`${summaryLine(saved)} is now open for applications as ${jobId}.`]),
     saved
   );
+  return saved;
+}
+
+/** Changes the hiring flow of an open job. Only applicants who arrive afterwards follow it; people already in a flow keep theirs. */
+export async function setJobFlow(actor: User, req: Requisition, flow: JobFlowChoice): Promise<Requisition> {
+  assertAllowed(req.status === 'JOB_OPEN' && can(actor, 'close', req), 'only the owning HR can change the hiring flow of an open job.');
+  const saved = await persist({
+    ...req,
+    flowFamilyId: flow.familyId || undefined,
+    flowFamilyName: flow.familyId ? flow.name : undefined,
+    events: [...req.events, event(actor, flow.familyId ? `Hiring flow changed to ${flow.name}` : 'Hiring flow set to automatic', 'New applicants follow this flow; applicants already inside keep theirs.')],
+  });
   return saved;
 }
 

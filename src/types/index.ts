@@ -492,6 +492,8 @@ export interface Requisition {
   jd?: RequisitionJD;
   jobId?: string;
   careersPostingId?: string; // id returned by the public careers API when the job was posted
+  flowFamilyId?: string; // the hiring flow attached to this job ('default' or a designation flow id). Empty = pick automatically.
+  flowFamilyName?: string; // name of that flow, kept for display
   publishedAt?: string;
   closedReason?: string;
   events: RequisitionEvent[];

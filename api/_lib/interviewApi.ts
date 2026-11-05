@@ -3,7 +3,7 @@
  *
  *   screen-get / screen-save                    HR screening call: answers, notes, communication rating, outcome
  *   assess-list / assess-assign / assess-result tests and assignments with a pass mark
- *   int-schedule / int-reschedule / int-cancel  interviews with a calendar invite (.ics) emailed to the candidate and panel
+ *   int-schedule / int-reschedule / int-cancel  interviews with a Google Meet link (when the company connected Google), extra guests, and a calendar invite (.ics) emailed to the candidate, panel and guests
  *   int-list                                    HR sees every interview; an interviewer sees the ones they are on
  *   int-feedback-get / int-feedback-submit      blind scorecards (see shared/interviewEngine.ts)
  *   int-ai-summary                              summary of the panel's feedback, once everyone has submitted
@@ -12,6 +12,7 @@
  */
 import { flowAdvanceHook } from './flowApi.js';
 import { createTeamsMeeting, sendWhatsApp } from './integrations.js';
+import { cancelGoogleMeeting, createGoogleMeeting, updateGoogleMeeting } from './googleCalendar.js';
 import { adminDb } from './firebaseAdmin.js';
 import { authErrorResponse, requireActiveTenant, type AuthContext } from './authContext.js';
 import { getApplication, listApplications, type ApplicationDoc } from './recruitmentData.js';
@@ -126,9 +127,13 @@ async function assessResult(ctx: AuthContext, b: any): Promise<Result> {
 
 interface PanelMember { uid: string; name: string; email: string }
 
+let mailer: typeof dispatchLiveEmail = dispatchLiveEmail;
+/** Tests replace the mail sender (pass null to restore the real one). */
+export const __setInterviewMailer = (fn: typeof dispatchLiveEmail | null) => { mailer = fn || dispatchLiveEmail; };
+
 async function safeMail(to: string, name: string, subject: string, body: string, ics?: { content: string; method: 'REQUEST' | 'CANCEL' }): Promise<boolean> {
   try {
-    const r = await dispatchLiveEmail({ to, recipientName: name, subject, body, ics });
+    const r = await mailer({ to, recipientName: name, subject, body, ics });
     return !!r.success;
   } catch (e: any) {
     console.warn('[Interview] email failed:', e?.message || e);
@@ -164,13 +169,16 @@ async function findConflicts(cid: string, panel: PanelMember[], startIso: string
   return out;
 }
 
+/** Extra people who should be in the meeting but are not interviewers (they get the invite, not a scorecard). */
+const guestList = (i: Item): string[] => (Array.isArray(i.guests) ? i.guests : []).map((g: any) => String(g || '').trim().toLowerCase()).filter((g: string) => EMAIL_RE.test(g));
+
 function inviteFor(i: Item, organizer: { name: string; email: string }, cancel = false): string {
   return buildIcs({
     uid: `${i.id}@amaavigo-hiring`, startIso: i.startIso, durationMinutes: i.durationMinutes, sequence: i.sequence, cancel,
     title: `${i.round}: ${i.candidateName} for ${i.positionTitle}`,
     description: `${i.mode} interview for ${i.positionTitle}.${i.location ? `\n${i.location}` : ''}`,
     location: i.location || i.mode, organizerName: organizer.name, organizerEmail: organizer.email,
-    attendees: [{ name: i.candidateName, email: i.candidateEmail }, ...(i.panel as PanelMember[]).map((p) => ({ name: p.name, email: p.email }))].filter((x) => EMAIL_RE.test(x.email)),
+    attendees: [{ name: i.candidateName, email: i.candidateEmail }, ...(i.panel as PanelMember[]).map((p) => ({ name: p.name, email: p.email })), ...guestList(i).map((email) => ({ name: email.split('@')[0], email }))].filter((x) => EMAIL_RE.test(x.email)),
   });
 }
 
@@ -181,14 +189,15 @@ async function sendInvites(i: Item, organizer: { name: string; email: string }, 
   const ics = { content: inviteFor(i, organizer, cancel), method: (cancel ? 'CANCEL' : 'REQUEST') as 'REQUEST' | 'CANCEL' };
   let sent = 0;
   const verb = kind === 'new' ? 'scheduled' : kind === 'moved' ? 'rescheduled' : 'cancelled';
-  const people = [{ name: i.candidateName, email: i.candidateEmail, candidate: true }, ...(i.panel as PanelMember[]).map((p) => ({ ...p, candidate: false }))];
+  const people = [{ name: i.candidateName, email: i.candidateEmail, candidate: true }, ...(i.panel as PanelMember[]).map((p) => ({ ...p, candidate: false })), ...guestList(i).map((email) => ({ name: email.split('@')[0], email, candidate: false }))];
   for (const p of people) {
     if (!EMAIL_RE.test(p.email)) continue;
     const lines = [
       `Hello ${p.name},`, '',
       p.candidate ? `Your ${i.round} for ${i.positionTitle} has been ${verb}.` : `${i.round} with ${i.candidateName} for ${i.positionTitle} has been ${verb}.`,
       cancel ? '' : `When: ${whenText(i.startIso)} (${i.durationMinutes} minutes)`,
-      cancel ? '' : `Mode: ${i.mode}${i.location ? ` - ${i.location}` : ''}`,
+      cancel ? '' : `Mode: ${i.mode}${i.location && !/^https?:\/\//i.test(i.location) ? ` - ${i.location}` : ''}`,
+      cancel || !/^https?:\/\//i.test(i.location || '') ? '' : `Join link: ${i.location}`,
       '', cancel ? 'The calendar event has been cancelled.' : 'A calendar invite is attached.',
     ].filter((x, idx, arr) => !(x === '' && arr[idx - 1] === ''));
     if (await safeMail(p.email, p.name, `${cancel ? 'Cancelled: ' : ''}${i.round} - ${i.candidateName} - ${i.positionTitle}`, lines.join('\n'), ics)) sent++;
@@ -212,16 +221,51 @@ async function intSchedule(ctx: AuthContext, b: any, existing?: Item): Promise<R
   if (conflicts.length && !b.force) return fail(409, 'An interviewer already has an interview at that time.', { conflicts, canForce: true });
   const mode = ['Video', 'Phone', 'In person'].includes(str(b.mode, 20)) ? str(b.mode, 20) : existing?.mode || 'Video';
   const who = await whoIs(ctx);
-  // Video with no link typed in: make a Teams link if Teams is switched on (otherwise HR pastes one, as before).
+  // Guests: other people who should be in the meeting (not interviewers), given as email addresses.
+  const rawGuests = Array.isArray(b.guests) ? b.guests : typeof b.guests === 'string' ? b.guests.split(/[,;\s]+/) : (existing?.guests || []);
+  const guests = [...new Set(rawGuests.map((g: any) => str(g, 200).toLowerCase()).filter(Boolean))] as string[];
+  const badGuest = guests.find((g) => !EMAIL_RE.test(g));
+  if (badGuest) return fail(400, `"${badGuest}" is not a valid email address.`);
+  if (guests.length > 20) return fail(400, 'Add up to 20 guests.');
+
+  // Video: Google Meet when the company connected Google (the link is made, or the existing event moved), else a Teams link if
+  // Teams is switched on, else HR pastes a link as before. A link HR types or pastes is always kept as typed.
+  const endIso = new Date(new Date(startIso).getTime() + minutes * 60000).toISOString();
   let location = str(b.location, 300) ?? '';
   let teamsLink = false;
-  if (mode === 'Video' && !location) {
-    const link = await createTeamsMeeting(`${a.designation} interview`, startIso, new Date(new Date(startIso).getTime() + minutes * 60000).toISOString());
-    if (link) { location = link; teamsLink = true; }
+  let googleEventId: string = existing?.googleEventId || '';
+  let meetProvider: string = existing?.meetProvider || (location ? 'manual' : '');
+  let meetNote = '';
+  const meeting = {
+    title: `${str(b.round, 60) || existing?.round || 'Interview'}: ${a.name} for ${a.designation}`.slice(0, 250), description: `Interview for ${a.designation}.`,
+    startIso, endIso, attendees: [a.email, ...panel.map((p) => p.email), ...guests], requestId: `iv-${existing?.id || 'new'}-${Date.now()}`,
+  };
+  if (mode === 'Video') {
+    const ownLink = !!location && location !== existing?.location;   // HR typed or pasted a different link
+    if (ownLink) {
+      if (googleEventId) { await cancelGoogleMeeting(cid, googleEventId); googleEventId = ''; }
+      meetProvider = 'manual';
+    } else if (googleEventId) {
+      const g = await updateGoogleMeeting(cid, googleEventId, meeting);
+      if (g.ok) { location = g.link || existing?.location || ''; meetProvider = 'google'; } else { location = existing?.location || ''; meetNote = `The Google event could not be moved: ${g.error}`; }
+    } else if (!location) {
+      const g = await createGoogleMeeting(cid, meeting);
+      if (g.ok) { location = g.link!; googleEventId = g.eventId!; meetProvider = 'google'; }
+      else {
+        if (!g.notConnected) meetNote = `Google Meet link could not be made: ${g.error}`;
+        const link = await createTeamsMeeting(`${a.designation} interview`, startIso, endIso);
+        if (link) { location = link; teamsLink = true; meetProvider = 'teams'; meetNote = ''; }
+      }
+    }
+  } else if (googleEventId) {
+    await cancelGoogleMeeting(cid, googleEventId);
+    googleEventId = ''; meetProvider = '';
   }
+  // Google is connected but failed: schedule nothing, so no invite ever goes out without its link. HR can try again or paste a link.
+  if (meetNote) return fail(502, `${meetNote} Nothing was scheduled and no email was sent. Try again in a moment, or paste a meeting link yourself.`);
   const it: Item = {
     ...(existing || {}), id: existing?.id || newId(), companyId: cid, kind: 'interview', applicationId: a.id, candidateName: a.name, candidateEmail: a.email, positionTitle: a.designation,
-    round: str(b.round, 60) || existing?.round || 'Interview', mode, location, teamsLink, candidateMobile: a.mobile || '', startIso, durationMinutes: minutes, panel,
+    round: str(b.round, 60) || existing?.round || 'Interview', mode, location, teamsLink, googleEventId, meetProvider, guests, candidateMobile: a.mobile || '', startIso, durationMinutes: minutes, panel,
     status: 'SCHEDULED', sequence: existing ? (existing.sequence || 0) + 1 : 0, criteria: existing?.criteria || [...DEFAULT_CRITERIA],
     scorecards: existing?.scorecards || [], reminders: reminderTimes(startIso, nowIso()).map((r) => ({ ...r, sent: false })),
     createdBy: existing?.createdBy || who, createdAt: existing?.createdAt || nowIso(), updatedAt: nowIso(),
@@ -229,7 +273,7 @@ async function intSchedule(ctx: AuthContext, b: any, existing?: Item): Promise<R
   await putItem(it);
   await db().collection('applications').doc(a.id).update({ status: 'Interview Scheduled', interviewDate: startIso.slice(0, 10), updatedAt: nowIso() });
   const sent = await sendInvites(it, { name: who, email: ctx.email }, existing ? 'moved' : 'new');
-  return ok({ interview: it, invitesSent: sent });
+  return ok({ interview: it, invitesSent: sent, meet: { provider: meetProvider, link: mode === 'Video' ? location : '', note: meetNote } });
 }
 
 async function intCancel(ctx: AuthContext, b: any): Promise<Result> {
@@ -239,6 +283,7 @@ async function intCancel(ctx: AuthContext, b: any): Promise<Result> {
   if (it.status === 'CANCELLED') return fail(409, 'Already cancelled.');
   const next: Item = { ...it, status: 'CANCELLED', sequence: (it.sequence || 0) + 1, cancelReason: str(b.reason, 300), updatedAt: nowIso(), reminders: [] };
   await putItem(next);
+  if (it.googleEventId) { await cancelGoogleMeeting(cid, it.googleEventId); await putItem({ ...next, googleEventId: '' }); }
   const others = (await listItems(cid, 'interview')).some((i) => i.applicationId === it.applicationId && i.status === 'SCHEDULED' && i.id !== it.id);
   const a = await getApplication(cid, it.applicationId);
   if (a && a.status === 'Interview Scheduled' && !others) await db().collection('applications').doc(a.id).update({ status: 'Shortlisted', interviewDate: '', updatedAt: nowIso() });

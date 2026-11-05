@@ -35,21 +35,22 @@ const CandidateDrawer: React.FC<{ id: string; users: User[]; onClose: () => void
   const val = (k: string) => fields[k] ?? (a && a[k] !== undefined && a[k] !== 0 ? String(a[k]) : '');
   const [scr, setScr] = useState({ outcome: 'PASS', notes: '', communication: '', currentCtcLpa: '', expectedCtcLpa: '', noticePeriod: '' });
   const [asg, setAsg] = useState({ title: '', type: 'TECHNICAL', maxScore: '100', passScore: '60', link: '', dueOn: '' });
-  const [iv, setIv] = useState({ startLocal: '', durationMinutes: '45', mode: 'Video', location: '', round: 'Interview', panel: [] as string[] });
+  const [iv, setIv] = useState({ startLocal: '', durationMinutes: '45', mode: 'Video', location: '', round: 'Interview', panel: [] as string[], guests: '' });
+  const google = useLoad(() => pipelineService.googleStatus(), []);
   const [conflict, setConflict] = useState<any[] | null>(null);
   const [open, setOpen] = useState<string | null>(null);
   const reload = async () => { await d.reload(); onChanged(); };
   const staff = users.filter((u) => u.active !== false).sort((x, y) => x.name.localeCompare(y.name));
   const schedule = (force = false) => run(async () => {
     try {
-      await pipelineService.schedule({ ...iv, applicationId: id, startIso: new Date(iv.startLocal).toISOString(), durationMinutes: Number(iv.durationMinutes), force });
+      await pipelineService.schedule({ ...iv, guests: iv.guests.split(/[,;\s]+/).filter(Boolean), applicationId: id, startIso: new Date(iv.startLocal).toISOString(), durationMinutes: Number(iv.durationMinutes), force });
       setConflict(null);
       await reload();
     } catch (e: any) {
       if (/already has an interview/i.test(e?.message || '')) setConflict([{}]);
       throw e;
     }
-  }, 'Interview scheduled. Invites sent to the candidate and the panel.');
+  }, 'Interview scheduled. The schedule email and calendar invite went to the candidate, the panel and any guests.');
 
   return (
     <Drawer open onClose={onClose} title={a?.name || 'Candidate'} subtitle={a ? `${a.designation} - ${a.email}` : ''}>
@@ -115,6 +116,8 @@ const CandidateDrawer: React.FC<{ id: string; users: User[]; onClose: () => void
               <div key={i.id} className="border-b border-slate-100 py-2 text-xs">
                 <div className="flex items-center justify-between gap-2"><div><span className="font-bold text-slate-800">{i.round}</span> <span className="text-slate-500">{when(i.startIso)} - {i.mode}</span></div><Pill tone={i.status === 'COMPLETED' ? 'green' : i.status === 'CANCELLED' ? 'slate' : 'blue'}>{i.status.toLowerCase()}</Pill></div>
                 <div className="text-slate-500">Panel: {(i.panel as any[]).map((p) => p.name).join(', ')} - {i.submittedCount}/{(i.panel as any[]).length} scorecards</div>
+                {Array.isArray(i.guests) && i.guests.length > 0 && <div className="text-slate-500">Also invited: {i.guests.join(', ')}</div>}
+                {i.status !== 'CANCELLED' && /^https?:\/\//i.test(i.location || '') && <div><a className="text-[#FA7014] underline" href={i.location} target="_blank" rel="noreferrer">{i.meetProvider === 'google' ? 'Join Google Meet' : 'Meeting link'}</a></div>}
                 {i.status !== 'CANCELLED' && <button className={`${btnGhost} mt-1`} onClick={() => setOpen(open === i.id ? null : i.id)}>{open === i.id ? 'Hide feedback' : 'Feedback'}</button>}
                 {open === i.id && <div className="mt-2"><FeedbackPanel interviewId={i.id} manager onChanged={reload} /></div>}
               </div>
@@ -124,7 +127,16 @@ const CandidateDrawer: React.FC<{ id: string; users: User[]; onClose: () => void
               <Field label="Round"><input className={input} value={iv.round} onChange={(e) => setIv({ ...iv, round: e.target.value })} /></Field>
               <Field label="Mode"><select className={input} value={iv.mode} onChange={(e) => setIv({ ...iv, mode: e.target.value })}><option>Video</option><option>Phone</option><option>In person</option></select></Field>
               <Field label="Minutes"><input className={input} type="number" value={iv.durationMinutes} onChange={(e) => setIv({ ...iv, durationMinutes: e.target.value })} /></Field>
-              <div className="md:col-span-2"><Field label="Meeting link or address"><input className={input} value={iv.location} onChange={(e) => setIv({ ...iv, location: e.target.value })} /></Field></div>
+              <div className="md:col-span-2"><Field label={iv.mode === 'Video' && google.data?.connected ? 'Meeting link (leave empty to create a Google Meet)' : 'Meeting link or address'}><input className={input} value={iv.location} onChange={(e) => setIv({ ...iv, location: e.target.value })} placeholder={iv.mode === 'Video' && google.data?.connected ? 'A Google Meet link is created for you' : ''} /></Field>
+                {iv.mode === 'Video' && google.data && !google.data.connected && (
+                  <p className="mt-1 text-[11px] text-amber-700">
+                    {google.data.needsReconnect ? 'The Google Calendar connection stopped working. ' : 'Google Calendar is not connected, so paste a meeting link. '}
+                    {google.data.canManage ? 'Connect it under Administration > Integrations to get Google Meet links automatically.' : 'Ask a Company Admin to connect it under Administration > Integrations.'}
+                  </p>
+                )}
+                {iv.mode === 'Video' && google.data?.connected && <p className="mt-1 text-[11px] text-slate-500">Meetings are created on {google.data.email || 'the connected Google account'}.</p>}</div>
+              <div className="md:col-span-2"><Field label="Other people to invite (optional, email addresses separated by commas)"><input className={input} value={iv.guests} onChange={(e) => setIv({ ...iv, guests: e.target.value })} placeholder="founder@company.com, manager@company.com" /></Field>
+                <p className="mt-1 text-[11px] text-slate-500">Guests get the schedule email and invite. Only the interviewers below fill in feedback after the interview.</p></div>
               <div className="md:col-span-2"><Field label="Interviewers (hold Ctrl or Cmd to pick several)">
                 <select multiple className={`${input} h-28`} value={iv.panel} onChange={(e) => setIv({ ...iv, panel: Array.from(e.target.selectedOptions).map((o) => o.value) })}>
                   {staff.map((u) => <option key={u.id} value={u.id}>{u.name}{u.departmentName ? ` - ${u.departmentName}` : ''}</option>)}

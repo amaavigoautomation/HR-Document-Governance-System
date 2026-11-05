@@ -22,7 +22,9 @@ import {
   publishJob,
   readAttachment,
   saveJd,
+  setJobFlow,
 } from '../services/requisitionService';
+import { flowService, type FamilyView } from '../services/flowService';
 import { checkBudget } from '../services/hiringBudgetService';
 import { RequisitionBudgetCheck } from '../types';
 import { STATUS_LABEL, can, canAssign, isFounder, isHr } from '../utils/requisitionPermissions';
@@ -69,6 +71,27 @@ export const RequisitionDetailPanel: React.FC<Props> = ({ req, currentUser, user
   // JD
   const [jdText, setJdText] = useState(req.jd?.text || '');
   const [closeReason, setCloseReason] = useState('');
+  // hiring flow picker (shown before publishing, and for changing an open job's flow)
+  const [flowPick, setFlowPick] = useState<'publish' | 'change' | null>(null);
+  const [flowList, setFlowList] = useState<FamilyView[] | null>(null);
+  const [flowChoice, setFlowChoice] = useState('');
+  const openFlowPicker = async (mode: 'publish' | 'change') => {
+    setError(null);
+    setFlowPick(mode);
+    setFlowChoice(req.flowFamilyId || '');
+    if (flowList) return;
+    try {
+      const st = await flowService.state();
+      setFlowList(st.families.filter((f) => !!f.active));
+    } catch (e: any) {
+      setFlowList([]);   // flows could not be loaded: the job can still be published with the automatic choice
+      setError(e?.message || 'Could not load the hiring flows. You can still publish with the automatic choice.');
+    }
+  };
+  const chosenFlow = () => {
+    const f = (flowList || []).find((x) => x.familyId === flowChoice);
+    return { familyId: f ? f.familyId : '', name: f ? f.name : '' };
+  };
   // budget check shown to the founder before approving
   const [budget, setBudget] = useState<RequisitionBudgetCheck | null>(null);
   const founderTurn = can(currentUser, 'founderDecide', req);
@@ -100,7 +123,7 @@ export const RequisitionDetailPanel: React.FC<Props> = ({ req, currentUser, user
     return m;
   }, [allRequisitions]);
 
-  const run = async (key: string, fn: () => Promise<unknown>, success?: string) => {
+  const run = async (key: string, fn: () => Promise<unknown>, success?: string): Promise<boolean> => {
     setError(null);
     setNotice(null);
     setBusy(key);
@@ -110,9 +133,11 @@ export const RequisitionDetailPanel: React.FC<Props> = ({ req, currentUser, user
       setComments('');
       setFile(null);
       setAssignNote('');
+      return true;
     } catch (e: any) {
       const msg: string = e?.message || 'Something went wrong.';
       setError(/permission|insufficient/i.test(msg) ? `${msg} (If this persists, the Firestore rules for "requisitions" may not be deployed yet.)` : msg);
+      return false;
     } finally {
       setBusy(null);
     }
@@ -164,6 +189,16 @@ export const RequisitionDetailPanel: React.FC<Props> = ({ req, currentUser, user
             <Row k="Budget" v={req.budgetRange} />
             <Row k="HR owner" v={req.ownerHr ? `${req.ownerHr.name} (assigned by ${req.assignedByName})` : 'Not assigned'} />
             {req.jobId && <Row k="Job ID" v={req.jobId} />}
+            {req.status === 'JOB_OPEN' && (
+              <Row k="Hiring flow" v={(
+                <span className="inline-flex items-center gap-2">
+                  {req.flowFamilyName || 'Automatic (by job title, else Default)'}
+                  {can(currentUser, 'close', req) && (
+                    <button className="text-[11px] font-bold text-[#FA7014] hover:underline" disabled={busy !== null} onClick={() => openFlowPicker('change')}>Change</button>
+                  )}
+                </span>
+              )} />
+            )}
             <div className="mt-2 border-t border-slate-100 pt-2 text-xs">
               <div className="font-semibold text-slate-500">Key skills</div>
               <div className="text-slate-900">{req.keySkills || '-'}</div>
@@ -333,6 +368,56 @@ export const RequisitionDetailPanel: React.FC<Props> = ({ req, currentUser, user
             </div>
           )}
 
+          {/* Hiring flow picker */}
+          {flowPick && (
+            <div className={`${box} border-[#FA7014]/40`}>
+              <div className="text-sm font-black text-slate-900">{flowPick === 'publish' ? 'Choose the hiring flow for this job' : 'Change the hiring flow'}</div>
+              <p className="mt-1 text-xs text-slate-500">
+                Everyone who applies for this job follows the flow you pick. {flowPick === 'change' ? 'People already inside a flow keep theirs; only new applicants follow the new one.' : 'You can change it later.'}
+              </p>
+              {flowList === null ? (
+                <div className="mt-3 flex items-center gap-2 text-xs text-slate-500"><Loader2 className="w-3.5 h-3.5 animate-spin" /> Loading flows...</div>
+              ) : (
+                <div className="mt-3 space-y-2">
+                  {flowList.map((f) => (
+                    <label key={f.familyId} className="flex cursor-pointer items-start gap-2 rounded-xl border border-slate-200 p-3 text-xs hover:bg-slate-50">
+                      <input type="radio" name="jobflow" className="mt-0.5" checked={flowChoice === f.familyId} onChange={() => setFlowChoice(f.familyId)} />
+                      <span>
+                        <span className="font-bold text-slate-900">{f.name}</span>
+                        <span className="ml-2 text-slate-500">{f.active ? `${f.active.steps.length} steps, version ${f.active.version}` : ''}{f.designations.length ? ` · for ${f.designations.join(', ')}` : ''}</span>
+                      </span>
+                    </label>
+                  ))}
+                  <label className="flex cursor-pointer items-start gap-2 rounded-xl border border-slate-200 p-3 text-xs hover:bg-slate-50">
+                    <input type="radio" name="jobflow" className="mt-0.5" checked={flowChoice === ''} onChange={() => setFlowChoice('')} />
+                    <span>
+                      <span className="font-bold text-slate-900">Automatic</span>
+                      <span className="ml-2 text-slate-500">The flow for this job title if there is one, otherwise the Default flow.</span>
+                    </span>
+                  </label>
+                  {flowList.length === 0 && <p className="text-xs text-amber-700">No published hiring flow yet. Applicants will not be enrolled until one is published under Hiring Automation.</p>}
+                </div>
+              )}
+              <div className="mt-3 flex flex-wrap gap-2">
+                <button
+                  className={btnPrimary}
+                  disabled={busy !== null || flowList === null}
+                  onClick={async () => {
+                    const choice = chosenFlow();
+                    const ok = flowPick === 'publish'
+                      ? await run('publish', () => publishJob(currentUser, req, choice), 'Published. The job is now open.')
+                      : await run('flow', () => setJobFlow(currentUser, req, choice), 'Hiring flow updated.');
+                    if (ok) setFlowPick(null);
+                  }}
+                >
+                  {(busy === 'publish' || busy === 'flow') ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />}
+                  {flowPick === 'publish' ? 'Publish job' : 'Save flow'}
+                </button>
+                <button className={btnGhost} disabled={busy !== null} onClick={() => setFlowPick(null)}>Cancel</button>
+              </div>
+            </div>
+          )}
+
           {/* Job description */}
           {(req.status === 'JD_DRAFT' || req.status === 'JOB_OPEN') && (canEditJd || req.jd) && (
             <div className={box}>
@@ -384,11 +469,7 @@ export const RequisitionDetailPanel: React.FC<Props> = ({ req, currentUser, user
                       className={btnPrimary}
                       disabled={busy !== null || dirtyJd || !req.jd?.text.trim()}
                       title={dirtyJd ? 'Save your edits first' : undefined}
-                      onClick={() => {
-                        if (window.confirm('Publish this job description as an open job?')) {
-                          run('publish', () => publishJob(currentUser, req), 'Published. The job is now open.');
-                        }
-                      }}
+                      onClick={() => openFlowPicker('publish')}
                     >
                       {busy === 'publish' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />}
                       Publish job

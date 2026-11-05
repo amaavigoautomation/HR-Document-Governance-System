@@ -51,7 +51,9 @@ const TaskCard: React.FC<{ t: FlowTask; onDone: () => void; onOpen?: (tab: strin
       ) : (
         <div className="mt-3 flex flex-wrap items-center gap-3">
           {t.link && onOpen && <button className={btnPrimary} onClick={() => onOpen(t.link)}><ExternalLink className="w-3.5 h-3.5" />{OPEN_WORDS[t.link] || 'Open'}</button>}
-          <span className="text-xs text-slate-500">This task finishes by itself when you complete the work there.</span>
+          {t.manualDone
+            ? <button className={btnPrimary} disabled={busy} onClick={() => run(async () => { await flowService.markDone(t.id); onDone(); }, 'Thanks, marked as done.')}><CheckCircle2 className="w-3.5 h-3.5" />Mark done</button>
+            : <span className="text-xs text-slate-500">This task finishes by itself when you complete the work there.</span>}
         </div>
       )}
     </div>

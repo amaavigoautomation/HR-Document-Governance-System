@@ -112,6 +112,64 @@ async function offerGet(cid: string, q: any): Promise<Result> {
   return o ? ok({ item: publicView(o) }) : fail(404, 'Offer not found.');
 }
 
+// ------------------------------------------------------------------ automatic offer (flow step in "app makes the offer" mode)
+
+const EXPECTED_NOTE = 'The candidate\'s expected salary fits the budgeted band, so it was used.';
+
+/**
+ * Called by the hiring flow when an applicant reaches an automatic Offer step and has no offer yet.
+ * Drafts the offer from the job's salary band, hands it to the approver and tells them. Never throws.
+ * Returns help text when a person has to step in (no salary to offer, no email, ...).
+ */
+export async function flowOfferAuto(cid: string, applicationId: string, settings: Record<string, any>): Promise<{ made?: boolean; help?: string }> {
+  try {
+    const a = await getApplication(cid, applicationId);
+    if (!a) return { help: 'The application could not be found.' };
+    if (!EMAIL_RE.test(a.email || '')) return { help: 'This candidate has no valid email address, so an offer cannot be sent. Fix the email, then make the offer.' };
+    const req = a.requisitionId ? await getRequisition(cid, a.requisitionId) : null;
+    const bandMax = req ? requisitionMaxCtcLpa(req as any) : null;
+    const expected = Number(a.expectedCtcLpa);
+    const hasExpected = Number.isFinite(expected) && expected > 0;
+    let ctc: number | null = null;
+    let basis = '';
+    if (bandMax !== null) {
+      if (hasExpected && expected <= bandMax) { ctc = expected; basis = EXPECTED_NOTE; }
+      else { ctc = bandMax; basis = hasExpected ? `The candidate expects ${expected} LPA, above the budgeted ${bandMax} LPA, so the offer is at the top of the band.` : `No expected salary on file, so the offer is at the top of the budgeted band (${bandMax} LPA).`; }
+    } else if (hasExpected) { ctc = expected; basis = 'This job has no salary band, so the candidate\'s expected salary was used. The approver should check it.'; }
+    if (ctc === null) return { help: 'This job has no salary band and the candidate has no expected salary, so the app cannot choose a CTC. Make the offer by hand.' };
+
+    const joinDays = Math.min(180, Math.max(1, num(settings.joiningInDays) ?? 30));
+    const probation = Math.min(12, Math.max(0, num(settings.probationMonths) ?? 3));
+    const validDays = Math.min(30, Math.max(1, num(settings.validDays) ?? 7));
+    const id = `offerauto_${a.id}`;
+    const ref = db().collection('hiringItems').doc(id);
+    const it: Item = {
+      id, companyId: cid, kind: 'offer', applicationId: a.id, requisitionId: a.requisitionId || '', candidateName: a.name, email: a.email, mobile: a.mobile || '',
+      designation: a.designation, department: str(req?.departmentName, 100), positionId: str(req?.positionId, 40), source: (a as any).source || '',
+      recommendedCtcLpa: ctc, approvedCtcLpa: null, bandMaxLpa: bandMax, overBand: false, justification: basis,
+      joiningDate: addDay(todayIst(), joinDays), probationMonths: probation, validDays, autoSend: true, autoDrafted: true,
+      status: 'DRAFT', createdAt: nowIso(), updatedAt: nowIso(), createdBy: 'Automation', createdByEmail: '',
+      history: [{ at: nowIso(), by: 'Automation', action: 'create', from: '', to: 'DRAFT', note: basis }],
+    };
+    let created = false;
+    await db().runTransaction(async (tx: any) => { const snap = await tx.get(ref); if (snap.exists) return; created = true; tx.set(ref, clean(it)); });
+    if (!created) return { made: true };   // another engine drafted it a moment ago
+    const sub = await moveOffer(cid, id, 'submit', 'Automation', 'Sent to the approver by the hiring flow.', () => ({ founderDecision: null }));
+    if (sub.error) return { help: `The offer was drafted but could not be sent for approval: ${sub.error}` };
+    const approverUid = str(settings.approverUid, 128);
+    const approver = (await loadPeople(cid)).find((p: any) => p.uid === approverUid);
+    if (approver?.email) {
+      const co = await companyInfo(cid);
+      await mail(approver.email, approver.name, `Approve the offer for ${a.name} (${a.designation})`,
+        [`Hi ${approver.name},`, '', `An offer is ready for your approval.`, '', `Candidate: ${a.name}`, `Position: ${a.designation}`, `CTC: ${ctc} LPA${bandMax !== null ? ` (budgeted maximum ${bandMax} LPA)` : ''}`, `Joining: ${it.joiningDate}`, '', basis, '', 'Open Hiring > Offers and press Approve. The offer goes to the candidate as soon as you approve.', '', `Regards`, co.name].join('\n'), co.name);
+    }
+    return { made: true, ...(approver ? {} : { help: 'The offer is waiting for approval, but the chosen approver is no longer an active employee. Ask the founder to open Hiring > Offers and approve it.' }) };
+  } catch (e: any) {
+    console.warn('[Offer] automatic offer failed:', e?.message || e);
+    return { help: `The app could not draft the offer: ${e?.message || 'unknown problem'}. Make it by hand.` };
+  }
+}
+
 // ------------------------------------------------------------------ create and act
 
 async function offerCreate(ctx: AuthContext, b: any): Promise<Result> {
@@ -157,6 +215,27 @@ async function startOnboardingFor(cid: string, o: Item, hrName: string, hrEmail:
   }
 }
 
+
+/** Sends an approved offer to the candidate. Used by HR's Send button and by the automatic flow right after approval. */
+async function doSend(cid: string, cur: Item, who: string, note: string, origin?: string):
+  Promise<{ offer: Item; emailSent: boolean; link: string } | { error: string; status: number }> {
+  const missing = cur.packMissing as string[] | undefined;
+  const packText = Object.values(cur.pack || {}).join('\n');
+  const unresolved = [...new Set([...packText.matchAll(/\{\{([a-z0-9_]+)\}\}/gi)].map((m) => m[1]))];
+  if (!cur.pack || unresolved.length) return { status: 400, error: `Fill these fields in the documents first: ${(unresolved.length ? unresolved : missing || []).join(', ') || 'the pack is empty'}.` };
+  const token = randomBytes(24).toString('hex');
+  const validTill = addDay(todayIst(), cur.validDays || 7);
+  const res = await moveOffer(cid, cur.id, 'send', who, note, () => ({ token, sentAt: nowIso(), validTill, remindersSent: [] }));
+  if (!res.offer) return { status: res.status || 400, error: res.error || 'The offer could not be sent.' };
+  const link = offerLink(token, origin);
+  const co = await companyInfo(cid);
+  const emailSent = await mail(cur.email, cur.candidateName, `Your offer from ${co.name}: ${cur.designation}`,
+    [`Hello ${cur.candidateName},`, '', `We are delighted to offer you the position of ${cur.designation} at ${co.name}.`, '', 'Please open your offer, read the documents and let us know your answer here:', link || '(link will be sent separately)', '', `The offer is valid till ${validTill}.`, '', 'Best regards', who].join('\n'), co.name);
+  await updateApplication(cid, cur.applicationId, { status: 'Selected' });
+  if (!emailSent) await putItem({ ...res.offer, emailFailed: true });
+  return { offer: res.offer, emailSent, link };
+}
+
 async function offerAct(ctx: AuthContext, b: any, origin?: string): Promise<Result> {
   const cid = ctx.companyId!;
   const id = str(b.id, 100);
@@ -197,6 +276,12 @@ async function offerAct(ctx: AuthContext, b: any, origin?: string): Promise<Resu
         approvedCtcLpa: ctc, countered: ctc !== Number(cur.recommendedCtcLpa), pack: built.pack, packMissing: built.missing,
         founderDecision: { by: who, at: nowIso(), comments: note },
       }));
+      // An offer the flow drafted goes out as soon as the founder approves it. If it cannot, HR is told why and sends it by hand.
+      if (res.offer?.autoSend) {
+        const sent = await doSend(cid, res.offer, who, 'Sent automatically after approval.', origin);
+        if ('error' in sent) { await putItem({ ...res.offer, autoSendError: sent.error }); res.offer = { ...res.offer, autoSendError: sent.error }; }
+        else { res.offer = sent.offer; emailSent = sent.emailSent; link = sent.link; }
+      }
       break;
     }
     case 'reject':
@@ -204,21 +289,9 @@ async function offerAct(ctx: AuthContext, b: any, origin?: string): Promise<Resu
       res = await moveOffer(cid, id, 'reject', who, note, () => ({ founderDecision: { by: who, at: nowIso(), comments: note, rejected: true } }));
       break;
     case 'send': {
-      const missing = cur.packMissing as string[] | undefined;
-      const packText = Object.values(cur.pack || {}).join('\n');
-      const unresolved = [...new Set([...packText.matchAll(/\{\{([a-z0-9_]+)\}\}/gi)].map((m) => m[1]))];
-      if (!cur.pack || unresolved.length) return fail(400, `Fill these fields in the documents first: ${(unresolved.length ? unresolved : missing || []).join(', ') || 'the pack is empty'}.`);
-      const token = randomBytes(24).toString('hex');
-      const validTill = addDay(todayIst(), cur.validDays || 7);
-      res = await moveOffer(cid, id, 'send', who, note, () => ({ token, sentAt: nowIso(), validTill, remindersSent: [] }));
-      if (res.offer) {
-        link = offerLink(token, origin);
-        const co = await companyInfo(cid);
-        emailSent = await mail(cur.email, cur.candidateName, `Your offer from ${co.name}: ${cur.designation}`,
-          [`Hello ${cur.candidateName},`, '', `We are delighted to offer you the position of ${cur.designation} at ${co.name}.`, '', 'Please open your offer, read the documents and let us know your answer here:', link || '(link will be sent separately)', '', `The offer is valid till ${validTill}.`, '', 'Best regards', who].join('\n'), co.name);
-        await updateApplication(cid, cur.applicationId, { status: 'Selected' });
-        if (!emailSent) await putItem({ ...res.offer, emailFailed: true });
-      }
+      const sent = await doSend(cid, cur, who, note, origin);
+      if ('error' in sent) return fail(sent.status, sent.error);
+      res = { offer: sent.offer }; emailSent = sent.emailSent; link = sent.link;
       break;
     }
     case 'accept':
@@ -482,4 +555,9 @@ export async function routeOffer(r: PipeRequest & { ip?: string }): Promise<Resu
     console.error('[Offer] error:', err);
     return fail(500, err?.message || 'Offer request failed.');
   }
+}
+
+/** The joining flow marks an offer as joined once the person has actually started. Safe to call twice. */
+export async function markOfferJoined(cid: string, offerId: string, joinedOn: string): Promise<void> {
+  try { await moveOffer(cid, offerId, 'join', 'Automation', 'Marked automatically.', () => ({ joinedOn })); } catch { /* already joined or not in a state that allows it */ }
 }

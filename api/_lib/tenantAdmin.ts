@@ -576,6 +576,20 @@ async function createUserInternal(actor: AuthContext, companyId: string, body: a
   };
 }
 
+/**
+ * Creates the login and employee record of a new joiner from their accepted offer, with the ordinary Employee role only
+ * (nothing that grants extra access can be passed in). If the email already has an employee record in this company, that record is returned instead.
+ */
+export async function createJoinerAccount(companyId: string, p: { name: string; email: string; title?: string }, origin?: string):
+  Promise<{ uid: string; created: boolean; emailed: boolean; inviteLink?: string; inviteError?: string }> {
+  const email = String(p.email || '').trim().toLowerCase();
+  const found = await db().collection('employees').where('companyId', '==', companyId).where('email', '==', email).get();
+  if (found.docs[0]) return { uid: String(found.docs[0].data().authUid || found.docs[0].id), created: false, emailed: false };
+  const system = { uid: 'system', email: '', companyId, isCompanyAdmin: true, perms: [] } as unknown as AuthContext;
+  const row = await createUserInternal(system, companyId, { name: p.name, email, title: p.title || '', roleIds: [`${companyId}_employee`], sendInvite: true }, origin);
+  return { uid: row.userId, created: true, emailed: row.emailed, inviteLink: row.inviteLink, inviteError: row.inviteError };
+}
+
 async function importUsers(headers: Record<string, any>, body: any, origin?: string): Promise<TenantResult> {
   const actor = await requirePermission(headers, 'users.manage');
   const companyId = actor.companyId!;

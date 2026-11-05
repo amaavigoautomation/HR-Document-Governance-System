@@ -35,6 +35,10 @@ export const pipelineService = {
   screenSave: (b: unknown) => post('screen-save', b),
   assessAssign: (b: unknown) => post('assess-assign', b),
   assessResult: (b: unknown) => post('assess-result', b),
+  // Google Calendar / Meet connection (one per company)
+  googleStatus: () => get('google-status'),
+  googleConnect: () => post('google-connect'),
+  googleDisconnect: () => post('google-disconnect'),
   // interviews
   interviews: (applicationId?: string) => get('int-list', { applicationId }),
   schedule: (b: unknown) => post('int-schedule', b),

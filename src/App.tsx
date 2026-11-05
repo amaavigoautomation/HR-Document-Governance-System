@@ -138,6 +138,20 @@ export default function App() {
     } catch (e) {}
   };
 
+  // Google sends the browser back to /?google=connected (or =error&reason=...) after the Calendar connect screen: remember the
+  // result for the Administration > Integrations tab, tidy the address and open Administration.
+  useEffect(() => {
+    if (!currentUser) return;
+    try {
+      const q = new URLSearchParams(window.location.search);
+      const result = q.get('google');
+      if (!result) return;
+      sessionStorage.setItem('googleFlash', JSON.stringify({ result, reason: q.get('reason') || '' }));
+      window.history.replaceState({}, '', window.location.pathname);
+      setHrAgentModule('administration');
+    } catch { /* nothing to remember */ }
+  }, [currentUser]);
+
   // URL Routing synchronization to maintain clean URLs across roles
   useEffect(() => {
     try {

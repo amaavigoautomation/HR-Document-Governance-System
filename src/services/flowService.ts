@@ -25,7 +25,7 @@ export interface FlowRunRow {
 }
 export interface FlowTask {
   id: string; runId: string; applicationId: string; candidateName: string; designation: string; stepId: string; stepType: string; stepTitle: string;
-  ownerUid: string; ownerName: string; instruction: string; question: string; decide: boolean; link: string; dueOn: string; status: string; late: boolean; resolution?: string; doneAt?: string;
+  ownerUid: string; ownerName: string; instruction: string; question: string; decide: boolean; manualDone?: boolean; link: string; dueOn: string; status: string; late: boolean; resolution?: string; doneAt?: string;
 }
 
 /** Every hiring-flow call. Server side: api/_lib/flowApi.ts. */
@@ -46,6 +46,7 @@ export const flowService = {
   runAction: (runId: string, action: 'retry' | 'skip' | 'reject' | 'stop' | 'reassign', extra: { note?: string; ownerUid?: string } = {}) => post('flow-run-action', { runId, action, ...extra }),
   tasks: (all = false) => get<{ open: FlowTask[]; recent: FlowTask[] }>('flow-my-tasks', all ? { all: '1' } : {}),
   decide: (taskId: string, decision: 'yes' | 'no', note?: string) => post('flow-task-decide', { taskId, decision, note }),
+  markDone: (taskId: string) => post('flow-task-done', { taskId }),
 };
 
 export interface SkillQuestion { id: string; q: string; options: string[]; answer: number; topic?: string }
