@@ -874,12 +874,6 @@ async function saveRole(headers: Record<string, any>, body: any): Promise<Tenant
     return fail(403, 'You cannot give a role permissions that you do not have yourself.');
   }
   const portal: Portal = ['CREATOR', 'REVIEWER', 'EMPLOYEE'].includes(body.portal) ? body.portal : 'EMPLOYEE';
-  // Management permissions only have a screen to live on in the HR or Approver portal.
-  const EMPLOYEE_SAFE = ['doc.acknowledge', 'doc.suggest', 'req.create'];
-  if (portal === 'EMPLOYEE' && permissions.some((p) => !EMPLOYEE_SAFE.includes(p))) {
-    return fail(400, 'A role with management permissions must open in the HR or Approver portal.');
-  }
-
   const roles = await loadRoles(companyId);
   const id = str(body.roleId, 128);
   if (roles.some((r) => r.id !== id && r.name.toLowerCase() === name.toLowerCase())) return fail(409, 'A role with this name already exists.');
