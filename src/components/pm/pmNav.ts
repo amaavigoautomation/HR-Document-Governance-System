@@ -4,7 +4,7 @@ export type Section =
   | 'today' | 'mine' | 'checkins' | 'development'
   | 'team' | 'teamPlans' | 'evidence'
   | 'approvals'
-  | 'start' | 'framework' | 'cycles' | 'comps' | 'sops' | 'templates' | 'plans' | 'reviews'
+  | 'start' | 'framework' | 'cycles' | 'comps' | 'sops' | 'templates' | 'plans' | 'reviews' | 'autopilot'
   | 'dashboard' | 'governance';
 
 type Entry = { key: Section; label: string };
@@ -13,7 +13,7 @@ const MANAGER: Entry[] = [{ key: 'team', label: 'My team: reviews' }, { key: 'te
 const APPROVE: Entry[] = [{ key: 'approvals', label: 'Approvals' }];
 const SETUP: Entry[] = [
   { key: 'start', label: 'Start here' }, { key: 'framework', label: 'Scoring rules' }, { key: 'comps', label: 'Behaviours & roles' }, { key: 'sops', label: 'Processes (SOPs)' },
-  { key: 'templates', label: 'KRA/KPI by role' }, { key: 'plans', label: 'Everyone\'s targets' }, { key: 'cycles', label: 'Review cycles' }, { key: 'reviews', label: 'All reviews' },
+  { key: 'templates', label: 'KRA/KPI by role' }, { key: 'plans', label: 'Everyone\'s targets' }, { key: 'cycles', label: 'Review cycles' }, { key: 'reviews', label: 'All reviews' }, { key: 'autopilot', label: 'Autopilot' },
 ];
 const REPORTS: Entry[] = [{ key: 'dashboard', label: 'Dashboards' }, { key: 'governance', label: 'Audit, exceptions & AI' }];
 

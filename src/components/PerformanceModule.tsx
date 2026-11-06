@@ -9,6 +9,7 @@ import { ApprovalsScreen, Development, Evidence, PlanList, TeamCheckins } from '
 import { Cycles, Framework, StartHere } from './pm/Setup';
 import { AllPlans, CompsRoles, Sops, Templates } from './pm/Masters';
 import { Dashboard, Governance } from './pm/Reports';
+import { Autopilot } from './pm/Autopilot';
 import { ToastProvider } from './leave/ui';
 
 /**
@@ -51,6 +52,7 @@ export const PerformanceModule: React.FC<{ currentUser: User; users: User[] }> =
       case 'plans': return <AllPlans canApprove={approve} />;
       case 'cycles': return <Cycles users={staff} openReview={openReview} />;
       case 'reviews': return <ReviewList scope="all" open={openReview} title="All reviews" what="Every review in the company." />;
+      case 'autopilot': return <Autopilot />;
       case 'dashboard': return <Dashboard />;
       case 'governance': return <Governance users={staff} />;
       default: return null;

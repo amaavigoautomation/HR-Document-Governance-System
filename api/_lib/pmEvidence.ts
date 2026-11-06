@@ -24,7 +24,7 @@ const evId = (cid: string, uid: string, source: string, taskId: string) => `ev_$
 const isLink = (s: string) => /^https?:\/\/\S+$/i.test(s);
 
 /** The plan targets a person's evidence can attach to (their current, non-superseded plan). */
-async function targetsOf(c: C, uid: string): Promise<Item[]> {
+export async function targetsOf(c: C, uid: string): Promise<Item[]> {
   const plans = (await listK(c.cid, 'plan')).filter((p) => p.uid === uid && p.status !== 'SUPERSEDED' && p.status !== 'CONFIGURATION_PENDING');
   const ids = new Set(plans.map((p) => p.id));
   return (await listK(c.cid, 'kpiTarget')).filter((k) => ids.has(k.planId));
@@ -32,7 +32,7 @@ async function targetsOf(c: C, uid: string): Promise<Item[]> {
 
 interface Incoming {
   uid: string; source: string; taskId: string; title: string; link: string; completedOn: string; dueOn: string; quality: string; reworkCount: number; project: string; notes: string;
-  kpiRef: string; sopRef: string; addedVia: 'MANUAL' | 'IMPORT' | 'WEBHOOK'; event?: string;
+  kpiRef: string; sopRef: string; addedVia: 'MANUAL' | 'IMPORT' | 'WEBHOOK' | 'AUTO'; event?: string;
 }
 
 /** Validation: a piece of evidence needs a title and something a manager can open or look up (a link or a task id). */
@@ -149,7 +149,14 @@ const HEAD: Record<string, string> = {
 };
 
 async function evImport(c: C, b: any): Promise<Result> {
-  const text = typeof b.csv === 'string' ? b.csv : '';
+  return importCsvText(c, typeof b.csv === 'string' ? b.csv : '', { uid: c.ctx.uid, name: c.who, system: false });
+}
+
+/**
+ * The CSV import used by the screen and by the autopilot's evidence feeds. A person importing may only add evidence for themselves or
+ * their reports (HR: anyone). A feed run by the system is trusted for the whole company, because HR set the feed up.
+ */
+export async function importCsvText(c: C, text: string, by: { uid: string; name: string; system: boolean }): Promise<Result> {
   const rows = parseCsv(text);
   if (rows.length < 2) return fail(400, 'The file needs a header row and at least one task. Download the template to see the columns.');
   if (rows.length > 501) return fail(400, 'Import at most 500 rows at a time.');
@@ -162,14 +169,20 @@ async function evImport(c: C, b: any): Promise<Result> {
     rows[r].forEach((v, i) => { if (heads[i]) o[heads[i]] = v.trim(); });
     const p = people.get((o.email || '').toLowerCase());
     if (!p) { result.unassigned++; await raise(c, 'TASK_EVENT_PROBLEM', { refId: `imp_${hash(`${o.email}|${o.taskId}`)}`, refLabel: o.title || o.taskId || 'task', detail: `Row ${r + 1}: no employee with the email "${o.email || '(empty)'}". The task was not scored for anyone.` }); continue; }
-    if (!c.isHr && !isMyReport(c, p.uid) && p.uid !== c.ctx.uid) { result.rejected.push({ row: r + 1, reason: `${p.name} does not report to you.` }); continue; }
-    const res = await store(c, incoming(o, p.uid, 'IMPORT'), { uid: c.ctx.uid, name: c.who, verified: false });
+    if (!by.system && !c.isHr && !isMyReport(c, p.uid) && p.uid !== c.ctx.uid) { result.rejected.push({ row: r + 1, reason: `${p.name} does not report to you.` }); continue; }
+    const res = await store(c, incoming(o, p.uid, by.system ? 'AUTO' : 'IMPORT'), { uid: by.uid, name: by.name, verified: false });
     if (res.outcome === 'REJECTED') result.rejected.push({ row: r + 1, reason: res.message || 'Could not be stored.' });
     else if (res.outcome === 'DUPLICATE') { result.duplicates++; }
     else if (res.outcome === 'UPDATED') result.updated++; else result.stored++;
   }
-  if (result.duplicates) await raise(c, 'DUPLICATE_EVENT', { refId: `import_${today()}`, refLabel: 'CSV import', detail: `${result.duplicates} row${result.duplicates > 1 ? 's were' : ' was'} already recorded and skipped, so nothing was counted twice.` });
+  if (result.duplicates && !by.system) await raise(c, 'DUPLICATE_EVENT', { refId: `import_${today()}`, refLabel: 'CSV import', detail: `${result.duplicates} row${result.duplicates > 1 ? 's were' : ' was'} already recorded and skipped, so nothing was counted twice.` });
   return ok({ ...result, message: `${result.stored} new, ${result.updated} updated, ${result.duplicates} already there, ${result.unassigned} with no matching employee, ${result.rejected.length} rejected.` });
+}
+
+/** Evidence made by the autopilot from the app's own records (for example attendance). It goes through the same validation and KPI mapping as everything else. */
+export async function systemEvidence(c: C, i: { uid: string; taskId: string; title: string; kpiRef: string; completedOn: string; source?: string; notes?: string }, byName: string) {
+  const full = incoming({ source: i.source || 'DASHBOARD', taskId: i.taskId, title: i.title, completedOn: i.completedOn, quality: 'NOT_APPLICABLE', kpi: i.kpiRef, notes: i.notes || '' }, i.uid, 'AUTO');
+  return store(c, full, { uid: 'system', name: byName, verified: true });
 }
 
 // ------------------------------------------------------------------ webhook (public, signed by a company key)

@@ -111,6 +111,8 @@ async function cycleSave(c: C, b: any): Promise<Result> {
   const self = str(b.selfReviewDeadline, 10); const mgr = str(b.managerDeadline, 10); const hr = str(b.hrDeadline, 10);
   for (const d of [self, mgr, hr]) if (d && !isDate(d)) return fail(400, 'Use valid deadline dates.');
   if ((self && mgr && self > mgr) || (mgr && hr && mgr > hr) || (self && hr && self > hr)) return fail(400, 'Deadlines must go in order: self-review, then manager, then HR.');
+  const autoOpenOn = str(b.autoOpenOn, 10);
+  if (autoOpenOn && !isDate(autoOpenOn)) return fail(400, 'Choose a valid date for opening the reviews automatically.');
   const prev = b.id ? await getK(c.cid, str(b.id, 80), 'cycle') : null;
   if (b.id && !prev) return fail(404, 'That cycle was not found.');
   if (prev && prev.lockStatus === 'LOCKED') return fail(409, 'This cycle is locked. Nothing can be changed.');
@@ -122,7 +124,7 @@ async function cycleSave(c: C, b: any): Promise<Result> {
   if (scope === 'SELECTED' && employeeUids.length === 0) return fail(400, 'Choose at least one employee.');
   const id = prev?.id || newId();
   const item: Item = { ...(prev || {}), id, companyId: c.cid, kind: 'cycle', name, reviewType: oneOf(b.reviewType, REVIEW_TYPES, 'QUARTERLY'), periodStart, periodEnd,
-    selfReviewDeadline: self, managerDeadline: mgr, hrDeadline: hr, scope, departments, employeeUids, lockStatus: prev?.lockStatus || 'OPEN', openedAt: prev?.openedAt || '' };
+    selfReviewDeadline: self, managerDeadline: mgr, hrDeadline: hr, autoOpenOn: prev?.openedAt ? prev.autoOpenOn || '' : autoOpenOn, scope, departments, employeeUids, lockStatus: prev?.lockStatus || 'OPEN', openedAt: prev?.openedAt || '' };
   await putK(item);
   await audit(c, 'cycle', id, prev ? 'UPDATED' : 'CREATED', prev ? { periodStart: prev.periodStart, periodEnd: prev.periodEnd } : null, { periodStart, periodEnd });
   return ok({ item });

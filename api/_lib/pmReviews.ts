@@ -530,4 +530,4 @@ export const REVIEW_ROUTES: Record<string, Route> = {
   'review-defer': { method: 'POST', who: 'hr', run: (c, b) => reviewDefer(c, b) },
 };
 
-export { compute as computeReview, round, overlapDays, REVIEW_TYPES, closeSuperseded };
+export { compute as computeReview, cycleOpen as openCycleNow, round, overlapDays, REVIEW_TYPES, closeSuperseded };

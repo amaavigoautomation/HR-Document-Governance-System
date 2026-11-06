@@ -12,10 +12,11 @@ import { EVIDENCE_ROUTES, evHook } from './pmEvidence.js';
 import { REVIEW_ROUTES, refreshBlockedReviews, reviewReminders } from './pmReviews.js';
 import { GROWTH_ROUTES, generateCheckins } from './pmGrowth.js';
 import { INSIGHT_ROUTES } from './pmInsights.js';
+import { AUTO_ROUTES, runAutopilot } from './pmAuto.js';
 
 export interface PmRequest { method: string; action: string; query: Record<string, any>; body?: any; headers: Record<string, any> }
 
-export const ROUTES: Record<string, Route> = { ...MASTER_ROUTES, ...PLAN_ROUTES, ...EVIDENCE_ROUTES, ...REVIEW_ROUTES, ...GROWTH_ROUTES, ...INSIGHT_ROUTES };
+export const ROUTES: Record<string, Route> = { ...MASTER_ROUTES, ...PLAN_ROUTES, ...EVIDENCE_ROUTES, ...REVIEW_ROUTES, ...GROWTH_ROUTES, ...INSIGHT_ROUTES, ...AUTO_ROUTES };
 
 /** The daily job for one company. Every step is safe to run twice. */
 export async function runDaily(cid: string): Promise<Record<string, any>> {
@@ -28,6 +29,7 @@ export async function runDaily(cid: string): Promise<Record<string, any>> {
     ['checkins', () => generateCheckins(c)],
     ['sopReminders', () => sopReminders(c)],
     ['reviewReminders', () => reviewReminders(c)],
+    ['autopilot', () => runAutopilot(c)],
   ];
   for (const [name, fn] of steps) { try { out[name] = await fn(); } catch (e: any) { out[name] = { error: e?.message || 'failed' }; } }
   return out;

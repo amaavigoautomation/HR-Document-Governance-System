@@ -76,6 +76,7 @@ const Body: React.FC<{ d: any; reload: () => void }> = ({ d, reload }) => {
       {isEmp && ['PUBLISHED', 'ACKNOWLEDGED', 'DISPUTED'].includes(s) && <Result d={d} reload={reload} />}
       {!isEmp && <SelfRead d={d} />}
       {isMgr && ['OPEN'].includes(s) && <Waive d={d} reload={reload} />}
+      {!isEmp && ['SELF_ASSESSED', 'MANAGER_EVALUATED', 'DISCUSSED', 'HR_REVIEWED'].includes(s) && <ReviewPack d={d} />}
       {isMgr && ['SELF_ASSESSED', 'MANAGER_EVALUATED'].includes(s) && <ManagerForm d={d} reload={reload} />}
       {isMgr && s === 'MANAGER_EVALUATED' && <Discuss d={d} reload={reload} />}
       {!isEmp && s === 'DISCUSSED' && d.canHr && <HrCheck d={d} reload={reload} />}
@@ -99,12 +100,23 @@ const SelfForm: React.FC<{ d: any; reload: () => void }> = ({ d, reload }) => {
   const [s, setS] = useState({ achievements: rv.self?.achievements || '', improvements: rv.self?.improvements || '', trainingNeeds: rv.self?.trainingNeeds || '', comments: rv.self?.comments || '' });
   const [comps, setComps] = useState<Record<string, any>>(() => Object.fromEntries(d.comps.map((c: any) => [c.competencyId, { selfRating: c.selfRating, selfEvidence: c.selfEvidence }])));
   const [kpis, setKpis] = useState<Record<string, string>>(() => Object.fromEntries((rv.kpis || []).map((k: any) => [k.targetId, k.employeeNote || ''])));
+  const [evIds, setEvIds] = useState<Record<string, string[]>>(() => Object.fromEntries((rv.kpis || []).map((k: any) => [k.targetId, k.evidenceIds || []])));
+  const [fillNote, setFillNote] = useState('');
   const { busy, note, run } = useRunner();
-  const payload = (submit: boolean) => ({ id: rv.id, submit, ...s, comps: Object.entries(comps).map(([competencyId, v]: any) => ({ competencyId, ...v })), kpis: Object.entries(kpis).map(([targetId, employeeNote]) => ({ targetId, employeeNote })) });
+  const payload = (submit: boolean) => ({ id: rv.id, submit, ...s, comps: Object.entries(comps).map(([competencyId, v]: any) => ({ competencyId, ...v })), kpis: Object.entries(kpis).map(([targetId, employeeNote]) => ({ targetId, employeeNote, evidenceIds: evIds[targetId] || [] })) });
+  // Fills what is still empty from the work recorded for this person. Nothing already written is overwritten.
+  const fill = () => run(async () => {
+    const r = await pmService.get('self-prefill', { reviewId: rv.id });
+    setFillNote(r.note || '');
+    if (r.achievements) setS((cur) => ({ ...cur, achievements: cur.achievements.trim() ? cur.achievements : r.achievements }));
+    setKpis((cur) => { const n = { ...cur }; for (const k of r.kpis || []) if (!n[k.targetId]?.trim() && k.employeeNote) n[k.targetId] = k.employeeNote; return n; });
+    setEvIds((cur) => { const n = { ...cur }; for (const k of r.kpis || []) n[k.targetId] = Array.from(new Set([...(n[k.targetId] || []), ...k.evidenceIds])).slice(0, 30); return n; });
+  });
   const left = d.comps.filter((c: any) => !comps[c.competencyId]?.selfRating).length;
   return (
     <Card title="Your self-assessment" subtitle="Be honest and specific. Your manager will also see your examples. You can save and come back.">
       <div className="space-y-5">
+        <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 flex flex-wrap items-center gap-3"><button className={btnGhost} disabled={busy} onClick={fill}>Fill empty boxes from my recorded work</button><span className="text-xs text-slate-600">{fillNote || 'Uses the work already recorded for you in this period. You check it and make it yours. Anything you have written stays as it is.'}</span></div>
         <Note label="1. What did you achieve in this period?" value={s.achievements} onChange={(v) => setS({ ...s, achievements: v })} hint="Examples with results are best, like 'Closed 14 tickets a week, up from 10'." />
         {(rv.kpis || []).length > 0 && (
           <div className="space-y-2"><div className="text-xs font-bold text-slate-700">2. Your targets: add a note on each (optional)</div>
@@ -331,6 +343,39 @@ const AiBox: React.FC<{ d: any }> = ({ d }) => {
       <div className="flex flex-wrap gap-1.5">{AI_BUTTONS.map((b) => <button key={b.k} className={btnGhost} disabled={busy} onClick={() => run(async () => { setOut(await pmService.post('ai-insight', { reviewId: d.item.id, capability: b.k })); })}>{b.l}</button>)}</div>
       <ResultNote note={note} />
       {out && <div className="mt-3 text-sm"><Pill tone={out.source === 'AI' ? 'blue' : 'slate'}>{out.source === 'AI' ? 'AI suggestion' : 'Simple check'}</Pill>{out.note && <p className="text-xs text-slate-500 mt-1">{out.note}</p>}<ul className="list-disc pl-5 mt-2 space-y-1">{out.points.map((p: string, i: number) => <li key={i}>{p}</li>)}</ul></div>}
+    </Card>
+  );
+};
+
+
+// ------------------------------------------------------------------ review pack (evaluators only)
+
+const EV_TONE: Record<string, 'green' | 'amber' | 'red' | 'slate'> = { VERIFIED: 'green', PENDING_VERIFICATION: 'amber', REJECTED: 'red', UNMAPPED: 'amber' };
+const EV_WORDS: Record<string, string> = { VERIFIED: 'checked', PENDING_VERIFICATION: 'waiting to be checked', REJECTED: 'rejected', UNMAPPED: 'not linked to a target' };
+const ReviewPack: React.FC<{ d: any }> = ({ d }) => {
+  const [p, setP] = useState<any>(null); const [copied, setCopied] = useState(false); const { busy, note, run } = useRunner();
+  const copy = async () => { try { await navigator.clipboard.writeText(p.draft.points.map((x: string) => `- ${x}`).join('\n')); setCopied(true); setTimeout(() => setCopied(false), 2000); } catch { /* the points stay on screen to copy by hand */ } };
+  return (
+    <Card title="Review pack" subtitle="The recorded facts for this person in one place, with a draft of talking points. It is information only: you give every rating.">
+      {!p ? <div><button className={btnPrimary} disabled={busy} onClick={() => run(async () => { setP((await pmService.get('pack-get', { reviewId: d.item.id })).pack); })}>Open the review pack</button><ResultNote note={note} /></div> : (
+        <div className="space-y-4">
+          <div className="space-y-2">{p.kpis.length === 0 && <p className="text-sm text-slate-500">This review has no targets, so there is nothing to group.</p>}{p.kpis.map((k: any) => (
+            <div key={k.targetId} className="border border-slate-200 rounded-lg p-3">
+              <div className="flex flex-wrap items-center gap-2"><span className="text-sm font-bold text-slate-800">{k.kraName}: {k.kpiName}</span><span className="text-xs text-slate-500">target: {k.target || 'not set'}</span>
+                <Pill tone={k.gap ? 'amber' : 'green'}>{k.counts.verified} checked</Pill>{k.counts.pending > 0 && <Pill tone="amber">{k.counts.pending} waiting</Pill>}{k.counts.rework > 0 && <Pill tone="slate">{k.counts.rework} rework</Pill>}</div>
+              {k.gap && <p className="text-xs text-amber-800 mt-1">No checked evidence yet. Check some in Work evidence, or choose "not enough evidence" when you rate this target.</p>}
+              <ul className="mt-2 space-y-1">{k.items.map((i: any) => <li key={i.id} className="text-xs text-slate-700 flex flex-wrap gap-1.5 items-center"><Pill tone={EV_TONE[i.status] || 'slate'}>{EV_WORDS[i.status] || i.status}</Pill>{i.link ? <a href={i.link} target="_blank" rel="noreferrer" className="underline">{i.title}</a> : i.title}{i.completedOn && <span className="text-slate-400">{i.completedOn}</span>}</li>)}</ul>
+            </div>))}</div>
+          {p.unmapped.length > 0 && <Notice tone="warn"><b>{p.unmapped.length} item(s) are not linked to a target:</b> {p.unmapped.slice(0, 5).map((u: any) => u.title).join('; ')}. Link or reject them in Work evidence before you rate.</Notice>}
+          {p.checkins.length > 0 && <div><div className="text-xs font-bold text-slate-700 mb-1">Monthly check-ins</div><ul className="space-y-1">{p.checkins.map((c: any) => <li key={c.month} className="text-xs text-slate-700"><b>{c.month}</b> ({c.status === 'DONE' ? 'recorded' : 'not recorded'}){c.wins ? ` - wins: ${c.wins}` : ''}{c.concerns ? ` - concerns: ${c.concerns}` : ''}{c.employeeComment ? ` - employee added: ${c.employeeComment}` : ''}</li>)}</ul></div>}
+          {p.context?.leaveDays > 0 && <p className="text-xs text-slate-600">On approved leave for {p.context.leaveDays} day(s) in this period (context only).</p>}
+          <div className="border border-slate-200 rounded-lg p-3 bg-slate-50">
+            <div className="flex flex-wrap items-center gap-2 mb-1"><span className="text-sm font-bold text-slate-800">Draft talking points</span><Pill tone={p.draft.source === 'AI' ? 'blue' : 'slate'}>{p.draft.source === 'AI' ? 'AI draft' : 'Simple summary'}</Pill><button className={btnGhost} onClick={copy}>{copied ? 'Copied' : 'Copy'}</button></div>
+            <p className="text-xs text-slate-500 mb-2">{p.draft.note}</p>
+            <ul className="list-disc pl-5 space-y-1 text-sm text-slate-800">{p.draft.points.map((x: string, i: number) => <li key={i}>{x}</li>)}</ul>
+          </div>
+        </div>
+      )}
     </Card>
   );
 };

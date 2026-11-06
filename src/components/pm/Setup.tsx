@@ -96,7 +96,7 @@ export const Cycles: React.FC<{ users: User[]; openReview: (id: string) => void 
       <ResultNote note={note} />
       <div className="space-y-2 mb-3">{items.length === 0 && <Empty text="No cycles yet." />}{items.map((c) => (
         <div key={c.id} className="bg-white border border-slate-200 rounded-xl px-4 py-3 flex flex-wrap items-center justify-between gap-2">
-          <div><div className="text-sm font-bold">{c.name} {c.lockStatus === 'LOCKED' && <Pill tone="slate">locked</Pill>} {c.openedAt && <Pill tone="green">open</Pill>}</div><div className="text-xs text-slate-500">{c.periodStart} to {c.periodEnd} - self-review by {c.selfReviewDeadline || '-'}, manager by {c.managerDeadline || '-'}, HR by {c.hrDeadline || '-'}</div></div>
+          <div><div className="text-sm font-bold">{c.name} {c.lockStatus === 'LOCKED' && <Pill tone="slate">locked</Pill>} {c.openedAt && <Pill tone="green">open</Pill>}</div><div className="text-xs text-slate-500">{c.periodStart} to {c.periodEnd}{c.autoOpenOn && !c.openedAt ? ` - opens by itself on ${c.autoOpenOn}` : ''} - self-review by {c.selfReviewDeadline || '-'}, manager by {c.managerDeadline || '-'}, HR by {c.hrDeadline || '-'}</div></div>
           <div className="flex gap-2">
             {c.lockStatus !== 'LOCKED' && <ConfirmButton className={btnPrimary} question={c.openedAt ? 'Add any missing people (nobody is duplicated)?' : 'Create a review for everyone covered?'} yes="Yes, open" onConfirm={() => run(async () => { const r = await pmService.post('cycle-open', { id: c.id }); setTick((t) => t + 1); setForm(null); setMsg(r.message); }, undefined)}>{c.openedAt ? 'Add missing reviews' : 'Open reviews'}</ConfirmButton>}
             {c.lockStatus !== 'LOCKED' && <button className={btnGhost} onClick={() => setForm({ ...c })}>Edit</button>}
@@ -105,7 +105,7 @@ export const Cycles: React.FC<{ users: User[]; openReview: (id: string) => void 
           </div>
         </div>))}</div>
       {msg && <Notice tone="ok">{msg}</Notice>}
-      {!form ? <button className={btnPrimary} onClick={() => setForm({ name: '', reviewType: 'QUARTERLY', scope: 'ALL', departments: [], periodStart: '', periodEnd: '', selfReviewDeadline: '', managerDeadline: '', hrDeadline: '' })}><Plus className="w-4 h-4" />New cycle</button> : (
+      {!form ? <button className={btnPrimary} onClick={() => setForm({ name: '', reviewType: 'QUARTERLY', scope: 'ALL', departments: [], periodStart: '', periodEnd: '', selfReviewDeadline: '', managerDeadline: '', hrDeadline: '', autoOpenOn: '' })}><Plus className="w-4 h-4" />New cycle</button> : (
         <Card title={form.id ? 'Edit cycle' : 'New cycle'}>
           <div className="grid md:grid-cols-3 gap-3">
             <Field label="Name"><input className={input} value={form.name} placeholder="Q4 2026 review" onChange={(e) => set({ name: e.target.value })} /></Field>
@@ -113,7 +113,7 @@ export const Cycles: React.FC<{ users: User[]; openReview: (id: string) => void 
             <Field label="Who is reviewed?"><select className={input} value={form.scope} onChange={(e) => set({ scope: e.target.value })}><option value="ALL">Everyone</option><option value="DEPARTMENT">Some departments</option><option value="SELECTED">Chosen people</option></select></Field>
             <Field label="Period starts"><input type="date" className={input} value={form.periodStart} onChange={(e) => set({ periodStart: e.target.value })} /></Field>
             <Field label="Period ends"><input type="date" className={input} value={form.periodEnd} onChange={(e) => set({ periodEnd: e.target.value })} /></Field>
-            <div />
+            <Field label="Open the reviews by themselves on (optional)">{form.openedAt ? <div className="text-sm text-slate-500 py-2">Already open.</div> : <input type="date" className={input} value={form.autoOpenOn || ''} onChange={(e) => set({ autoOpenOn: e.target.value })} />}</Field>
             <Field label="Employees finish self-review by"><input type="date" className={input} value={form.selfReviewDeadline} onChange={(e) => set({ selfReviewDeadline: e.target.value })} /></Field>
             <Field label="Managers finish by"><input type="date" className={input} value={form.managerDeadline} onChange={(e) => set({ managerDeadline: e.target.value })} /></Field>
             <Field label="HR finishes by"><input type="date" className={input} value={form.hrDeadline} onChange={(e) => set({ hrDeadline: e.target.value })} /></Field>
