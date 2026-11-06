@@ -14,7 +14,6 @@ import { AttendanceCard } from './cards/AttendanceCard';
 import { QuickLinksCard, QuickReportsCard } from './cards/QuickCards';
 import { OnLeaveCard } from './cards/OnLeaveCard';
 import { CelebrationsCard } from './cards/CelebrationsCard';
-import { FilesCard } from './cards/FilesCard';
 import { AnnouncementsCard } from './cards/AnnouncementsCard';
 import { LoginSummaryCard } from './cards/LoginSummaryCard';
 import { AcksCard } from './cards/AcksCard';
@@ -93,7 +92,6 @@ export const HomePage: React.FC<Props> = ({ fallbackName, onOpen }) => {
           </div>
           <div className="space-y-4 min-w-0">
             {show('celebrations') && <CelebrationsCard refreshKey={tick} />}
-            {show('files') && <FilesCard onOpen={onOpen} refreshKey={tick} />}
             {show('ceo-speak') && <AnnouncementsCard kind="CEO_SPEAK" canManage={!!can?.announce} onManage={() => setManage(true)} refreshKey={tick} />}
             {show('announcements') && <AnnouncementsCard kind="ANNOUNCEMENT" canManage={!!can?.announce} onManage={() => setManage(true)} refreshKey={tick} />}
             {show('login-summary') && can?.loginSummary && <LoginSummaryCard refreshKey={tick} />}
