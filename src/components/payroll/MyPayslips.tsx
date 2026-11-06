@@ -5,7 +5,7 @@ import { downloadPayslipPdf, slipRows } from './payslipPdf';
 import { MySettlement } from './SettlementsTab';
 
 /** One payslip on screen. Opens the signed-in person's own payslip, or anyone's for payroll viewers. */
-export const PayslipViewer: React.FC<{ month: string; uid?: string; onClose?: () => void }> = ({ month, uid, onClose }) => {
+export const PayslipViewer: React.FC<{ month: string; uid?: string; onClose?: () => void; embedded?: boolean }> = ({ month, uid, onClose, embedded }) => {
   const [slip, setSlip] = useState<any | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -22,17 +22,15 @@ export const PayslipViewer: React.FC<{ month: string; uid?: string; onClose?: ()
   const e = slip.employee;
   const rows = Math.max(earn.length, ded.length);
 
-  return (
-    <Card
-      title={`Payslip · ${monthLabel(month)}`}
-      right={
-        <div className="flex items-center gap-2">
-          {slip.status !== 'LOCKED' && slip.status !== 'PAID' && <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 border border-amber-200">Preview: not final</span>}
-          <button className={btnPrimary} onClick={() => downloadPayslipPdf(slip)}>Download PDF</button>
-          {onClose && <button className={btnGhost} onClick={onClose}>Close</button>}
-        </div>
-      }
-    >
+  const actions = (
+    <div className="flex items-center gap-2">
+      {slip.status !== 'LOCKED' && slip.status !== 'PAID' && <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 border border-amber-200">Preview: not final</span>}
+      <button className={btnPrimary} onClick={() => downloadPayslipPdf(slip)}>Download PDF</button>
+      {onClose && <button className={btnGhost} onClick={onClose}>Close</button>}
+    </div>
+  );
+  const body = (
+    <>
       {slip.company?.legalName && <div className="text-sm font-bold text-slate-800">{slip.company.legalName}</div>}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-x-4 gap-y-2 text-xs my-3">
         {([
@@ -74,8 +72,11 @@ export const PayslipViewer: React.FC<{ month: string; uid?: string; onClose?: ()
         <span className="text-lg font-bold tabular-nums">{inr(l.net)}</span>
       </div>
       {slip.paidOn && <div className="text-[11px] text-slate-500 mt-2">Paid on {slip.paidOn}</div>}
-    </Card>
+    </>
   );
+
+  if (embedded) return <div><div className="flex justify-end mb-2">{actions}</div>{body}</div>;
+  return <Card title={`Payslip · ${monthLabel(month)}`} right={actions}>{body}</Card>;
 };
 
 /** Everyone's own payslips (released once payroll for the month is locked). */
@@ -85,7 +86,7 @@ export const MyPayslips: React.FC = () => {
   const [month, setMonth] = useState<string | null>(null);
 
   useEffect(() => {
-    payrollService.myPayslips().then((r) => { setItems(r.items); if (r.items[0]) setMonth(r.items[0].month); }).catch((e) => setError(e.message));
+    payrollService.myPayslips().then((r) => { setItems(r.items); }).catch((e) => setError(e.message));
   }, []);
 
   if (error) return <Notice tone="error">{error}</Notice>;
@@ -96,22 +97,28 @@ export const MyPayslips: React.FC = () => {
     <div className="space-y-4">
       <Card title="Your payslips">
         <div className="divide-y divide-slate-100">
-          {items.map((p) => (
-            <button key={p.month} onClick={() => setMonth(p.month)}
-              className={`w-full text-left py-2.5 px-2 flex items-center justify-between gap-3 rounded ${month === p.month ? 'bg-[#FA7014]/5' : 'hover:bg-slate-50'}`}>
-              <div>
-                <div className="text-sm font-bold text-slate-800">{monthLabel(p.month)}</div>
-                <div className="text-xs text-slate-500">Gross {inr(p.gross)} · Deductions {inr(p.deductions)}</div>
+          {items.map((p) => {
+            const open = month === p.month;
+            return (
+              <div key={p.month}>
+                <button onClick={() => setMonth(open ? null : p.month)} aria-expanded={open}
+                  className={`w-full text-left py-2.5 px-2 flex items-center justify-between gap-3 rounded ${open ? 'bg-[#FA7014]/5' : 'hover:bg-slate-50'}`}>
+                  <div>
+                    <div className="text-sm font-bold text-slate-800">{monthLabel(p.month)}</div>
+                    <div className="text-xs text-slate-500">Gross {inr(p.gross)} · Deductions {inr(p.deductions)}</div>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${p.status === 'PAID' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-sky-50 text-sky-700 border-sky-200'}`}>{p.status === 'PAID' ? 'Paid' : 'Released'}</span>
+                    <span className="text-sm font-bold tabular-nums">{inr(p.net)}</span>
+                    <span className={`text-slate-400 text-xs transition-transform ${open ? 'rotate-180' : ''}`}>▾</span>
+                  </div>
+                </button>
+                {open && <div className="px-2 pb-4 pt-2"><PayslipViewer month={p.month} embedded /></div>}
               </div>
-              <div className="flex items-center gap-3">
-                <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${p.status === 'PAID' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-sky-50 text-sky-700 border-sky-200'}`}>{p.status === 'PAID' ? 'Paid' : 'Released'}</span>
-                <span className="text-sm font-bold tabular-nums">{inr(p.net)}</span>
-              </div>
-            </button>
-          ))}
+            );
+          })}
         </div>
       </Card>
-      {month && <PayslipViewer month={month} />}
       <MySettlement />
     </div>
   );
