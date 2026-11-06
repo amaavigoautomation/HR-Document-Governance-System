@@ -232,7 +232,7 @@ export async function assignRequisition(actor: User, req: Requisition, hr: User,
   assertAllowed(isHr(hr) && hr.active !== false, 'the assignee must be an active HR user.');
 
   const previous = req.ownerHr;
-  if (previous?.id === hr.id) throw new Error(`${hr.name} already owns this requisition.`);
+  if (previous) throw new Error(`This requisition is already assigned to ${previous.name} and cannot be changed.`);
 
   // Reassigning mid-flow keeps the current stage; first assignment moves it to PENDING_HR.
   const status = req.status === 'PENDING_ASSIGNMENT' ? 'PENDING_HR' : req.status;

@@ -248,44 +248,49 @@ export const RequisitionDetailPanel: React.FC<Props> = ({ req, currentUser, user
           {can(currentUser, 'assign', req) && (
             <div className={box}>
               <div className="flex items-center gap-2 text-sm font-black text-slate-900">
-                <UserCog className="w-4 h-4 text-[#FA7014]" /> {req.ownerHr ? 'Reassign HR owner' : 'Assign to an HR'}
+                <UserCog className="w-4 h-4 text-[#FA7014]" /> {req.ownerHr ? 'HR owner' : 'Assign to an HR'}
               </div>
-              {req.ownerHr && (
-                <div className="mt-3 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-900">
-                  <span className="font-black">Already assigned to {req.ownerHr.name}</span>
+              {req.ownerHr ? (
+                <>
+                  <div className="mt-3">
+                    <select className={`${field} cursor-not-allowed bg-slate-50 text-slate-700`} value={req.ownerHr.id} disabled aria-label="HR owner">
+                      <option value={req.ownerHr.id}>{req.ownerHr.name}</option>
+                    </select>
+                  </div>
                   {(req.assignedByName || req.assignedAt) && (
-                    <span className="text-emerald-800">
-                      {req.assignedByName ? ` by ${req.assignedByName}` : ''}
-                      {req.assignedAt ? ` on ${fmt(req.assignedAt)}` : ''}
-                    </span>
+                    <p className="mt-2 text-[11px] text-slate-400">
+                      Assigned{req.assignedByName ? ` by ${req.assignedByName}` : ''}{req.assignedAt ? ` on ${fmt(req.assignedAt)}` : ''}. This cannot be changed.
+                    </p>
                   )}
-                  . Choose someone else below only to reassign.
-                </div>
+                </>
+              ) : (
+                <>
+                  <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
+                    <select className={field} value={assigneeId} onChange={(e) => setAssigneeId(e.target.value)}>
+                      <option value="">Select HR...</option>
+                      {hrOptions.map((u) => (
+                        <option key={u.id} value={u.id}>
+                          {u.name}
+                          {canAssign(u) ? ' (can assign)' : ''} - {workload.get(u.id) || 0} open
+                        </option>
+                      ))}
+                    </select>
+                    <input className={field} placeholder="Note (optional)" value={assignNote} onChange={(e) => setAssignNote(e.target.value)} />
+                  </div>
+                  <button
+                    className={`${btnPrimary} mt-3`}
+                    disabled={!assigneeId || busy !== null}
+                    onClick={() => {
+                      const hr = users.find((u) => u.id === assigneeId);
+                      if (hr) run('assign', () => assignRequisition(currentUser, req, hr, assignNote), `Assigned to ${hr.name}.`).then(() => setAssigneeId(''));
+                    }}
+                  >
+                    {busy === 'assign' && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+                    Assign
+                  </button>
+                </>
               )}
-              <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
-                <select className={field} value={assigneeId} onChange={(e) => setAssigneeId(e.target.value)}>
-                  <option value="">Select HR...</option>
-                  {hrOptions.map((u) => (
-                    <option key={u.id} value={u.id} disabled={u.id === req.ownerHr?.id}>
-                      {u.name}
-                      {canAssign(u) ? ' (can assign)' : ''} - {workload.get(u.id) || 0} open
-                    </option>
-                  ))}
-                </select>
-                <input className={field} placeholder="Note (optional)" value={assignNote} onChange={(e) => setAssignNote(e.target.value)} />
-              </div>
-              <button
-                className={`${btnPrimary} mt-3`}
-                disabled={!assigneeId || busy !== null}
-                onClick={() => {
-                  const hr = users.find((u) => u.id === assigneeId);
-                  if (hr) run('assign', () => assignRequisition(currentUser, req, hr, assignNote), `Assigned to ${hr.name}.`).then(() => setAssigneeId(''));
-                }}
-              >
-                {busy === 'assign' && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
-                {req.ownerHr ? 'Reassign' : 'Assign'}
-              </button>
-              {hrOptions.length === 0 && <p className="mt-2 text-xs text-slate-500">No active HR users found.</p>}
+              {!req.ownerHr && hrOptions.length === 0 && <p className="mt-2 text-xs text-slate-500">No active HR users found.</p>}
             </div>
           )}
 
