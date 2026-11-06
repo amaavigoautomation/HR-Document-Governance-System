@@ -575,7 +575,9 @@ async function myMood(w: Who): Promise<Result> {
 async function saveMood(w: Who, body: any): Promise<Result> {
   if (!isMood(body?.mood)) return fail(400, 'Choose how you feel.');
   const date = istToday();
-  await db().collection('moodCheckins').doc(moodId(w.cid, w.ctx.uid, date)).set({ companyId: w.cid, uid: w.ctx.uid, date, mood: body.mood, at: nowIso() });
+  const ref = db().collection('moodCheckins').doc(moodId(w.cid, w.ctx.uid, date));
+  if ((await ref.get()).exists) return fail(409, 'You have already shared your mood today. It cannot be changed.');
+  await ref.set({ companyId: w.cid, uid: w.ctx.uid, date, mood: body.mood, at: nowIso() });
   return ok({ today: body.mood });
 }
 

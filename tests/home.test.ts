@@ -48,6 +48,8 @@ assert.equal((await call(FOREIGN_HR, 'save-announcement', 'POST', { id: (saved.j
 // mood: one answer a day, counts only for managers
 assert.equal((await call(EMP, 'mood', 'POST', { mood: 'OK' })).status, 200);
 assert.equal(((await call(EMP, 'mood')).json as any).today, 'OK');
+assert.equal((await call(EMP, 'mood', 'POST', { mood: 'SAD' })).status, 409);
+assert.equal(((await call(EMP, 'mood')).json as any).today, 'OK');
 assert.equal((await call(EMP, 'mood-summary')).status, 403);
 assert.equal((await call(HR, 'mood-summary')).status, 200);
 

@@ -26,8 +26,10 @@ export const MoodCard: React.FC<{ showSummary: boolean }> = ({ showSummary }) =>
   const [picked, setPicked] = useState<Mood | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const current = picked ?? load.data?.today ?? null;
+  const locked = !!current;
 
   const choose = async (m: Mood) => {
+    if (locked) return;
     setSaving(true);
     setErr(null);
     try {
@@ -47,8 +49,8 @@ export const MoodCard: React.FC<{ showSummary: boolean }> = ({ showSummary }) =>
           const on = current === m.value;
           return (
             <button
-              key={m.value} type="button" role="radio" aria-checked={on} disabled={saving} onClick={() => void choose(m.value)}
-              className={`flex flex-col items-center gap-1 rounded-xl border py-2 transition-colors disabled:opacity-60 ${on ? 'border-[#FA7014] bg-orange-50' : 'border-slate-200 bg-slate-50 hover:bg-white'}`}
+              key={m.value} type="button" role="radio" aria-checked={on} disabled={saving || locked} onClick={() => void choose(m.value)}
+              className={`flex flex-col items-center gap-1 rounded-xl border py-2 transition-colors disabled:cursor-default ${on ? 'border-[#FA7014] bg-orange-50' : locked ? 'border-slate-200 bg-slate-50 opacity-50' : 'border-slate-200 bg-slate-50 hover:bg-white'}`}
             >
               <span className="text-2xl" aria-hidden>{m.emoji}</span>
               <span className="text-[10px] font-semibold text-slate-600">{m.label}</span>
@@ -56,7 +58,7 @@ export const MoodCard: React.FC<{ showSummary: boolean }> = ({ showSummary }) =>
           );
         })}
       </div>
-      {current && !err && <p className="mt-2 text-[11px] text-slate-400">Saved for today. You can change it until midnight.</p>}
+      {current && !err && <p className="mt-2 text-[11px] text-slate-400">Saved for today. It can't be changed, you can pick again tomorrow.</p>}
       {err && <p className="mt-2 text-xs text-rose-700" role="alert">{err}</p>}
       {showSummary && <MoodSummary />}
     </HomeCard>
