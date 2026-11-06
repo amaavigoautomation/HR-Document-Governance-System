@@ -22,9 +22,9 @@ export const FeedbackPanel: React.FC<{ interviewId: string; manager: boolean; on
     <div className="space-y-3">
       <Loading error={fb.error} loading={fb.loading} />
       {note && <Notice tone={note.tone}>{note.text}</Notice>}
-      {d?.onPanel && !d.iSubmitted && (
+      {(d?.canSubmit ?? d?.onPanel) && !d.iSubmitted && (
         <div className="space-y-3 rounded-lg border border-slate-200 p-3">
-          <p className="text-xs text-slate-500">Rate each point from 1 (weak) to 5 (excellent). You will not see colleagues' scorecards until you and everyone else on the panel have submitted.</p>
+          <p className="text-xs text-slate-500">Rate each point from 1 (weak) to 5 (excellent). You will not see colleagues' scorecards until you and everyone else on the panel have submitted.{d.guest ? ' You were in this meeting as a guest, so your feedback is optional but welcome.' : ''}</p>
           {(d.criteria as string[]).map((c) => (
             <div key={c} className="flex items-center justify-between gap-2 text-xs">
               <span className="font-semibold text-slate-700">{c}</span>
@@ -106,11 +106,13 @@ export const InterviewsTab: React.FC = () => {
           right={<Pill tone={i.status === 'COMPLETED' ? 'green' : i.status === 'CANCELLED' ? 'slate' : 'blue'}>{i.status.toLowerCase()}</Pill>}>
           <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500">
             <span>Panel: {(i.panel as any[]).map((p) => p.name).join(', ')}</span>
+            {(i.guests || []).length > 0 && <span>- Guests: {(i.guests as string[]).join(', ')}</span>}
             <span>- {i.submittedCount}/{(i.panel as any[]).length} scorecards</span>
             {i.iAmOnPanel && !i.iSubmitted && i.status !== 'CANCELLED' && <Pill tone="amber">Your scorecard is due</Pill>}
+            {i.iAmGuest && !i.iSubmitted && i.status !== 'CANCELLED' && <Pill tone="blue">You were invited: feedback welcome</Pill>}
           </div>
           <div className="mt-2 flex flex-wrap gap-2">
-            {(i.iAmOnPanel || manager) && i.status !== 'CANCELLED' && <button className={btnGhost} onClick={() => setOpen(open === i.id ? null : i.id)}>{open === i.id ? 'Hide' : i.iAmOnPanel && !i.iSubmitted ? 'Give feedback' : 'View feedback'}</button>}
+            {(i.iAmOnPanel || i.iAmGuest || manager) && i.status !== 'CANCELLED' && <button className={btnGhost} onClick={() => setOpen(open === i.id ? null : i.id)}>{open === i.id ? 'Hide' : (i.iAmOnPanel || i.iAmGuest) && !i.iSubmitted ? 'Give feedback' : 'View feedback'}</button>}
             {manager && i.status === 'SCHEDULED' && <button className={btnGhost} disabled={busy} onClick={() => run(async () => { await pipelineService.cancel(i.id, ''); await list.reload(); }, 'Interview cancelled and everyone notified.')}>Cancel</button>}
           </div>
           {manager && i.status !== 'CANCELLED' && i.status !== 'COMPLETED' && (i.pending || []).length > 0 && (i.panel as any[]).length > 1 && (

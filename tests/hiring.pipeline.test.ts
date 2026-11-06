@@ -155,6 +155,22 @@ async function main() {
   assert.equal((await call(EMP, 'GET', 'int-list')).json.items.length, 0, 'others see none');
   assert.equal(JSON.stringify((await call(I1, 'GET', 'int-list')).json).includes('strengths'), false, 'the list never carries scorecards');
 
+  // ---- a guest added to the meeting can also give feedback (optional, never blocks the panel)
+  const gsch = await call(HR, 'POST', 'int-schedule', { applicationId: appId, startIso: future(72), durationMinutes: 30, panel: ['u_i2'], guests: ['u_emp@acme.com'], force: true });
+  assert.equal(gsch.status, 200, JSON.stringify(gsch.json));
+  const gid = gsch.json.interview.id;
+  const gl = (await call(EMP, 'GET', 'int-list')).json.items;
+  assert.equal(gl.length, 1, 'the guest sees the interview they were added to');
+  assert.equal(gl[0].iAmGuest, true);
+  assert.equal((await call(EMP, 'GET', 'int-feedback-get', {}, { interviewId: gid })).json.canSubmit, true);
+  const gc = { ratings: { 'Technical skills': 3, 'Problem solving': 3, Communication: 3, 'Culture fit': 3, 'Role knowledge': 3 }, recommendation: 'YES', strengths: 'Guest view', concerns: '' };
+  const gs = await call(EMP, 'POST', 'int-feedback-submit', { interviewId: gid, scorecard: gc });
+  assert.equal(gs.status, 200, JSON.stringify(gs.json));
+  assert.equal(gs.json.panelComplete, false, 'a guest card does not complete the panel');
+  assert.equal((await call(EMP, 'POST', 'int-feedback-submit', { interviewId: gid, scorecard: gc })).status, 409, 'guest cannot resubmit');
+  assert.equal((await call(HR, 'GET', 'int-list')).json.items.find((x: any) => x.id === gid).submittedCount, 0, 'panel count ignores guests');
+  assert.equal((await call(HR, 'POST', 'int-cancel', { id: gid })).status, 200);
+
   // ---- blind feedback
   const card = (rec: string, strengths: string) => ({ ratings: { 'Technical skills': 4, 'Problem solving': 5, Communication: 4, 'Culture fit': 4, 'Role knowledge': 3 }, recommendation: rec, strengths, concerns: '' });
   assert.equal((await call(EMP, 'POST', 'int-feedback-submit', { interviewId: iv.id, scorecard: card('YES', 'x') })).status, 403, 'not on the panel');

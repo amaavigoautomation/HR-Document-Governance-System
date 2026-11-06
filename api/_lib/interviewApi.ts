@@ -173,6 +173,10 @@ async function findConflicts(cid: string, panel: PanelMember[], startIso: string
 /** Extra people who should be in the meeting but are not interviewers (they get the invite, not a scorecard). */
 const guestList = (i: Item): string[] => (Array.isArray(i.guests) ? i.guests : []).map((g: any) => String(g || '').trim().toLowerCase()).filter((g: string) => EMAIL_RE.test(g));
 
+/** A signed-in person added to the meeting as a guest (matched by email). Their feedback is welcome but never blocks the interview. */
+const isGuestOf = (i: Item, ctx: AuthContext): boolean => !!ctx.email && guestList(i).includes(ctx.email.trim().toLowerCase());
+const isPanelOf = (i: Item, ctx: AuthContext): boolean => (i.panel as PanelMember[]).some((p) => p.uid === ctx.uid);
+
 function inviteFor(i: Item, organizer: { name: string; email: string }, cancel = false): string {
   return buildIcs({
     uid: `${i.id}@amaavigo-hiring`, startIso: i.startIso, durationMinutes: i.durationMinutes, sequence: i.sequence, cancel,
@@ -296,12 +300,12 @@ async function intList(ctx: AuthContext, q: any): Promise<Result> {
   const cid = ctx.companyId!;
   let items = await listItems(cid, 'interview');
   const mgr = isManager(ctx);
-  if (!mgr) items = items.filter((i) => (i.panel as PanelMember[]).some((p) => p.uid === ctx.uid));
+  if (!mgr) items = items.filter((i) => isPanelOf(i, ctx) || isGuestOf(i, ctx));
   if (q.applicationId) items = items.filter((i) => i.applicationId === String(q.applicationId));
   // Scorecards are never part of the list: they go through the blind view only.
   const out = items.sort((a, b) => String(a.startIso).localeCompare(String(b.startIso))).map(({ scorecards, ...rest }) => ({
-    ...rest, submittedCount: (scorecards || []).length, iSubmitted: (scorecards || []).some((s: Scorecard) => s.interviewerId === ctx.uid),
-    iAmOnPanel: (rest.panel as PanelMember[]).some((p) => p.uid === ctx.uid),
+    ...rest, submittedCount: (scorecards || []).filter((s: Scorecard) => (rest.panel as PanelMember[]).some((p) => p.uid === s.interviewerId)).length, iSubmitted: (scorecards || []).some((s: Scorecard) => s.interviewerId === ctx.uid),
+    iAmOnPanel: isPanelOf(rest as Item, ctx), iAmGuest: !isPanelOf(rest as Item, ctx) && isGuestOf(rest as Item, ctx),
     ...(mgr ? { pending: (rest.panel as PanelMember[]).filter((p) => !(scorecards || []).some((s: Scorecard) => s.interviewerId === p.uid)).map((p) => ({ uid: p.uid, name: p.name })) } : {}),
   }));
   return ok({ items: out, manager: mgr });
@@ -311,16 +315,19 @@ async function intList(ctx: AuthContext, q: any): Promise<Result> {
 
 function viewFor(it: Item, ctx: AuthContext) {
   const expected = (it.panel as PanelMember[]).map((p) => p.uid);
-  return blindView(it.scorecards || [], expected, ctx.uid, isManager(ctx));
+  const v = blindView(it.scorecards || [], expected, ctx.uid, isManager(ctx));
+  // The "x of y" count is about the panel only; guests' extra scorecards are on top of it.
+  return { ...v, submittedCount: (it.scorecards || []).filter((c: Scorecard) => expected.includes(c.interviewerId)).length };
 }
 
 async function feedbackGet(ctx: AuthContext, q: any): Promise<Result> {
   const it = await getItem(ctx.companyId!, str(q.interviewId, 100), 'interview');
   if (!it) return fail(404, 'Interview not found.');
-  const onPanel = (it.panel as PanelMember[]).some((p) => p.uid === ctx.uid);
-  if (!onPanel && !isManager(ctx)) return fail(403, 'You are not on this interview.');
+  const onPanel = isPanelOf(it, ctx);
+  const canSubmit = onPanel || isGuestOf(it, ctx);
+  if (!canSubmit && !isManager(ctx)) return fail(403, 'You are not on this interview.');
   const v = viewFor(it, ctx);
-  return ok({ interviewId: it.id, criteria: it.criteria, onPanel, iSubmitted: (it.scorecards || []).some((s: Scorecard) => s.interviewerId === ctx.uid), view: v, aiSummary: v.summary ? it.aiSummary || null : null });
+  return ok({ interviewId: it.id, criteria: it.criteria, onPanel, canSubmit, guest: canSubmit && !onPanel, iSubmitted: (it.scorecards || []).some((s: Scorecard) => s.interviewerId === ctx.uid), view: v, aiSummary: v.summary ? it.aiSummary || null : null });
 }
 
 async function feedbackSubmit(ctx: AuthContext, b: any): Promise<Result> {
@@ -328,8 +335,9 @@ async function feedbackSubmit(ctx: AuthContext, b: any): Promise<Result> {
   const id = str(b.interviewId, 100);
   const first = await getItem(cid, id, 'interview');
   if (!first) return fail(404, 'Interview not found.');
-  const me = (first.panel as PanelMember[]).find((p) => p.uid === ctx.uid);
-  if (!me) return fail(403, 'Only the interviewers on this panel can submit a scorecard.');
+  const panelMe = (first.panel as PanelMember[]).find((p) => p.uid === ctx.uid);
+  if (!panelMe && !isGuestOf(first, ctx)) return fail(403, 'Only people on this interview (the panel or guests added to the meeting) can submit a scorecard.');
+  const me = panelMe || { uid: ctx.uid, name: await whoIs(ctx), email: ctx.email };
   if (first.status === 'CANCELLED') return fail(409, 'This interview was cancelled.');
   const parsed = validateScorecard(b.scorecard, first.criteria);
   if (!parsed.value) return fail(400, parsed.error || 'Scorecard is not valid.');
@@ -343,7 +351,8 @@ async function feedbackSubmit(ctx: AuthContext, b: any): Promise<Result> {
     if ((cur.scorecards || []).some((s: Scorecard) => s.interviewerId === ctx.uid)) return { error: fail(409, 'You have already submitted your scorecard. It cannot be changed.') };
     const card: Scorecard = { ...parsed.value!, interviewerId: ctx.uid, interviewerName: me.name || ctx.email, submittedAt: nowIso() };
     const cards = [...(cur.scorecards || []), card];
-    const done = (cur.panel as PanelMember[]).every((p) => cards.some((c) => c.interviewerId === p.uid));
+    // Only the panel decides when the interview is complete; a guest's late feedback is added without re-triggering anything.
+    const done = cur.status !== 'COMPLETED' && (cur.panel as PanelMember[]).every((p) => cards.some((c) => c.interviewerId === p.uid));
     const next = { ...cur, scorecards: cards, status: done ? 'COMPLETED' : cur.status, updatedAt: nowIso() };
     tx.set(ref, JSON.parse(JSON.stringify(next)));
     return { next, done };

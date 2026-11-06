@@ -115,9 +115,10 @@ async function main() {
   assert.ok(sent.every((m) => m.body.includes('Join link: https://meet.google.com/abc-defg-hij')));
   assert.ok(sent.every((m) => !!m.ics && m.ics.content.includes('meet.google.com')), 'the .ics carries the link too');
 
-  // ---- guests are not interviewers: they get no scorecard rights
+  // ---- guests are not interviewers (they do not block the panel) but may give feedback: access is allowed, an empty card is not
   const fb = await call(tok('founder'), 'POST', 'int-feedback-submit', { interviewId: iv.id, scorecard: {} });
-  assert.equal(fb.status, 403);
+  assert.equal(fb.status, 400);
+  assert.equal((await call(tok('nobody'), 'POST', 'int-feedback-submit', { interviewId: iv.id, scorecard: {} })).status, 403, 'someone not in the meeting is still refused');
   assert.equal((await call(HR, 'POST', 'int-schedule', { applicationId: 'a1', startIso: future(60), panel: ['u_i1'], guests: ['not-an-email'] })).status, 400);
 
   // ---- an interviewer who cannot give feedback is released by HR, so the interview is not stuck
