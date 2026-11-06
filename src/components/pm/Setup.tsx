@@ -1,129 +1,212 @@
 import React, { useEffect, useState } from 'react';
-import { CheckCircle2, Circle, Plus, Trash2, ArrowRight } from 'lucide-react';
+import { Check, X, Plus, Trash2, Sparkles, Circle } from 'lucide-react';
 import { pmService } from '../../services/pmService';
-import { pmNav } from './pmNav';
-import { User } from '../../types';
-import { Loading, Pill } from '../common/loadUi';
-import { Card, Field, Notice, btnBig, btnGhost, btnPrimary, btnDanger, input, useRunner, ConfirmButton } from '../leave/ui';
-import { Empty, Explain, Intro, Note, ResultNote, StatusChip, Tabs } from './common';
+import { Loading, useLoad } from '../common/loadUi';
+import { Card, Field, Notice, btnGhost, btnPrimary, input, useRunner, ConfirmButton } from '../leave/ui';
+import { Empty, Explain, GuardedButton, Intro, ResultNote } from './common';
+import { kpiProblem, weightsProblem, type KpiDef } from '../../../shared/pmEngine';
 
-const GO: Record<string, string> = { framework: 'framework', sops: 'sops', templates: 'templates', plans: 'plans', cycles: 'cycles', evidence: 'evidence', ai: 'governance' };
+const STEPS = [
+  { key: 'weights', label: '1. Weights' }, { key: 'behaviours', label: '2. Behaviours' }, { key: 'sops', label: '3. SOPs' },
+  { key: 'templates', label: '4. KRA/KPI by role' }, { key: 'finish', label: '5. Timing & finish' },
+];
 
-/** The checklist. One big button always shows the next thing to do. */
-export const StartHere: React.FC = () => {
-  const [d, setD] = useState<any>(null); const [tick, setTick] = useState(0); const { busy, note, run } = useRunner();
-  useEffect(() => { pmService.get('setup-status').then(setD); }, [tick]);
-  if (!d) return <Loading loading />;
-  const next = d.steps.find((s: any) => !s.done);
+/** HR's 5-step wizard. Each step saves on its own and cannot be saved with a mistake in it. */
+export const Setup: React.FC = () => {
+  const { data, error, loading, reload } = useLoad(() => pmService.get('setup'), []);
+  const [step, setStep] = useState('weights');
+  if (!data) return <Loading error={error} loading={loading} />;
+  const r = data.readiness;
+  const stepOk = (k: string) => r.items.filter((i: any) => i.step === k).every((i: any) => i.ok);
   return (
-    <div>
-      <Intro title="Start here" what="Seven steps to get Performance running. Do them in order. Each step shows a button that takes you there." todo={next ? `Step ${d.steps.indexOf(next) + 1}: ${next.title}.` : 'Everything is set up.'} />
+    <div className="space-y-4">
+      <Intro title="Performance setup" what={data.settings.setupDone ? 'Setup is finished. You can still change anything here; changes apply straight away to plans that have not started yet.' : 'Five short steps, about 30 minutes. Nothing starts for employees until you press "Finish setup" in step 5.'} todo={data.settings.setupDone ? undefined : 'Go through the steps in order. Each step has defaults you can keep.'} />
+      <Card title={data.settings.setupDone ? 'Status: running' : 'Not ready yet'} subtitle="Red items stop plans from starting. Amber items are allowed, but check them.">
+        <ul className="space-y-1 text-sm">{r.items.map((i: any, n: number) => (
+          <li key={n} className="flex items-start gap-2">{i.ok ? <Check className="w-4 h-4 text-emerald-600 mt-0.5" /> : i.block ? <X className="w-4 h-4 text-rose-600 mt-0.5" /> : <Circle className="w-4 h-4 text-amber-500 mt-0.5" />}<span className={i.ok ? 'text-slate-600' : i.block ? 'text-rose-700' : 'text-amber-800'}>{i.text}</span></li>
+        ))}</ul>
+      </Card>
+      <div className="flex flex-wrap gap-1.5">
+        {STEPS.map((s) => <button key={s.key} onClick={() => setStep(s.key)} className={step === s.key ? btnPrimary : btnGhost}>{s.key !== 'finish' && stepOk(s.key) && <Check className="w-3.5 h-3.5" />}{s.label}</button>)}
+      </div>
+      {step === 'weights' && <Weights data={data} reload={reload} next={() => setStep('behaviours')} />}
+      {step === 'behaviours' && <Behaviours data={data} reload={reload} next={() => setStep('sops')} />}
+      {step === 'sops' && <Sops data={data} reload={reload} next={() => setStep('templates')} />}
+      {step === 'templates' && <Templates data={data} reload={reload} next={() => setStep('finish')} />}
+      {step === 'finish' && <Finish data={data} reload={reload} />}
+    </div>
+  );
+};
+
+const Weights: React.FC<{ data: any; reload: () => void; next: () => void }> = ({ data, reload, next }) => {
+  const [w, setW] = useState({ ...data.settings.weights });
+  const { busy, note, run } = useRunner();
+  const p = weightsProblem({ results: Number(w.results), behaviour: Number(w.behaviour), sop: Number(w.sop) });
+  return (
+    <Card title="How much each part counts" subtitle="Recommended start: Results 60%, Behaviour 25%, SOP 15%. The three must add up to 100.">
+      <div className="grid grid-cols-3 gap-3 max-w-md">
+        {(['results', 'behaviour', 'sop'] as const).map((k) => <Field key={k} label={k === 'results' ? 'Results (KPIs)' : k === 'behaviour' ? 'Behaviour' : 'SOP compliance'}><input type="number" min={0} max={100} className={input} value={w[k]} onChange={(e) => setW({ ...w, [k]: e.target.value })} /></Field>)}
+      </div>
+      <p className={`text-xs font-bold mt-1 ${p ? 'text-rose-700' : 'text-emerald-700'}`}>{p || 'Adds up to 100 ✓'}</p>
       <ResultNote note={note} />
-      {d.steps.findIndex((s: any) => s.key === 'competency') === 0 && !d.steps[0].done && (
-        <Card className="mb-4" title="Quick start (recommended)" subtitle="One press loads the standard behaviours, a starting set of scoring rules (60 / 25 / 15) and your job roles from your people list. Nothing goes live until you approve it.">
-          <button className={btnBig} disabled={busy} onClick={() => run(async () => { const r = await pmService.post('quickstart'); setTick((t) => t + 1); pmNav.setSection('framework'); }, 'Done. Now check the scoring rules and approve them.')}>Load the standard set-up</button>
-        </Card>
-      )}
-      <div className="space-y-2">
-        {d.steps.map((s: any, i: number) => (
-          <div key={s.key} className={`flex items-center gap-3 border rounded-xl px-4 py-3 ${s.done ? 'bg-emerald-50/50 border-emerald-200' : s === next ? 'bg-white border-[#FA7014] shadow-sm' : 'bg-white border-slate-200'}`}>
-            {s.done ? <CheckCircle2 className="w-6 h-6 text-emerald-600 shrink-0" /> : <Circle className="w-6 h-6 text-slate-300 shrink-0" />}
-            <div className="flex-1 min-w-0"><div className="text-sm font-bold text-slate-800">{i + 1}. {s.title}</div><div className="text-xs text-slate-500">{s.plain}</div><div className="text-xs text-slate-700 mt-0.5">{s.detail}</div></div>
-            <button className={s === next ? btnBig : btnGhost} onClick={() => pmNav.setSection(GO[s.key] || s.go)}>{s.done ? 'Open' : 'Go'}<ArrowRight className="w-4 h-4" /></button>
+      <div className="mt-2"><GuardedButton busy={busy} missing={p ? [p.replace(/\.$/, '')] : []} onClick={() => run(async () => { await pmService.post('setup-save', { step: 'weights', weights: { results: Number(w.results), behaviour: Number(w.behaviour), sop: Number(w.sop) } }); await reload(); next(); }, 'Saved.')}>Save and continue</GuardedButton></div>
+    </Card>
+  );
+};
+
+const Behaviours: React.FC<{ data: any; reload: () => void; next: () => void }> = ({ data, reload, next }) => {
+  const [list, setList] = useState<any[]>(data.settings.competencies.map((x: any) => ({ ...x })));
+  const [extras, setExtras] = useState<boolean>(data.settings.managerExtras !== false);
+  const { busy, note, run } = useRunner();
+  const names = list.map((x) => x.name.trim().toLowerCase()).filter(Boolean);
+  const missing = [!names.length && 'at least one behaviour', new Set(names).size !== names.length && 'no two behaviours have the same name'].filter(Boolean) as string[];
+  return (
+    <Card title="Behaviours everyone is rated on" subtitle="The 12 standard ones are filled in. Remove or rename any, or add your own. Rate observable work behaviour only.">
+      <div className="space-y-1.5">{list.map((x, i) => (
+        <div key={x.id} className="grid md:grid-cols-[1fr_2fr_auto] gap-2">
+          <input className={input} value={x.name} placeholder="Name" onChange={(e) => setList(list.map((y, j) => (j === i ? { ...y, name: e.target.value } : y)))} />
+          <input className={input} value={x.standard} placeholder="What good looks like" onChange={(e) => setList(list.map((y, j) => (j === i ? { ...y, standard: e.target.value } : y)))} />
+          <button aria-label="Remove" className={btnGhost} onClick={() => setList(list.filter((_, j) => j !== i))}><Trash2 className="w-4 h-4" /></button>
+        </div>
+      ))}</div>
+      <button className={`${btnGhost} mt-2`} onClick={() => setList([...list, { id: `c_${Date.now().toString(36)}`, name: '', standard: '' }])}><Plus className="w-4 h-4" />Add a behaviour</button>
+      <label className="flex items-center gap-2 text-sm mt-3"><input type="checkbox" checked={extras} onChange={(e) => setExtras(e.target.checked)} />Managers are also rated on coaching, delegation, fair decisions and team development (added automatically for anyone with people reporting to them)</label>
+      <ResultNote note={note} />
+      <div className="mt-2"><GuardedButton busy={busy} missing={missing} onClick={() => run(async () => { await pmService.post('setup-save', { step: 'behaviours', competencies: list.filter((x) => x.name.trim()), managerExtras: extras }); await reload(); next(); }, 'Saved.')}>Save and continue</GuardedButton></div>
+    </Card>
+  );
+};
+
+const Sops: React.FC<{ data: any; reload: () => void; next: () => void }> = ({ data, reload, next }) => {
+  const [sops, setSops] = useState<any[]>(data.settings.sops.map((x: any) => ({ ...x })));
+  const [pick, setPick] = useState('');
+  const { busy, note, run } = useRunner();
+  const unused = data.documents.filter((d: any) => !sops.some((x) => x.documentId === d.documentId));
+  const add = () => { const d = data.documents.find((x: any) => x.documentId === pick); if (!d) return; setSops([...sops, { documentId: d.documentId, title: d.title, departments: d.department && data.departments.includes(d.department) ? [d.department] : [], designations: [], critical: false }]); setPick(''); };
+  const toggle = (i: number, key: 'departments' | 'designations', v: string) => setSops(sops.map((x, j) => (j === i ? { ...x, [key]: x[key].includes(v) ? x[key].filter((y: string) => y !== v) : [...x[key], v] } : x)));
+  return (
+    <Card title="Which SOPs apply to whom" subtitle="Pick published documents from Document Governance. Leave departments empty for 'everyone'. Leave designations empty for 'everyone in those departments'.">
+      {data.documents.length === 0 && <Notice tone="warn">There are no published documents yet. Publish your SOPs in Documents first, or skip this step (people will have no SOPs to acknowledge).</Notice>}
+      <div className="flex gap-2 items-end">
+        <Field label="Add a document"><select className={input} value={pick} onChange={(e) => setPick(e.target.value)}><option value="">Pick a published document…</option>{unused.map((d: any) => <option key={d.documentId} value={d.documentId}>{d.title} ({d.documentId}, v{d.versionNumber})</option>)}</select></Field>
+        <button className={btnGhost} disabled={!pick} onClick={add}><Plus className="w-4 h-4" />Add</button>
+      </div>
+      <div className="space-y-3 mt-3">
+        {sops.length === 0 ? <Empty text="No SOPs chosen." /> : sops.map((x, i) => (
+          <div key={x.documentId} className="border border-slate-200 rounded-lg p-3">
+            <div className="flex items-center justify-between gap-2"><b className="text-sm">{x.title}</b><button aria-label="Remove" className={btnGhost} onClick={() => setSops(sops.filter((_, j) => j !== i))}><Trash2 className="w-4 h-4" /></button></div>
+            <div className="text-xs text-slate-500 mt-1">Departments ({x.departments.length ? x.departments.length : 'everyone'}):</div>
+            <div className="flex flex-wrap gap-1 mt-1">{data.departments.map((d: string) => <button key={d} onClick={() => toggle(i, 'departments', d)} className={`px-2 py-0.5 rounded-full text-[11px] border ${x.departments.includes(d) ? 'bg-[#FA7014] text-white border-[#FA7014]' : 'bg-white border-slate-300'}`}>{d}</button>)}</div>
+            <div className="text-xs text-slate-500 mt-2">Only these designations (optional):</div>
+            <div className="flex flex-wrap gap-1 mt-1">{data.designations.map((d: any) => <button key={d.designation} onClick={() => toggle(i, 'designations', d.designation)} className={`px-2 py-0.5 rounded-full text-[11px] border ${x.designations.includes(d.designation) ? 'bg-slate-700 text-white border-slate-700' : 'bg-white border-slate-300'}`}>{d.designation}</button>)}</div>
+            <label className="flex items-center gap-2 text-sm mt-2"><input type="checkbox" checked={x.critical} onChange={(e) => setSops(sops.map((y, j) => (j === i ? { ...y, critical: e.target.checked } : y)))} />Critical (security, legal or money). A "not compliant" here is never averaged away; HR must look at it.</label>
           </div>
         ))}
       </div>
-      <Explain title="What do the words mean?"><p><b>KRA</b>: an area of responsibility (like "Customer support"). <b>KPI</b>: how it is measured (like "Tickets closed per week"). <b>SOP</b>: an approved step-by-step process. <b>Competency</b>: a behaviour expected at work (like "Teamwork").</p></Explain>
-    </div>
+      <ResultNote note={note} />
+      <div className="mt-2"><button className={btnPrimary} disabled={busy} onClick={() => run(async () => { await pmService.post('setup-save', { step: 'sops', sops }); await reload(); next(); }, 'Saved.')}>Save and continue</button></div>
+    </Card>
   );
 };
 
-// ------------------------------------------------------------------ scoring rules (framework)
+const blankKpi = (): KpiDef => ({ id: `k_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 5)}`, kra: '', kpi: '', measure: '', weight: 0 });
 
-const CAT: Record<string, string> = { INDIVIDUAL_CONTRIBUTOR: 'Individual contributors', MANAGER: 'Managers', LEADERSHIP: 'Leadership', SALES: 'Sales / business development', SPECIALIST: 'Specialists' };
-export const Framework: React.FC<{ canApprove: boolean }> = ({ canApprove }) => {
-  const [items, setItems] = useState<any[] | null>(null); const [tick, setTick] = useState(0); const [form, setForm] = useState<any>(null); const { busy, note, run } = useRunner();
-  useEffect(() => { pmService.get('fw-list').then((r) => setItems(r.items)); }, [tick]);
-  if (!items) return <Loading loading />;
-  const total = form ? (Number(form.kraWeight) || 0) + (Number(form.behaviourWeight) || 0) + (Number(form.sopWeight) || 0) : 0;
-  const start = (f?: any) => setForm(f ? { ...f } : { name: '', employeeCategory: 'INDIVIDUAL_CONTRIBUTOR', kraWeight: 60, behaviourWeight: 25, sopWeight: 15, reviewFrequency: 'QUARTERLY', effectiveFrom: new Date().toISOString().slice(0, 10) });
-  return (
-    <div>
-      <Intro title="Scoring rules" what="How much each part of a review counts: results (KRA/KPI), behaviour, and following processes (SOPs). The three must add up to 100." todo="Check the numbers, then ask an approver to approve." />
-      <ResultNote note={note} />
-      {items.length === 0 && <Notice tone="info">Nothing here yet. Use "Start here" to load a ready-made draft, or add one below.</Notice>}
-      <div className="space-y-2 my-3">{items.map((f) => (
-        <div key={f.id} className="bg-white border border-slate-200 rounded-xl px-4 py-3 flex flex-wrap items-center justify-between gap-2">
-          <div><div className="text-sm font-bold text-slate-800">{f.name} <span className="text-xs text-slate-400 font-medium">v{f.version}</span></div>
-            <div className="text-xs text-slate-500">{CAT[f.employeeCategory] || 'Everyone'}{f.roleFamily ? ` - ${f.roleFamily}` : ''} - Results {f.kraWeight}% / Behaviour {f.behaviourWeight}% / Processes {f.sopWeight}% - from {f.effectiveFrom}</div></div>
-          <div className="flex items-center gap-2"><StatusChip status={f.status} />
-            {f.status !== 'RETIRED' && <button className={btnGhost} onClick={() => start(f)}>{f.status === 'APPROVED' ? 'Change (new version)' : 'Edit'}</button>}
-            {f.status === 'DRAFT' && canApprove && <button className={btnPrimary} disabled={busy} onClick={() => run(async () => { await pmService.post('fw-approve', { id: f.id }); setTick((t) => t + 1); }, 'Approved.')}>Approve</button>}
-            {f.status === 'DRAFT' && !canApprove && <span className="text-xs text-slate-500">Needs an approver</span>}
-            {f.status !== 'RETIRED' && <ConfirmButton className={btnDanger} question={f.status === 'DRAFT' ? 'Delete this draft?' : 'Retire this framework?'} yes="Yes" onConfirm={() => run(async () => { await pmService.post('fw-retire', { id: f.id }); setTick((t) => t + 1); })}><Trash2 className="w-4 h-4" /></ConfirmButton>}</div>
-        </div>))}</div>
-      {!form ? <button className={btnPrimary} onClick={() => start()}><Plus className="w-4 h-4" />Add scoring rules</button> : (
-        <Card title={form.id ? 'Edit scoring rules' : 'New scoring rules'}>
-          <div className="grid md:grid-cols-2 gap-3">
-            <Field label="Name"><input className={input} value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} /></Field>
-            <Field label="Who is it for?"><select className={input} value={form.employeeCategory} onChange={(e) => setForm({ ...form, employeeCategory: e.target.value })}>{Object.entries(CAT).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select></Field>
-            <Field label="How often are people reviewed?"><select className={input} value={form.reviewFrequency} onChange={(e) => setForm({ ...form, reviewFrequency: e.target.value })}><option value="MONTHLY_CHECKIN">Monthly check-in</option><option value="PROBATION">Probation</option><option value="QUARTERLY">Quarterly</option><option value="ANNUAL">Annual</option></select></Field>
-            <Field label="Starts on"><input type="date" className={input} value={form.effectiveFrom} onChange={(e) => setForm({ ...form, effectiveFrom: e.target.value })} /></Field>
-            <Field label="Results (KRA/KPI) %"><input className={input} value={form.kraWeight} onChange={(e) => setForm({ ...form, kraWeight: e.target.value })} /></Field>
-            <Field label="Behaviour %"><input className={input} value={form.behaviourWeight} onChange={(e) => setForm({ ...form, behaviourWeight: e.target.value })} /></Field>
-            <Field label="Processes (SOP) %"><input className={input} value={form.sopWeight} onChange={(e) => setForm({ ...form, sopWeight: e.target.value })} /></Field>
-            <div className={`text-sm font-bold self-end pb-2 ${Math.abs(total - 100) < 0.005 ? 'text-emerald-700' : 'text-rose-700'}`}>Total: {total}% {Math.abs(total - 100) < 0.005 ? '(good)' : '(must be exactly 100)'}</div>
+const Templates: React.FC<{ data: any; reload: () => void; next: () => void }> = ({ data, reload, next }) => {
+  const [edit, setEdit] = useState<{ designation: string; kpis: KpiDef[]; extra: string } | null>(null);
+  const [checks, setChecks] = useState<Record<string, { problem: string | null; suggestion: string }>>({});
+  const { busy, note, run } = useRunner();
+  useEffect(() => setChecks({}), [edit?.designation]);
+  const open = (designation: string) => {
+    const t = data.templates.find((x: any) => x.designation.toLowerCase() === designation.toLowerCase());
+    setEdit({ designation, kpis: t ? t.kpis.map((k: any) => ({ ...k })) : [blankKpi()], extra: (t?.extraCompetencies || []).join(', ') });
+  };
+  const p = edit ? kpiProblem(edit.kpis.map((k) => ({ ...k, weight: Number(k.weight) }))) : null;
+  const total = edit ? edit.kpis.reduce((s, k) => s + (Number(k.weight) || 0), 0) : 0;
+  const setK = (i: number, patch: Partial<KpiDef>) => setEdit(edit && { ...edit, kpis: edit.kpis.map((k, j) => (j === i ? { ...k, ...patch } : k)) });
+  if (edit) return (
+    <Card title={`KRA/KPI template: ${edit.designation}`} subtitle="What this role is expected to deliver. Managers set the actual numbers (targets) for each person. Weights must total 100.">
+      <div className="space-y-2">
+        {edit.kpis.map((k, i) => (
+          <div key={k.id} className="border border-slate-200 rounded-lg p-2">
+            <div className="grid md:grid-cols-[1fr_2fr_1.3fr_80px_auto] gap-2">
+              <input className={input} placeholder="Responsibility area (KRA)" value={k.kra} onChange={(e) => setK(i, { kra: e.target.value })} />
+              <input className={input} placeholder="KPI: what is delivered" value={k.kpi} onChange={(e) => setK(i, { kpi: e.target.value })} />
+              <input className={input} placeholder="Measured by (evidence source)" value={k.measure} onChange={(e) => setK(i, { measure: e.target.value })} />
+              <input type="number" min={1} max={100} className={input} placeholder="%" value={k.weight || ''} onChange={(e) => setK(i, { weight: Number(e.target.value) })} />
+              <button aria-label="Remove" className={btnGhost} onClick={() => setEdit({ ...edit, kpis: edit.kpis.filter((_, j) => j !== i) })}><Trash2 className="w-4 h-4" /></button>
+            </div>
+            {checks[k.id]?.problem && <p className="text-[11px] text-amber-700 mt-1">{checks[k.id].problem}</p>}
+            {checks[k.id]?.suggestion && <p className="text-[11px] text-slate-600 mt-1">Suggestion: {checks[k.id].suggestion} <button className="underline" onClick={() => setK(i, { kpi: checks[k.id].suggestion })}>Use it</button></p>}
           </div>
-          <ResultNote note={note} />
-          <div className="flex gap-2 mt-3"><button className={btnBig} disabled={busy} onClick={() => run(async () => { await pmService.post('fw-save', form); setForm(null); setTick((t) => t + 1); }, 'Saved as a draft.')}>Save</button><button className={btnGhost} onClick={() => setForm(null)}>Cancel</button></div>
-        </Card>
+        ))}
+      </div>
+      <div className="flex flex-wrap gap-2 mt-2">
+        <button className={btnGhost} disabled={edit.kpis.length >= 12} onClick={() => setEdit({ ...edit, kpis: [...edit.kpis, blankKpi()] })}><Plus className="w-4 h-4" />Add a KPI</button>
+        <select className={`${input} max-w-xs`} value="" onChange={(e) => { const s = data.suggestions[Number(e.target.value)]; if (s) setEdit({ ...edit, kpis: [...edit.kpis.filter((k) => k.kpi || k.kra), { ...blankKpi(), ...s }] }); }}><option value="">Add from suggestions…</option>{data.suggestions.map((s: any, i: number) => <option key={i} value={i}>{s.kra}: {s.kpi}</option>)}</select>
+        <button className={btnGhost} disabled={busy} onClick={() => run(async () => { const r = await pmService.post('kpi-check', { kpis: edit.kpis }); setChecks(Object.fromEntries(r.notes.map((n: any) => [n.id, n]))); })}><Sparkles className="w-4 h-4" />Check the wording</button>
+      </div>
+      <p className={`text-xs font-bold mt-2 ${total === 100 ? 'text-emerald-700' : 'text-rose-700'}`}>Weights total: {total}% {total === 100 ? '✓' : '(must be 100%)'}</p>
+      <Field label="Extra behaviours for this role only (optional, comma-separated)" hint="For example: CRM discipline, Code quality, Brand consistency"><input className={input} value={edit.extra} onChange={(e) => setEdit({ ...edit, extra: e.target.value })} /></Field>
+      <ResultNote note={note} />
+      <div className="flex gap-2 items-start mt-2">
+        <GuardedButton busy={busy} missing={p ? [p.replace(/\.$/, '')] : []} onClick={() => run(async () => { await pmService.post('tpl-save', { designation: edit.designation, kpis: edit.kpis.map((k) => ({ ...k, weight: Number(k.weight) })), extraCompetencies: edit.extra.split(',').map((x) => x.trim()).filter(Boolean) }); setEdit(null); await reload(); }, "Template saved.")}>Save template</GuardedButton>
+        <button className={btnGhost} onClick={() => setEdit(null)}>Cancel</button>
+      </div>
+    </Card>
+  );
+  return (
+    <Card title="KRA/KPI templates by designation" subtitle="One template per designation in use. People whose designation has no template wait (on hold) until you add one.">
+      <ResultNote note={note} />
+      {data.designations.length === 0 ? <Empty text="Nobody has a designation yet. Set designations in People first." /> : (
+        <table className="w-full text-sm">
+          <thead><tr className="text-left text-xs text-slate-500"><th className="py-1">Designation</th><th>People</th><th>Template</th><th /></tr></thead>
+          <tbody>{data.designations.map((d: any) => {
+            const t = data.templates.find((x: any) => x.designation.toLowerCase() === d.designation.toLowerCase());
+            return (
+              <tr key={d.designation} className="border-t border-slate-100">
+                <td className="py-1.5 font-semibold">{d.designation}</td><td>{d.people}</td>
+                <td>{t ? <span className="text-emerald-700 text-xs font-bold">{t.kpis.length} KPIs</span> : <span className="text-amber-700 text-xs font-bold">Missing</span>}</td>
+                <td className="text-right space-x-2"><button className={t ? btnGhost : btnPrimary} onClick={() => open(d.designation)}>{t ? 'Edit' : 'Create'}</button>{t && <ConfirmButton question="Delete this template? Plans already started keep their KPIs." yes="Delete" onConfirm={() => run(async () => { await pmService.post('tpl-delete', { id: t.id }); await reload(); }, 'Deleted.')}><Trash2 className="w-4 h-4" /></ConfirmButton>}</td>
+              </tr>
+            );
+          })}</tbody>
+        </table>
       )}
-      <Explain><p>Changing approved rules never rewrites history. It makes a new draft version. When approved it takes over from its start date and the old one is kept on record.</p></Explain>
-    </div>
+      <div className="mt-3"><button className={btnPrimary} onClick={next}>Continue</button></div>
+    </Card>
   );
 };
 
-// ------------------------------------------------------------------ review cycles
-
-export const Cycles: React.FC<{ users: User[]; openReview: (id: string) => void }> = ({ users }) => {
-  const [items, setItems] = useState<any[] | null>(null); const [tick, setTick] = useState(0); const [form, setForm] = useState<any>(null); const { busy, note, run } = useRunner(); const [depts, setDepts] = useState<string[]>([]); const [msg, setMsg] = useState('');
-  useEffect(() => { pmService.get('cycle-list').then((r) => setItems(r.items)); setDepts(Array.from(new Set(users.map((u: any) => u.department).filter(Boolean))) as string[]); }, [tick, users]);
-  if (!items) return <Loading loading />;
-  const set = (p: any) => setForm({ ...form, ...p });
+const Finish: React.FC<{ data: any; reload: () => void }> = ({ data, reload }) => {
+  const s = data.settings;
+  const [t, setT] = useState({ ...s.timing });
+  const [feedUrl, setFeedUrl] = useState(s.feedUrl || '');
+  const [aiOn, setAiOn] = useState(!!s.aiOn);
+  const { busy, note, run } = useRunner();
+  const n = (k: keyof typeof t, label: string, hint: string) => <Field label={label} hint={hint}><input type="number" min={0} max={30} className={input} value={t[k]} onChange={(e) => setT({ ...t, [k]: Number(e.target.value) })} /></Field>;
+  const blocks = data.readiness.items.filter((i: any) => !i.ok && i.block).map((i: any) => i.text.replace(/\.$/, ''));
   return (
-    <div>
-      <Intro title="Review cycles" what="A cycle is one round of reviews (for example 'Q4 2026'). Create it, then press 'Open reviews' and everyone gets a review." todo="Create the cycle, set the dates, press Open reviews." />
+    <Card title="Timing, reminders and finish" subtitle="The system chases people for you. These are the defaults; change them only if you need to.">
+      <div className="grid md:grid-cols-3 gap-3">
+        {n('selfDays', 'Days for the self-review', 'After the quarter opens')}
+        {n('managerDays', 'Days for the manager', 'After the self-review deadline')}
+        {n('hrDays', 'Days for HR approval', 'After the manager deadline')}
+        {n('publishDelayDays', 'Share with employee after (days)', '0 = share as soon as approved')}
+        {n('remindEvery', 'Remind every (days)', 'For anything waiting')}
+        {n('escalateAfter', 'Tell HR after (days)', 'When something is still late')}
+      </div>
+      <Field label="Evidence feed: Google Sheet link (optional)" hint="Read every morning. Columns: email, date, kpi, title, link. Share the sheet so anyone with the link can view it."><input className={input} value={feedUrl} placeholder="https://docs.google.com/spreadsheets/d/…" onChange={(e) => setFeedUrl(e.target.value)} /></Field>
+      {s.feedLast && <p className="text-[11px] text-slate-500">Last read: {s.feedLast}</p>}
+      <label className="flex items-center gap-2 text-sm mt-2"><input type="checkbox" checked={aiOn} disabled={!data.aiAvailable} onChange={(e) => setAiOn(e.target.checked)} />Use AI to draft review text and check KPI wording {data.aiAvailable ? '(AI never rates, never decides, never sees names)' : '(AI is not configured on this server)'}</label>
       <ResultNote note={note} />
-      <div className="space-y-2 mb-3">{items.length === 0 && <Empty text="No cycles yet." />}{items.map((c) => (
-        <div key={c.id} className="bg-white border border-slate-200 rounded-xl px-4 py-3 flex flex-wrap items-center justify-between gap-2">
-          <div><div className="text-sm font-bold">{c.name} {c.lockStatus === 'LOCKED' && <Pill tone="slate">locked</Pill>} {c.openedAt && <Pill tone="green">open</Pill>}</div><div className="text-xs text-slate-500">{c.periodStart} to {c.periodEnd}{c.autoOpenOn && !c.openedAt ? ` - opens by itself on ${c.autoOpenOn}` : ''} - self-review by {c.selfReviewDeadline || '-'}, manager by {c.managerDeadline || '-'}, HR by {c.hrDeadline || '-'}</div></div>
-          <div className="flex gap-2">
-            {c.lockStatus !== 'LOCKED' && <ConfirmButton className={btnPrimary} question={c.openedAt ? 'Add any missing people (nobody is duplicated)?' : 'Create a review for everyone covered?'} yes="Yes, open" onConfirm={() => run(async () => { const r = await pmService.post('cycle-open', { id: c.id }); setTick((t) => t + 1); setForm(null); setMsg(r.message); }, undefined)}>{c.openedAt ? 'Add missing reviews' : 'Open reviews'}</ConfirmButton>}
-            {c.lockStatus !== 'LOCKED' && <button className={btnGhost} onClick={() => setForm({ ...c })}>Edit</button>}
-            <button className={btnGhost} disabled={busy} onClick={() => run(async () => { try { await pmService.post('cycle-lock', { id: c.id, lock: c.lockStatus !== 'LOCKED' }); } catch (e: any) { if (e?.data?.needsConfirm && window.confirm(`${e.message}`)) await pmService.post('cycle-lock', { id: c.id, lock: true, force: true }); else throw e; } setTick((t) => t + 1); }, undefined)}>{c.lockStatus === 'LOCKED' ? 'Unlock' : 'Lock'}</button>
-            {!c.openedAt && <ConfirmButton className={btnDanger} question="Delete?" yes="Delete" onConfirm={() => run(async () => { await pmService.post('cycle-delete', { id: c.id }); setTick((t) => t + 1); })}><Trash2 className="w-4 h-4" /></ConfirmButton>}
-          </div>
-        </div>))}</div>
-      {msg && <Notice tone="ok">{msg}</Notice>}
-      {!form ? <button className={btnPrimary} onClick={() => setForm({ name: '', reviewType: 'QUARTERLY', scope: 'ALL', departments: [], periodStart: '', periodEnd: '', selfReviewDeadline: '', managerDeadline: '', hrDeadline: '', autoOpenOn: '' })}><Plus className="w-4 h-4" />New cycle</button> : (
-        <Card title={form.id ? 'Edit cycle' : 'New cycle'}>
-          <div className="grid md:grid-cols-3 gap-3">
-            <Field label="Name"><input className={input} value={form.name} placeholder="Q4 2026 review" onChange={(e) => set({ name: e.target.value })} /></Field>
-            <Field label="Type"><select className={input} value={form.reviewType} onChange={(e) => set({ reviewType: e.target.value })}><option value="QUARTERLY">Quarterly</option><option value="ANNUAL">Annual</option><option value="PROBATION">Probation</option><option value="IMPROVEMENT_PLAN">Improvement plan</option><option value="MONTHLY_CHECKIN">Monthly</option></select></Field>
-            <Field label="Who is reviewed?"><select className={input} value={form.scope} onChange={(e) => set({ scope: e.target.value })}><option value="ALL">Everyone</option><option value="DEPARTMENT">Some departments</option><option value="SELECTED">Chosen people</option></select></Field>
-            <Field label="Period starts"><input type="date" className={input} value={form.periodStart} onChange={(e) => set({ periodStart: e.target.value })} /></Field>
-            <Field label="Period ends"><input type="date" className={input} value={form.periodEnd} onChange={(e) => set({ periodEnd: e.target.value })} /></Field>
-            <Field label="Open the reviews by themselves on (optional)">{form.openedAt ? <div className="text-sm text-slate-500 py-2">Already open.</div> : <input type="date" className={input} value={form.autoOpenOn || ''} onChange={(e) => set({ autoOpenOn: e.target.value })} />}</Field>
-            <Field label="Employees finish self-review by"><input type="date" className={input} value={form.selfReviewDeadline} onChange={(e) => set({ selfReviewDeadline: e.target.value })} /></Field>
-            <Field label="Managers finish by"><input type="date" className={input} value={form.managerDeadline} onChange={(e) => set({ managerDeadline: e.target.value })} /></Field>
-            <Field label="HR finishes by"><input type="date" className={input} value={form.hrDeadline} onChange={(e) => set({ hrDeadline: e.target.value })} /></Field>
-          </div>
-          {form.scope === 'DEPARTMENT' && <div className="mt-3 flex flex-wrap gap-2">{depts.map((d) => <label key={d} className="text-sm flex items-center gap-1.5"><input type="checkbox" checked={form.departments.includes(d)} onChange={(e) => set({ departments: e.target.checked ? [...form.departments, d] : form.departments.filter((x: string) => x !== d) })} />{d}</label>)}</div>}
-          {form.scope === 'SELECTED' && <div className="mt-3 max-h-48 overflow-auto grid md:grid-cols-3 gap-1">{users.filter((u) => u.active !== false).map((u) => <label key={u.id} className="text-sm flex items-center gap-1.5"><input type="checkbox" checked={(form.employeeUids || []).includes(u.id)} onChange={(e) => set({ employeeUids: e.target.checked ? [...(form.employeeUids || []), u.id] : (form.employeeUids || []).filter((x: string) => x !== u.id) })} />{u.name}</label>)}</div>}
-          <ResultNote note={note} />
-          <div className="flex gap-2 mt-3"><button className={btnBig} disabled={busy} onClick={() => run(async () => { await pmService.post('cycle-save', form); setForm(null); setTick((t) => t + 1); }, 'Saved. Now press "Open reviews".')}>Save cycle</button><button className={btnGhost} onClick={() => setForm(null)}>Cancel</button></div>
-        </Card>
-      )}
-    </div>
+      <div className="flex flex-wrap gap-2 items-start mt-3">
+        <button className={btnGhost} disabled={busy} onClick={() => run(async () => { await pmService.post('setup-save', { step: 'timing', timing: t, feedUrl, aiOn }); await reload(); }, 'Saved.')}>Save timing</button>
+        {!s.setupDone && <GuardedButton busy={busy} missing={blocks} onClick={() => run(async () => { await pmService.post('setup-save', { step: 'timing', timing: t, feedUrl, aiOn }); const r = await pmService.post('setup-save', { step: 'finish' }); await reload(); if (!r.success) throw new Error(r.error); }, 'Setup finished. Plans have started and managers have been asked to set targets.')}>Finish setup and start</GuardedButton>}
+      </div>
+      <Explain title="What happens when I press Finish?">
+        <p>Every employee gets a plan from their designation's template. Their manager is emailed to set targets. Anyone missing something (no manager, no template) shows as "on hold" with the reason, and starts by itself when it is fixed.</p>
+        <p>From then on a daily check runs by itself: new joiners, role changes, new SOP versions, monthly check-ins, reminders, opening each quarter's reviews and sharing approved ones.</p>
+      </Explain>
+    </Card>
   );
 };

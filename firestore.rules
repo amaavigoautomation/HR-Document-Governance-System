@@ -475,6 +475,15 @@ service cloud.firestore {
     match /integrationSecrets/{id} { allow read, write: if false; }
     // HR Business Partner records (mappings, talent reviews, PIPs, surveys ...): server only (api/_lib/hrbpApi.ts)
     match /pmItems/{id} { allow read, write: if false; }
+    match /pmSettings/{id} { allow read, write: if false; }
+    match /pmTemplates/{id} { allow read, write: if false; }
+    match /pmPlans/{id} { allow read, write: if false; }
+    match /pmEvidence/{id} { allow read, write: if false; }
+    match /pmCheckins/{id} { allow read, write: if false; }
+    match /pmCycles/{id} { allow read, write: if false; }
+    match /pmReviews/{id} { allow read, write: if false; }
+    match /pmDevPlans/{id} { allow read, write: if false; }
+    match /pmLog/{id} { allow read, write: if false; }
     match /hrbpItems/{id} { allow read, write: if false; }
     match /leaveSettings/{id} { allow read, write: if false; }
     match /leaveProfiles/{id} { allow read, write: if false; }

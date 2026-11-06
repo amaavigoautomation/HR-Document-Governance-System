@@ -1,155 +1,202 @@
 /**
- * HR-PM-006 monthly check-ins (workflow PM-006) and HR-PM-007 development plans (workflow PM-008).
- *  - A check-in is generated once per person per month (the id is the person and the month, so running it twice is harmless).
- *  - A development plan comes from an approved review. It is for growth, improvement or recognition. Nothing here starts
- *    disciplinary action: an improvement plan is always written and approved by people, never started by the system or by AI.
+ * After the review: a development, improvement or recognition plan (proposed by the system, confirmed by the manager),
+ * plus reports for HR and leadership, the exception list, and the AI review draft.
+ * AI only drafts text from documented work. It never rates, never decides, and anything about personality, motive or health is thrown away.
  */
-import { addDays, isDate, isFinal, monthOf } from '../../shared/pmEngine.js';
-import { audit, fail, getK, isMyReport, listK, managerOf, nameOf, nowIso, ok, putK, str, tell, today, newId, type C, type Item, type Route, type Result } from './pmCore.js';
+import { aiEnabled, aiJson } from './openaiHelper.js';
+import { GROWTH_WORDS, addDays, daysBetween, growthFor, isDate, unsupportedInference, type GrowthType } from '../../shared/pmEngine.js';
+import {
+  EXCEPTIONS, active, audit, bad, canSee, clear, db, denied, get, hrUids, isManagerOf, list, lc, newId, notFound, nowIso, ok, put, raise,
+  remindNow, settingsOf, str, tell, today,
+  type C, type Doc, type Result, type Route,
+} from './pmCore.js';
 
-const ciId = (uid: string, month: string) => `ci_${uid}_${month}`.replace(/[^A-Za-z0-9_-]/g, '_').slice(0, 150);
+const lines = (t: string) => (t || '').split(/\r?\n|;|•/).map((x) => str(x, 200)).filter((x) => x.length > 2).slice(0, 8);
 
-/** Daily job: make sure every active person who has a manager has a check-in for this month. */
-export async function generateCheckins(c: C): Promise<{ created: number }> {
-  const month = monthOf(today());
-  let created = 0;
-  for (const p of c.people.filter((x) => x.active)) {
-    const mgr = managerOf(c, p.uid);
-    if (!mgr) continue;
-    const id = ciId(p.uid, month);
-    if (await getK(c.cid, id, 'checkin')) continue;
-    await putK({ id, companyId: c.cid, kind: 'checkin', uid: p.uid, employeeName: p.name, managerUid: mgr, managerName: nameOf(c, mgr), month, dueBy: addDays(`${month}-28`, 0), status: 'DUE', focus: '', wins: '', concerns: '', support: '', employeeComment: '', doneAt: '' });
-    await tell(c, [mgr], `Monthly check-in with ${p.name}`, `Please hold this month's short check-in and record it under Performance > Check-ins${''}.`);
-    created++;
-  }
-  return { created };
+/** Called when a review is shared. Once per review. */
+export async function proposeGrowth(c: C, rv: Doc): Promise<void> {
+  const id = `${rv.id}_growth`;
+  if (await get(c.cid, 'growth', id)) return;
+  const type: GrowthType = growthFor(rv.score?.overall ?? null);
+  const m = rv.manager || {};
+  const objective = type === 'IMPROVEMENT' ? m.improve : type === 'RECOGNITION' ? m.strengths : m.training || m.improve;
+  await put('growth', {
+    id, companyId: c.cid, uid: rv.uid, name: rv.name, managerUid: rv.managerUid, managerName: rv.managerName, reviewId: rv.id, cycleName: rv.cycleName,
+    type, status: 'PROPOSED', objective: str(objective, 1000), expected: '', support: '',
+    actions: lines(type === 'RECOGNITION' ? '' : `${m.training || ''}\n${rv.self?.training || ''}`).map((text) => ({ text, done: false })),
+    reviewDate: addDays(today(), type === 'IMPROVEMENT' ? 45 : 60), outcome: '', proposedOn: today(),
+  });
+  await audit(c, id, 'GROWTH_PROPOSED', `${GROWTH_WORDS[type]} after ${rv.cycleName} (score ${rv.score?.overall ?? '-'})`, rv.uid);
+  await tell(c, [rv.managerUid], `Confirm ${rv.name}'s ${GROWTH_WORDS[type].toLowerCase()}`, `Based on the ${rv.cycleName} review, a ${GROWTH_WORDS[type].toLowerCase()} has been drafted for ${rv.name}. Check it and press "Confirm".`);
 }
 
-async function checkinList(c: C, _b: any, q: Record<string, any>): Promise<Result> {
-  const scope = str(q.scope, 10) || 'mine';
-  let items = await listK(c.cid, 'checkin');
-  if (scope === 'mine') items = items.filter((x) => x.uid === c.ctx.uid);
-  else if (scope === 'team') items = items.filter((x) => isMyReport(c, x.uid) || x.managerUid === c.ctx.uid);
-  else if (!c.isHr) return fail(403, 'You do not have permission to see every check-in.');
-  if (q.month) items = items.filter((x) => x.month === str(q.month, 7));
-  const t = today();
-  return ok({ items: items.sort((a, b) => String(b.month).localeCompare(String(a.month)) || String(a.employeeName).localeCompare(String(b.employeeName))).map((x) => ({ ...x, overdue: x.status === 'DUE' && x.dueBy < t })) });
+/** Training needs from the review go to HRBP's list (once each). */
+export async function feedHrbp(c: C, rv: Doc): Promise<void> {
+  const seen = new Set<string>(); let i = 0;
+  for (const skill of lines(`${rv.manager?.training || ''}\n${rv.self?.training || ''}`)) {
+    if (seen.has(lc(skill))) continue; seen.add(lc(skill));
+    const id = `pmneed_${rv.id}_${i++}`.replace(/[^A-Za-z0-9_-]/g, '_').slice(0, 150);
+    const ref = db().collection('hrbpItems').doc(id);
+    if (!(await ref.get()).exists) await ref.set({ id, companyId: c.cid, kind: 'trainingNeed', employeeUid: rv.uid, employeeName: rv.name, skill, source: 'REVIEW', priority: 'MEDIUM', status: 'OPEN', notes: `From the ${rv.cycleName} review`, createdAt: nowIso(), updatedAt: nowIso() });
+  }
 }
 
-async function checkinSave(c: C, b: any): Promise<Result> {
-  const it = await getK(c.cid, str(b.id, 160), 'checkin');
-  if (!it) return fail(404, 'That check-in was not found.');
-  if (it.uid === c.ctx.uid) return fail(403, 'Your manager records the check-in. You can add your own comment on it.');
-  if (managerOf(c, it.uid) !== c.ctx.uid && !c.isHr) return fail(403, 'Only the reporting manager can record this check-in.');
-  const next: Item = { ...it, focus: str(b.focus, 1000), wins: str(b.wins, 1000), concerns: str(b.concerns, 1000), support: str(b.support, 1000) };
-  if (b.done === true) {
-    if (!next.wins && !next.focus && !next.concerns) return fail(400, 'Write at least one note (wins, focus or concerns) before marking it done.');
-    next.status = 'DONE'; next.doneAt = nowIso(); next.managerUid = managerOf(c, it.uid) || it.managerUid;
-    await tell(c, [it.uid], 'Your monthly check-in was recorded', 'Open Performance > My performance to read it and add your comment.');
+async function growthSave(c: C, b: any): Promise<Result> {
+  const g = await get(c.cid, 'growth', str(b.id, 200));
+  if (!g) return notFound('The plan');
+  if (g.uid === c.ctx.uid) return denied('Your manager confirms this plan.');
+  if (!isManagerOf(c, g.uid) && !c.isHr) return denied();
+  if (!['PROPOSED', 'ACTIVE'].includes(g.status)) return bad('This plan is closed.');
+  const type: GrowthType = ['IMPROVEMENT', 'DEVELOPMENT', 'RECOGNITION'].includes(b.type) ? b.type : g.type;
+  const actions = (Array.isArray(b.actions) ? b.actions : []).slice(0, 12).map((a: any) => ({ text: str(a?.text ?? a, 200), done: a?.done === true })).filter((a: any) => a.text);
+  const next: Doc = { ...g, type, objective: str(b.objective, 1000), expected: str(b.expected, 1000), support: str(b.support, 1000), actions, reviewDate: str(b.reviewDate, 10) };
+  if (b.confirm === true) {
+    if (next.objective.length < 5) return bad('Write the objective (what should change or be recognised).');
+    if (!isDate(next.reviewDate) || next.reviewDate <= today()) return bad('Pick a follow-up date in the future.');
+    if (type !== 'RECOGNITION' && !actions.length) return bad('Add at least one action (training, coaching, a stretch task…).');
+    if (type === 'IMPROVEMENT' && (next.expected.length < 5 || next.support.length < 5)) return bad('An improvement plan needs the expected standard and the support you will give. This keeps it fair.');
+    next.status = 'ACTIVE'; next.confirmedBy = c.who; next.confirmedAt = nowIso();
   }
-  await putK(next);
-  await audit(c, 'checkin', it.id, b.done === true ? 'COMPLETED' : 'SAVED', null, { status: next.status }, it.uid);
+  await put('growth', next);
+  await audit(c, g.id, b.confirm === true ? 'GROWTH_CONFIRMED' : 'GROWTH_SAVED', `${GROWTH_WORDS[type]}: ${next.objective}`, g.uid);
+  if (b.confirm === true) await tell(c, [g.uid], `Your ${GROWTH_WORDS[type].toLowerCase()}`, `${c.who} confirmed your ${GROWTH_WORDS[type].toLowerCase()} after the ${g.cycleName} review. See My performance → Growth.`);
+  return ok({ item: next, message: b.confirm === true ? 'Confirmed and shared with the employee.' : 'Saved.' });
+}
+
+async function growthAction(c: C, b: any): Promise<Result> {
+  const g = await get(c.cid, 'growth', str(b.id, 200));
+  if (!g || (g.uid !== c.ctx.uid && !isManagerOf(c, g.uid) && !c.isHr)) return notFound('The plan');
+  if (g.status !== 'ACTIVE') return bad('This plan is not in progress.');
+  const i = Number(b.index);
+  if (!Number.isInteger(i) || !g.actions[i]) return bad('Pick an action.');
+  const actions = g.actions.map((a: any, j: number) => (j === i ? { ...a, done: b.done === true, doneOn: b.done === true ? today() : '' } : a));
+  const next = await put('growth', { ...g, actions });
   return ok({ item: next });
 }
 
-async function checkinComment(c: C, b: any): Promise<Result> {
-  const it = await getK(c.cid, str(b.id, 160), 'checkin');
-  if (!it || it.uid !== c.ctx.uid) return fail(404, 'That check-in was not found.');
-  if (it.status !== 'DONE') return fail(409, 'Your manager has not recorded this check-in yet.');
-  const next = { ...it, employeeComment: str(b.comment, 1000) };
-  await putK(next); await audit(c, 'checkin', it.id, 'EMPLOYEE_COMMENT', null, { comment: next.employeeComment }, it.uid);
-  return ok({ item: next });
+async function growthClose(c: C, b: any): Promise<Result> {
+  const g = await get(c.cid, 'growth', str(b.id, 200));
+  if (!g) return notFound('The plan');
+  if (g.uid === c.ctx.uid || (!isManagerOf(c, g.uid) && !c.isHr)) return denied();
+  const cancel = b.cancel === true; const outcome = str(b.outcome, 1500);
+  if (outcome.length < 5) return bad(cancel ? 'Write why it is cancelled.' : 'Write the outcome (what happened).');
+  const next = await put('growth', { ...g, status: cancel ? 'CANCELLED' : 'DONE', outcome, closedBy: c.who, closedOn: today() });
+  await audit(c, g.id, cancel ? 'GROWTH_CANCELLED' : 'GROWTH_DONE', outcome, g.uid);
+  return ok({ item: next, message: cancel ? 'Cancelled.' : 'Completed.' });
 }
 
-// ------------------------------------------------------------------ development plans
-
-const DEV_TYPES = ['DEVELOPMENT', 'IMPROVEMENT', 'RECOGNITION'] as const;
-type DevType = (typeof DEV_TYPES)[number];
-
-async function devList(c: C, _b: any, q: Record<string, any>): Promise<Result> {
-  const scope = str(q.scope, 10) || 'mine';
-  let items = await listK(c.cid, 'devPlan');
-  if (scope === 'mine') items = items.filter((x) => x.uid === c.ctx.uid && !(x.type === 'IMPROVEMENT' && x.status === 'PROPOSED'));
-  else if (scope === 'team') items = items.filter((x) => isMyReport(c, x.uid) || x.managerUid === c.ctx.uid);
-  else if (!c.isHr) return fail(403, 'You do not have permission to see every development plan.');
-  return ok({ items: items.sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt))) });
-}
-
-const cleanActions = (v: unknown, prev: any[] = []) => (Array.isArray(v) ? v : []).slice(0, 20).map((a: any, i: number) => {
-  const old = prev.find((p) => p.id === a?.id);
-  const due = isDate(a?.dueDate) ? a.dueDate : '';
-  return { id: old?.id || `a${Date.now().toString(36)}${i}`, text: str(a?.text, 300), dueDate: due, done: !!(a?.done ?? old?.done), doneAt: a?.done && !old?.done ? nowIso() : old?.doneAt || '' };
-}).filter((a: any) => a.text);
-
-async function devSave(c: C, b: any): Promise<Result> {
-  const prev = b.id ? await getK(c.cid, str(b.id, 80), 'devPlan') : null;
-  if (b.id && !prev) return fail(404, 'That plan was not found.');
-  const uid = prev?.uid || str(b.uid, 120);
-  const p = c.byKey.get(uid);
-  if (!p) return fail(400, 'Choose the employee.');
-  if (uid === c.ctx.uid) return fail(403, 'You cannot write your own plan. Your manager does this with you.');
-  if (managerOf(c, uid) !== c.ctx.uid && !c.isHr) return fail(403, 'Only the reporting manager or HR can write this plan.');
-  const type = (DEV_TYPES as readonly string[]).includes(str(b.type, 20)) ? (str(b.type, 20) as DevType) : prev?.type || 'DEVELOPMENT';
-  const reviewId = str(b.reviewId ?? prev?.reviewId, 160);
-  if (type === 'IMPROVEMENT') {
-    const rv = reviewId ? await getK(c.cid, reviewId, 'review') : null;
-    if (!rv || rv.uid !== uid || !isFinal(rv.status)) return fail(400, 'An improvement plan must come from this person\'s approved review. Pick the review it is based on.');
+export async function growthReminders(c: C): Promise<{ reminded: number }> {
+  const s = await settingsOf(c.cid);
+  let reminded = 0;
+  for (const g of await list(c.cid, 'growth')) {
+    if (g.status === 'PROPOSED' && daysBetween(g.proposedOn, today()) >= s.timing.remindEvery && remindNow(g, 'confirm', s.timing.remindEvery)) {
+      await put('growth', g); reminded++;
+      await tell(c, [g.managerUid], `Confirm ${g.name}'s ${GROWTH_WORDS[g.type as GrowthType].toLowerCase()}`, 'It is still waiting for you to confirm.');
+    } else if (g.status === 'ACTIVE' && g.reviewDate <= today() && remindNow(g, 'follow', s.timing.remindEvery * 2)) {
+      await put('growth', g); reminded++;
+      await tell(c, [g.managerUid], `Follow up: ${g.name}'s ${GROWTH_WORDS[g.type as GrowthType].toLowerCase()}`, `The follow-up date (${g.reviewDate}) has come. Review progress with ${g.name} and record the outcome.`);
+    }
   }
-  if (prev && ['COMPLETED', 'CANCELLED'].includes(prev.status)) return fail(409, 'This plan is closed.');
-  const title = str(b.title, 160);
-  if (!title) return fail(400, 'Give the plan a short title.');
-  const actions = cleanActions(b.actions, prev?.actions);
-  if (actions.length === 0) return fail(400, 'Add at least one action, with what the person will do and by when.');
-  const item: Item = {
-    ...(prev || {}), id: prev?.id || newId(), companyId: c.cid, kind: 'devPlan', uid, employeeName: p.name, managerUid: managerOf(c, uid), managerName: nameOf(c, managerOf(c, uid)),
-    type, reviewId, title, goal: str(b.goal, 800), actions, supportNeeded: str(b.supportNeeded, 600), reviewOn: isDate(b.reviewOn) ? b.reviewOn : prev?.reviewOn || '',
-    // Growth and recognition plans start at once; an improvement plan waits for HR to approve it.
-    status: prev?.status || (type === 'IMPROVEMENT' ? 'PROPOSED' : 'ACTIVE'), createdBy: prev?.createdBy || c.who,
+  return { reminded };
+}
+
+// ------------------------------------------------------------------ AI review draft (manager only)
+
+/** Drafts strengths / areas to improve / training from documented work. Names never leave the app. */
+async function aiDraft(c: C, b: any): Promise<Result> {
+  const rv = await get(c.cid, 'reviews', str(b.id, 200));
+  if (!rv || rv.uid === c.ctx.uid || !isManagerOf(c, rv.uid) || rv.status !== 'MANAGER') return denied('Only the manager can draft this review.');
+  const ev = (await list(c.cid, 'evidence', { uid: rv.uid })).filter((e) => e.status === 'VERIFIED' && e.date >= rv.from && e.date <= rv.to);
+  const checkins = (await list(c.cid, 'checkins', { uid: rv.uid })).filter((x) => x.status === 'DONE' && x.month >= rv.from.slice(0, 7) && x.month <= rv.to.slice(0, 7));
+  const perKpi = rv.snap.kpis.map((k: any) => ({ kpi: k.kpi, target: k.target, work: ev.filter((e) => e.kpiId === k.id).map((e) => e.title).slice(0, 12) }));
+  // The plain draft: always available, used when AI is off or fails.
+  const withWork = perKpi.filter((k: any) => k.work.length); const without = perKpi.filter((k: any) => !k.work.length);
+  const plain = {
+    strengths: withWork.length ? withWork.map((k: any) => `${k.kpi}: ${k.work.length} verified item(s), e.g. ${k.work.slice(0, 2).join(', ')}.`).join('\n') : '',
+    improve: without.length ? `No verified work recorded this quarter for: ${without.map((k: any) => k.kpi).join('; ')}. Discuss whether this reflects the work or missing records.` : '',
+    training: '',
   };
-  await putK(item);
-  await audit(c, 'devPlan', item.id, prev ? 'UPDATED' : 'CREATED', prev ? { status: prev.status } : null, { type, status: item.status }, uid);
-  if (!prev && item.status === 'ACTIVE') await tell(c, [uid], 'You have a new development plan', `${title}. Open Performance > Development to see it.`);
-  return ok({ item, message: item.status === 'PROPOSED' ? 'Saved. An improvement plan needs HR approval before the employee sees it.' : 'Saved.' });
+  const s = await settingsOf(c.cid);
+  if (!aiEnabled() || !s.aiOn) return ok({ draft: plain, ai: false, note: 'AI is off, so this draft is built from the recorded work only.' });
+  const r = await aiJson({
+    cid: c.cid, feature: 'pm_review_draft', maxTokens: 900, cacheKey: JSON.stringify({ perKpi, n: checkins.length }),
+    system: 'You help a manager draft a factual quarterly performance review. Use ONLY the facts given (KPIs, targets, verified work, check-in notes). Do not rate, do not give a score, do not mention personality, motivation, attitude, loyalty, health, family or any personal trait. Refer to the person as "the employee". Reply as JSON {"strengths":"...","improve":"...","training":"..."}; each a few short lines.',
+    user: JSON.stringify({ kpis: perKpi, checkins: checkins.map((x) => ({ month: x.month, wentWell: x.wentWell, blockers: x.blockers, managerComment: x.managerComment })) }),
+  });
+  if (!r.data) return ok({ draft: plain, ai: false, note: r.error ? `AI could not answer (${r.error}). Draft built from the recorded work instead.` : 'Draft built from the recorded work.' });
+  const draft = { strengths: str(r.data.strengths, 2000), improve: str(r.data.improve, 2000), training: str(r.data.training, 1000) };
+  const badWord = unsupportedInference(`${draft.strengths} ${draft.improve} ${draft.training}`);
+  if (badWord) {
+    await raise(c, 'AI_DISCARDED', `${rv.id}_${Date.now().toString(36)}`, { subjectUid: rv.uid, text: `An AI review draft was discarded because it went beyond the documented work ("${badWord}").` });
+    return ok({ draft: plain, ai: false, note: 'The AI draft went beyond the facts, so it was thrown away. This draft is built from the recorded work.' });
+  }
+  return ok({ draft, ai: true, note: 'AI draft from the recorded work. Check every line and change anything that is not right before using it.' });
 }
 
-async function devAct(c: C, b: any): Promise<Result> {
-  const it = await getK(c.cid, str(b.id, 80), 'devPlan');
-  if (!it) return fail(404, 'That plan was not found.');
-  const action = str(b.action, 20).toUpperCase();
-  const mine = it.uid === c.ctx.uid;
-  const mgr = managerOf(c, it.uid) === c.ctx.uid;
-  if (action === 'TICK') {
-    if (!(mine || mgr || c.isHr)) return fail(403, 'You cannot update this plan.');
-    if (it.status !== 'ACTIVE') return fail(409, 'This plan is not active.');
-    const actions = it.actions.map((a: any) => (a.id === str(b.actionId, 60) ? { ...a, done: b.done !== false, doneAt: b.done !== false ? nowIso() : '' } : a));
-    await putK({ ...it, actions }); await audit(c, 'devPlan', it.id, 'ACTION_TICKED', null, { actionId: b.actionId }, it.uid);
-    return ok({ item: { ...it, actions } });
-  }
-  if (action === 'APPROVE') {
-    if (!c.isHr || mine) return fail(403, 'Only HR (not the employee) can approve an improvement plan.');
-    if (it.status !== 'PROPOSED') return fail(409, 'This plan is not waiting for approval.');
-    const next = { ...it, status: 'ACTIVE', approvedBy: c.who, approvedAt: nowIso() }; await putK(next);
-    await audit(c, 'devPlan', it.id, 'APPROVED', { status: 'PROPOSED' }, { status: 'ACTIVE' }, it.uid);
-    await tell(c, [it.uid], 'You have a new plan', `${it.title}. Open Performance > Development to see it and talk it through with your manager.`);
-    return ok({ item: next });
-  }
-  if (action === 'COMPLETE' || action === 'CANCEL') {
-    if (!(mgr || c.isHr) || mine) return fail(403, 'Only the manager or HR can close a plan.');
-    if (!['ACTIVE', 'PROPOSED'].includes(it.status)) return fail(409, 'This plan is already closed.');
-    const note = str(b.note, 600);
-    if (!note) return fail(400, 'Write a short closing note.');
-    const next = { ...it, status: action === 'COMPLETE' ? 'COMPLETED' : 'CANCELLED', closingNote: note, closedAt: nowIso(), closedBy: c.who }; await putK(next);
-    await audit(c, 'devPlan', it.id, action === 'COMPLETE' ? 'COMPLETED' : 'CANCELLED', { status: it.status }, { status: next.status, note }, it.uid);
-    return ok({ item: next });
-  }
-  return fail(400, 'Unknown action.');
+// ------------------------------------------------------------------ exceptions and reports
+
+async function exceptionList(c: C, _b: any, q: Record<string, any>): Promise<Result> {
+  const all = (await list(c.cid, 'log')).filter((x) => x.kind === 'EXCEPTION');
+  const showResolved = q.all === '1';
+  const order: Record<string, number> = { BLOCK: 0, REMIND: 1, LOG: 2 };
+  const items = all.filter((x) => showResolved || x.status === 'OPEN').sort((a, b) => (a.status === b.status ? 0 : a.status === 'OPEN' ? -1 : 1) || order[a.behaviour] - order[b.behaviour] || String(b.openedAt).localeCompare(String(a.openedAt)));
+  return ok({ items, labels: EXCEPTIONS });
+}
+
+async function exceptionResolve(c: C, b: any): Promise<Result> {
+  const x = await get(c.cid, 'log', str(b.id, 160));
+  if (!x || x.kind !== 'EXCEPTION') return notFound('That item');
+  const note = str(b.note, 400);
+  if (note.length < 3) return bad('Write what was done.');
+  await clear(c, x.code, x.ref, note);
+  return ok({ message: 'Marked as handled.' });
+}
+
+/** Grouped figures. Leadership sees groups only; individual scores stay with HR, approvers and the manager. */
+async function report(c: C, _b: any, q: Record<string, any>): Promise<Result> {
+  const [reviews, plans, checkins, growth, logs] = await Promise.all([list(c.cid, 'reviews'), list(c.cid, 'plans'), list(c.cid, 'checkins'), list(c.cid, 'growth'), list(c.cid, 'log')]);
+  const cycles = Array.from(new Set(reviews.map((r) => r.cycleKey))).sort().reverse();
+  const cycle = str(q.cycle, 10) || cycles[0] || '';
+  const rs = reviews.filter((r) => r.cycleKey === cycle);
+  const done = rs.filter((r) => ['PUBLISHED', 'ACKNOWLEDGED', 'DISPUTED', 'RESOLVED'].includes(r.status));
+  const scoredRows = done.filter((r) => typeof r.score?.overall === 'number');
+  const dist: Record<string, number> = { 'Below Standard': 0, Developing: 0, 'Meets Standard': 0, 'Exceeds Standard': 0, Exemplary: 0 };
+  for (const r of scoredRows) dist[r.score.band] = (dist[r.score.band] || 0) + 1;
+  const byDept = new Map<string, number[]>();
+  for (const r of scoredRows) { const d = r.snap?.department || 'No department'; byDept.set(d, [...(byDept.get(d) || []), r.score.overall]); }
+  const status: Record<string, number> = {};
+  for (const r of rs) status[r.status] = (status[r.status] || 0) + 1;
+  const openPlans = plans.filter((p) => p.status !== 'CLOSED');
+  const sopsAll = openPlans.flatMap((p) => p.sops || []);
+  const month = today().slice(0, 7);
+  const ciMonth = checkins.filter((x) => x.month === month);
+  return ok({
+    cycle, cycles, total: rs.length, status, done: done.length, disputed: rs.filter((r) => r.status === 'DISPUTED').length,
+    distribution: dist, departments: Array.from(byDept.entries()).map(([d, l]) => ({ department: d, people: l.length, average: l.length >= 3 ? Math.round((l.reduce((a, x) => a + x, 0) / l.length) * 100) / 100 : null })).sort((a, b) => a.department.localeCompare(b.department)),
+    criticalFlags: rs.filter((r) => r.score?.criticalBreach).length,
+    plans: { active: openPlans.filter((p) => p.status === 'ACTIVE').length, waiting: openPlans.filter((p) => p.status !== 'ACTIVE').length, onHold: openPlans.filter((p) => p.status === 'ON_HOLD').length },
+    sopAck: { total: sopsAll.length, acknowledged: sopsAll.filter((x: any) => x.ackAt).length },
+    checkins: { month, total: ciMonth.length, done: ciMonth.filter((x) => x.status === 'DONE').length },
+    growth: { proposed: growth.filter((g) => g.status === 'PROPOSED').length, active: growth.filter((g) => g.status === 'ACTIVE').length, improvement: growth.filter((g) => g.status === 'ACTIVE' && g.type === 'IMPROVEMENT').length },
+    openExceptions: logs.filter((x) => x.kind === 'EXCEPTION' && x.status === 'OPEN').length,
+    note: 'Department averages appear only for groups of 3 or more, so nobody can work out one person\'s score.',
+  });
+}
+
+async function growthList(c: C, _b: any, q: Record<string, any>): Promise<Result> {
+  const uid = str(q.uid, 120);
+  if (uid && !canSee(c, uid)) return denied();
+  const items = (await list(c.cid, 'growth')).filter((g) => (uid ? g.uid === uid : g.uid === c.ctx.uid || isManagerOf(c, g.uid) || c.isHr)).sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)));
+  return ok({ items });
 }
 
 export const GROWTH_ROUTES: Record<string, Route> = {
-  'checkin-list': { method: 'GET', who: 'any', run: (c, b, q) => checkinList(c, b, q) },
-  'checkin-save': { method: 'POST', who: 'any', run: (c, b) => checkinSave(c, b) },
-  'checkin-comment': { method: 'POST', who: 'any', run: (c, b) => checkinComment(c, b) },
-  'dev-list': { method: 'GET', who: 'any', run: (c, b, q) => devList(c, b, q) },
-  'dev-save': { method: 'POST', who: 'any', run: (c, b) => devSave(c, b) },
-  'dev-act': { method: 'POST', who: 'any', run: (c, b) => devAct(c, b) },
+  growth: { method: 'GET', who: 'any', run: (c, b, q) => growthList(c, b, q) },
+  'growth-save': { method: 'POST', who: 'any', run: (c, b) => growthSave(c, b) },
+  'growth-action': { method: 'POST', who: 'any', run: (c, b) => growthAction(c, b) },
+  'growth-close': { method: 'POST', who: 'any', run: (c, b) => growthClose(c, b) },
+  'ai-draft': { method: 'POST', who: 'any', run: (c, b) => aiDraft(c, b) },
+  exceptions: { method: 'GET', who: 'hr', run: (c, b, q) => exceptionList(c, b, q) },
+  'exception-resolve': { method: 'POST', who: 'hr', run: (c, b) => exceptionResolve(c, b) },
+  report: { method: 'GET', who: 'reports', run: (c, b, q) => report(c, b, q) },
 };

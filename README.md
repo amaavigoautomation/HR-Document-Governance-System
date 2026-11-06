@@ -119,29 +119,30 @@ KPI governance (HRBP-006), performance improvement plans (HRBP-007), anonymous p
 training needs (HRBP-011), learning paths (HRBP-012), certificate tracker (HRBP-013), retention planning, succession planning and the leadership dashboard.
 Existing companies need `hrbp.manage` / `hrbp.view` / `hiring.budget.manage` granted to the right roles (new companies get them from the role templates).
 
-## Performance Management (HR-PM-001 to HR-PM-009)
+## Performance Management (HR-PM-001 to HR-PM-009, simplified)
 
-Built to the "HR Performance Management Automation" specification (Draft v1.0) and meant to be usable without training. Open **Performance** in the sidebar.
+Built from the "HR Performance Management Automation" specification, simplified so nobody needs training. No n8n: the app's own API and a daily job do the automation. Open **Performance** in the sidebar.
 
-- **Everyone** starts on *Today*, a plain to-do list. *My performance* shows their targets (KRA/KPI), processes (SOPs) and reviews; they self-assess, read the result and agree or disagree.
-- **Managers** set targets for their team, rate each target and behaviour, record the feedback discussion, run monthly check-ins and development plans, and verify work evidence.
-- **HR** follows *Start here* (the seven setup steps in the specification's order, with a one-press quick start), then opens review cycles. **Approvers** (`pm.approve`) approve scoring rules, KRA/KPI templates, plans and final reviews, and are the only people who can amend a final review.
-- Permissions: `pm.manage` (HR), `pm.approve`, `pm.view` (grouped dashboards). Managers see their own team automatically.
-- The ten n8n workflows run inside the app: plan assignment (`sync` button and the daily job), SOP assignment, task evidence (manual, CSV upload, or a webhook at `/api/pm/ev-hook?c=<company>&key=<key>`), monthly check-ins, formal reviews, development plans, dashboards, and the exception and audit handler. `/api/pm/daily` is the daily cron (`CRON_SECRET`).
-- Rules enforced on the server: weights 60/25/15 and KRA/KPI weights must total 100; ratings are 1 to 5 plus "Not observed" (never 0); missing evidence is left out, never scored as zero (HR must accept the gap); nothing starts without an approved framework and manager (`CONFIGURATION_PENDING`, no silent defaults); finished reviews change only by an audited, reasoned amendment; nobody approves their own review; opening a cycle twice creates no duplicate; leadership figures hide groups under 3; AI is optional, advisory, and anything inferring personality, motive or health is discarded and logged; serious misconduct is only recorded as a confidential pointer.
-- Data: one server-only collection `pmItems` (told apart by `kind`). Code: `shared/pmEngine.ts`, `api/_lib/pm*.ts` (router `pmApi.ts`), `src/components/pm/`. Tests: `tests/pm.engine.test.ts`, `tests/pm.api.test.ts` (covers the 12 launch checks of section 14).
-- This replaces the earlier Performance module that lived on `sahil-11-performance`. It adds one Vercel function (`api/pm/[action].ts`).
+**What is measured:** Results (KPIs with targets, 60%), Behaviour (25%) and SOP compliance (15%). Ratings are 1–5 or "Not observed"; "Not observed" is left out, never counted as 0. A critical SOP marked "not compliant" is never averaged away: HR must look at it before approving.
 
-### Performance Autopilot (routine work done for you)
+**Who sees what:** everyone lands on **To do** (one list of what is waiting for them) and **My performance**. Managers get **My team**. HR gets **Setup**, **Targets (plans)**, **Reviews** and **Needs attention**. Approvers get **Reviews**. Leadership gets **Reports** (groups only; department averages hidden under 3 people).
 
-Open **Performance > Autopilot** (HR setup). Every switch starts off (except the manager pack note) and every step is safe to run twice, audited, and visible under "What the autopilot did last time". It never rates anyone: managers rate, HR checks, approvers approve.
+**The year:**
+1. HR runs the 5-step **Setup** once (weights, behaviours, SOPs from Document Governance, a KRA/KPI template per designation, timing). Nothing starts until "Finish setup".
+2. Every employee gets a plan automatically. The manager sets targets (weights must total 100), HR approves, the employee acknowledges the targets and each SOP (open first, then "I have read and understood"). Missing manager or template → plan **on hold** with the reason; it starts by itself once fixed.
+3. During the quarter, work is recorded against KPIs (by the employee, the manager, a CSV upload or a daily Google Sheet feed) and the manager verifies it. A check-in is created on the 1st of each month.
+4. The quarter's reviews open by themselves on the first day after it ends (HR can also open one now). Self-review → manager (discussion date required) → HR approval → shared after N days → employee acknowledges or disagrees (kept word for word) → HR resolves.
+5. When a review is shared, a development / improvement / recognition plan is drafted from the score; the manager confirms it. Training needs go to HRBP.
 
-- **Cycles on a timer.** Give a cycle an "open the reviews by themselves on" date; on that day the daily job opens it (same code as the Open reviews button, so nobody is duplicated). Approved reviews can be shared with the employee after a short wait (default 2 days), and a cycle locks itself only when every review in it is acknowledged (a deferred, disputed or unanswered review always waits for a person).
-- **Evidence made for you.** (1) *Attendance*: last month's and this month's attendance becomes one piece of evidence per person, only for people whose plan has the KPI HR names (matched by name, never guessed), so nothing piles up unmapped. (2) *Evidence feeds*: a link to a CSV (a Google Sheet shared "anyone with the link" works; the normal sheet address is converted) read every day through the same checks as the CSV import: same columns (`employee_email`, `title`, `task_id` or `link`, optional `completed_on`, `kpi`, `quality`, `rework`), duplicates ignored, rows with no matching person or KPI logged or left in the manager's queue.
-- **Review pack.** When an employee submits, the manager gets one short note (once per review). On the review screen, **Review pack** groups the evidence by KPI (checked, waiting, rework), shows gaps and unlinked items, the monthly check-ins and approved leave, and a draft of talking points. The draft is a plain summary of the facts; with `OPENAI_API_KEY` and HR's "AI on" switch (Governance), an AI draft is used instead. The AI never sees names, never suggests a rating, and anything inferring personality, motive or health is discarded and logged (`AI_UNSUPPORTED`).
-- **Self-assessment draft.** The employee's "Fill empty boxes from my recorded work" button fills only empty boxes from their own evidence and check-in wins, and attaches that evidence to the matching targets. Nothing they wrote is overwritten, and attendance is not listed as an achievement.
-- **Code.** `api/_lib/pmAuto.ts` (routes `auto-get`, `auto-save`, `auto-run`, `feed-save`, `feed-delete`, `feed-run`, `pack-get`, `self-prefill`), the daily job step `autopilot` in `pmApi.ts`, screens `src/components/pm/Autopilot.tsx` and the pack/draft parts of `ReviewScreen.tsx`. No new Vercel function (still 9 of 12). Data: `pmItems` kinds `autopilot` (one per company), `evFeed`, `packSent`. Tests: `tests/pm.auto.test.ts`.
-- **Not built yet:** connectors that need an outside login (ClickUp, CRM and similar) beyond the CSV feed and the existing task webhook; one-click approval links in email; AI-drafted KRA/KPI templates.
+**Rules that never bend:** nobody sets or approves their own targets or approves a review they are the subject or manager of; a shared review changes only by an audited amendment (old version kept); running anything twice creates nothing twice; attendance and task counts are context, never ratings; AI only drafts text from recorded work (never names, never ratings) and anything about personality, motive or health is discarded and logged; with AI off everything still works.
+
+**Automation:** event hooks run straight away (setup changes, template saved, targets approved, review approved/shared). The daily job (`/api/pm/daily`, cron with `CRON_SECRET`; HR can also press "Run the daily checks now" in Reports) syncs plans with People (joiners, leavers, role/department/manager changes, new SOP versions), reads the evidence feed, creates check-ins, opens the quarter, starts held reviews, closes late self-reviews, sends reminders and escalations, and shares approved reviews.
+
+**Data:** nine server-only collections, each record carrying `companyId`: `pmSettings`, `pmTemplates`, `pmPlans`, `pmEvidence`, `pmCheckins`, `pmCycles`, `pmReviews` (with a frozen copy of the plan, weights and SOP versions), `pmDevPlans`, `pmLog` (audit trail + exceptions). Records from the earlier module (`pmItems`) are left untouched.
+
+**Defaults used for open decisions:** HR approval is final (pm.manage or pm.approve, never the review's subject or manager); cycles are calendar quarters; after a mid-quarter role change the review scores the new plan only (the old plan and its evidence are kept).
+
+Tests: `npx tsx tests/pm.test.ts` walks a whole year and checks all 12 acceptance tests from section 14 of the spec.
 
 ## Hiring Flow builder (custom steps from applicant to onboarding)
 

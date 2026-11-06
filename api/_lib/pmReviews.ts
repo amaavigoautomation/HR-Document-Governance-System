@@ -1,533 +1,444 @@
 /**
- * HR-PM-003 (behavioural assessment) and HR-PM-006 (review and approval): workflows PM-003 and PM-007.
+ * Quarterly reviews.
  *
- * The ten steps of the specification, in order:
- *   OPEN -> SELF_ASSESSED -> MANAGER_EVALUATED -> DISCUSSED -> HR_REVIEWED -> APPROVED -> PUBLISHED -> ACKNOWLEDGED (or DISPUTED, recorded and routed)
- * Rules that are enforced here and not just shown on screen:
- *  - nobody approves their own review; a review with no approved KRA/KPI cannot be finalised (it waits in CONFIGURATION_PENDING)
- *  - a missing rating is "not rated", never zero; a part with no evidence is left out and HR must accept the gap
- *  - once approved, a review is final: only an authorized, reasoned, audited amendment can change it
- *  - opening a cycle twice never creates a second review for the same person
+ *   SELF → MANAGER → HR → APPROVED → PUBLISHED → ACKNOWLEDGED | DISPUTED → RESOLVED
+ *   ON_HOLD   no approved plan yet (starts by itself when the plan is approved)
+ *   DEFERRED  long approved leave in the quarter (HR resumes it)
+ *
+ * Each review keeps a frozen copy of the plan, weights and SOP versions it was scored against.
+ * Nobody approves a review they are the subject or the manager of. A shared review changes only through an audited amendment.
  */
 import {
-  REVIEW_TYPES, behaviourPillar, completenessProblems, consistencyFlags, isDate, isFinal, isRating, kraPillar, overallScore, overlapDays, ratingBand, round, sopScore, addDays, canMove,
-  type CompetencyResult, type KpiResult, type ReviewStatus, type SopResult,
+  REVIEW_WORDS, addDays, daysBetween, isDate, isRating, isSopResult, previousQuarter, quarterByKey, quarterOf, scoreReview,
+  type Quarter,
 } from '../../shared/pmEngine.js';
+import { openPlanOf } from './pmPlans.js';
+import { proposeGrowth, feedHrbp } from './pmGrowth.js';
 import {
-  anyPerson, audit, clearException, db, fail, getK, isMyReport, lc, listK, managerOf, nameOf, newId, nowIso, num, ok, putK, raise, str, strList, tell, today,
-  type C, type Item, type Route, type Result,
+  active, audit, bad, canSee, clear, db, denied, get, hrUids, isManagerOf, list, managerOf, nameOf, notFound, ok, put, raise,
+  remindNow, settingsOf, str, tell, today,
+  type C, type Doc, type Result, type Route, type Settings,
 } from './pmCore.js';
-import { evidenceFor, workContext } from './pmEvidence.js';
-import { closeSuperseded } from './pmPlans.js';
 
-const FINAL_MSG = 'This review is final. An authorized person can amend it, and every change is recorded.';
-const reviewId = (cycleId: string, uid: string) => `rv_${cycleId}_${uid}`.replace(/[^A-Za-z0-9_-]/g, '_').slice(0, 150);
-const textBlock = (v: unknown, max = 2000) => str(v, max);
+const reviewId = (cid: string, key: string, uid: string) => `${cid}_${key}_${uid}`;
+const cycleId = (cid: string, key: string) => `${cid}_${key}`;
 
-// ------------------------------------------------------------------ opening a cycle (workflow PM-007)
-
-function eligible(c: C, cy: Item) {
-  return c.people.filter((p) => {
-    if (!p.active || p.createdDate > cy.periodEnd) return false;
-    if (cy.scope === 'DEPARTMENT') return (cy.departments || []).some((d: string) => lc(d) === lc(p.department));
-    if (cy.scope === 'SELECTED') return (cy.employeeUids || []).includes(p.uid);
-    return true;
-  });
-}
-
-/** Why this person's review cannot start yet. The review is created anyway and waits, so nothing is silently skipped. */
-async function blockersFor(c: C, uid: string, plans: Item[]) {
-  const mine = plans.filter((p) => p.uid === uid && p.status !== 'SUPERSEDED').sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)));
-  const active = mine.find((p) => p.status === 'ACTIVE') || null;
-  const blockers: string[] = [];
-  if (!active) {
-    const cur = mine[0];
-    if (!cur) blockers.push('This person has no performance plan, so there is no KRA/KPI. The final review is blocked.');
-    else if (cur.status === 'CONFIGURATION_PENDING') blockers.push('The plan is waiting for setup: ' + (cur.configIssues || []).map((i: any) => i.text).join(' '));
-    else blockers.push(`The KRA/KPI is not active yet (it is at "${String(cur.status).toLowerCase().replace(/_/g, ' ')}"). It must be approved and acknowledged first.`);
-  }
-  if (!managerOf(c, uid)) blockers.push('This person has no reporting manager. Set one under Leave & Attendance > Manage > People.');
-  return { active, blockers };
-}
-
-async function buildReview(c: C, cy: Item, p: any, plans: Item[], comps: Item[]): Promise<Item> {
-  const { active, blockers } = await blockersFor(c, p.uid, plans);
-  const mgr = managerOf(c, p.uid);
-  const id = reviewId(cy.id, p.uid);
-  const base: Item = {
-    id, companyId: c.cid, kind: 'review', cycleId: cy.id, cycleName: cy.name, reviewType: cy.reviewType, periodStart: cy.periodStart, periodEnd: cy.periodEnd,
-    selfReviewDeadline: cy.selfReviewDeadline, managerDeadline: cy.managerDeadline, hrDeadline: cy.hrDeadline, uid: p.uid, employeeName: p.name, department: p.department, title: p.title,
-    planId: active?.id || '', managerUid: mgr, managerName: nameOf(c, mgr), status: blockers.length ? 'CONFIGURATION_PENDING' : 'OPEN', blockers, weights: active?.weights || null,
-    snapshot: active ? { frameworkId: active.frameworkId, frameworkName: active.frameworkName, frameworkVersion: active.frameworkVersion, templateVersion: active.templateVersion, competencies: (active.competencies || []).map((x: any) => ({ id: x.competencyId, name: x.name, version: x.version })) } : null,
-    self: { achievements: '', improvements: '', trainingNeeds: '', comments: '', submittedAt: '', waived: '' },
-    kpis: [], manager: { evaluation: '', achievements: '', improvements: '', trainingNeeds: '', submittedAt: '', sopNotAssessedReason: '' },
-    discussion: { heldOn: '', notes: '' }, hr: { checkedBy: '', checkedAt: '', note: '', acceptedPartial: false, criticalAck: false }, final: null, response: null, amendments: [], leaveFlag: 0,
+function snapshot(plan: Doc, s: Settings) {
+  return {
+    planId: plan.id, designation: plan.designation, department: plan.department, weights: { ...s.weights },
+    kpis: plan.kpis.map((k: any) => ({ id: k.id, kra: k.kra, kpi: k.kpi, measure: k.measure, weight: k.weight, target: k.target })),
+    comps: plan.competencies.map((x: any) => ({ id: x.id, name: x.name, standard: x.standard })),
+    sops: (plan.sops || []).map((x: any) => ({ id: x.documentId, title: x.title, versionNumber: x.versionNumber, critical: !!x.critical })),
   };
-  if (active) {
-    const targets = (await listK(c.cid, 'kpiTarget')).filter((k) => k.planId === active.id);
-    base.kpis = targets.map((t): KpiResult => ({ targetId: t.id, kpiName: t.kpiName, kraName: t.kraName, weightage: Number(t.weightage) || 0, target: t.target, rating: null, insufficientEvidence: false, employeeNote: '', managerNote: '', evidenceIds: [], finalRating: null, calibrationReason: '' }));
-    // PM-003: the assessment template. One row per competency in the plan, frozen at this version.
-    for (const x of active.competencies || []) {
-      const caId = `ca_${id}_${x.competencyId}`.replace(/[^A-Za-z0-9_-]/g, '_').slice(0, 150);
-      if (!(await getK(c.cid, caId, 'compAssess'))) await putK({ id: caId, companyId: c.cid, kind: 'compAssess', reviewId: id, uid: p.uid, competencyId: x.competencyId, name: x.name, weight: Number(x.weight) || 1, expectedBehaviour: x.expectedBehaviour, expectedLevel: x.expectedLevel,
-        selfRating: null, selfEvidence: '', managerRating: null, observedExamples: '', evidenceRefs: '', managerComment: '', finalRating: null, calibrationReason: '', reviewerUid: '' });
-    }
-  }
-  return base;
 }
 
-async function cycleOpen(c: C, b: any): Promise<Result> {
-  const cy = await getK(c.cid, str(b.id, 80), 'cycle');
-  if (!cy) return fail(404, 'That cycle was not found.');
-  if (cy.lockStatus === 'LOCKED') return fail(409, 'This cycle is locked.');
-  const [plans, comps] = await Promise.all([listK(c.cid, 'plan'), listK(c.cid, 'competency')]);
-  const people = eligible(c, cy);
-  if (people.length === 0) return fail(400, 'No active employee matches this cycle. Check who it is for.');
-  let created = 0; let existing = 0; let waiting = 0; let onLeave = 0;
-  for (const p of people) {
-    const id = reviewId(cy.id, p.uid);
-    if (await getK(c.cid, id, 'review')) { existing++; continue; }   // idempotency: never a second review for the same person and cycle
-    const rv = await buildReview(c, cy, p, plans, comps);
-    const w = await workContext(c, p.uid, cy.periodStart, cy.periodEnd);
-    rv.leaveFlag = w.leaveDays;
-    await putK(rv);
+const overlap = (a1: string, a2: string, b1: string, b2: string) => { const s = a1 > b1 ? a1 : b1; const e = a2 < b2 ? a2 : b2; return s > e ? 0 : daysBetween(s, e) + 1; };
+async function leaveDays(c: C, uid: string, q: Quarter): Promise<number> {
+  const snap = await db().collection('leaveRequests').where('companyId', '==', c.cid).where('uid', '==', uid).get();
+  return snap.docs.map((d: any) => d.data() as any).filter((r: any) => r.status === 'APPROVED' && isDate(r.from) && isDate(r.to)).reduce((n: number, r: any) => n + overlap(r.from, r.to, q.from, q.to), 0);
+}
+
+/** Opens a quarter: one review per person (never twice). Refused until setup is finished. */
+export async function openCycle(c: C, q: Quarter): Promise<{ created: number; onHold: number; deferred: number; cycle: Doc }> {
+  const s = await settingsOf(c.cid);
+  const t = today();
+  const id = cycleId(c.cid, q.key);
+  const cycle = (await get(c.cid, 'cycles', id)) || await put('cycles', {
+    id, companyId: c.cid, key: q.key, name: q.name, from: q.from, to: q.to, openedOn: t, openedBy: c.who,
+    selfDue: addDays(t, s.timing.selfDays), managerDue: addDays(t, s.timing.selfDays + s.timing.managerDays), hrDue: addDays(t, s.timing.selfDays + s.timing.managerDays + s.timing.hrDays),
+  });
+  const plans = await list(c.cid, 'plans');
+  const hr = await hrUids(c);
+  let created = 0; let onHold = 0; let deferred = 0;
+  for (const p of active(c)) {
+    if (p.createdDate > q.to) continue; // joined after the quarter ended
+    const rid = reviewId(c.cid, q.key, p.uid);
+    if (await get(c.cid, 'reviews', rid)) continue;
+    const plan = openPlanOf(plans, p.uid);
+    const ld = await leaveDays(c, p.uid, q);
+    const base: Doc = {
+      id: rid, companyId: c.cid, uid: p.uid, name: p.name, managerUid: managerOf(c, p.uid), managerName: nameOf(c, managerOf(c, p.uid)),
+      cycleKey: q.key, cycleName: q.name, from: q.from, to: q.to, selfDue: cycle.selfDue, managerDue: cycle.managerDue, hrDue: cycle.hrDue,
+      self: {}, manager: {}, score: null, flags: [], leaveDays: ld, amendments: [], statusOn: t, history: [],
+    };
+    if (ld >= 30) {
+      await put('reviews', { ...base, status: 'DEFERRED', snap: plan?.status === 'ACTIVE' ? snapshot(plan, s) : null, deferReason: `On approved leave for ${ld} days of this quarter.` });
+      await raise(c, 'EXTENDED_LEAVE', rid, { subjectUid: p.uid, text: `${p.name} was on approved leave for ${ld} days in ${q.name}. The review is paused; HR can resume it.` });
+      deferred++; continue;
+    }
+    if (!plan || plan.status !== 'ACTIVE') {
+      await put('reviews', { ...base, status: 'ON_HOLD', snap: null });
+      await raise(c, 'NO_PLAN_FOR_REVIEW', rid, { subjectUid: p.uid, text: `${p.name}'s ${q.name} review is waiting because their targets are not approved yet (${plan ? plan.status.replace(/_/g, ' ').toLowerCase() : 'no plan'}). It starts by itself once they are.`, notify: hr });
+      onHold++; continue;
+    }
+    await put('reviews', { ...base, status: 'SELF', snap: snapshot(plan, s) });
+    await tell(c, [p.uid], `Your ${q.name} review is open`, `Please do your self-review by ${cycle.selfDue}. It takes about 10 minutes: your KPIs, targets and recorded work are already filled in.`);
     created++;
-    if (rv.status === 'CONFIGURATION_PENDING') {
-      waiting++;
-      await raise(c, 'CONFIGURATION_PENDING', { refId: `review_${id}`, subjectUid: p.uid, refLabel: `${p.name} - ${cy.name}`, ownerUid: rv.managerUid, detail: rv.blockers.join(' ') });
-      if (rv.blockers.some((x: string) => /no performance plan|no KRA|not active yet/i.test(x))) await raise(c, 'NO_KRA_KPI', { refId: `review_${id}`, subjectUid: p.uid, refLabel: `${p.name} - ${cy.name}`, ownerUid: rv.managerUid, detail: `${p.name} has no approved KRA/KPI. Their final review is blocked.`, notifyUids: rv.managerUid ? [rv.managerUid] : [] });
-    } else {
-      await tell(c, [p.uid], `Your ${cy.name} is open`, `Please open Performance > My performance and complete your self-assessment${cy.selfReviewDeadline ? ` by ${cy.selfReviewDeadline}` : ''}.`);
-    }
-    if (w.leaveDays >= 30) { onLeave++; await raise(c, 'EXTENDED_LEAVE', { refId: `review_${id}`, subjectUid: p.uid, refLabel: `${p.name} - ${cy.name}`, detail: `${p.name} was on approved leave for ${w.leaveDays} days of this period. HR can defer or adjust the review.` }); }
-    await audit(c, 'review', id, 'OPENED', null, { status: rv.status }, p.uid);
   }
-  if (!cy.openedAt) await putK({ ...cy, openedAt: nowIso(), openedBy: c.who });
-  await audit(c, 'cycle', cy.id, 'OPENED', null, { created, existing });
-  return ok({ created, existing, waiting, onLeave, message: `${created} review${created === 1 ? '' : 's'} created${existing ? `, ${existing} already existed (not duplicated)` : ''}${waiting ? `, ${waiting} waiting for setup` : ''}.` });
+  await audit(c, id, 'CYCLE_OPENED', `${q.name}: ${created} started, ${onHold} on hold, ${deferred} paused`);
+  return { created, onHold, deferred, cycle };
 }
 
-async function cycleLock(c: C, b: any): Promise<Result> {
-  const cy = await getK(c.cid, str(b.id, 80), 'cycle');
-  if (!cy) return fail(404, 'That cycle was not found.');
-  const open = (await listK(c.cid, 'review')).filter((r) => r.cycleId === cy.id && !['PUBLISHED', 'ACKNOWLEDGED', 'DISPUTED', 'DEFERRED'].includes(r.status));
-  if (b.lock !== false && open.length && b.force !== true) return fail(409, `${open.length} review${open.length > 1 ? 's are' : ' is'} not finished. Locking stops further changes. Press "Lock anyway" to confirm.`, { needsConfirm: true });
-  const next = { ...cy, lockStatus: b.lock === false ? 'OPEN' : 'LOCKED' };
-  await putK(next); await audit(c, 'cycle', cy.id, b.lock === false ? 'UNLOCKED' : 'LOCKED', { lock: cy.lockStatus }, { lock: next.lockStatus });
-  return ok({ item: next });
+/** The daily job opens the quarter that just ended, on the first days of the next one, if setup was finished before it ended. */
+export async function autoOpen(c: C): Promise<string> {
+  const s = await settingsOf(c.cid);
+  if (!s.setupDone) return 'setup not finished';
+  const q = previousQuarter(today());
+  if (s.setupDoneAt.slice(0, 10) > q.to) return 'setup finished after this quarter';
+  if (daysBetween(q.to, today()) > 30) return 'too late to open automatically';
+  if (await get(c.cid, 'cycles', cycleId(c.cid, q.key))) return 'already open';
+  const r = await openCycle(c, q);
+  return `opened ${q.name}: ${r.created} started`;
 }
 
-/** Reviews that were waiting for a KRA/KPI or a manager start as soon as it exists (run by "Check for changes" and daily). */
-export async function refreshBlockedReviews(c: C): Promise<{ started: number }> {
-  const [reviews, plans, comps, cycles] = await Promise.all([listK(c.cid, 'review'), listK(c.cid, 'plan'), listK(c.cid, 'competency'), listK(c.cid, 'cycle')]);
+/** Reviews on hold start as soon as the person's targets are approved. */
+export async function releaseHeld(c: C): Promise<{ started: number }> {
+  const s = await settingsOf(c.cid);
+  const [held, plans] = await Promise.all([list(c.cid, 'reviews', { status: 'ON_HOLD' }), list(c.cid, 'plans')]);
   let started = 0;
-  for (const rv of reviews.filter((r) => r.status === 'CONFIGURATION_PENDING')) {
-    const cy = cycles.find((x) => x.id === rv.cycleId);
-    const p = anyPerson(c, rv.uid);
-    if (!cy || !p || !p.active) continue;
-    const next = await buildReview(c, cy, p, plans, comps);
-    if (next.status === 'CONFIGURATION_PENDING') { if (JSON.stringify(next.blockers) !== JSON.stringify(rv.blockers)) await putK({ ...rv, blockers: next.blockers }); continue; }
-    next.leaveFlag = rv.leaveFlag || 0; next.createdAt = rv.createdAt;
-    await putK(next);
-    await clearException(c, 'CONFIGURATION_PENDING', `review_${rv.id}`, 'The review could start.');
-    await clearException(c, 'NO_KRA_KPI', `review_${rv.id}`, 'The KRA/KPI is now approved.');
-    await tell(c, [p.uid], `Your ${cy.name} is open`, 'Please open Performance > My performance and complete your self-assessment.');
-    await audit(c, 'review', rv.id, 'STARTED', { status: 'CONFIGURATION_PENDING' }, { status: 'OPEN' }, p.uid);
+  for (const rv of held) {
+    const plan = openPlanOf(plans, rv.uid);
+    if (!plan || plan.status !== 'ACTIVE') continue;
+    const selfDue = addDays(today(), s.timing.selfDays);
+    await put('reviews', { ...rv, status: 'SELF', snap: snapshot(plan, s), selfDue, managerDue: addDays(selfDue, s.timing.managerDays), hrDue: addDays(selfDue, s.timing.managerDays + s.timing.hrDays), statusOn: today(), managerUid: plan.managerUid, managerName: plan.managerName });
+    await clear(c, 'NO_PLAN_FOR_REVIEW', rv.id, 'Targets approved; the review has started.');
+    await tell(c, [rv.uid], `Your ${rv.cycleName} review is open`, `Please do your self-review by ${selfDue}.`);
     started++;
   }
   return { started };
 }
 
-// ------------------------------------------------------------------ reading a review
+// ------------------------------------------------------------------ reading
 
-const canSee = (c: C, rv: Item) => rv.uid === c.ctx.uid || isMyReport(c, rv.uid) || rv.managerUid === c.ctx.uid || c.isHr || c.isApprover;
-const employeeSeesManagerSide = (rv: Item) => ['PUBLISHED', 'ACKNOWLEDGED', 'DISPUTED'].includes(rv.status);
-
-async function loadParts(c: C, rv: Item) {
-  const [compRows, checks, assigns, evidence, ctx] = await Promise.all([
-    listK(c.cid, 'compAssess'), listK(c.cid, 'sopCheck'), listK(c.cid, 'sopAssign'),
-    evidenceFor(c, rv.uid, rv.periodStart, rv.periodEnd), workContext(c, rv.uid, rv.periodStart, rv.periodEnd),
-  ]);
-  const comps: CompetencyResult[] = compRows.filter((x) => x.reviewId === rv.id).map((x) => ({
-    assessmentId: x.id, competencyId: x.competencyId, name: x.name, weight: Number(x.weight) || 1, expectedBehaviour: x.expectedBehaviour, selfRating: x.selfRating ?? null, selfEvidence: x.selfEvidence || '',
-    managerRating: x.managerRating ?? null, observedExamples: x.observedExamples || '', evidenceRefs: x.evidenceRefs || '', managerComment: x.managerComment || '', finalRating: x.finalRating ?? null, calibrationReason: x.calibrationReason || '',
-  }));
-  const mySopChecks = checks.filter((x) => x.uid === rv.uid && x.cycleId === rv.cycleId);
-  const sopRows = mySopChecks.flatMap((x) => (x.rows || []).map((r: any) => ({ result: r.result as SopResult, critical: !!r.critical, weight: r.weight })));
-  const myAssign = assigns.filter((x) => x.uid === rv.uid && !['SUPERSEDED', 'ENDED'].includes(x.status));
-  return { comps, sopChecks: mySopChecks, sopRows, assignments: myAssign, evidence, context: ctx };
+/** Evidence for the quarter, per KPI. Information for the manager, never a score by itself. */
+async function evidenceFor(c: C, rv: Doc) {
+  const ev = (await list(c.cid, 'evidence', { uid: rv.uid })).filter((e) => e.date >= rv.from && e.date <= rv.to && e.status !== 'REJECTED');
+  const checkins = (await list(c.cid, 'checkins', { uid: rv.uid })).filter((x) => x.month >= rv.from.slice(0, 7) && x.month <= rv.to.slice(0, 7));
+  return { evidence: ev.sort((a, b) => a.date.localeCompare(b.date)), checkins: checkins.sort((a, b) => a.month.localeCompare(b.month)) };
 }
 
-/** Everything the screen needs, with the scores worked out the way the specification describes. */
-async function compute(c: C, rv: Item) {
-  const parts = await loadParts(c, rv);
-  const useFinal = !!rv.final;
-  const kpis: KpiResult[] = rv.kpis || [];
-  const kra = kraPillar(kpis, useFinal); const beh = behaviourPillar(parts.comps, useFinal); const sop = sopScore(parts.sopRows);
-  const weights = rv.weights || { kra: 60, behaviour: 25, sop: 15 };
-  const overall = overallScore({ kra: kra.score, behaviour: beh.score, sop: sop.score }, weights);
-  const flags = consistencyFlags(kpis, parts.comps, sop);
-  const input = { selfDone: !!rv.self?.submittedAt || !!rv.self?.waived, kpis, comps: parts.comps, sopRows: parts.sopRows.length, sopRequired: parts.assignments.length, sopConfirmedNone: !!str(rv.manager?.sopNotAssessedReason, 300), managerEvaluation: rv.manager?.evaluation || '', discussionHeld: !!rv.discussion?.heldOn, hasKra: kpis.length > 0 && !!rv.planId };
-  return { ...parts, kra, beh, sop, overall, flags, weights, problems: { manager: completenessProblems(input, 'MANAGER'), discussion: completenessProblems(input, 'DISCUSSION'), hr: completenessProblems(input, 'HR') }, band: ratingBand(overall.score) };
+export function computeScore(rv: Doc) {
+  const snap = rv.snap; if (!snap) return null;
+  const m = rv.manager || {};
+  return scoreReview({
+    kpis: snap.kpis.map((k: any) => ({ id: k.id, weight: k.weight, rating: m.kpis?.[k.id] })),
+    comps: snap.comps.map((x: any) => ({ id: x.id, rating: m.comps?.[x.id] })),
+    sops: snap.sops.map((x: any) => ({ id: x.id, critical: x.critical, result: m.sops?.[x.id] })),
+  }, snap.weights);
 }
 
-function redactForEmployee(rv: Item, view: any) {
-  if (employeeSeesManagerSide(rv)) return { rv, view };
-  const r = { ...rv, kpis: (rv.kpis || []).map((k: KpiResult) => ({ ...k, rating: null, managerNote: '', finalRating: null, calibrationReason: '', insufficientEvidence: false })), manager: { ...rv.manager, evaluation: '', achievements: '', improvements: '', trainingNeeds: '', sopNotAssessedReason: '' }, discussion: { heldOn: '', notes: '' }, hr: { checkedBy: '', checkedAt: '', note: '', acceptedPartial: false, criticalAck: false }, final: null, amendments: [] };
-  const v = { ...view, comps: view.comps.map((x: CompetencyResult) => ({ ...x, managerRating: null, observedExamples: '', evidenceRefs: '', managerComment: '', finalRating: null, calibrationReason: '' })), sopChecks: [], kra: null, beh: null, sop: null, overall: null, flags: [], problems: { manager: [], discussion: [], hr: [] }, band: null, context: view.context };
-  return { rv: r, view: v };
+const SHARED = ['PUBLISHED', 'ACKNOWLEDGED', 'DISPUTED', 'RESOLVED'];
+/** What one person may see of a review: the employee sees the manager's part only once it is shared. */
+export function visible(c: C, rv: Doc) {
+  const isEmp = rv.uid === c.ctx.uid && !c.isHr && !c.isApprover;
+  if (isEmp && !SHARED.includes(rv.status)) return { ...rv, manager: {}, score: null, flags: [], hr: undefined };
+  if (isEmp) return { ...rv, flags: [] };
+  return rv;
+}
+
+function can(c: C, rv: Doc) {
+  const me = c.ctx.uid; const isEmp = rv.uid === me; const isMgr = rv.managerUid === me || isManagerOf(c, rv.uid);
+  const approver = (c.isHr || c.isApprover) && !isEmp && rv.managerUid !== me;
+  return {
+    self: isEmp && rv.status === 'SELF',
+    manager: isMgr && !isEmp && rv.status === 'MANAGER',
+    skipSelf: isMgr && !isEmp && rv.status === 'SELF' && today() > rv.selfDue,
+    approve: approver && rv.status === 'HR',
+    publish: (c.isHr || c.isApprover) && rv.status === 'APPROVED',
+    respond: isEmp && rv.status === 'PUBLISHED',
+    resolve: c.isHr && !isEmp && rv.status === 'DISPUTED',
+    amend: (c.isHr || c.isApprover) && !isEmp && ['APPROVED', ...SHARED].includes(rv.status),
+    defer: c.isHr && !isEmp && ['SELF', 'MANAGER', 'HR', 'ON_HOLD'].includes(rv.status),
+    resume: c.isHr && !isEmp && rv.status === 'DEFERRED',
+    aiDraft: isMgr && !isEmp && rv.status === 'MANAGER',
+  };
 }
 
 async function reviewGet(c: C, _b: any, q: Record<string, any>): Promise<Result> {
-  const rv = await getK(c.cid, str(q.id, 160), 'review');
-  if (!rv || !canSee(c, rv)) return fail(404, 'That review was not found.');
-  const view = await compute(c, rv);
-  const asEmployee = rv.uid === c.ctx.uid && !c.isHr && !c.isApprover;
-  const [kpiTargets, approvals] = await Promise.all([listK(c.cid, 'kpiTarget'), listK(c.cid, 'approval')]);
-  const out = asEmployee ? redactForEmployee(rv, view) : { rv, view };
-  const role = rv.uid === c.ctx.uid ? 'EMPLOYEE' : rv.managerUid === c.ctx.uid || isMyReport(c, rv.uid) ? 'MANAGER' : c.isApprover ? 'APPROVER' : 'HR';
-  return ok({
-    item: out.rv, ...out.view, role, canHr: c.isHr && rv.uid !== c.ctx.uid, canApprove: c.isApprover && rv.uid !== c.ctx.uid,
-    approvals: asEmployee && !employeeSeesManagerSide(rv) ? [] : approvals.filter((a) => a.reviewId === rv.id),
-    targets: kpiTargets.filter((k) => k.planId === rv.planId).map((k) => ({ id: k.id, kpiName: k.kpiName, target: k.target })),
-  });
+  const rv = await get(c.cid, 'reviews', str(q.id, 200));
+  if (!rv || !canSee(c, rv.uid)) return notFound('The review');
+  const mine = rv.uid === c.ctx.uid;
+  const own = await evidenceFor(c, rv);
+  const history = (await list(c.cid, 'log', { ref: rv.id })).filter((x) => x.kind === 'AUDIT').sort((a, b) => String(a.at).localeCompare(String(b.at))).map((x) => ({ at: x.at, action: x.action, actor: x.actor, detail: mine && !c.isHr && !['DISPUTED', 'DISPUTE_RESOLVED', 'AMENDMENT_STARTED', 'ACKNOWLEDGED'].includes(x.action) ? '' : x.detail }));
+  return ok({ review: visible(c, rv), live: rv.status === 'MANAGER' && !mine ? computeScore(rv) : null, ...own, can: can(c, rv), history, statusText: REVIEW_WORDS[rv.status] || rv.status });
 }
 
 async function reviewList(c: C, _b: any, q: Record<string, any>): Promise<Result> {
-  const scope = str(q.scope, 10) || 'mine';
-  let items = await listK(c.cid, 'review');
-  if (scope === 'mine') items = items.filter((r) => r.uid === c.ctx.uid);
-  else if (scope === 'team') items = items.filter((r) => isMyReport(c, r.uid) || r.managerUid === c.ctx.uid);
-  else if (scope === 'approve') { if (!c.isApprover) return fail(403, 'You do not have approval rights.'); items = items.filter((r) => r.status === 'HR_REVIEWED' && r.uid !== c.ctx.uid); }
-  else if (!c.isHr && !c.isApprover) return fail(403, 'You do not have permission to see every review.');
-  if (q.cycleId) items = items.filter((r) => r.cycleId === str(q.cycleId, 80));
-  if (q.status) items = items.filter((r) => r.status === str(q.status, 30));
-  const t = today();
-  const deadline = (r: Item) => (['OPEN'].includes(r.status) ? r.selfReviewDeadline : ['SELF_ASSESSED', 'MANAGER_EVALUATED', 'DISCUSSED'].includes(r.status) ? r.managerDeadline : r.status === 'HR_REVIEWED' || r.status === 'DISCUSSED' ? r.hrDeadline : '');
-  return ok({ items: items.sort((a, b) => String(a.employeeName).localeCompare(String(b.employeeName))).map((r) => {
-    const seeScore = r.uid !== c.ctx.uid || employeeSeesManagerSide(r) || c.isHr || c.isApprover;
-    return { id: r.id, uid: r.uid, employeeName: r.employeeName, department: r.department, title: r.title, cycleId: r.cycleId, cycleName: r.cycleName, reviewType: r.reviewType, status: r.status, managerName: r.managerName, managerUid: r.managerUid,
-      due: deadline(r) || '', overdue: !!deadline(r) && (deadline(r) as string) < t, blockers: r.blockers || [], overall: seeScore ? r.final?.overall ?? null : null, finalRating: seeScore ? r.final?.finalRating ?? null : null, leaveFlag: r.leaveFlag || 0, response: r.response?.type || '' };
-  }) });
+  const scope = str(q.scope, 10);
+  let rows = await list(c.cid, 'reviews');
+  if (scope === 'mine') rows = rows.filter((r) => r.uid === c.ctx.uid);
+  else if (scope === 'team') rows = rows.filter((r) => r.uid !== c.ctx.uid && (r.managerUid === c.ctx.uid || isManagerOf(c, r.uid)));
+  else { if (!c.isHr && !c.isApprover) return denied(); if (q.cycle) rows = rows.filter((r) => r.cycleKey === str(q.cycle, 10)); }
+  // HR sees the risky ones first; the clean ones sink to the bottom.
+  const risk = (r: Doc) => (r.score?.criticalBreach ? 5 : 0) + (r.status === 'DISPUTED' ? 4 : 0) + (r.flags?.length || 0) + (r.status === 'ON_HOLD' ? 1 : 0);
+  rows.sort((a, b) => risk(b) - risk(a) || String(b.cycleKey).localeCompare(String(a.cycleKey)) || String(a.name).localeCompare(String(b.name)));
+  return ok({ items: rows.map((r) => ({ ...visible(c, r), risk: risk(r), statusText: REVIEW_WORDS[r.status] || r.status })) });
+}
+
+async function cycleList(c: C): Promise<Result> {
+  const [cycles, reviews] = await Promise.all([list(c.cid, 'cycles'), list(c.cid, 'reviews')]);
+  const items = cycles.sort((a, b) => b.key.localeCompare(a.key)).map((cy) => {
+    const rs = reviews.filter((r) => r.cycleKey === cy.key);
+    const count: Record<string, number> = {};
+    for (const r of rs) count[r.status] = (count[r.status] || 0) + 1;
+    return { ...cy, total: rs.length, count, done: rs.filter((r) => ['ACKNOWLEDGED', 'RESOLVED'].includes(r.status)).length };
+  });
+  const cur = quarterOf(today()); const prev = previousQuarter(today());
+  return ok({ items, canOpen: [prev, cur].filter((q) => !cycles.some((x) => x.key === q.key)) });
+}
+
+async function cycleOpenRoute(c: C, b: any): Promise<Result> {
+  const q = quarterByKey(str(b.key, 10));
+  if (!q) return bad('Pick a quarter.');
+  if (q.from > today()) return bad('That quarter has not started yet.');
+  const s = await settingsOf(c.cid);
+  if (!s.setupDone) return bad('Finish Performance setup first (Setup → step 5).');
+  if (await get(c.cid, 'cycles', cycleId(c.cid, q.key))) return bad(`${q.name} is already open. Opening it again would not change anything.`);
+  const r = await openCycle(c, q);
+  return ok({ ...r, message: `${q.name} opened: ${r.created} review(s) started${r.onHold ? `, ${r.onHold} waiting for approved targets` : ''}${r.deferred ? `, ${r.deferred} paused for long leave` : ''}.` });
 }
 
 // ------------------------------------------------------------------ the steps
 
-async function mine(c: C, id: string): Promise<{ rv?: Item; err?: Result }> {
-  const rv = await getK(c.cid, str(id, 160), 'review');
-  return rv ? { rv } : { err: fail(404, 'That review was not found.') };
-}
-const cycleOpenCheck = async (c: C, rv: Item): Promise<Result | null> => {
-  const cy = await getK(c.cid, rv.cycleId, 'cycle');
-  return cy && cy.lockStatus === 'LOCKED' ? fail(409, 'This review cycle is locked. Nothing can be changed.') : null;
-};
+const ratingsFrom = (v: any, ids: string[]) => { const out: Record<string, any> = {}; for (const id of ids) if (isRating(v?.[id])) out[id] = v[id]; return out; };
 
-async function setStatus(c: C, rv: Item, to: ReviewStatus, patch: Record<string, any>, action: string, note = ''): Promise<Item> {
-  if (!canMove(rv.status, to)) throw Object.assign(new Error(`This review cannot move from ${rv.status} to ${to}.`), { status: 409 });
-  const next = { ...rv, ...patch, status: to, history: [...(rv.history || []), { at: nowIso(), by: c.who, action, note }] };
-  await putK(next);
-  await audit(c, 'review', rv.id, action, { status: rv.status }, { status: to, note }, rv.uid);
+async function reviewSelf(c: C, b: any): Promise<Result> {
+  const rv = await get(c.cid, 'reviews', str(b.id, 200));
+  if (!rv || rv.uid !== c.ctx.uid) return notFound('Your review');
+  if (rv.status !== 'SELF') return bad('Your self-review is closed for this review.');
+  const kIds = rv.snap.kpis.map((k: any) => k.id); const cIds = rv.snap.comps.map((x: any) => x.id);
+  const self = { kpis: ratingsFrom(b.kpis, kIds), comps: ratingsFrom(b.comps, cIds), achievements: str(b.achievements, 3000), improve: str(b.improve, 2000), training: str(b.training, 1000) };
+  const submit = b.submit === true;
+  if (submit) {
+    const missing = [...rv.snap.kpis.filter((k: any) => !self.kpis[k.id]).map((k: any) => k.kpi), ...rv.snap.comps.filter((x: any) => !self.comps[x.id]).map((x: any) => x.name)];
+    if (missing.length) return bad(`Pick a rating (or "Not observed") for: ${missing.slice(0, 6).join('; ')}${missing.length > 6 ? ` and ${missing.length - 6} more` : ''}.`);
+    if (self.achievements.length < 10) return bad('Write a few words about what you achieved this quarter.');
+  }
+  const next = { ...rv, self: { ...self, submittedAt: submit ? new Date().toISOString() : '' }, ...(submit ? { status: 'MANAGER', statusOn: today() } : {}) };
+  await put('reviews', next);
+  if (submit) {
+    await audit(c, rv.id, 'SELF_SUBMITTED', '', rv.uid);
+    await tell(c, [rv.managerUid], `${rv.name}'s self-review is in`, `${rv.name} finished their ${rv.cycleName} self-review. Please do your part by ${rv.managerDue}.`);
+  }
+  return ok({ review: next, message: submit ? 'Sent to your manager.' : 'Saved. You can finish it later.' });
+}
+
+async function skipSelf(c: C, rv: Doc, by: string): Promise<Doc> {
+  const next = { ...rv, status: 'MANAGER', statusOn: today(), selfSkipped: true };
+  await put('reviews', next);
+  await audit(c, rv.id, 'SELF_SKIPPED', `Self-review not done by ${rv.selfDue}; ${by}.`, rv.uid);
   return next;
 }
 
-async function setComps(c: C, rv: Item, rows: any[], fields: (x: any, row: any) => Record<string, any>): Promise<void> {
-  const all = (await listK(c.cid, 'compAssess')).filter((x) => x.reviewId === rv.id);
-  for (const r of rows) {
-    const row = all.find((x) => x.competencyId === str(r?.competencyId, 80));
-    if (row) await putK({ ...row, ...fields(r, row) });
-  }
+async function reviewSkipSelf(c: C, b: any): Promise<Result> {
+  const rv = await get(c.cid, 'reviews', str(b.id, 200));
+  if (!rv || !can(c, rv).skipSelf) return bad('You can continue without the self-review only after its due date has passed.');
+  const next = await skipSelf(c, rv, `${c.who} continued without it`);
+  await tell(c, [rv.uid], 'Your self-review closed', `Your ${rv.cycleName} self-review was not done by ${rv.selfDue}, so your manager has continued.`);
+  return ok({ review: next, message: 'You can now do your part.' });
 }
 
-async function reviewSelf(c: C, b: any): Promise<Result> {
-  const { rv, err } = await mine(c, b.id); if (err) return err;
-  if (rv!.uid !== c.ctx.uid) return fail(403, 'Only the employee writes their own self-assessment.');
-  if (isFinal(rv!.status)) return fail(409, FINAL_MSG);
-  if (rv!.status !== 'OPEN') return fail(409, rv!.status === 'CONFIGURATION_PENDING' ? 'Your review has not started yet: ' + (rv!.blockers || []).join(' ') : 'You have already submitted your self-assessment.');
-  const lock = await cycleOpenCheck(c, rv!); if (lock) return lock;
-  const kpis: KpiResult[] = (rv!.kpis || []).map((k: KpiResult) => { const u = (Array.isArray(b.kpis) ? b.kpis : []).find((x: any) => str(x?.targetId, 80) === k.targetId); return u ? { ...k, employeeNote: str(u.employeeNote, 800), evidenceIds: strList(u.evidenceIds, 30, 120) } : k; });
-  const self = { ...rv!.self, achievements: textBlock(b.achievements), improvements: textBlock(b.improvements), trainingNeeds: textBlock(b.trainingNeeds, 1000), comments: textBlock(b.comments) };
-  await setComps(c, rv!, Array.isArray(b.comps) ? b.comps : [], (x) => ({ selfRating: isRating(Number(x.selfRating)) ? Number(x.selfRating) : null, selfEvidence: str(x.selfEvidence, 600) }));
-  if (b.submit === true) {
-    const rows = (await listK(c.cid, 'compAssess')).filter((x) => x.reviewId === rv!.id);
-    const problems: string[] = [];
-    if (!self.achievements.trim()) problems.push('Write your achievements for this period.');
-    const unrated = rows.filter((x) => !isRating(x.selfRating));
-    if (unrated.length) problems.push(`Rate yourself on every competency (${unrated.length} left): ${unrated.slice(0, 3).map((x) => x.name).join(', ')}${unrated.length > 3 ? '...' : ''}.`);
-    if (problems.length) { await putK({ ...rv!, kpis, self }); return fail(400, problems.join(' '), { problems, saved: true }); }
-    const next = await setStatus(c, { ...rv!, kpis, self: { ...self, submittedAt: nowIso() } }, 'SELF_ASSESSED', { kpis, self: { ...self, submittedAt: nowIso() } }, 'SELF_SUBMITTED');
-    if (next.managerUid) await tell(c, [next.managerUid], `${rv!.employeeName} has submitted a self-assessment`, `Open Performance > My team to evaluate the ${rv!.cycleName} review${rv!.managerDeadline ? ` by ${rv!.managerDeadline}` : ''}.`);
-    return ok({ item: next, message: 'Submitted. Your manager will now review it.' });
-  }
-  await putK({ ...rv!, kpis, self });
-  return ok({ saved: true, message: 'Draft saved.' });
-}
-
-async function reviewSelfWaive(c: C, b: any): Promise<Result> {
-  const { rv, err } = await mine(c, b.id); if (err) return err;
-  if (!isMyReport(c, rv!.uid) && !c.isHr) return fail(403, 'Only the reporting manager or HR can do this.');
-  if (rv!.status !== 'OPEN') return fail(409, 'The self-assessment is not what this review is waiting for.');
-  const reason = str(b.reason, 300);
-  if (!reason) return fail(400, 'Say why the self-assessment is being skipped (for example "on leave until the deadline").');
-  const next = await setStatus(c, rv!, 'SELF_ASSESSED', { self: { ...rv!.self, waived: reason, waivedBy: c.who } }, 'SELF_WAIVED', reason);
-  return ok({ item: next });
-}
-
+/** The manager's part. "Send to HR" checks everything: all rated, all SOPs answered, the discussion date, a comment. */
 async function reviewManager(c: C, b: any): Promise<Result> {
-  const { rv, err } = await mine(c, b.id); if (err) return err;
-  if (isFinal(rv!.status)) return fail(409, FINAL_MSG);
-  const current = managerOf(c, rv!.uid);
-  if (rv!.uid === c.ctx.uid) return fail(403, 'You cannot evaluate your own review.');
-  if (current !== c.ctx.uid) return fail(403, 'Only the reporting manager can evaluate this review.');
-  if (!['SELF_ASSESSED', 'MANAGER_EVALUATED'].includes(rv!.status)) return fail(409, rv!.status === 'OPEN' ? 'The employee has not submitted their self-assessment yet. If it cannot be done, use "Skip self-assessment" with a reason.' : 'This review is not waiting for the manager.');
-  const lock = await cycleOpenCheck(c, rv!); if (lock) return lock;
-  const patchManager = rv!.managerUid !== current ? { managerUid: current, managerName: nameOf(c, current) } : {};
-  const kpis: KpiResult[] = (rv!.kpis || []).map((k: KpiResult) => {
-    const u = (Array.isArray(b.kpis) ? b.kpis : []).find((x: any) => str(x?.targetId, 80) === k.targetId);
-    if (!u) return k;
-    const insufficient = u.insufficientEvidence === true;
-    const rating = num(u.rating);
-    return { ...k, insufficientEvidence: insufficient, rating: insufficient || rating === null || !isRating(rating) ? null : rating, managerNote: str(u.managerNote, 800), evidenceIds: u.evidenceIds ? strList(u.evidenceIds, 30, 120) : k.evidenceIds };
-  });
-  const bad = (Array.isArray(b.comps) ? b.comps : []).find((x: any) => x?.managerRating !== undefined && x.managerRating !== null && x.managerRating !== 'NOT_OBSERVED' && !isRating(Number(x.managerRating)));
-  if (bad) return fail(400, 'Ratings are from 1 to 5, or "Not observed".');
-  await setComps(c, rv!, Array.isArray(b.comps) ? b.comps : [], (x) => ({ managerRating: x.managerRating === 'NOT_OBSERVED' ? 'NOT_OBSERVED' : x.managerRating === null || x.managerRating === undefined || x.managerRating === '' ? null : Number(x.managerRating), observedExamples: str(x.observedExamples, 800), evidenceRefs: str(x.evidenceRefs, 400), managerComment: str(x.managerComment, 800), reviewerUid: c.ctx.uid }));
-  const manager = { ...rv!.manager, evaluation: textBlock(b.managerEvaluation), achievements: textBlock(b.achievements), improvements: textBlock(b.improvements), trainingNeeds: textBlock(b.trainingNeeds, 1000), sopNotAssessedReason: str(b.sopNotAssessedReason, 300) };
-  const base = { ...rv!, ...patchManager, kpis, manager };
-  if (b.submit === true) {
-    const v = await compute(c, base);
-    if (v.problems.manager.length) { await putK(base); return fail(400, v.problems.manager.join(' '), { problems: v.problems.manager, saved: true }); }
-    const next = await setStatus(c, base, 'MANAGER_EVALUATED', { ...patchManager, kpis, manager: { ...manager, submittedAt: nowIso() } }, 'MANAGER_EVALUATED');
-    return ok({ item: next, message: 'Saved. Next: hold the feedback discussion with the employee and record it.' });
+  const rv = await get(c.cid, 'reviews', str(b.id, 200));
+  if (!rv) return notFound('The review');
+  if (!can(c, rv).manager) return denied(rv.uid === c.ctx.uid ? 'You cannot do the manager part of your own review.' : 'This review is not waiting for you.');
+  const kIds = rv.snap.kpis.map((k: any) => k.id); const cIds = rv.snap.comps.map((x: any) => x.id);
+  const sops: Record<string, string> = {};
+  for (const x of rv.snap.sops) if (isSopResult(b.sops?.[x.id])) sops[x.id] = b.sops[x.id];
+  const m = {
+    kpis: ratingsFrom(b.kpis, kIds), comps: ratingsFrom(b.comps, cIds), sops,
+    strengths: str(b.strengths, 2000), improve: str(b.improve, 2000), training: str(b.training, 1000), comment: str(b.comment, 3000), discussedOn: str(b.discussedOn, 10),
+  };
+  const draft = { ...rv, manager: m };
+  const score = computeScore(draft)!;
+  const submit = b.submit === true;
+  if (submit) {
+    const missing = [...rv.snap.kpis.filter((k: any) => !m.kpis[k.id]).map((k: any) => k.kpi), ...rv.snap.comps.filter((x: any) => !m.comps[x.id]).map((x: any) => x.name), ...rv.snap.sops.filter((x: any) => !m.sops[x.id]).map((x: any) => `SOP: ${x.title}`)];
+    if (missing.length) return bad(`Answer every line first. Missing: ${missing.slice(0, 6).join('; ')}${missing.length > 6 ? ` and ${missing.length - 6} more` : ''}.`);
+    if (score.blocking.length) return bad(score.blocking.join(' '));
+    if (!isDate(m.discussedOn)) return bad('Enter the date you discussed this review with the employee. The review cannot go to HR before that conversation.');
+    if (m.discussedOn > today() || m.discussedOn < rv.from) return bad('The discussion date must be between the start of the quarter and today.');
+    if (m.comment.length < 10) return bad('Write an overall comment (a sentence or two).');
   }
-  await putK(base);
-  return ok({ saved: true, message: 'Draft saved.' });
-}
-
-async function reviewDiscuss(c: C, b: any): Promise<Result> {
-  const { rv, err } = await mine(c, b.id); if (err) return err;
-  if (isFinal(rv!.status)) return fail(409, FINAL_MSG);
-  if (rv!.uid === c.ctx.uid || managerOf(c, rv!.uid) !== c.ctx.uid) return fail(403, 'Only the reporting manager records the feedback discussion.');
-  if (rv!.status !== 'MANAGER_EVALUATED') return fail(409, 'Finish the evaluation first.');
-  const heldOn = str(b.heldOn, 10) || today();
-  if (!isDate(heldOn) || heldOn > today()) return fail(400, 'Enter the date the discussion took place (not in the future).');
-  const notes = str(b.notes, 1500);
-  if (notes.length < 5) return fail(400, 'Write a few words about what was discussed.');
-  const next = await setStatus(c, rv!, 'DISCUSSED', { discussion: { heldOn, notes, recordedBy: c.who } }, 'DISCUSSED');
-  return ok({ item: next, message: 'Recorded. HR will now check the review.' });
-}
-
-async function reviewHr(c: C, b: any): Promise<Result> {
-  const { rv, err } = await mine(c, b.id); if (err) return err;
-  if (isFinal(rv!.status)) return fail(409, FINAL_MSG);
-  if (rv!.uid === c.ctx.uid) return fail(403, 'You cannot check your own review. Another HR person must do it.');
-  if (!c.isHr) return fail(403, 'Only HR can check a review.');
-  if (rv!.status !== 'DISCUSSED') return fail(409, 'This review is not waiting for HR.');
-  const note = str(b.note, 800);
-  if (str(b.decision, 10).toUpperCase() === 'RETURN') {
-    if (!note) return fail(400, 'Say what the manager needs to fix.');
-    const next = await setStatus(c, rv!, 'SELF_ASSESSED', { manager: { ...rv!.manager, submittedAt: '' }, discussion: { heldOn: '', notes: '' }, hr: { ...rv!.hr, note, returnedBy: c.who } }, 'HR_RETURNED', note);
-    if (next.managerUid) await tell(c, [next.managerUid], `Review for ${rv!.employeeName} sent back`, `HR asks: ${note}`);
-    return ok({ item: next, message: 'Sent back to the manager.' });
+  // Flags HR should look at. They never change the score.
+  const flags: string[] = [];
+  const ev = submit ? (await evidenceFor(c, rv)).evidence.filter((e) => e.status === 'VERIFIED') : [];
+  if (submit) {
+    const unproven = rv.snap.kpis.filter((k: any) => typeof m.kpis[k.id] === 'number' && !ev.some((e) => e.kpiId === k.id));
+    if (unproven.length) flags.push(`Rated without verified evidence: ${unproven.map((k: any) => k.kpi).join('; ')}`);
+    const all = [...Object.values(m.kpis), ...Object.values(m.comps)].filter((v) => typeof v === 'number');
+    if (all.length >= 5 && new Set(all).size === 1) flags.push(`Every item was given the same rating (${all[0]})`);
+    if (score.criticalBreach) flags.push('A critical SOP was marked not compliant');
+    if (rv.selfSkipped) flags.push('No self-review (not done by the due date)');
+    const selfAvg = Object.values(rv.self?.kpis || {}).filter((v) => typeof v === 'number') as number[];
+    if (selfAvg.length && score.results !== null && Math.abs(selfAvg.reduce((a, x) => a + x, 0) / selfAvg.length - score.results) >= 2) flags.push('Large gap between self-rating and manager rating on results');
   }
-  const v = await compute(c, rv!);
-  if (v.problems.hr.length) return fail(400, v.problems.hr.join(' '), { problems: v.problems.hr });
-  if (v.overall.partial && b.acceptPartial !== true) return fail(409, `Nothing could be scored for ${v.overall.missing.map((m) => ({ kra: 'KRA/KPI', behaviour: 'Behaviour', sop: 'SOP' }[m])).join(' and ')} (not enough evidence). The other parts will be re-weighted. Tick "I accept the evidence gap" to continue.`, { needsAcceptPartial: true });
-  if (v.sop.criticalFailures > 0 && b.criticalAck !== true) return fail(409, `${v.sop.criticalFailures} critical SOP control${v.sop.criticalFailures > 1 ? 's were' : ' was'} not followed. Critical failures are reviewed on their own and are not averaged into the score. Tick "I have reviewed the critical failures" to continue.`, { needsCriticalAck: true });
-  const next = await setStatus(c, rv!, 'HR_REVIEWED', { hr: { checkedBy: c.who, checkedAt: nowIso(), note, acceptedPartial: v.overall.partial, criticalAck: v.sop.criticalFailures > 0, flags: v.flags.map((f) => f.code) } }, 'HR_REVIEWED', note);
-  return ok({ item: next, message: 'Checked. An authorized approver can now approve it.' });
+  const next = { ...draft, score, ...(submit ? { status: 'HR', statusOn: today(), flags, managerSubmittedAt: new Date().toISOString(), managerName: c.who } : {}) };
+  await put('reviews', next);
+  if (submit) {
+    await audit(c, rv.id, 'MANAGER_SUBMITTED', `Score ${score.overall} (${score.band})${flags.length ? `; flags: ${flags.join(' | ')}` : ''}`, rv.uid);
+    if (score.criticalBreach) await raise(c, 'CRITICAL_SOP', rv.id, { subjectUid: rv.uid, text: `${rv.name}: a critical SOP was marked not compliant in the ${rv.cycleName} review. HR must review it before approving. Misconduct goes through the separate investigation process, not the performance score.`, notify: await hrUids(c) });
+    if (flags.some((f) => f.startsWith('Every item'))) await raise(c, 'RATING_PATTERN', rv.id, { subjectUid: rv.uid, text: `${rv.name}'s ${rv.cycleName} review: ${c.who} gave every item the same rating.` });
+    if (flags.some((f) => f.startsWith('Rated without'))) await raise(c, 'NO_EVIDENCE', rv.id, { subjectUid: rv.uid, text: `${rv.name}'s ${rv.cycleName} review: ${flags.find((f) => f.startsWith('Rated without'))}.` });
+    await clear(c, 'REVIEW_LATE', `${rv.id}_MANAGER`, 'Sent to HR.');
+    await tell(c, await hrUids(c), `Review ready for approval: ${rv.name}`, `${c.who} finished ${rv.name}'s ${rv.cycleName} review (score ${score.overall}).`);
+  }
+  return ok({ review: next, score, message: submit ? 'Sent to HR.' : 'Saved.' });
 }
 
-function finalise(rv: Item, comps: CompetencyResult[], sop: ReturnType<typeof sopScore>, finalRating: number, comments: string, by: string) {
-  const weights = rv.weights || { kra: 60, behaviour: 25, sop: 15 };
-  const kra = kraPillar(rv.kpis || [], true); const beh = behaviourPillar(comps, true);
-  const overall = overallScore({ kra: kra.score, behaviour: beh.score, sop: sop.score }, weights);
-  return { overall: overall.score, parts: overall.parts, partial: overall.partial, missing: overall.missing, formula: overall.formula, weights, finalRating, band: ratingBand(overall.score)?.label || '', comments, criticalFailures: sop.criticalFailures, approvedBy: by, approvedAt: nowIso() };
+async function publish(c: C, rv: Doc): Promise<Doc> {
+  const next = { ...rv, status: 'PUBLISHED', statusOn: today(), publishedAt: new Date().toISOString() };
+  await put('reviews', next);
+  await audit(c, rv.id, 'PUBLISHED', '', rv.uid);
+  await tell(c, [rv.uid], `Your ${rv.cycleName} review is ready`, 'Your review is ready to read. Open My performance → Reviews. You can acknowledge it or record that you disagree.');
+  await proposeGrowth(c, next);
+  await feedHrbp(c, next);
+  return next;
 }
 
 async function reviewApprove(c: C, b: any): Promise<Result> {
-  const { rv, err } = await mine(c, b.id); if (err) return err;
-  if (isFinal(rv!.status)) return fail(409, FINAL_MSG);
-  if (!c.isApprover) return fail(403, 'Only an authorized approver can approve a review.');
-  if (rv!.uid === c.ctx.uid) return fail(403, 'You cannot approve your own review. It must be approved by someone else with approval rights.');
-  if (rv!.status !== 'HR_REVIEWED') return fail(409, 'HR has not finished checking this review.');
-  const decision = str(b.decision, 10).toUpperCase() || 'APPROVE';
-  const note = str(b.note || b.comments, 800);
-  if (decision === 'RETURN') {
-    if (!note) return fail(400, 'Say what needs to change.');
-    await putK({ id: newId(), companyId: c.cid, kind: 'approval', reviewId: rv!.id, approver: c.who, approverUid: c.ctx.uid, decision: 'RETURNED', note, at: nowIso() });
-    const next = await setStatus(c, rv!, 'SELF_ASSESSED', { manager: { ...rv!.manager, submittedAt: '' }, discussion: { heldOn: '', notes: '' } }, 'APPROVER_RETURNED', note);
-    if (next.managerUid) await tell(c, [next.managerUid], `Review for ${rv!.employeeName} sent back`, `The approver asks: ${note}`);
-    return ok({ item: next });
-  }
-  const v = await compute(c, rv!);
-  const finalRating = Number(b.finalRating);
-  if (!isRating(finalRating)) return fail(400, `Choose the final rating from 1 to 5${v.band ? ` (the scores suggest ${v.band.value} - ${v.band.label})` : ''}.`);
-  const comments = str(b.finalComments, 1500);
-  if (comments.length < 5) return fail(400, 'Write the final comments the employee will read.');
-  // Calibration: the approver may adjust individual ratings, but only with a reason each time.
-  const kpis: KpiResult[] = [...(rv!.kpis || [])];
-  for (const cal of Array.isArray(b.calibrations) ? b.calibrations : []) {
-    const reason = str(cal?.reason, 400);
-    const val = cal?.finalRating === 'NOT_OBSERVED' ? 'NOT_OBSERVED' : Number(cal?.finalRating);
-    if (val !== 'NOT_OBSERVED' && !isRating(val)) return fail(400, 'Calibrated ratings are from 1 to 5.');
-    if (!reason) return fail(400, 'Every calibration needs a reason.');
-    if (cal.targetId) { const k = kpis.find((x) => x.targetId === str(cal.targetId, 80)); if (k && val !== 'NOT_OBSERVED') { k.finalRating = val as number; k.calibrationReason = reason; } }
-  }
-  await setComps(c, rv!, (Array.isArray(b.calibrations) ? b.calibrations : []).filter((x: any) => x.competencyId), (x) => ({ finalRating: x.finalRating === 'NOT_OBSERVED' ? 'NOT_OBSERVED' : Number(x.finalRating), calibrationReason: str(x.reason, 400) }));
-  const v2 = await compute(c, { ...rv!, kpis });
-  const comps = v2.comps.map((x) => ({ ...x, finalRating: x.finalRating ?? x.managerRating }));
-  const final = finalise({ ...rv!, kpis }, comps, v2.sop, finalRating, comments, c.who);
-  await putK({ id: newId(), companyId: c.cid, kind: 'approval', reviewId: rv!.id, approver: c.who, approverUid: c.ctx.uid, decision: 'APPROVED', note: comments, at: nowIso(), overall: final.overall, finalRating });
-  const next = await setStatus(c, { ...rv!, kpis }, 'APPROVED', { kpis, final }, 'APPROVED', comments);
-  await feedHrbp(c, next);
-  return ok({ item: next, message: 'Approved. Publish it when you are ready for the employee to see it.' });
+  const rv = await get(c.cid, 'reviews', str(b.id, 200));
+  if (!rv) return notFound('The review');
+  if (rv.uid === c.ctx.uid) return denied('Nobody approves their own review.');
+  if (rv.managerUid === c.ctx.uid) return denied('You were the manager on this review, so another HR person or approver must approve it.');
+  if (rv.status !== 'HR') return bad('Only reviews waiting for HR can be approved.');
+  const note = str(b.note, 1000);
+  if (rv.score?.criticalBreach && note.length < 10) return bad('This review has a critical SOP flag. Write a note saying what you checked before approving.');
+  const s = await settingsOf(c.cid);
+  let next: Doc = { ...rv, status: 'APPROVED', statusOn: today(), hr: { note, by: c.who, byUid: c.ctx.uid, at: new Date().toISOString() }, publishOn: addDays(today(), s.timing.publishDelayDays) };
+  await put('reviews', next);
+  await audit(c, rv.id, 'APPROVED', note, rv.uid);
+  await clear(c, 'CRITICAL_SOP', rv.id, `Checked by ${c.who}: ${note || 'approved'}`);
+  if (s.timing.publishDelayDays === 0) next = await publish(c, next);
+  return ok({ review: next, message: next.status === 'PUBLISHED' ? 'Approved and shared with the employee.' : `Approved. It will be shared with ${rv.name} on ${next.publishOn}.` });
 }
 
-/** Step 12 of the lifecycle: approved outcomes feed HRBP / L&D. Training needs written in the review become HRBP training needs (once each). */
-async function feedHrbp(c: C, rv: Item): Promise<void> {
-  const seen = new Set<string>();
-  const lines = `${rv.self?.trainingNeeds || ''}\n${rv.manager?.trainingNeeds || ''}`.split(/\r?\n|;/).map((x) => str(x, 120)).filter(Boolean);
-  let i = 0;
-  for (const skill of lines) {
-    if (seen.has(lc(skill)) || i >= 10) continue;
-    seen.add(lc(skill));
-    const id = `pmneed_${rv.id}_${i++}`.replace(/[^A-Za-z0-9_-]/g, '_').slice(0, 150);
-    const s = await db().collection('hrbpItems').doc(id).get();
-    if (!s.exists) await db().collection('hrbpItems').doc(id).set({ id, companyId: c.cid, kind: 'trainingNeed', employeeUid: rv.uid, employeeName: rv.employeeName, skill, source: 'REVIEW', priority: 'MEDIUM', status: 'OPEN', notes: `From the ${rv.cycleName} review`, createdAt: nowIso(), updatedAt: nowIso() });
-  }
+async function reviewReturn(c: C, b: any): Promise<Result> {
+  const rv = await get(c.cid, 'reviews', str(b.id, 200));
+  if (!rv) return notFound('The review');
+  if (rv.status !== 'HR') return bad('Only reviews waiting for HR can be sent back.');
+  const note = str(b.note, 1000);
+  if (note.length < 5) return bad('Write what the manager should change.');
+  const next = { ...rv, status: 'MANAGER', statusOn: today(), hrReturnNote: note };
+  await put('reviews', next);
+  await audit(c, rv.id, 'RETURNED_TO_MANAGER', note, rv.uid);
+  await tell(c, [rv.managerUid], `Please update ${rv.name}'s review`, `HR sent the ${rv.cycleName} review back: "${note}"`);
+  return ok({ review: next, message: 'Sent back to the manager.' });
 }
 
 async function reviewPublish(c: C, b: any): Promise<Result> {
-  const { rv, err } = await mine(c, b.id); if (err) return err;
-  if (!(c.isHr || c.isApprover)) return fail(403, 'Only HR or an authorized approver can publish a review.');
-  if (rv!.uid === c.ctx.uid) return fail(403, 'You cannot publish your own review. Someone else must.');
-  if (rv!.status !== 'APPROVED') return fail(409, 'Only an approved review can be published.');
-  const next = await setStatus(c, rv!, 'PUBLISHED', { publishedAt: nowIso(), publishedBy: c.who }, 'PUBLISHED');
-  await tell(c, [rv!.uid], `Your ${rv!.cycleName} review is ready`, 'Open Performance > My performance to read it. You can acknowledge it, or record that you disagree and why.');
-  return ok({ item: next, message: 'Published. The employee has been told.' });
+  const rv = await get(c.cid, 'reviews', str(b.id, 200));
+  if (!rv || rv.status !== 'APPROVED') return bad('Only approved reviews can be shared.');
+  return ok({ review: await publish(c, rv), message: 'Shared with the employee.' });
 }
 
 async function reviewRespond(c: C, b: any): Promise<Result> {
-  const { rv, err } = await mine(c, b.id); if (err) return err;
-  if (rv!.uid !== c.ctx.uid) return fail(403, 'Only the employee responds to their own review.');
-  if (rv!.status !== 'PUBLISHED') return fail(409, 'The review has not been published to you yet, or you have already responded.');
-  const type = str(b.response, 12).toUpperCase();
-  const comment = str(b.comment, 1500);
-  if (type === 'DISAGREE') {
-    if (comment.length < 10) return fail(400, 'Say what you disagree with. For example a factual error, or evidence that was missed.');
-    const next = await setStatus(c, rv!, 'DISPUTED', { response: { type: 'DISAGREE', comment, at: nowIso() } }, 'DISPUTED', comment);
-    await raise(c, 'REVIEW_DISPUTED', { refId: rv!.id, subjectUid: rv!.uid, refLabel: `${rv!.employeeName} - ${rv!.cycleName}`, detail: `${rv!.employeeName} recorded: "${comment}". Your words are kept exactly as written; HR will route a formal review.`, notifyUids: [] });
-    return ok({ item: next, message: 'Your disagreement is recorded exactly as you wrote it. HR will review it formally.' });
-  }
-  if (type !== 'ACKNOWLEDGE') return fail(400, 'Choose to acknowledge the review or to record that you disagree.');
-  const next = await setStatus(c, rv!, 'ACKNOWLEDGED', { response: { type: 'ACKNOWLEDGE', comment, at: nowIso() } }, 'ACKNOWLEDGED', comment);
-  if (rv!.managerUid) await tell(c, [rv!.managerUid], `${rv!.employeeName} acknowledged the review`, 'Next: agree a development plan and goals for the next cycle (Performance > Development).');
-  return ok({ item: next, message: 'Thank you. Next, your manager will agree a development plan with you.' });
+  const rv = await get(c.cid, 'reviews', str(b.id, 200));
+  if (!rv || rv.uid !== c.ctx.uid) return notFound('Your review');
+  if (rv.status !== 'PUBLISHED') return bad('This review is not waiting for your response.');
+  const agree = b.agree === true; const comment = str(b.comment, 2000);
+  if (!agree && comment.length < 10) return bad('Write what you disagree with (a sentence or two). It is kept exactly as you write it.');
+  const next = { ...rv, status: agree ? 'ACKNOWLEDGED' : 'DISPUTED', statusOn: today(), response: { agree, comment, at: new Date().toISOString() } };
+  await put('reviews', next);
+  await audit(c, rv.id, agree ? 'ACKNOWLEDGED' : 'DISPUTED', comment, rv.uid);
+  if (!agree) await raise(c, 'REVIEW_DISPUTED', rv.id, { subjectUid: rv.uid, text: `${rv.name} disagrees with their ${rv.cycleName} review: "${comment}"`, notify: [...(await hrUids(c)), rv.managerUid].filter(Boolean) });
+  return ok({ review: next, message: agree ? 'Thank you. Your review is complete.' : 'Your comments are recorded and HR has been told.' });
 }
 
 async function reviewResolve(c: C, b: any): Promise<Result> {
-  const { rv, err } = await mine(c, b.id); if (err) return err;
-  if (!(c.isHr || c.isApprover)) return fail(403, 'Only HR or an authorized approver can resolve a disagreement.');
-  if (rv!.uid === c.ctx.uid) return fail(403, 'You cannot resolve a disagreement about your own review.');
-  if (rv!.status !== 'DISPUTED') return fail(409, 'There is no recorded disagreement to resolve.');
-  const outcome = str(b.outcome, 10).toUpperCase(); const note = str(b.note, 1000);
-  if (!['UPHELD', 'AMENDED'].includes(outcome)) return fail(400, 'Say whether the review was upheld or amended (amend it first, then resolve).');
-  if (note.length < 5) return fail(400, 'Write the outcome of the formal review.');
-  const next = await setStatus(c, rv!, 'ACKNOWLEDGED', { response: { ...rv!.response, resolution: { outcome, note, by: c.who, at: nowIso() } } }, 'DISPUTE_RESOLVED', note);
-  await clearException(c, 'REVIEW_DISPUTED', rv!.id, `${outcome}: ${note}`);
-  await tell(c, [rv!.uid], 'The formal review of your disagreement is complete', `Outcome: ${outcome.toLowerCase()}. ${note}`);
-  return ok({ item: next });
+  const rv = await get(c.cid, 'reviews', str(b.id, 200));
+  if (!rv || rv.status !== 'DISPUTED') return bad('Only a review the employee disagrees with can be resolved.');
+  if (rv.uid === c.ctx.uid) return denied();
+  const note = str(b.note, 2000);
+  if (note.length < 10) return bad('Write what was decided and why. The employee will see it.');
+  const next = { ...rv, status: 'RESOLVED', statusOn: today(), resolution: { note, by: c.who, at: new Date().toISOString() } };
+  await put('reviews', next);
+  await audit(c, rv.id, 'DISPUTE_RESOLVED', note, rv.uid);
+  await clear(c, 'REVIEW_DISPUTED', rv.id, note);
+  await tell(c, [rv.uid], 'Your review: HR decision', `HR looked at your comments on the ${rv.cycleName} review: "${note}"`);
+  return ok({ review: next, message: 'Resolved. The employee has been told.' });
 }
 
-/** The only way to change a final review: an authorized person, a reason, and a record of before and after. */
+/** The only way to change a review after approval: a reason, the old version kept, and the normal steps again. */
 async function reviewAmend(c: C, b: any): Promise<Result> {
-  const { rv, err } = await mine(c, b.id); if (err) return err;
-  if (!c.isApprover) return fail(403, 'Only an authorized approver can amend a final review.');
-  if (rv!.uid === c.ctx.uid) return fail(403, 'You cannot amend your own review.');
-  if (!isFinal(rv!.status)) return fail(409, 'This review is not final yet, so edit it through the normal steps.');
-  const reason = str(b.reason, 600);
-  if (reason.length < 10) return fail(400, 'Every amendment needs a reason, so the record explains itself.');
-  const kpis: KpiResult[] = (rv!.kpis || []).map((k: KpiResult) => ({ ...k }));
-  for (const a of Array.isArray(b.kpis) ? b.kpis : []) { const k = kpis.find((x) => x.targetId === str(a?.targetId, 80)); if (k && isRating(Number(a.finalRating))) { k.finalRating = Number(a.finalRating); k.calibrationReason = reason; } }
-  await setComps(c, rv!, Array.isArray(b.comps) ? b.comps : [], (x) => (isRating(Number(x.finalRating)) ? { finalRating: Number(x.finalRating), calibrationReason: reason } : {}));
-  const v = await compute(c, { ...rv!, kpis });
-  const finalRating = b.finalRating !== undefined && isRating(Number(b.finalRating)) ? Number(b.finalRating) : rv!.final?.finalRating;
-  const comments = b.finalComments !== undefined && str(b.finalComments, 1500).length >= 5 ? str(b.finalComments, 1500) : rv!.final?.comments;
-  const after = { ...finalise({ ...rv!, kpis }, v.comps.map((x) => ({ ...x, finalRating: x.finalRating ?? x.managerRating })), v.sop, finalRating, comments, rv!.final?.approvedBy || c.who), approvedAt: rv!.final?.approvedAt };
-  const amendment = { at: nowIso(), by: c.who, byUid: c.ctx.uid, reason, before: { overall: rv!.final?.overall, finalRating: rv!.final?.finalRating, comments: rv!.final?.comments }, after: { overall: after.overall, finalRating: after.finalRating, comments: after.comments } };
-  const next = { ...rv!, kpis, final: after, amendments: [...(rv!.amendments || []), amendment] };
-  await putK(next);
-  await audit(c, 'review', rv!.id, 'AMENDED', amendment.before, { ...amendment.after, reason }, rv!.uid);
-  await raise(c, 'REVIEW_AMENDED', { refId: `${rv!.id}_${(rv!.amendments || []).length + 1}`, subjectUid: rv!.uid, refLabel: `${rv!.employeeName} - ${rv!.cycleName}`, detail: `Amended by ${c.who}: ${reason}` });
-  await tell(c, [rv!.uid], 'Your performance review was amended', `An authorized person amended your ${rv!.cycleName} review. Reason: ${reason}. Open Performance > My performance to see the record of changes.`);
-  return ok({ item: next, message: 'Amended. The old and new values are both kept in the record.' });
+  const rv = await get(c.cid, 'reviews', str(b.id, 200));
+  if (!rv || !can(c, rv).amend) return denied('This review cannot be amended by you.');
+  const reason = str(b.reason, 1000);
+  if (reason.length < 10) return bad('Write the reason for the amendment. It is kept on the record.');
+  const before = { status: rv.status, manager: rv.manager, score: rv.score, hr: rv.hr || null, response: rv.response || null };
+  const next = { ...rv, status: 'MANAGER', statusOn: today(), amended: true, amendments: [...(rv.amendments || []), { at: new Date().toISOString(), by: c.who, reason, before }], response: null, hr: null };
+  await put('reviews', next);
+  await audit(c, rv.id, 'AMENDMENT_STARTED', reason, rv.uid);
+  await tell(c, [rv.managerUid, rv.uid].filter(Boolean), `${rv.cycleName} review reopened for amendment`, `Reason: "${reason}". The previous version is kept on the record. The manager updates it, HR approves it again, and it is shared again.`);
+  return ok({ review: next, message: 'Reopened for the manager. The previous version is kept.' });
 }
 
-async function reviewDefer(c: C, b: any): Promise<Result> {
-  const { rv, err } = await mine(c, b.id); if (err) return err;
-  if (!c.isHr) return fail(403, 'Only HR can defer a review.');
-  if (b.resume === true) {
-    if (rv!.status !== 'DEFERRED') return fail(409, 'This review is not deferred.');
-    const back = (rv!.statusBeforeDefer || 'OPEN') as ReviewStatus;
-    const next = await setStatus(c, rv!, back, { statusBeforeDefer: '', deferral: { ...(rv!.deferral || {}), resumedAt: nowIso(), resumedBy: c.who } }, 'RESUMED');
-    return ok({ item: next });
+async function reviewDefer(c: C, b: any, resume: boolean): Promise<Result> {
+  const rv = await get(c.cid, 'reviews', str(b.id, 200));
+  if (!rv) return notFound('The review');
+  const k = can(c, rv);
+  if (resume ? !k.resume : !k.defer) return bad(resume ? 'Only a paused review can be resumed.' : 'This review cannot be paused now.');
+  const s = await settingsOf(c.cid);
+  if (resume) {
+    const plan = openPlanOf(await list(c.cid, 'plans'), rv.uid);
+    const snap = rv.snap || (plan?.status === 'ACTIVE' ? snapshot(plan, s) : null);
+    const selfDue = addDays(today(), s.timing.selfDays);
+    const next = { ...rv, snap, status: snap ? 'SELF' : 'ON_HOLD', selfDue, managerDue: addDays(selfDue, s.timing.managerDays), hrDue: addDays(selfDue, s.timing.managerDays + s.timing.hrDays), statusOn: today() };
+    await put('reviews', next); await audit(c, rv.id, 'RESUMED', '', rv.uid); await clear(c, 'EXTENDED_LEAVE', rv.id, 'Resumed by HR.');
+    if (snap) await tell(c, [rv.uid], `Your ${rv.cycleName} review is open`, `Please do your self-review by ${selfDue}.`);
+    return ok({ review: next, message: 'Resumed.' });
   }
-  if (isFinal(rv!.status) || ['DEFERRED', 'CONFIGURATION_PENDING'].includes(rv!.status)) return fail(409, 'This review cannot be deferred from its current step.');
-  const reason = str(b.reason, 400);
-  if (!reason) return fail(400, 'Say why it is deferred (for example approved extended leave).');
-  const extendDays = Math.max(0, Math.min(180, Number(b.extendDays) || 0));
-  const bump = (d: string) => (d && extendDays ? addDays(d, extendDays) : d);
-  const next = await setStatus(c, rv!, 'DEFERRED', { statusBeforeDefer: rv!.status, deferral: { reason, by: c.who, at: nowIso(), extendDays }, selfReviewDeadline: bump(rv!.selfReviewDeadline), managerDeadline: bump(rv!.managerDeadline), hrDeadline: bump(rv!.hrDeadline) }, 'DEFERRED', reason);
-  await clearException(c, 'EXTENDED_LEAVE', `review_${rv!.id}`, `Deferred: ${reason}`);
-  return ok({ item: next });
+  const reason = str(b.reason, 500);
+  if (reason.length < 5) return bad('Write why the review is paused.');
+  const next = { ...rv, status: 'DEFERRED', statusOn: today(), deferReason: reason };
+  await put('reviews', next); await audit(c, rv.id, 'DEFERRED', reason, rv.uid);
+  return ok({ review: next, message: 'Paused.' });
 }
 
-// ------------------------------------------------------------------ reminders and escalation (REVIEW_OVERDUE)
+// ------------------------------------------------------------------ daily: deadlines, reminders, sharing
 
-export async function reviewReminders(c: C): Promise<{ reminded: number }> {
-  const t = today();
-  let reminded = 0;
-  for (const rv of (await listK(c.cid, 'review')).filter((r) => !isFinal(r.status) && !['DEFERRED', 'CONFIGURATION_PENDING'].includes(r.status))) {
-    const waitingOnEmployee = rv.status === 'OPEN';
-    const due = waitingOnEmployee ? rv.selfReviewDeadline : ['SELF_ASSESSED', 'MANAGER_EVALUATED', 'DISCUSSED'].includes(rv.status) ? rv.managerDeadline : rv.hrDeadline;
-    if (!due || due >= t || rv.remindedOn === t) continue;
-    const late = Math.round((Date.parse(t) - Date.parse(due)) / 86400000);
-    const to = waitingOnEmployee ? [rv.uid] : rv.managerUid ? [rv.managerUid] : [];
-    const up = !waitingOnEmployee && rv.managerUid ? managerOf(c, rv.managerUid) : '';
-    await putK({ ...rv, remindedOn: t });
-    await tell(c, late > 7 && up ? [...to, up] : to, `Overdue: ${rv.employeeName}'s ${rv.cycleName}`, `This was due on ${due}. Please complete it.${late > 7 && up ? ' It has been escalated to the next manager.' : ''}`);
-    await raise(c, 'REVIEW_OVERDUE', { refId: rv.id, subjectUid: rv.uid, refLabel: `${rv.employeeName} - ${rv.cycleName}`, ownerUid: to[0] || '', detail: `${late} day${late > 1 ? 's' : ''} past the ${due} deadline.${late > 7 && up ? ' Escalated.' : ''}` });
-    reminded++;
+export async function reviewDaily(c: C): Promise<Record<string, number>> {
+  const s = await settingsOf(c.cid);
+  const t = today(); const hr = await hrUids(c); const every = s.timing.remindEvery;
+  const out = { remindedSelf: 0, selfClosed: 0, remindedManager: 0, remindedHr: 0, shared: 0, remindedResponse: 0 };
+  for (const rv0 of await list(c.cid, 'reviews')) {
+    let rv = rv0;
+    if (rv.status === 'SELF') {
+      if (t > rv.selfDue) { rv = await skipSelf(c, rv, 'closed automatically at the due date'); out.selfClosed++; await tell(c, [rv.managerUid], `${rv.name}'s review is ready for you`, `${rv.name} did not do the self-review by ${rv.selfDue}. Please do your part by ${rv.managerDue}.`); continue; }
+      if (daysBetween(t, rv.selfDue) <= 2 && remindNow(rv, 'self', every)) { await put('reviews', rv); out.remindedSelf++; await tell(c, [rv.uid], 'Reminder: your self-review', `Your ${rv.cycleName} self-review is due on ${rv.selfDue}.`); }
+    } else if (rv.status === 'MANAGER') {
+      const late = t > rv.managerDue;
+      if ((late || daysBetween(t, rv.managerDue) <= 2) && remindNow(rv, 'mgr', every)) {
+        await put('reviews', rv); out.remindedManager++;
+        await tell(c, [rv.managerUid], `Reminder: ${rv.name}'s review`, `${rv.name}'s ${rv.cycleName} review is ${late ? 'late' : `due on ${rv.managerDue}`}.`);
+        if (late && daysBetween(rv.managerDue, t) >= s.timing.escalateAfter) await raise(c, 'REVIEW_LATE', `${rv.id}_MANAGER`, { subjectUid: rv.uid, text: `${rv.managerName}'s part of ${rv.name}'s ${rv.cycleName} review is ${daysBetween(rv.managerDue, t)} days late.`, notify: hr });
+      }
+    } else if (rv.status === 'HR') {
+      if (t > rv.hrDue && remindNow(rv, 'hr', every)) { await put('reviews', rv); out.remindedHr++; await tell(c, hr, `Reminder: approve ${rv.name}'s review`, `${rv.name}'s ${rv.cycleName} review has been waiting for HR since ${rv.statusOn}.`); }
+    } else if (rv.status === 'APPROVED') {
+      if (rv.publishOn && rv.publishOn <= t) { await publish(c, rv); out.shared++; }
+    } else if (rv.status === 'PUBLISHED') {
+      if (daysBetween(rv.statusOn, t) >= every && remindNow(rv, 'resp', every * 2)) { await put('reviews', rv); out.remindedResponse++; await tell(c, [rv.uid], 'Please read your review', `Your ${rv.cycleName} review is waiting for you to acknowledge it (or record that you disagree).`); }
+    }
   }
-  return { reminded };
-}
-
-/** For the manager's SOP check: the processes assigned to this person with their checkpoints, and any check already saved for the cycle. */
-async function sopFor(c: C, _b: any, q: Record<string, any>): Promise<Result> {
-  const uid = str(q.employeeUid, 120);
-  if (!(isMyReport(c, uid) || c.isHr || c.isApprover)) return fail(403, 'Only the reporting manager or HR can assess SOP compliance.');
-  const [assigns, sops, checks] = await Promise.all([listK(c.cid, 'sopAssign'), listK(c.cid, 'sop'), listK(c.cid, 'sopCheck')]);
-  const mine = assigns.filter((a) => a.uid === uid && !['SUPERSEDED', 'ENDED'].includes(a.status));
-  return ok({ items: mine.map((a) => { const sop = sops.find((x) => x.id === a.sopId); return { sopId: a.sopId, title: a.title, criticality: a.criticality, checkpoints: sop?.checkpoints || [], check: checks.find((x) => x.uid === uid && x.sopId === a.sopId && x.cycleId === str(q.cycleId, 80)) || null, acknowledged: !!a.acknowledgedAt }; }) });
+  return out;
 }
 
 export const REVIEW_ROUTES: Record<string, Route> = {
-  'sop-for': { method: 'GET', who: 'any', run: (c, b, q) => sopFor(c, b, q) },
-  'cycle-open': { method: 'POST', who: 'hr', run: (c, b) => cycleOpen(c, b) },
-  'cycle-lock': { method: 'POST', who: 'hr', run: (c, b) => cycleLock(c, b) },
-  'review-list': { method: 'GET', who: 'any', run: (c, b, q) => reviewList(c, b, q) },
-  'review-get': { method: 'GET', who: 'any', run: (c, b, q) => reviewGet(c, b, q) },
+  review: { method: 'GET', who: 'any', run: (c, b, q) => reviewGet(c, b, q) },
+  reviews: { method: 'GET', who: 'any', run: (c, b, q) => reviewList(c, b, q) },
+  cycles: { method: 'GET', who: 'approver', run: (c) => cycleList(c) },
+  'cycle-open': { method: 'POST', who: 'hr', run: (c, b) => cycleOpenRoute(c, b) },
   'review-self': { method: 'POST', who: 'any', run: (c, b) => reviewSelf(c, b) },
-  'review-waive': { method: 'POST', who: 'any', run: (c, b) => reviewSelfWaive(c, b) },
+  'review-skip-self': { method: 'POST', who: 'any', run: (c, b) => reviewSkipSelf(c, b) },
   'review-manager': { method: 'POST', who: 'any', run: (c, b) => reviewManager(c, b) },
-  'review-discuss': { method: 'POST', who: 'any', run: (c, b) => reviewDiscuss(c, b) },
-  'review-hr': { method: 'POST', who: 'hr', run: (c, b) => reviewHr(c, b) },
   'review-approve': { method: 'POST', who: 'approver', run: (c, b) => reviewApprove(c, b) },
-  'review-publish': { method: 'POST', who: 'any', run: (c, b) => reviewPublish(c, b) },
+  'review-return': { method: 'POST', who: 'approver', run: (c, b) => reviewReturn(c, b) },
+  'review-publish': { method: 'POST', who: 'approver', run: (c, b) => reviewPublish(c, b) },
   'review-respond': { method: 'POST', who: 'any', run: (c, b) => reviewRespond(c, b) },
-  'review-resolve': { method: 'POST', who: 'any', run: (c, b) => reviewResolve(c, b) },
+  'review-resolve': { method: 'POST', who: 'hr', run: (c, b) => reviewResolve(c, b) },
   'review-amend': { method: 'POST', who: 'approver', run: (c, b) => reviewAmend(c, b) },
-  'review-defer': { method: 'POST', who: 'hr', run: (c, b) => reviewDefer(c, b) },
+  'review-defer': { method: 'POST', who: 'hr', run: (c, b) => reviewDefer(c, b, false) },
+  'review-resume': { method: 'POST', who: 'hr', run: (c, b) => reviewDefer(c, b, true) },
 };
-
-export { compute as computeReview, cycleOpen as openCycleNow, round, overlapDays, REVIEW_TYPES, closeSuperseded };

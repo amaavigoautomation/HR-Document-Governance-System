@@ -1,593 +1,328 @@
 /**
- * Performance Management: HR-PM-002 (KRA/KPI templates and each person's plan), HR-PM-003 (competency assignment) and the
- * assignment, acknowledgement and checking side of HR-PM-004 (department SOPs).
+ * Plans: what each person is expected to deliver (KPIs with targets), the behaviours they are rated on, and the SOPs they follow.
  *
- * Workflow PM-002 "KRA/KPI Assignment": joining, role change or new cycle -> a plan for the person.
- * Workflow PM-003 "Competency Assignment": the competencies a person is assessed on are fixed into their plan.
- * Workflow PM-004 "SOP Assignment": joining, transfer, SOP publication -> SOP training and acknowledgement.
+ * A plan is created automatically (join, role change, setup finished) from the template for the person's designation.
+ *   ON_HOLD      something is missing (setup, manager, template); HR sees exactly what, and it starts by itself once fixed
+ *   SET_TARGETS  the manager fills in the targets (and may adjust weights; they must still total 100)
+ *   HR_CHECK     HR approves or sends it back with a note
+ *   ACTIVE       in force; the employee acknowledges it and each SOP
+ *   CLOSED       replaced after a department/designation change; kept with its evidence for history
  */
+import { MANAGER_EXTRAS, kpiProblem, type Competency, type KpiDef } from '../../shared/pmEngine.js';
+import { publishedDocs, templateId } from './pmSetup.js';
 import {
-  KPI_FREQUENCIES, EVIDENCE_SOURCES, SOP_RESULTS, validateKpiWeights, addDays, isDate, type SopResult,
-} from '../../shared/pmEngine.js';
-import {
-  anyPerson, audit, clean, clearException, db, fail, getK, groupBy, isManagerCtx, isMyReport, lc, listK, managerOf, newId, nameOf, nowIso, num, ok, oneOf, person, putK, raise, reportsOf, str, tell, today,
-  type C, type Item, type Route, type Result,
+  active, audit, bad, canSee, clear, db, denied, get, hasReports, hrUids, isManagerOf, list, lc, managerOf, nameOf, newId, notFound, num, ok, put, raise,
+  remindNow, settingsOf, slug, str, tell, today,
+  type C, type Doc, type Result, type Route, type Settings,
 } from './pmCore.js';
-import { pickFramework } from './pmMasters.js';
 import type { Person } from './leaveCore.js';
 
-const FREQ = KPI_FREQUENCIES;
-const SRC = EVIDENCE_SOURCES;
+export const OPEN_PLAN = ['ON_HOLD', 'SET_TARGETS', 'HR_CHECK', 'ACTIVE'];
+export const openPlanOf = (plans: Doc[], uid: string) => plans.filter((p) => p.uid === uid && OPEN_PLAN.includes(p.status)).sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)))[0] || null;
 
-// ------------------------------------------------------------------ KRA/KPI templates (Role_KRA_Template)
+type Docs = Awaited<ReturnType<typeof publishedDocs>>;
 
-interface TemplateRow { kraName: string; kpiName: string; description: string; measurement: string; targetHint: string; weightage: number; frequency: string; evidenceSource: string; sopId: string }
-
-function cleanRows(v: unknown): TemplateRow[] {
-  return (Array.isArray(v) ? v : []).slice(0, 60).map((x: any) => ({
-    kraName: str(x?.kraName, 120), kpiName: str(x?.kpiName, 160), description: str(x?.description, 400), measurement: str(x?.measurement, 300), targetHint: str(x?.targetHint, 200),
-    weightage: num(x?.weightage) ?? 0, frequency: oneOf(x?.frequency, FREQ, 'MONTHLY'), evidenceSource: oneOf(x?.evidenceSource, SRC, 'TASK_SYSTEM'), sopId: str(x?.sopId, 80),
-  })).filter((r) => r.kraName || r.kpiName);
-}
-
-async function tplList(c: C, _b: any, q: Record<string, any>): Promise<Result> {
-  let items = (await listK(c.cid, 'roleTemplate')).sort((a, b) => String(a.roleName).localeCompare(String(b.roleName)) || (b.version || 0) - (a.version || 0));
-  if (q.roleId) items = items.filter((t) => t.roleId === str(q.roleId, 80));
-  return ok({ items });
-}
-
-async function tplSave(c: C, b: any): Promise<Result> {
-  const role = await getK(c.cid, str(b.roleId, 80), 'role');
-  if (!role) return fail(404, 'Choose a role first.');
-  const rows = cleanRows(b.items);
-  if (rows.some((r) => !r.kraName || !r.kpiName)) return fail(400, 'Every line needs a KRA (the responsibility area) and a KPI (how it is measured).');
-  const w = validateKpiWeights(rows);
-  if (!w.ok) return fail(400, `${w.error} (Exception: weights invalid, so the template was not saved.)`);
-  const sops = await listK(c.cid, 'sop');
-  for (const r of rows) if (r.sopId && !sops.some((s) => s.id === r.sopId)) return fail(400, 'One of the linked SOPs was not found.');
-  const prev = b.id ? await getK(c.cid, str(b.id, 80), 'roleTemplate') : null;
-  if (b.id && !prev) return fail(404, 'That template was not found.');
-  const all = await listK(c.cid, 'roleTemplate');
-  const forRole = all.filter((t) => t.roleId === role.id);
-  // An approved template is never rewritten: changes become a new draft version, and people's plans keep the version they were built from.
-  const reuse = prev && prev.status === 'DRAFT' ? prev : forRole.find((t) => t.status === 'DRAFT') || null;
-  const version = reuse ? reuse.version : Math.max(0, ...forRole.map((t) => t.version || 0)) + 1;
-  const id = reuse?.id || newId();
-  const item: Item = { ...(reuse || {}), id, companyId: c.cid, kind: 'roleTemplate', roleId: role.id, roleName: role.name, department: role.department, version, status: 'DRAFT', items: rows, approvedBy: '', approvedAt: '' };
-  await putK(item);
-  // KRA_Master and KPI_Master are kept in step so the same wording is reused across roles.
-  const [kras, kpis] = await Promise.all([listK(c.cid, 'kraMaster'), listK(c.cid, 'kpiMaster')]);
-  for (const r of rows) {
-    let kra = kras.find((k) => lc(k.name) === lc(r.kraName));
-    if (!kra) { kra = { id: newId(), companyId: c.cid, kind: 'kraMaster', name: r.kraName, description: '' }; await putK(kra); kras.push(kra); }
-    if (!kpis.some((k) => k.kraId === kra!.id && lc(k.name) === lc(r.kpiName))) { const kp = { id: newId(), companyId: c.cid, kind: 'kpiMaster', kraId: kra.id, name: r.kpiName, description: r.description, measurement: r.measurement, frequency: r.frequency, evidenceSource: r.evidenceSource }; await putK(kp); kpis.push(kp); }
-  }
-  await audit(c, 'template', id, reuse ? 'UPDATED' : 'CREATED', reuse ? { rows: reuse.items?.length } : null, { rows: rows.length, version });
-  return ok({ item });
-}
-
-async function tplApprove(c: C, b: any): Promise<Result> {
-  const t = await getK(c.cid, str(b.id, 80), 'roleTemplate');
-  if (!t) return fail(404, 'That template was not found.');
-  if (t.status !== 'DRAFT') return fail(409, 'Only a draft can be approved.');
-  const w = validateKpiWeights(t.items);
-  if (!w.ok) return fail(400, w.error!);
-  for (const o of (await listK(c.cid, 'roleTemplate')).filter((x) => x.roleId === t.roleId && x.status === 'APPROVED')) await putK({ ...o, status: 'RETIRED' });
-  const next = { ...t, status: 'APPROVED', approvedBy: c.who, approvedAt: nowIso() };
-  await putK(next);
-  await audit(c, 'template', t.id, 'APPROVED', { status: 'DRAFT' }, { status: 'APPROVED', version: t.version });
-  return ok({ item: next, message: 'Template approved. New plans for this role will use it.' });
-}
-
-async function tplDelete(c: C, b: any): Promise<Result> {
-  const t = await getK(c.cid, str(b.id, 80), 'roleTemplate');
-  if (!t) return fail(404, 'That template was not found.');
-  if (t.status !== 'DRAFT') return fail(409, 'Only a draft can be deleted. Approved templates are kept for history.');
-  await db().collection('pmItems').doc(t.id).delete();
-  await audit(c, 'template', t.id, 'DELETED', { role: t.roleName }, null);
-  return ok({});
-}
-
-// ------------------------------------------------------------------ roles and competencies of a person
-
-export function roleOfPerson(roles: Item[], p: Person): Item | null {
-  if (!p.title) return null;
-  const exact = roles.find((r) => lc(r.name) === lc(p.title) && lc(r.department) === lc(p.department));
-  if (exact) return exact;
-  const byTitle = roles.filter((r) => lc(r.name) === lc(p.title));
-  return byTitle.length === 1 ? byTitle[0] : null;
-}
-
-/** PM-003: every active core competency, plus the ones HR mapped to the role. Frozen into the plan so later edits never rewrite history. */
-export function competenciesFor(comps: Item[], maps: Item[], role: Item) {
-  const mine = new Map(maps.filter((m) => m.roleId === role.id).map((m) => [m.competencyId, m]));
-  return comps.filter((x) => x.active !== false && (x.category === 'CORE' || mine.has(x.id))).map((x) => ({
-    competencyId: x.id, name: x.name, expectedBehaviour: x.standard || x.definition || '', exampleEvidence: x.exampleEvidence || '', category: x.category, version: x.version || 1,
-    expectedLevel: mine.get(x.id)?.expectedLevel ?? 3, weight: mine.get(x.id)?.weight ?? 1,
-  }));
-}
-
-// ------------------------------------------------------------------ building a person's plan (workflow PM-002)
-
-type PlanTrigger = 'JOINING' | 'CONFIRMATION' | 'TRANSFER' | 'ROLE_CHANGE' | 'NEW_CYCLE' | 'MANUAL' | 'MANAGER_CHANGE';
-
-async function bundle(c: C) {
-  const [roles, frameworks, templates, comps, compMaps, plans] = await Promise.all([
-    listK(c.cid, 'role'), listK(c.cid, 'framework'), listK(c.cid, 'roleTemplate'), listK(c.cid, 'competency'), listK(c.cid, 'roleCompetency'), listK(c.cid, 'plan'),
-  ]);
-  return { roles, frameworks, templates, comps, compMaps, plans };
-}
-type Bundle = Awaited<ReturnType<typeof bundle>>;
-
-const latestPlan = (plans: Item[], uid: string): Item | null => plans.filter((p) => p.uid === uid && p.status !== 'SUPERSEDED').sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)))[0] || null;
-
-/** Why a plan cannot be built yet. The specification: never silently assign a default score or approver. */
-function configIssues(c: C, p: Person, bd: Bundle) {
-  const issues: { code: string; text: string }[] = [];
-  const role = roleOfPerson(bd.roles, p);
-  if (!p.title) issues.push({ code: 'NO_JOB_TITLE', text: `${p.name} has no job title, so no role can be found. Add the job title on their employee record.` });
-  else if (!role) issues.push({ code: 'NO_ROLE', text: `No role exists for "${p.title}" in ${p.department || 'their department'}. Create it in Roles (the "Create roles from my employees" button does it for everyone).` });
-  const mgr = managerOf(c, p.uid);
-  if (!mgr) issues.push({ code: 'NO_MANAGER', text: `${p.name} has no reporting manager. Set one under Leave & Attendance > Manage > People.` });
-  const fw = role ? pickFramework(bd.frameworks, role.employeeCategory, role.roleFamily) : null;
-  if (role && !fw) issues.push({ code: 'NO_FRAMEWORK', text: `No approved framework covers the role "${role.name}" (${role.employeeCategory.replace(/_/g, ' ').toLowerCase()}). Approve one in Framework.` });
-  const tpl = role ? bd.templates.filter((t) => t.roleId === role.id && t.status === 'APPROVED').sort((a, b) => b.version - a.version)[0] : null;
-  if (role && !tpl) issues.push({ code: 'NO_TEMPLATE', text: `The role "${role.name}" has no approved KRA/KPI template. Write and approve one in KRA/KPI templates.` });
-  return { issues, role, mgr, fw, tpl };
-}
-
-async function writePlanBody(c: C, plan: Item, tpl: Item): Promise<void> {
-  const kraIds = new Map<string, string>();
-  const rows: TemplateRow[] = tpl.items;
-  const [kras, kpis] = await Promise.all([listK(c.cid, 'kraMaster'), listK(c.cid, 'kpiMaster')]);
-  for (const r of rows) {
-    const kra = kras.find((k) => lc(k.name) === lc(r.kraName));
-    const kpi = kpis.find((k) => k.kraId === kra?.id && lc(k.name) === lc(r.kpiName));
-    let assignId = kraIds.get(r.kraName);
-    if (!assignId) { assignId = newId(); kraIds.set(r.kraName, assignId); await putK({ id: assignId, companyId: c.cid, kind: 'kraAssign', planId: plan.id, uid: plan.uid, kraId: kra?.id || '', kraName: r.kraName, weight: 0, effectiveFrom: plan.effectiveFrom }); }
-    await putK({
-      id: newId(), companyId: c.cid, kind: 'kpiTarget', planId: plan.id, uid: plan.uid, kraAssignId: assignId, kraName: r.kraName, kpiId: kpi?.id || '', kpiName: r.kpiName, description: r.description, measurement: r.measurement,
-      targetHint: r.targetHint, target: '', weightage: r.weightage, frequency: r.frequency, evidenceSource: r.evidenceSource, sopRef: r.sopId, owner: 'Employee', reviewerUid: plan.managerUid, effectiveFrom: plan.effectiveFrom,
-    });
-  }
-  await refreshKraWeights(c, plan.id);
-}
-
-async function refreshKraWeights(c: C, planId: string): Promise<void> {
-  const [kras, kpis] = await Promise.all([listK(c.cid, 'kraAssign'), listK(c.cid, 'kpiTarget')]);
-  for (const k of kras.filter((x) => x.planId === planId)) {
-    const w = kpis.filter((t) => t.planId === planId && t.kraAssignId === k.id).reduce((s, t) => s + (Number(t.weightage) || 0), 0);
-    if (w !== k.weight) await putK({ ...k, weight: w });
-  }
-}
-
-/** Builds (or rebuilds, if it was waiting for configuration) the plan for one person. */
-export async function buildPlan(c: C, p: Person, trigger: PlanTrigger, bd: Bundle, replaceId = ''): Promise<{ plan: Item; created: boolean }> {
-  const cfg = configIssues(c, p, bd);
-  const existing = replaceId ? bd.plans.find((x) => x.id === replaceId) || null : null;
-  const prev = latestPlan(bd.plans, p.uid);
-  const id = existing?.id || newId();
-  const needsBody = !existing || existing.status === 'CONFIGURATION_PENDING';   // read before `existing` is overwritten below
-  const blocked = cfg.issues.length > 0;
-  const from = today();
-  const plan: Item = {
-    ...(existing || {}), id, companyId: c.cid, kind: 'plan', uid: p.uid, employeeName: p.name, department: p.department, title: p.title,
-    roleId: cfg.role?.id || '', roleName: cfg.role?.name || '', managerUid: cfg.mgr || '', managerName: nameOf(c, cfg.mgr),
-    frameworkId: cfg.fw?.id || '', frameworkName: cfg.fw?.name || '', frameworkVersion: cfg.fw?.version || 0,
-    weights: cfg.fw ? { kra: cfg.fw.kraWeight, behaviour: cfg.fw.behaviourWeight, sop: cfg.fw.sopWeight } : null,
-    templateId: cfg.tpl?.id || '', templateVersion: cfg.tpl?.version || 0, trigger, status: blocked ? 'CONFIGURATION_PENDING' : 'GENERATED', configIssues: cfg.issues,
-    effectiveFrom: existing?.effectiveFrom || from, effectiveTo: '', competencies: cfg.role ? competenciesFor(bd.comps, bd.compMaps, cfg.role) : [],
-    history: [...(existing?.history || []), { at: nowIso(), by: 'System', action: blocked ? 'CONFIGURATION_PENDING' : 'GENERATED', note: blocked ? cfg.issues.map((i) => i.code).join(', ') : `Trigger: ${trigger}` }],
-    supersedes: existing?.supersedes || (prev && prev.id !== id ? prev.id : ''),
-  };
-  // The previous plan stays on record; the new one takes over from today.
-  if (!existing && prev && !blocked) {
-    await putK({ ...prev, status: 'SUPERSEDED', effectiveTo: addDays(from, -1) < prev.effectiveFrom ? prev.effectiveFrom : addDays(from, -1), supersededBy: id });
-    await audit(c, 'plan', prev.id, 'SUPERSEDED', { status: prev.status }, { by: id, trigger }, p.uid);
-  }
-  await putK(plan);
-  if (!existing) bd.plans.push(plan); else Object.assign(existing, plan);
-  if (blocked) {
-    await raise(c, 'CONFIGURATION_PENDING', { refId: `plan_${p.uid}`, subjectUid: p.uid, refLabel: p.name, detail: cfg.issues.map((i) => i.text).join(' '), ownerUid: cfg.mgr || '' });
-    if (cfg.issues.some((i) => i.code === 'NO_TEMPLATE')) await raise(c, 'NO_KRA_KPI', { refId: `plan_${p.uid}`, subjectUid: p.uid, refLabel: p.name, ownerUid: cfg.mgr || '', detail: `${p.name} has no KRA/KPI yet. Their final review is blocked until one is approved.` });
-  } else {
-    if (needsBody) {
-      await writePlanBody(c, plan, cfg.tpl!);
-      await clearException(c, 'CONFIGURATION_PENDING', `plan_${p.uid}`, 'The plan could be built.');
-      await tell(c, [cfg.mgr!], `Set targets for ${p.name}`, `${p.name}'s performance plan (${plan.roleName}) is ready. Open Performance > My team and set the targets, then send it for HR validation.`);
-    }
-    await assignSopsFor(c, p, cfg.role!);
-  }
-  await audit(c, 'plan', id, existing ? 'REBUILT' : 'GENERATED', null, { status: plan.status, trigger }, p.uid);
-  return { plan, created: !existing };
-}
-
-// ------------------------------------------------------------------ SOP assignment (workflow PM-004)
-
-/** Which SOPs apply: active, in the person's department, and (if HR mapped it to roles) mapped to their role. */
-export async function applicableSops(c: C, p: Person, role: Item | null) {
-  const [sops, maps] = await Promise.all([listK(c.cid, 'sop'), listK(c.cid, 'roleSop')]);
-  const on = today();
-  return sops.filter((s) => {
-    if (s.status !== 'ACTIVE' || lc(s.department) !== lc(p.department) || s.effectiveFrom > on) return false;
-    const mapped = maps.filter((m) => m.sopId === s.id);
-    return mapped.length === 0 || (!!role && mapped.some((m) => m.roleId === role.id));
-  });
-}
-
-export async function assignSopsFor(c: C, p: Person, role: Item | null): Promise<{ created: number; gap: boolean }> {
-  const [applicable, existing] = await Promise.all([applicableSops(c, p, role), listK(c.cid, 'sopAssign')]);
-  const mine = existing.filter((a) => a.uid === p.uid);
-  let created = 0;
-  for (const s of applicable) {
-    if (mine.some((a) => a.sopId === s.id && a.versionId === s.versionId && !['SUPERSEDED', 'ENDED'].includes(a.status))) continue;
-    await putK({
-      id: `sa_${p.uid}_${s.id}_${s.versionId}`.replace(/[^A-Za-z0-9_-]/g, '_').slice(0, 150), companyId: c.cid, kind: 'sopAssign', uid: p.uid, employeeName: p.name, sopId: s.id, title: s.title, department: s.department,
-      versionId: s.versionId, versionNumber: s.versionNumber, mandatory: true, criticality: s.criticality, assignedDate: today(), status: 'ASSIGNED', readAt: '', acknowledgedAt: '', acknowledgementRequired: s.acknowledgementRequired !== false,
-      training: s.trainingRequired ? 'PENDING' : 'NOT_REQUIRED', trainingDoneAt: '', managerVerification: s.managerVerificationRequired ? 'PENDING' : 'NOT_REQUIRED', verifiedBy: '', verifiedAt: '',
-    });
-    created++;
-  }
-  // Assignments that no longer apply (for example after a department transfer) are ended, never deleted.
-  for (const a of mine) {
-    if (['SUPERSEDED', 'ENDED'].includes(a.status)) continue;
-    if (!applicable.some((s) => s.id === a.sopId)) { await putK({ ...a, status: 'ENDED', endedAt: nowIso() }); await audit(c, 'sopAssign', a.id, 'ENDED', { status: a.status }, { status: 'ENDED' }, p.uid); }
-  }
-  const gap = applicable.length === 0 && !!p.department;
-  if (gap) await raise(c, 'SOP_MISSING', { refId: `dept_${lc(p.department)}`, refLabel: p.department, detail: `No SOP applies to ${p.department}${role ? ` / ${role.name}` : ''}. SOP assignment gap: people there have nothing to follow or acknowledge.`, notifyUids: [] });
-  if (created) await audit(c, 'sopAssign', p.uid, 'ASSIGNED', null, { created }, p.uid);
-  return { created, gap };
-}
-
-async function sopAssignList(c: C, _b: any, q: Record<string, any>): Promise<Result> {
-  const scope = str(q.scope, 10) || 'mine';
-  let items = await listK(c.cid, 'sopAssign');
-  if (scope === 'mine') items = items.filter((a) => a.uid === c.ctx.uid);
-  else if (scope === 'team') items = items.filter((a) => isMyReport(c, a.uid));
-  else if (!c.isHr && !c.isApprover) return fail(403, 'You do not have permission to see everyone\'s SOP assignments.');
-  if (q.employeeUid) items = items.filter((a) => a.uid === str(q.employeeUid, 120));
-  items = items.filter((a) => !['SUPERSEDED', 'ENDED'].includes(a.status));
-  const sops = await listK(c.cid, 'sop');
-  return ok({ items: items.sort((a, b) => String(a.title).localeCompare(String(b.title))).map((a) => ({ ...a, checkpoints: scope === 'mine' || scope === 'team' || c.isHr ? sops.find((s) => s.id === a.sopId)?.checkpoints || [] : undefined, docTitle: sops.find((s) => s.id === a.sopId)?.docTitle || '', documentId: sops.find((s) => s.id === a.sopId)?.documentId || '' })) });
-}
-
-async function ownAssignment(c: C, id: string): Promise<Item | null> { const a = await getK(c.cid, id, 'sopAssign'); return a && a.uid === c.ctx.uid ? a : null; }
-
-/** Reading, acknowledging and following an SOP are three different events and are recorded separately. */
-async function sopRead(c: C, b: any): Promise<Result> {
-  const a = await ownAssignment(c, str(b.id, 150));
-  if (!a) return fail(404, 'That SOP assignment was not found.');
-  if (a.readAt) return ok({ item: a });
-  const next = { ...a, readAt: nowIso() };
-  await putK(next); await audit(c, 'sopAssign', a.id, 'READ', null, { readAt: next.readAt }, a.uid);
-  return ok({ item: next });
-}
-async function sopAck(c: C, b: any): Promise<Result> {
-  const a = await ownAssignment(c, str(b.id, 150));
-  if (!a) return fail(404, 'That SOP assignment was not found.');
-  if (a.acknowledgedAt) return ok({ item: a });
-  if (!a.readAt) return fail(409, 'Open and read the SOP first. Reading and acknowledging are recorded separately.');
-  const next = { ...a, acknowledgedAt: nowIso(), status: 'ACKNOWLEDGED' };
-  await putK(next); await audit(c, 'sopAssign', a.id, 'ACKNOWLEDGED', null, { acknowledgedAt: next.acknowledgedAt }, a.uid);
-  await clearException(c, 'SOP_NOT_ACKNOWLEDGED', a.id, 'The employee acknowledged the SOP.');
-  return ok({ item: next });
-}
-async function sopTrain(c: C, b: any): Promise<Result> {
-  const a = await getK(c.cid, str(b.id, 150), 'sopAssign');
-  if (!a || (a.uid !== c.ctx.uid && !isMyReport(c, a.uid) && !c.isHr)) return fail(404, 'That SOP assignment was not found.');
-  if (a.training === 'NOT_REQUIRED') return fail(409, 'This SOP does not require training.');
-  const next = { ...a, training: 'DONE', trainingDoneAt: nowIso(), trainingRecordedBy: c.who };
-  await putK(next); await audit(c, 'sopAssign', a.id, 'TRAINING_DONE', null, { by: c.who }, a.uid);
-  return ok({ item: next });
-}
-async function sopVerify(c: C, b: any): Promise<Result> {
-  const a = await getK(c.cid, str(b.id, 150), 'sopAssign');
-  if (!a || (!isMyReport(c, a.uid) && !c.isHr)) return fail(403, 'Only the reporting manager or HR can verify.');
-  if (a.managerVerification === 'NOT_REQUIRED') return fail(409, 'This SOP does not need manager verification.');
-  const next = { ...a, managerVerification: 'VERIFIED', verifiedBy: c.who, verifiedAt: nowIso() };
-  await putK(next); await audit(c, 'sopAssign', a.id, 'VERIFIED', null, { by: c.who }, a.uid);
-  return ok({ item: next });
-}
-
-/** HR's decision on a new published version: material = everyone re-acknowledges (and retrains); not material = nothing is asked of anyone. */
-async function sopRevision(c: C, b: any): Promise<Result> {
-  const s = await getK(c.cid, str(b.id, 80), 'sop');
-  if (!s || !s.pendingRevision) return fail(404, 'That SOP has no new version waiting for a decision.');
-  const rev = s.pendingRevision;
-  const material = b.material === true;
-  const note = str(b.note, 400);
-  if (material && !note) return fail(400, 'Say briefly what changed, so people know why they are asked again.');
-  const assigns = (await listK(c.cid, 'sopAssign')).filter((a) => a.sopId === s.id && !['SUPERSEDED', 'ENDED'].includes(a.status));
-  let reassigned = 0; let carried = 0;
-  for (const a of assigns) {
-    if (material) {
-      await putK({ ...a, status: 'SUPERSEDED', supersededByVersion: rev.versionNumber });
-      await putK({ ...a, id: `sa_${a.uid}_${s.id}_${rev.versionId}`.replace(/[^A-Za-z0-9_-]/g, '_').slice(0, 150), versionId: rev.versionId, versionNumber: rev.versionNumber, assignedDate: today(), status: 'ASSIGNED', readAt: '', acknowledgedAt: '',
-        training: s.trainingRequired ? 'PENDING' : 'NOT_REQUIRED', trainingDoneAt: '', managerVerification: s.managerVerificationRequired ? 'PENDING' : 'NOT_REQUIRED', verifiedBy: '', verifiedAt: '', revisionNote: note });
-      reassigned++;
-    } else {
-      await putK({ ...a, versionId: rev.versionId, versionNumber: rev.versionNumber, carriedFromVersion: s.versionNumber }); carried++;
-    }
-  }
-  await putK({ ...s, versionId: rev.versionId, versionNumber: rev.versionNumber, pendingRevision: null, lastRevisionNote: note });
-  await clearException(c, 'SOP_VERSION_CHANGED', s.id, material ? 'Material change: people were asked to re-acknowledge.' : 'Not a material change: nothing was asked of anyone.');
-  await audit(c, 'sop', s.id, material ? 'REVISION_MATERIAL' : 'REVISION_MINOR', { version: s.versionNumber }, { version: rev.versionNumber, reassigned, carried });
-  if (material) await tell(c, assigns.map((a) => a.uid), `Please re-read ${s.title}`, `${s.title} has a new version (${rev.versionNumber}). What changed: ${note}\n\nOpen Performance > My SOPs, read it and acknowledge it.`);
-  return ok({ reassigned, carried, message: material ? `${reassigned} people were asked to re-acknowledge.` : 'Updated. Nobody was asked to do anything again.' });
-}
-
-/** Employees who have had an SOP for over a week without acknowledging: a reminder, and the manager is told. */
-export async function sopReminders(c: C): Promise<{ reminded: number }> {
-  const assigns = (await listK(c.cid, 'sopAssign')).filter((a) => a.status === 'ASSIGNED' && a.acknowledgementRequired !== false && a.assignedDate <= addDays(today(), -7));
-  let reminded = 0;
-  for (const a of assigns) {
-    if (a.remindedOn === today()) continue;
-    await putK({ ...a, remindedOn: today() });
-    const mgr = managerOf(c, a.uid);
-    await tell(c, [a.uid], `Reminder: acknowledge ${a.title}`, `You were given ${a.title} on ${a.assignedDate}. Please open Performance > My SOPs, read it and acknowledge it.`);
-    await raise(c, 'SOP_NOT_ACKNOWLEDGED', { refId: a.id, refLabel: a.title, subjectUid: a.uid, ownerUid: mgr, detail: `${a.employeeName} has not acknowledged ${a.title} since ${a.assignedDate}.`, notifyUids: mgr ? [mgr] : [] });
-    reminded++;
-  }
-  return { reminded };
-}
-
-// ------------------------------------------------------------------ SOP compliance assessment (SOP_Compliance_Assessment)
-
-async function sopCheckList(c: C, _b: any, q: Record<string, any>): Promise<Result> {
-  const uid = str(q.employeeUid, 120);
-  if (uid && !(c.ctx.uid === uid || isMyReport(c, uid) || c.isHr || c.isApprover)) return fail(403, 'You do not have permission to see that.');
-  let items = await listK(c.cid, 'sopCheck');
-  items = uid ? items.filter((x) => x.uid === uid) : c.isHr || c.isApprover ? items : items.filter((x) => x.uid === c.ctx.uid || isMyReport(c, x.uid));
-  if (q.cycleId) items = items.filter((x) => x.cycleId === str(q.cycleId, 80));
-  return ok({ items });
-}
-
-async function sopCheckSave(c: C, b: any): Promise<Result> {
-  const p = anyPerson(c, b.employeeUid);
-  if (!p || !p.active) return fail(400, 'Choose an employee of this company.');
-  const sop = await getK(c.cid, str(b.sopId, 80), 'sop');
-  if (!sop) return fail(404, 'That SOP was not found.');
-  const mayCheck = isMyReport(c, p.uid) || c.isHr || sop.processOwnerUid === c.ctx.uid;
-  if (!mayCheck) return fail(403, 'Only the reporting manager, the SOP owner or HR can assess SOP compliance.');
-  if (p.uid === c.ctx.uid && !c.isHr) return fail(403, 'You cannot assess your own SOP compliance.');
-  const cycleId = str(b.cycleId, 80);
-  if (cycleId) { const cy = await getK(c.cid, cycleId, 'cycle'); if (!cy) return fail(404, 'That review cycle was not found.'); if (cy.lockStatus === 'LOCKED') return fail(409, 'That cycle is locked.'); }
-  const cps: any[] = sop.checkpoints || [];
-  const rows: any[] = [];
-  for (const r of Array.isArray(b.rows) ? b.rows : []) {
-    const cp = cps.find((x) => x.id === str(r?.checkpointId, 60));
-    if (!cp) continue;
-    const result = oneOf(r?.result, SOP_RESULTS, 'NOT_VERIFIED') as SopResult;
-    const severity = oneOf(r?.severity, ['LOW', 'MEDIUM', 'HIGH'] as const, 'MEDIUM');
-    const corrective = str(r?.correctiveAction, 300);
-    if (result === 'NON_COMPLIANT' && !corrective) return fail(400, `"${cp.control}" is non-compliant. Write the corrective action so it can be followed up.`);
-    rows.push({ checkpointId: cp.id, control: cp.control, critical: !!cp.critical, weight: cp.weight || 1, result, evidence: str(r?.evidence, 300), severity: result === 'NON_COMPLIANT' ? severity : '', correctiveAction: result === 'NON_COMPLIANT' ? corrective : '' });
-  }
-  if (rows.length === 0) return fail(400, 'Mark at least one checkpoint.');
-  const id = `sc_${cycleId || 'adhoc'}_${p.uid}_${sop.id}`.replace(/[^A-Za-z0-9_-]/g, '_').slice(0, 150);
-  const prev = await getK(c.cid, id, 'sopCheck');
-  const item: Item = { id, companyId: c.cid, kind: 'sopCheck', uid: p.uid, employeeName: p.name, sopId: sop.id, sopTitle: sop.title, versionId: sop.versionId, versionNumber: sop.versionNumber, cycleId, rows, reviewerUid: c.ctx.uid, reviewerName: c.who, reviewedOn: today() };
-  await putK(item);
-  await audit(c, 'sopCheck', id, prev ? 'UPDATED' : 'CREATED', prev ? { results: prev.rows.length } : null, { results: rows.length }, p.uid);
-  return ok({ item });
-}
-
-// ------------------------------------------------------------------ plans
-
-async function planView(c: C, plan: Item) {
-  const [kras, kpis, acks] = await Promise.all([listK(c.cid, 'kraAssign'), listK(c.cid, 'kpiTarget'), listK(c.cid, 'kraAck')]);
-  const myKras = kras.filter((k) => k.planId === plan.id);
-  const myKpis = kpis.filter((k) => k.planId === plan.id);
-  const check = validateKpiWeights(myKpis as any);
-  return { ...plan, kras: myKras, kpis: myKpis, weightsOk: check.ok, weightsTotal: check.total, weightsError: check.error || '', acknowledgement: acks.find((a) => a.planId === plan.id) || null,
-    missingTargets: myKpis.filter((k) => !str(k.target, 300)).length };
-}
-
-async function planList(c: C, _b: any, q: Record<string, any>): Promise<Result> {
-  const scope = str(q.scope, 10) || 'mine';
-  let items = await listK(c.cid, 'plan');
-  if (scope === 'mine') items = items.filter((p) => p.uid === c.ctx.uid);
-  else if (scope === 'team') items = items.filter((p) => isMyReport(c, p.uid));
-  else if (!c.isHr && !c.isApprover) return fail(403, 'You do not have permission to see everyone\'s plans.');
-  if (q.employeeUid) items = items.filter((p) => p.uid === str(q.employeeUid, 120));
-  if (q.history !== '1') items = items.filter((p) => p.status !== 'SUPERSEDED');
-  items.sort((a, b) => String(a.employeeName).localeCompare(String(b.employeeName)) || String(b.createdAt).localeCompare(String(a.createdAt)));
-  const [kpis] = await Promise.all([listK(c.cid, 'kpiTarget')]);
-  return ok({ items: items.map((p) => { const mine = kpis.filter((k) => k.planId === p.id); const w = validateKpiWeights(mine as any); return { ...p, kpiCount: mine.length, missingTargets: mine.filter((k) => !str(k.target, 300)).length, weightsOk: w.ok, weightsTotal: w.total }; }) });
-}
-
-async function planGet(c: C, _b: any, q: Record<string, any>): Promise<Result> {
-  const plan = await getK(c.cid, str(q.id, 80), 'plan');
-  if (!plan || !(plan.uid === c.ctx.uid || isMyReport(c, plan.uid) || c.isHr || c.isApprover)) return fail(404, 'That plan was not found.');
-  return ok({ item: await planView(c, plan) });
-}
-
-const EDITABLE = ['GENERATED', 'CUSTOMISED'];
-
-/** Manager customisation: targets, measurement, weightage, frequency; add or remove a KPI. Weights are checked when the plan is sent on. */
-async function planSave(c: C, b: any): Promise<Result> {
-  const plan = await getK(c.cid, str(b.id, 80), 'plan');
-  if (!plan) return fail(404, 'That plan was not found.');
-  const isMgr = isMyReport(c, plan.uid);
-  if (!isMgr && !c.isHr) return fail(403, 'Only the reporting manager or HR can change targets.');
-  if (!EDITABLE.includes(plan.status)) return fail(409, plan.status === 'CONFIGURATION_PENDING' ? 'This plan cannot be edited until the missing setup is done.' : 'This plan has already been validated or approved, so it is locked. Use "Revise" to start a new version.');
-  if (plan.status === 'CUSTOMISED' && !c.isHr) return fail(409, 'This plan is with HR for validation. Ask HR to return it if you need to change it.');
-  const kpis = (await listK(c.cid, 'kpiTarget')).filter((k) => k.planId === plan.id);
-  for (const t of Array.isArray(b.targets) ? b.targets : []) {
-    const k = kpis.find((x) => x.id === str(t?.targetId, 80));
-    if (!k) continue;
-    if (t.remove === true) { await db().collection('pmItems').doc(k.id).delete(); continue; }
-    const w = num(t.weightage);
-    await putK({ ...k, target: t.target !== undefined ? str(t.target, 300) : k.target, measurement: t.measurement !== undefined ? str(t.measurement, 300) : k.measurement, description: t.description !== undefined ? str(t.description, 400) : k.description,
-      weightage: w !== null && w >= 0 ? w : k.weightage, frequency: t.frequency !== undefined ? oneOf(t.frequency, FREQ, k.frequency) : k.frequency, evidenceSource: t.evidenceSource !== undefined ? oneOf(t.evidenceSource, SRC, k.evidenceSource) : k.evidenceSource });
-  }
-  const kras = (await listK(c.cid, 'kraAssign')).filter((k) => k.planId === plan.id);
-  for (const a of Array.isArray(b.add) ? b.add.slice(0, 10) : []) {
-    const kraName = str(a?.kraName, 120); const kpiName = str(a?.kpiName, 160);
-    if (!kraName || !kpiName) return fail(400, 'A new KPI needs a KRA name and a KPI name.');
-    let kra = kras.find((k) => lc(k.kraName) === lc(kraName));
-    if (!kra) { kra = { id: newId(), companyId: c.cid, kind: 'kraAssign', planId: plan.id, uid: plan.uid, kraId: '', kraName, weight: 0, effectiveFrom: plan.effectiveFrom }; await putK(kra); kras.push(kra); }
-    await putK({ id: newId(), companyId: c.cid, kind: 'kpiTarget', planId: plan.id, uid: plan.uid, kraAssignId: kra.id, kraName, kpiId: '', kpiName, description: str(a?.description, 400), measurement: str(a?.measurement, 300), targetHint: '', target: str(a?.target, 300),
-      weightage: Math.max(0, num(a?.weightage) ?? 0), frequency: oneOf(a?.frequency, FREQ, 'MONTHLY'), evidenceSource: oneOf(a?.evidenceSource, SRC, 'TASK_SYSTEM'), sopRef: '', owner: 'Employee', reviewerUid: plan.managerUid, effectiveFrom: plan.effectiveFrom });
-  }
-  await refreshKraWeights(c, plan.id);
-  for (const k of (await listK(c.cid, 'kraAssign')).filter((x) => x.planId === plan.id && x.weight === 0)) await db().collection('pmItems').doc(k.id).delete();
-  await audit(c, 'plan', plan.id, 'TARGETS_EDITED', null, { by: c.who }, plan.uid);
-  return ok({ item: await planView(c, plan) });
-}
-
-function problemsToSend(v: Awaited<ReturnType<typeof planView>>): string[] {
-  const out: string[] = [];
-  if (!v.weightsOk) out.push(v.weightsError || 'The KPI weights do not add up to 100.');
-  if (v.missingTargets > 0) out.push(`${v.missingTargets} KPI${v.missingTargets > 1 ? 's have' : ' has'} no target yet. Targets must be agreed for this role, client portfolio, budget and period; they are never made up for you.`);
+export function competenciesFor(c: C, s: Settings, p: Person, tpl: Doc | null): Competency[] {
+  const out: Competency[] = s.competencies.map((x) => ({ ...x }));
+  if (s.managerExtras && hasReports(c, p.uid)) out.push(...MANAGER_EXTRAS.map((x) => ({ ...x })));
+  for (const n of (tpl?.extraCompetencies || []) as string[]) if (!out.some((x) => lc(x.name) === lc(n))) out.push({ id: `x_${slug(n)}`, name: n, standard: '' });
   return out;
 }
 
-async function planAct(c: C, b: any): Promise<Result> {
-  const plan = await getK(c.cid, str(b.id, 80), 'plan');
-  if (!plan) return fail(404, 'That plan was not found.');
-  const action = str(b.action, 20);
-  const note = str(b.note, 500);
-  const isEmp = plan.uid === c.ctx.uid;
-  const isMgr = isMyReport(c, plan.uid);
-  const view = await planView(c, plan);
-  const move = async (status: string, who: string, extra: Record<string, any> = {}) => {
-    const next = { ...plan, ...extra, status, history: [...(plan.history || []), { at: nowIso(), by: c.who, action: action.toUpperCase(), note }] };
-    await putK(next); await audit(c, 'plan', plan.id, action.toUpperCase(), { status: plan.status }, { status, note }, plan.uid);
-    return ok({ item: await planView(c, next), message: who });
+/** SOPs that apply to this person, with the current published version. An acknowledgement survives only while the version is the same. */
+export function sopsFor(s: Settings, p: Person, docs: Docs, prev: any[] = []) {
+  return s.sops
+    .filter((x) => (x.departments.length === 0 || x.departments.includes(p.department)) && (x.designations.length === 0 || x.designations.some((d) => lc(d) === lc(p.title))))
+    .map((x) => {
+      const d = docs.get(x.documentId);
+      const old = prev.find((o) => o.documentId === x.documentId);
+      const versionId = d?.versionId || old?.versionId || '';
+      const same = !!old && old.versionId === versionId;
+      return {
+        documentId: x.documentId, title: d?.title || x.title, versionId, versionNumber: d?.versionNumber || old?.versionNumber || '', critical: x.critical,
+        assignedOn: same ? old.assignedOn : today(), openedAt: same ? old.openedAt || '' : '', ackAt: same ? old.ackAt || '' : '', changed: !!old && !same,
+      };
+    });
+}
+
+function holdsFor(c: C, s: Settings, p: Person, tpl: Doc | null): { code: string; text: string }[] {
+  const h: { code: string; text: string }[] = [];
+  if (!s.setupDone) h.push({ code: 'SETUP_UNFINISHED', text: 'HR has not finished Performance setup yet.' });
+  if (!managerOf(c, p.uid)) h.push({ code: 'NO_MANAGER', text: `${p.name} has no reporting manager. Set one in People.` });
+  if (!tpl) h.push({ code: 'NO_TEMPLATE', text: `There is no KRA/KPI template for "${p.title || 'no designation'}". Add one in Setup → KRA/KPI templates.` });
+  return h;
+}
+
+async function raiseHolds(c: C, p: Person, holds: { code: string; text: string }[], hr: string[]) {
+  for (const h of holds) if (h.code !== 'SETUP_UNFINISHED') await raise(c, h.code, `plan_${p.uid}`, { subjectUid: p.uid, text: h.text, notify: hr });
+}
+async function clearHolds(c: C, p: Person) {
+  for (const code of ['NO_MANAGER', 'NO_TEMPLATE']) await clear(c, code, `plan_${p.uid}`, 'Fixed; the plan has started.');
+}
+
+async function startTargets(c: C, plan: Doc) {
+  await tell(c, [plan.managerUid], `Set targets for ${plan.name}`, `${plan.name} (${plan.designation}) needs targets for their KPIs. It takes about 5 minutes: open My team, fill one box per KPI and press "Send to HR".`);
+}
+
+/** Builds a new plan for one person. Safe to call repeatedly: the caller checks there is no open plan first. */
+export async function buildPlan(c: C, s: Settings, p: Person, tpl: Doc | null, docs: Docs, reason: string, hr: string[]): Promise<Doc> {
+  const holds = holdsFor(c, s, p, tpl);
+  const plan: Doc = {
+    id: newId('plans'), companyId: c.cid, uid: p.uid, name: p.name, department: p.department, designation: p.title,
+    managerUid: managerOf(c, p.uid), managerName: nameOf(c, managerOf(c, p.uid)),
+    status: holds.length ? 'ON_HOLD' : 'SET_TARGETS', holds: holds.map((h) => h.text), reason,
+    templateId: tpl?.id || '', templateVersion: tpl?.version || 0,
+    kpis: (tpl?.kpis || []).map((k: KpiDef) => ({ ...k, target: '' })), competencies: competenciesFor(c, s, p, tpl), sops: sopsFor(s, p, docs),
+    effectiveFrom: '', effectiveTo: '', ackAt: '', targetsTouched: false, hrNote: '', sentOn: '', statusOn: today(),
   };
-  switch (action) {
-    case 'submit': {
-      if (!isMgr && !c.isHr) return fail(403, 'Only the reporting manager can send this to HR.');
-      if (plan.status !== 'GENERATED') return fail(409, 'This plan is not waiting for the manager.');
-      const p = problemsToSend(view); if (p.length) return fail(400, p.join(' '), { problems: p });
-      return move('CUSTOMISED', 'Sent to HR for validation.', { customisedBy: c.who, customisedAt: nowIso() });
-    }
-    case 'validate': {
-      if (!c.isHr) return fail(403, 'Only HR can validate a plan.');
-      if (plan.status !== 'CUSTOMISED') return fail(409, 'This plan is not waiting for HR validation.');
-      const p = problemsToSend(view); if (p.length) return fail(400, p.join(' '), { problems: p });
-      return move('VALIDATED', 'Validated. Now it needs an authorized approver.', { validatedBy: c.who, validatedAt: nowIso() });
-    }
-    case 'approve': {
-      if (!c.isApprover) return fail(403, 'Only an authorized approver can approve a plan.');
-      if (isEmp) return fail(403, 'You cannot approve your own plan. It must be approved by someone else with approval rights.');
-      if (plan.status !== 'VALIDATED') return fail(409, 'HR has not validated this plan yet.');
-      const p = problemsToSend(view); if (p.length) return fail(400, p.join(' '), { problems: p });
-      await tell(c, [plan.uid], 'Your performance expectations are ready', `Your KRA/KPI for ${plan.roleName} has been approved. Open Performance > My performance, read it and acknowledge it.`);
-      return move('APPROVED', 'Approved. The employee has been asked to acknowledge it.', { approvedBy: c.who, approvedAt: nowIso() });
-    }
-    case 'acknowledge': {
-      if (!isEmp) return fail(403, 'Only the employee can acknowledge their own expectations.');
-      if (plan.status !== 'APPROVED') return fail(409, 'This plan is not waiting for your acknowledgement.');
-      await putK({ id: newId(), companyId: c.cid, kind: 'kraAck', planId: plan.id, uid: plan.uid, employeeName: plan.employeeName, acknowledgedAt: nowIso(), note });
-      await clearException(c, 'NO_KRA_KPI', `plan_${plan.uid}`, 'The KRA/KPI is approved and acknowledged.');
-      // The old version, if this replaces one, ends today (it was kept until now so the person was never without expectations).
-      return move('ACTIVE', 'Acknowledged. Tracking has started.', { acknowledgedAt: nowIso() });
-    }
-    case 'return': {
-      if (!note) return fail(400, 'Say what should change, so the manager knows what to fix.');
-      if (!(isEmp || c.isHr || c.isApprover || isMgr)) return fail(403, 'You cannot send this plan back.');
-      if (!['CUSTOMISED', 'VALIDATED', 'APPROVED'].includes(plan.status)) return fail(409, 'This plan cannot be sent back from its current step.');
-      if (isEmp && plan.status !== 'APPROVED') return fail(403, 'You can only query your plan once it has been approved.');
-      if (plan.managerUid) await tell(c, [plan.managerUid], `Plan for ${plan.employeeName} sent back`, `${c.who} sent it back: ${note}`);
-      return move('GENERATED', 'Sent back to the manager.');
-    }
-    default: return fail(400, 'Unknown action.');
-  }
+  await put('plans', plan);
+  await audit(c, plan.id, 'PLAN_CREATED', `${reason}. ${holds.length ? `On hold: ${holds.map((h) => h.text).join(' ')}` : 'Manager to set targets.'}`, p.uid);
+  if (holds.length) await raiseHolds(c, p, holds, hr);
+  else await startTargets(c, plan);
+  return plan;
 }
-
-/** Starts a new version of an active plan (for example the targets changed mid-year). The old one stays in force until the new one is acknowledged. */
-async function planRevise(c: C, b: any): Promise<Result> {
-  const plan = await getK(c.cid, str(b.id, 80), 'plan');
-  if (!plan || plan.status !== 'ACTIVE') return fail(409, 'Only an active plan can be revised.');
-  if (!c.isHr && !isMyReport(c, plan.uid)) return fail(403, 'Only the reporting manager or HR can revise a plan.');
-  const reason = str(b.reason, 300);
-  if (!reason) return fail(400, 'Say why the plan is being revised.');
-  const copy: Item = { ...plan, id: newId(), status: 'GENERATED', supersedes: plan.id, effectiveFrom: today(), effectiveTo: '', acknowledgedAt: '', approvedBy: '', validatedBy: '', customisedBy: '', history: [{ at: nowIso(), by: c.who, action: 'REVISION_STARTED', note: reason }] };
-  await putK(copy);
-  const [kras, kpis] = await Promise.all([listK(c.cid, 'kraAssign'), listK(c.cid, 'kpiTarget')]);
-  const map = new Map<string, string>();
-  for (const k of kras.filter((x) => x.planId === plan.id)) { const nid = newId(); map.set(k.id, nid); await putK({ ...k, id: nid, planId: copy.id, effectiveFrom: today() }); }
-  for (const k of kpis.filter((x) => x.planId === plan.id)) await putK({ ...k, id: newId(), planId: copy.id, kraAssignId: map.get(k.kraAssignId) || '', effectiveFrom: today() });
-  await audit(c, 'plan', copy.id, 'REVISION_STARTED', { from: plan.id }, { reason }, plan.uid);
-  return ok({ item: await planView(c, copy) });
-}
-
-/** When a revised plan is acknowledged, the version it replaces ends (effective-dated; its evidence and history stay). */
-export async function closeSuperseded(c: C, plan: Item): Promise<void> {
-  if (!plan.supersedes) return;
-  const old = await getK(c.cid, plan.supersedes, 'plan');
-  if (old && old.status !== 'SUPERSEDED') { await putK({ ...old, status: 'SUPERSEDED', effectiveTo: addDays(plan.effectiveFrom, -1) < old.effectiveFrom ? old.effectiveFrom : addDays(plan.effectiveFrom, -1), supersededBy: plan.id }); await audit(c, 'plan', old.id, 'SUPERSEDED', null, { by: plan.id }, old.uid); }
-}
-
-// ------------------------------------------------------------------ the sync (what the n8n triggers did)
 
 /**
- * Joining, confirmation, transfer, role or manager change, SOP publication: one pass that brings everyone up to date.
- * Safe to press repeatedly, and run daily. Old plans are kept; the new one starts today.
+ * Keeps every person's plan in line with who they are today. Runs after setup changes, after a template is saved, and every day.
+ * Never duplicates: one open plan per person.
  */
-export async function syncPlans(c: C): Promise<Result> {
-  const bd = await bundle(c);
-  const stats = { created: 0, rebuilt: 0, transfers: 0, managerChanges: 0, sopAssigned: 0, stillWaiting: 0 };
-  for (const p of c.people.filter((x) => x.active)) {
-    const cur = latestPlan(bd.plans, p.uid);
-    const cfg = configIssues(c, p, bd);
-    if (!cur) { const r = await buildPlan(c, p, p.createdDate >= addDays(today(), -45) ? 'JOINING' : 'NEW_CYCLE', bd); stats.created++; if (r.plan.status === 'CONFIGURATION_PENDING') stats.stillWaiting++; continue; }
-    if (cur.status === 'CONFIGURATION_PENDING') { const r = await buildPlan(c, p, cur.trigger as PlanTrigger, bd, cur.id); if (r.plan.status === 'CONFIGURATION_PENDING') stats.stillWaiting++; else stats.rebuilt++; continue; }
-    const moved = lc(cur.department) !== lc(p.department);
-    const retitled = cfg.role && cur.roleId && cur.roleId !== cfg.role.id;
-    if (moved || retitled) {
-      await raise(c, 'DEPARTMENT_TRANSFER', { refId: `${p.uid}_${today()}`, subjectUid: p.uid, refLabel: p.name, detail: `${p.name} moved from ${cur.department || 'no department'} to ${p.department || 'no department'}. The old plan and records are kept; a new plan applies from today.` });
-      await buildPlan(c, p, moved ? 'TRANSFER' : 'ROLE_CHANGE', bd); stats.transfers++;
+export async function syncPlans(c: C): Promise<{ stats: Record<string, number> }> {
+  const s = await settingsOf(c.cid);
+  const stats = { created: 0, released: 0, closed: 0, moved: 0, managerChanged: 0, sopUpdates: 0 };
+  if (!s.setupDone) return { stats };
+  const [plans, templates, docs] = await Promise.all([list(c.cid, 'plans'), list(c.cid, 'templates'), publishedDocs(c.cid)]);
+  const hr = await hrUids(c);
+  const tplFor = (title: string) => templates.find((t) => t.id === templateId(c.cid, title)) || templates.find((t) => lc(t.designation) === lc(title)) || null;
+
+  for (const p of c.people) {
+    let cur = openPlanOf(plans, p.uid);
+    if (!p.active) {
+      if (cur) { await put('plans', { ...cur, status: 'CLOSED', effectiveTo: today(), closedReason: 'Left the company' }); await audit(c, cur.id, 'PLAN_CLOSED', 'Person is no longer active.', p.uid); stats.closed++; }
       continue;
     }
-    if (cfg.mgr && cur.managerUid !== cfg.mgr && cur.status !== 'SUPERSEDED') {
-      // Manager changed: same expectations, new reviewer, effective from today. Evidence and acknowledgements carry over.
-      await raise(c, 'MANAGER_CHANGED', { refId: `${p.uid}_${today()}`, subjectUid: p.uid, refLabel: p.name, detail: `${p.name}'s manager changed from ${cur.managerName || 'nobody'} to ${nameOf(c, cfg.mgr)}. Applied from today.` });
-      const next = { ...cur, managerUid: cfg.mgr, managerName: nameOf(c, cfg.mgr), history: [...(cur.history || []), { at: nowIso(), by: 'System', action: 'MANAGER_CHANGED', note: `${cur.managerName || '-'} -> ${nameOf(c, cfg.mgr)} from ${today()}` }] };
-      await putK(next); Object.assign(cur, next);
-      for (const k of (await listK(c.cid, 'kpiTarget')).filter((x) => x.planId === cur.id)) await putK({ ...k, reviewerUid: cfg.mgr });
-      await audit(c, 'plan', cur.id, 'MANAGER_CHANGED', { manager: cur.managerUid }, { manager: cfg.mgr }, p.uid);
-      stats.managerChanges++;
+    const tpl = tplFor(p.title);
+    if (!cur) { const np = await buildPlan(c, s, p, tpl, docs, 'New plan', hr); plans.push(np); stats.created++; continue; }
+
+    // Department or designation changed: keep the old plan and its evidence, start a new one from today.
+    if (cur.department !== p.department || lc(cur.designation) !== lc(p.title)) {
+      await put('plans', { ...cur, status: 'CLOSED', effectiveTo: today(), closedReason: `Moved to ${p.department || 'no department'} / ${p.title || 'no designation'}` });
+      await raise(c, 'ROLE_CHANGED', `${p.uid}_${today()}`, { subjectUid: p.uid, text: `${p.name} moved from ${cur.department || 'no department'} / ${cur.designation || '-'} to ${p.department || 'no department'} / ${p.title || '-'}. The old plan and its evidence are kept; a new plan starts today.` });
+      const np = await buildPlan(c, s, p, tpl, docs, `Role change from ${cur.designation || '-'}`, hr);
+      plans.push(np); stats.moved++; continue;
     }
-    if (cfg.role) stats.sopAssigned += (await assignSopsFor(c, p, cfg.role)).created;
+
+    let changed = false;
+    const mgr = managerOf(c, p.uid);
+    if (cur.managerUid !== mgr) {
+      if (cur.managerUid && mgr) await raise(c, 'MANAGER_CHANGED', `${p.uid}_${today()}`, { subjectUid: p.uid, text: `${p.name}'s manager changed from ${cur.managerName || 'nobody'} to ${nameOf(c, mgr) || 'nobody'}. Applied from today; past records stay as they were.` });
+      cur = { ...cur, managerUid: mgr, managerName: nameOf(c, mgr) }; changed = true; stats.managerChanged++;
+    }
+
+    if (cur.status === 'ON_HOLD') {
+      const holds = holdsFor(c, s, p, tpl);
+      if (!holds.length) {
+        cur = { ...cur, status: 'SET_TARGETS', holds: [], templateId: tpl!.id, templateVersion: tpl!.version, kpis: tpl!.kpis.map((k: KpiDef) => ({ ...k, target: '' })), competencies: competenciesFor(c, s, p, tpl), statusOn: today() };
+        await put('plans', cur); await audit(c, cur.id, 'PLAN_RELEASED', 'Setup is complete for this person; the manager can set targets.', p.uid);
+        await clearHolds(c, p); await startTargets(c, cur); stats.released++; continue;
+      }
+      const texts = holds.map((h) => h.text);
+      if (JSON.stringify(texts) !== JSON.stringify(cur.holds)) { cur = { ...cur, holds: texts }; changed = true; await raiseHolds(c, p, holds, hr); }
+    } else if (cur.status === 'SET_TARGETS' && tpl && tpl.version !== cur.templateVersion && !cur.targetsTouched) {
+      cur = { ...cur, templateId: tpl.id, templateVersion: tpl.version, kpis: tpl.kpis.map((k: KpiDef) => ({ ...k, target: '' })) }; changed = true;
+    }
+    if (cur.status !== 'ACTIVE') {
+      const comps = competenciesFor(c, s, p, tpl);
+      if (JSON.stringify(comps) !== JSON.stringify(cur.competencies)) { cur = { ...cur, competencies: comps }; changed = true; }
+    }
+
+    // SOPs: new ones are added, removed ones dropped, and a new published version asks for a fresh acknowledgement.
+    const sops = sopsFor(s, p, docs, cur.sops || []);
+    const strip = (l: any[]) => JSON.stringify(l.map(({ changed: _x, ...r }) => r));
+    if (strip(sops) !== strip(cur.sops || [])) {
+      for (const x of sops.filter((y) => y.changed)) {
+        await raise(c, 'SOP_VERSION_CHANGED', `${x.documentId}_${x.versionId}`, { text: `${x.title} has a new published version (${x.versionNumber}). Everyone it applies to has been asked to read and acknowledge it again.` });
+        await tell(c, [p.uid], `Please re-read: ${x.title}`, `${x.title} has a new version (${x.versionNumber}). Open My performance, read it and press "I have read and understood".`);
+      }
+      cur = { ...cur, sops: sops.map(({ changed: _x, ...r }) => r) }; changed = true; stats.sopUpdates++;
+    }
+    if (changed) { await put('plans', cur); const i = plans.findIndex((x) => x.id === cur!.id); if (i >= 0) plans[i] = cur; }
   }
-  const rem = await sopReminders(c);
-  return ok({ ...stats, reminders: rem.reminded, message: `Checked ${c.people.filter((x) => x.active).length} people: ${stats.created} new plan${stats.created === 1 ? '' : 's'}, ${stats.rebuilt} finished set-up, ${stats.transfers} transfer${stats.transfers === 1 ? '' : 's'}, ${stats.managerChanges} manager change${stats.managerChanges === 1 ? '' : 's'}${stats.stillWaiting ? `, ${stats.stillWaiting} still waiting for setup (see the exceptions list)` : ''}.` });
+  return { stats };
 }
 
-async function planRebuild(c: C, b: any): Promise<Result> {
-  const p = person(c, b.employeeUid);
-  if (!p) return fail(400, 'Choose an active employee of this company.');
-  const bd = await bundle(c);
-  const cur = latestPlan(bd.plans, p.uid);
-  if (cur && cur.status !== 'CONFIGURATION_PENDING') return fail(409, 'This person already has a plan. Use "Revise" to change it.');
-  const r = await buildPlan(c, p, 'MANUAL', bd, cur?.id || '');
-  return ok({ item: await planView(c, r.plan) });
+// ------------------------------------------------------------------ reminders (daily job)
+
+export async function planReminders(c: C): Promise<{ reminded: number; escalated: number }> {
+  const s = await settingsOf(c.cid);
+  const plans = (await list(c.cid, 'plans')).filter((p) => OPEN_PLAN.includes(p.status));
+  const hr = await hrUids(c);
+  const t = today(); const { remindEvery, escalateAfter } = s.timing;
+  const age = (d: string) => (d ? Math.round((Date.parse(`${t}T00:00:00Z`) - Date.parse(`${d}T00:00:00Z`)) / 86_400_000) : 0);
+  let reminded = 0; let escalated = 0;
+  for (const p of plans) {
+    let dirty = false;
+    if (p.status === 'SET_TARGETS' && p.managerUid && age(p.statusOn) >= remindEvery && remindNow(p, 'targets', remindEvery)) {
+      dirty = true; reminded++;
+      await tell(c, [p.managerUid], `Reminder: set targets for ${p.name}`, `${p.name}'s targets are still waiting for you (${age(p.statusOn)} days).`);
+      if (age(p.statusOn) >= escalateAfter && await raise(c, 'TARGETS_LATE', p.id, { subjectUid: p.uid, text: `${p.managerName} has not set ${p.name}'s targets for ${age(p.statusOn)} days.`, notify: hr })) escalated++;
+    }
+    if (p.status === 'HR_CHECK' && age(p.statusOn) >= remindEvery && remindNow(p, 'hr', remindEvery)) {
+      dirty = true; reminded++;
+      await tell(c, hr, `Reminder: approve ${p.name}'s targets`, `${p.name}'s targets are waiting for HR approval (${age(p.statusOn)} days).`);
+    }
+    if (p.status === 'ACTIVE') {
+      if (!p.ackAt && age(p.effectiveFrom) >= remindEvery && remindNow(p, 'ack', remindEvery)) {
+        dirty = true; reminded++;
+        await tell(c, [p.uid], 'Please acknowledge your targets', 'Your targets were approved. Open My performance and press "I have read my targets".');
+        if (age(p.effectiveFrom) >= escalateAfter) await raise(c, 'PLAN_ACK_LATE', p.id, { subjectUid: p.uid, text: `${p.name} has not acknowledged their targets for ${age(p.effectiveFrom)} days.`, notify: p.managerUid ? [p.managerUid] : [] });
+      }
+      const late = (p.sops || []).filter((x: any) => !x.ackAt && age(x.assignedOn) >= remindEvery);
+      if (late.length && remindNow(p, 'sop', remindEvery)) {
+        dirty = true; reminded++;
+        await tell(c, [p.uid], 'Please read and acknowledge your SOPs', `Waiting: ${late.map((x: any) => x.title).join(', ')}. Open My performance.`);
+        for (const x of late.filter((y: any) => age(y.assignedOn) >= escalateAfter)) await raise(c, 'SOP_ACK_LATE', `${p.id}_${x.documentId}_${x.versionId}`, { subjectUid: p.uid, text: `${p.name} has not acknowledged ${x.title} (v${x.versionNumber}) since ${x.assignedOn}.`, notify: p.managerUid ? [p.managerUid] : [] });
+      }
+    }
+    if (dirty) await put('plans', p);
+  }
+  return { reminded, escalated };
+}
+
+// ------------------------------------------------------------------ actions
+
+async function planOr404(c: C, id: unknown): Promise<Doc | null> { return get(c.cid, 'plans', str(id, 80)); }
+
+export async function planView(c: C, plan: Doc) {
+  const ev = (await list(c.cid, 'evidence', { uid: plan.uid })).filter((e) => e.planId === plan.id);
+  return {
+    ...plan,
+    kpis: plan.kpis.map((k: any) => ({ ...k, evidence: ev.filter((e) => e.kpiId === k.id && e.status === 'VERIFIED').length, pending: ev.filter((e) => e.kpiId === k.id && e.status === 'PENDING').length })),
+    sopsToAck: (plan.sops || []).filter((x: any) => !x.ackAt).length,
+  };
+}
+
+async function planGet(c: C, _b: any, q: Record<string, any>): Promise<Result> {
+  const plan = await planOr404(c, q.id);
+  if (!plan || !canSee(c, plan.uid)) return notFound('The plan');
+  return ok({ plan: await planView(c, plan), canSetTargets: plan.status === 'SET_TARGETS' && (isManagerOf(c, plan.uid) || c.isHr) && plan.uid !== c.ctx.uid, canApprove: plan.status === 'HR_CHECK' && c.isHr && plan.uid !== c.ctx.uid });
+}
+
+/** The manager fills in targets (and may adjust weights). "Send to HR" only works when every KPI has a target and weights total 100. */
+async function planTargets(c: C, b: any): Promise<Result> {
+  const plan = await planOr404(c, b.id);
+  if (!plan) return notFound('The plan');
+  if (plan.uid === c.ctx.uid) return denied('You cannot set your own targets. Your manager does this.');
+  if (!isManagerOf(c, plan.uid) && !c.isHr) return denied('Only this person\'s manager (or HR) can set their targets.');
+  if (plan.status !== 'SET_TARGETS') return bad(plan.status === 'HR_CHECK' ? 'These targets are already with HR.' : 'Targets can only be set while the plan is waiting for them.');
+  const input = new Map<string, any>((Array.isArray(b.kpis) ? b.kpis : []).map((k: any) => [str(k?.id, 40), k]));
+  const kpis = plan.kpis.map((k: any) => {
+    const x = input.get(k.id);
+    return x ? { ...k, target: str(x.target, 200), weight: num(x.weight) ?? k.weight } : k;
+  });
+  const p = kpiProblem(kpis); if (p) return bad(p);
+  const send = b.send === true;
+  if (send) {
+    const empty = kpis.filter((k: any) => !k.target);
+    if (empty.length) return bad(`Fill in a target for every KPI before sending. Missing: ${empty.map((k: any) => k.kpi).join('; ')}.`);
+  }
+  const next = { ...plan, kpis, targetsTouched: true, ...(send ? { status: 'HR_CHECK', sentOn: today(), statusOn: today(), hrNote: '' } : {}) };
+  await put('plans', next);
+  await audit(c, plan.id, send ? 'TARGETS_SENT_TO_HR' : 'TARGETS_SAVED', kpis.map((k: any) => `${k.kpi}: ${k.target || '-'} (${k.weight}%)`).join('; '), plan.uid);
+  if (send) { await clear(c, 'TARGETS_LATE', plan.id, 'Targets sent to HR.'); await tell(c, await hrUids(c), `Approve targets for ${plan.name}`, `${c.who} set ${plan.name}'s targets. Open Performance → Plans to approve.`); }
+  return ok({ plan: next, message: send ? 'Sent to HR for approval.' : 'Saved. Press "Send to HR" when every KPI has a target.' });
+}
+
+async function planApprove(c: C, b: any): Promise<Result> {
+  const plan = await planOr404(c, b.id);
+  if (!plan) return notFound('The plan');
+  if (plan.uid === c.ctx.uid) return denied('You cannot approve your own targets. Another HR person must do it.');
+  if (plan.status !== 'HR_CHECK') return bad('Only targets that are waiting for HR can be approved.');
+  const next = { ...plan, status: 'ACTIVE', effectiveFrom: today(), statusOn: today(), approvedBy: c.who, approvedAt: new Date().toISOString() };
+  await put('plans', next);
+  await audit(c, plan.id, 'PLAN_APPROVED', '', plan.uid);
+  await tell(c, [plan.uid], 'Your targets are ready', 'Your targets for this period were approved. Open My performance, read them and press "I have read my targets". Please also read and acknowledge your SOPs there.');
+  return ok({ plan: next, message: `Approved. ${plan.name} has been asked to acknowledge.` });
+}
+
+async function planReturn(c: C, b: any): Promise<Result> {
+  const plan = await planOr404(c, b.id);
+  if (!plan) return notFound('The plan');
+  const note = str(b.note, 500);
+  if (note.length < 5) return bad('Write a short note so the manager knows what to change.');
+  if (plan.status !== 'HR_CHECK') return bad('Only targets that are waiting for HR can be sent back.');
+  const next = { ...plan, status: 'SET_TARGETS', hrNote: note, statusOn: today() };
+  await put('plans', next);
+  await audit(c, plan.id, 'PLAN_RETURNED', note, plan.uid);
+  await tell(c, [plan.managerUid], `Please change ${plan.name}'s targets`, `HR sent ${plan.name}'s targets back: "${note}"`);
+  return ok({ plan: next, message: 'Sent back to the manager with your note.' });
+}
+
+async function planAck(c: C, b: any): Promise<Result> {
+  const plan = await planOr404(c, b.id);
+  if (!plan || plan.uid !== c.ctx.uid) return notFound('Your plan');
+  if (plan.status !== 'ACTIVE') return bad('Your targets are not approved yet.');
+  if (plan.ackAt) return ok({ plan, message: 'Already acknowledged.' });
+  const next = { ...plan, ackAt: new Date().toISOString() };
+  await put('plans', next);
+  await audit(c, plan.id, 'PLAN_ACKNOWLEDGED', '', plan.uid);
+  await clear(c, 'PLAN_ACK_LATE', plan.id, 'Acknowledged.');
+  return ok({ plan: next, message: 'Thank you. Your targets are acknowledged.' });
+}
+
+/** Reading and acknowledging are separate events: "I have read and understood" only works after the document was opened. */
+async function sopStep(c: C, b: any, step: 'open' | 'ack'): Promise<Result> {
+  const plan = await planOr404(c, b.planId);
+  if (!plan || plan.uid !== c.ctx.uid) return notFound('Your plan');
+  const sops = (plan.sops || []).map((x: any) => ({ ...x }));
+  const x = sops.find((y: any) => y.documentId === str(b.documentId, 80));
+  if (!x) return notFound('That SOP');
+  if (step === 'open') { if (!x.openedAt) x.openedAt = new Date().toISOString(); }
+  else {
+    if (!x.openedAt) return bad('Open and read the SOP first.');
+    if (x.ackAt) return ok({ plan, message: 'Already acknowledged.' });
+    x.ackAt = new Date().toISOString();
+  }
+  const next = { ...plan, sops };
+  await put('plans', next);
+  await audit(c, plan.id, step === 'open' ? 'SOP_OPENED' : 'SOP_ACKNOWLEDGED', `${x.title} v${x.versionNumber}`, plan.uid);
+  if (step === 'ack') await clear(c, 'SOP_ACK_LATE', `${plan.id}_${x.documentId}_${x.versionId}`, 'Acknowledged.');
+  // Opening returns the published file (a link) or, when the file is stored inline, its text to show in the app.
+  let url = ''; let text = '';
+  if (step === 'open' && x.versionId) {
+    const v = await db().collection('versions').doc(x.versionId).get();
+    const d = v.exists ? (v.data() as any) : null;
+    if (d && (!d.companyId || d.companyId === c.cid)) {
+      const u = String(d.fileUrl || d.originalFileUrl || '');
+      if (/^https?:\/\//i.test(u)) url = u;
+      text = String(d.rawContent || '').slice(0, 200_000);
+    }
+  }
+  return ok({ plan: next, url, text, message: step === 'ack' ? `${x.title}: acknowledged.` : '' });
+}
+
+async function planList(c: C, _b: any, q: Record<string, any>): Promise<Result> {
+  const plans = await list(c.cid, 'plans');
+  const scope = str(q.scope, 10);
+  const rows = plans.filter((p) => (scope === 'closed' ? p.status === 'CLOSED' : OPEN_PLAN.includes(p.status)));
+  const order: Record<string, number> = { HR_CHECK: 0, ON_HOLD: 1, SET_TARGETS: 2, ACTIVE: 3, CLOSED: 4 };
+  rows.sort((a, b) => (order[a.status] ?? 9) - (order[b.status] ?? 9) || String(a.name).localeCompare(String(b.name)));
+  const noPlan = active(c).filter((p) => !openPlanOf(plans, p.uid)).map((p) => ({ uid: p.uid, name: p.name }));
+  return ok({ items: rows.map((p) => ({ ...p, sopsToAck: (p.sops || []).filter((x: any) => !x.ackAt).length })), noPlan });
+}
+
+async function planRefresh(c: C): Promise<Result> {
+  const r = await syncPlans(c);
+  return ok({ stats: r.stats, message: `Checked everyone. Started ${r.stats.created + r.stats.released}, moved ${r.stats.moved}, closed ${r.stats.closed}.` });
 }
 
 export const PLAN_ROUTES: Record<string, Route> = {
-  'tpl-list': { method: 'GET', who: 'hr', run: (c, b, q) => tplList(c, b, q) },
-  'tpl-save': { method: 'POST', who: 'hr', run: (c, b) => tplSave(c, b) },
-  'tpl-approve': { method: 'POST', who: 'approver', run: (c, b) => tplApprove(c, b) },
-  'tpl-delete': { method: 'POST', who: 'hr', run: (c, b) => tplDelete(c, b) },
-  'plan-list': { method: 'GET', who: 'any', run: (c, b, q) => planList(c, b, q) },
-  'plan-get': { method: 'GET', who: 'any', run: (c, b, q) => planGet(c, b, q) },
-  'plan-save': { method: 'POST', who: 'any', run: (c, b) => planSave(c, b) },
-  'plan-act': { method: 'POST', who: 'any', run: async (c, b) => { const r = await planAct(c, b); if (r.status === 200 && str(b.action, 20) === 'acknowledge') { const pl = await getK(c.cid, str(b.id, 80), 'plan'); if (pl) await closeSuperseded(c, pl); } return r; } },
-  'plan-revise': { method: 'POST', who: 'any', run: (c, b) => planRevise(c, b) },
-  'plan-rebuild': { method: 'POST', who: 'hr', run: (c, b) => planRebuild(c, b) },
-  sync: { method: 'POST', who: 'hr', run: (c) => syncPlans(c) },
-  'sopassign-list': { method: 'GET', who: 'any', run: (c, b, q) => sopAssignList(c, b, q) },
-  'sop-read': { method: 'POST', who: 'any', run: (c, b) => sopRead(c, b) },
-  'sop-ack': { method: 'POST', who: 'any', run: (c, b) => sopAck(c, b) },
-  'sop-train': { method: 'POST', who: 'any', run: (c, b) => sopTrain(c, b) },
-  'sop-verify': { method: 'POST', who: 'any', run: (c, b) => sopVerify(c, b) },
-  'sop-revision': { method: 'POST', who: 'hr', run: (c, b) => sopRevision(c, b) },
-  'sopcheck-list': { method: 'GET', who: 'any', run: (c, b, q) => sopCheckList(c, b, q) },
-  'sopcheck-save': { method: 'POST', who: 'any', run: (c, b) => sopCheckSave(c, b) },
+  plan: { method: 'GET', who: 'any', run: (c, b, q) => planGet(c, b, q) },
+  'plan-targets': { method: 'POST', who: 'any', run: (c, b) => planTargets(c, b) },
+  'plan-approve': { method: 'POST', who: 'hr', run: (c, b) => planApprove(c, b) },
+  'plan-return': { method: 'POST', who: 'hr', run: (c, b) => planReturn(c, b) },
+  'plan-ack': { method: 'POST', who: 'any', run: (c, b) => planAck(c, b) },
+  'sop-open': { method: 'POST', who: 'any', run: (c, b) => sopStep(c, b, 'open') },
+  'sop-ack': { method: 'POST', who: 'any', run: (c, b) => sopStep(c, b, 'ack') },
+  plans: { method: 'GET', who: 'hr', run: (c, b, q) => planList(c, b, q) },
+  'plans-refresh': { method: 'POST', who: 'hr', run: (c) => planRefresh(c) },
 };
-
-// kept for other modules
-export { bundle, latestPlan, planView, groupBy, clean, reportsOf, isManagerCtx, isDate };
