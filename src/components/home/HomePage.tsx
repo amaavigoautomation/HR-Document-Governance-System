@@ -21,9 +21,9 @@ import { AcksCard } from './cards/AcksCard';
 interface Props { fallbackName?: string; onOpen: (target: WidgetTarget) => void }
 
 // These dashboard widgets have their own full card on Home now.
-const REPLACED: WidgetId[] = ['attendance', 'acknowledgements'];
+const REPLACED: WidgetId[] = ['attendance', 'acknowledgements', 'latest-payslip'];
 // These stay beside the profile; everything else urgent goes in the strip on top.
-const LEFT_WIDGETS: WidgetId[] = ['leave-balance', 'latest-payslip'];
+const LEFT_WIDGETS: WidgetId[] = ['leave-balance'];
 
 export const HomePage: React.FC<Props> = ({ fallbackName, onOpen }) => {
   const [tick, setTick] = useState(0);
