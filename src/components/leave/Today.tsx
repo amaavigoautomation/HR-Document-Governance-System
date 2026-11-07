@@ -93,7 +93,7 @@ export const Today: React.FC<{ me: any; reload: () => void; onApply: (typeId?: s
       <div className="grid md:grid-cols-3 gap-4">
         <Card title="Your upcoming leave" className="md:col-span-2" right={<button className="text-xs font-bold text-slate-500 hover:text-slate-800" onClick={() => onOpen('my')}>All requests →</button>}>
           {!mine ? <Skeleton rows={2} /> : coming.length === 0 ? (
-            <EmptyState title="No leave planned" text="Need a break? It takes under a minute." action={<button className={btnGhost} onClick={() => onApply()}>Apply for leave</button>} />
+            <EmptyState title="No leave planned" text="Need a break? It takes under a minute." />
           ) : (
             <div className="divide-y divide-slate-100">
               {coming.map((r) => (
