@@ -31,6 +31,8 @@ export const OnboardingModule: React.FC<{ currentUser: User }> = ({ currentUser 
   const [accounts, setAccounts] = useState<Record<string, Record<string, string>>>({});
   const [rejectReason, setRejectReason] = useState('');
   const [dateEdit, setDateEdit] = useState('');
+  const [query, setQuery] = useState('');
+  const [stageFilter, setStageFilter] = useState('ALL');
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -91,16 +93,17 @@ export const OnboardingModule: React.FC<{ currentUser: User }> = ({ currentUser 
   }
 
   const d = detail;
+  const visibleItems = items.filter((it) => {
+    const matchesQuery = !query || `${it.name} ${it.employeeId} ${it.designation} ${it.email}`.toLowerCase().includes(query.toLowerCase());
+    return matchesQuery && (stageFilter === 'ALL' || it.status === stageFilter);
+  });
+  const countStatus = (statuses: string[]) => items.filter((it) => statuses.includes(it.status)).length;
+  const metrics = [{ label: 'New joiners', value: items.length, tone: 'orange' }, { label: 'In progress', value: countStatus(['DOCS_REQUESTED', 'DOCS_SUBMITTED', 'PRIOR_EMPLOYEE_REVIEW']), tone: 'blue' }, { label: 'Ready for joining', value: countStatus(['READY_FOR_JOINING', 'ACCOUNTS_PENDING']), tone: 'green' }, { label: 'Onboarded', value: countStatus(['ONBOARDED']), tone: 'violet' }];
+  const metricTone: Record<string, string> = { orange: 'bg-orange-50 text-orange-600', blue: 'bg-sky-50 text-sky-600', green: 'bg-emerald-50 text-emerald-600', violet: 'bg-violet-50 text-violet-600' };
   return (
-    <div className="flex-1 w-full min-w-0 max-w-[1600px] mx-auto px-4 sm:px-6 xl:px-8 py-6 space-y-5 bg-[#F7F8FA]">
-      <div className="rounded-2xl flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
-        <div className="flex items-center gap-2">
-          <UserCheck className="w-5 h-5 text-[#FA7014]" />
-          <div>
-            <h1 className="text-[28px] font-bold tracking-tight text-slate-900">Onboarding</h1>
-            <p className="text-xs text-slate-500">Manage new joiners, verify documents and prepare accounts for day one.</p>
-          </div>
-        </div>
+    <div className="flex-1 w-full min-w-0 max-w-[1600px] mx-auto px-4 sm:px-6 xl:px-8 py-6 space-y-5 bg-[#F6F7F9]">
+      <header className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+        <div><div className="text-[11px] font-bold uppercase tracking-[0.16em] text-[#F36B21]">Talent acquisition</div><h1 className="text-[28px] font-bold tracking-tight text-slate-950">Onboarding</h1><p className="mt-1 text-sm text-slate-500">Manage new joiners, verify documents and prepare accounts for day one.</p></div>
         <button
           type="button"
           onClick={load}
@@ -110,10 +113,13 @@ export const OnboardingModule: React.FC<{ currentUser: User }> = ({ currentUser 
         </button>
       </div>
 
-      {error && <div className="bg-rose-50 border border-rose-200 text-rose-700 text-xs rounded-xl p-3">{error}</div>}
-      {note && <div className="bg-slate-900 text-white text-xs rounded-xl p-3">{note}</div>}
-
-      <div className="bg-white rounded-2xl border border-slate-200/80 overflow-x-auto shadow-sm">
+      {error && <div className="rounded-xl border border-rose-200 bg-rose-50 p-3 text-xs text-rose-700">{error}</div>}
+      {note && <div className="rounded-xl bg-slate-900 p-3 text-xs text-white">{note}</div>}
+      <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">{metrics.map((m) => <div key={m.label} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"><div className={`mb-3 flex h-9 w-9 items-center justify-center rounded-xl ${metricTone[m.tone]}`}><UserCheck className="h-4 w-4" /></div><div className="text-2xl font-bold text-slate-950">{loading && items.length === 0 ? '—' : m.value}</div><div className="mt-1 text-xs font-semibold text-slate-600">{m.label}</div></div>)}</div>
+      <div className="grid items-start gap-4 xl:grid-cols-[minmax(0,1.55fr)_minmax(340px,0.85fr)]">
+      <section className="min-w-0 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 p-4"><div><h2 className="text-sm font-bold text-slate-900">New joiners</h2><p className="mt-0.5 text-xs text-slate-500">Track document submission and account setup.</p></div><div className="flex flex-wrap gap-2"><input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search name, ID or role…" className="w-full rounded-lg border border-slate-200 px-3 py-2 text-xs outline-none focus:border-[#FA7014] sm:w-52" /><select value={stageFilter} onChange={(e) => setStageFilter(e.target.value)} className="rounded-lg border border-slate-200 px-3 py-2 text-xs outline-none focus:border-[#FA7014]"><option value="ALL">All stages</option>{Object.entries(STATUS_LABELS).map(([key, label]) => <option key={key} value={key}>{label}</option>)}</select></div></div>
+        <div className="overflow-x-auto">
         <table className="w-full text-xs text-left">
           <thead>
             <tr className="bg-slate-50 text-slate-600 uppercase text-[10px] tracking-wider">
@@ -125,14 +131,14 @@ export const OnboardingModule: React.FC<{ currentUser: User }> = ({ currentUser 
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
-            {items.length === 0 && (
+            {visibleItems.length === 0 && (
               <tr>
                 <td colSpan={5} className="px-4 py-8 text-center text-slate-500">
                   {loading ? 'Loading…' : 'No onboardings yet.'}
                 </td>
               </tr>
             )}
-            {items.map((it) => (
+            {visibleItems.map((it) => (
               <tr
                 key={it.id}
                 onClick={() => setOpenId(it.id)}
@@ -154,10 +160,11 @@ export const OnboardingModule: React.FC<{ currentUser: User }> = ({ currentUser 
             ))}
           </tbody>
         </table>
-      </div>
-
-      {d && (
-        <div className="bg-white rounded-2xl border border-slate-200 p-5 space-y-5 shadow-sm">
+        </div>
+        <div className="border-t border-slate-100 px-4 py-3 text-[11px] text-slate-400">Showing {visibleItems.length} of {items.length} joiners</div>
+      </section>
+      {d ? (
+        <section className="min-w-0 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm xl:sticky xl:top-4 space-y-5">
           <div className="flex items-start justify-between">
             <div>
               <h2 className="text-base font-bold text-slate-900">
@@ -359,8 +366,11 @@ export const OnboardingModule: React.FC<{ currentUser: User }> = ({ currentUser 
               ))}
             </ul>
           </div>
-        </div>
+        </section>
+      ) : (
+        <section className="rounded-2xl border border-dashed border-slate-300 bg-white p-6 text-center"><div className="mx-auto flex h-10 w-10 items-center justify-center rounded-xl bg-orange-50 text-[#F36B21]"><UserCheck className="h-5 w-5" /></div><h2 className="mt-3 text-sm font-bold text-slate-800">Joiner details</h2><p className="mt-1 text-xs text-slate-500">Select a person from the list to review documents, account setup and onboarding history.</p></section>
       )}
+      </div>
     </div>
   );
 };

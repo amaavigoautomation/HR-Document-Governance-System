@@ -11,12 +11,9 @@ export const MyHiringModule: React.FC<{ currentUser: User }> = () => {
     return 'referrals';
   });
   return (
-    <div className="flex-1 min-w-0 space-y-5 overflow-y-auto bg-[#F7F8FA] p-4 sm:p-6 xl:p-8">
-      <div>
-        <h1 className="text-[28px] font-bold tracking-tight text-slate-900">My hiring</h1>
-        <p className="text-xs text-slate-500 sm:text-sm">Refer talented people and manage your interview assignments.</p>
-      </div>
-      <div className="rounded-xl border border-slate-200 bg-white p-2 shadow-sm"><Segmented value={tab} onChange={setTab} options={[{ value: 'referrals', label: 'Refer a candidate' }, { value: 'interviews', label: 'My interviews' }]} /></div>
+    <div className="flex-1 min-w-0 space-y-5 overflow-y-auto bg-[#F6F7F9] p-4 sm:p-6 xl:p-8">
+      <header><div className="text-[11px] font-bold uppercase tracking-[0.16em] text-[#F36B21]">Talent acquisition</div><h1 className="mt-1 text-[28px] font-bold tracking-tight text-slate-950">My hiring</h1><p className="mt-1 text-sm text-slate-500">Refer talented people and manage your interview assignments.</p></header>
+      <div className="rounded-2xl border border-slate-200 bg-white p-2 shadow-sm"><Segmented value={tab} onChange={setTab} options={[{ value: 'referrals', label: 'Refer a candidate' }, { value: 'interviews', label: 'My interviews' }]} /></div>
       {tab === 'referrals' ? <ReferralsTab /> : <InterviewsTab />}
     </div>
   );

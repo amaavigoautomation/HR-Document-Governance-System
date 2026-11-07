@@ -35,11 +35,8 @@ export const HiringAutomationModule: React.FC<{ currentUser: User; onNavigate: (
 
   return (
     <ToastProvider>
-      <div className="flex-1 min-w-0 space-y-5 overflow-y-auto bg-[#F7F8FA] p-4 sm:p-6 xl:p-8">
-        <div>
-          <h1 className="text-[28px] font-bold tracking-tight text-slate-900">Hiring automation</h1>
-          <p className="text-xs text-slate-500 sm:text-sm">Design recruitment workflows, monitor runs and action tasks assigned to you.</p>
-        </div>
+      <div className="flex-1 min-w-0 space-y-5 overflow-y-auto bg-[#F6F7F9] p-4 sm:p-6 xl:p-8">
+        <header className="flex flex-wrap items-end justify-between gap-4"><div><div className="text-[11px] font-bold uppercase tracking-[0.16em] text-[#F36B21]">Talent acquisition</div><h1 className="mt-1 text-[28px] font-bold tracking-tight text-slate-950">Hiring automation</h1><p className="mt-1 text-sm text-slate-500">Build recruitment workflows, monitor every run and resolve tasks.</p></div><div className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-600 shadow-sm">Workflow operations</div></header>
         {section === 'tasks' && <FlowTasks onOpenTab={openTab} onChanged={load} />}
         {section === 'flow' && manage && <FlowBuilder onChanged={load} />}
         {section === 'runs' && manage && <FlowRuns people={flow?.people || []} onChanged={load} />}

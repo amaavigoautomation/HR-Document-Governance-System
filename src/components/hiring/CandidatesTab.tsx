@@ -155,26 +155,26 @@ export const CandidatesTab: React.FC<{ users: User[] }> = ({ users }) => {
   const board = useLoad(() => pipelineService.board(), []);
   const [open, setOpen] = useState<string | null>(null);
   const [q, setQ] = useState('');
-  const rows: any[] = (board.data?.rows || []).filter((r: any) => !q || `${r.name} ${r.designation} ${r.email}`.toLowerCase().includes(q.toLowerCase()));
-  return (
-    <div className="space-y-3">
-      <input className={input} placeholder="Search candidates" value={q} onChange={(e) => setQ(e.target.value)} />
-      <Loading error={board.error} loading={board.loading} />
-      {!board.loading && rows.length === 0 && <EmptyState title="No candidates yet" text="Candidates arrive from your website, referrals, manual entry or CSV import (Applications screen)." />}
-      <div className="grid gap-2">
-        {rows.map((r) => (
-          <button key={r.id} onClick={() => setOpen(r.id)} className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-slate-200 bg-white p-3 text-left hover:border-[#FA7014]">
-            <div className="min-w-0"><div className="text-sm font-bold text-slate-800">{r.name}</div><div className="text-xs text-slate-500">{r.designation}{r.referredByName ? ` - referred by ${r.referredByName}` : ''}</div></div>
-            <div className="flex flex-wrap items-center gap-1.5">
-              {r.screening && <Pill tone={r.screening === 'PASS' ? 'green' : r.screening === 'FAIL' ? 'red' : 'amber'}>screen: {r.screening.toLowerCase()}</Pill>}
-              {r.assessmentsPending > 0 && <Pill tone="amber">{r.assessmentsPending} test pending</Pill>}
-              {r.nextInterview && <Pill tone="blue">interview {when(r.nextInterview)}</Pill>}
-              <Pill tone={stageTone(r.status)}>{r.status}</Pill>
-            </div>
-          </button>
-        ))}
-      </div>
-      {open && <CandidateDrawer id={open} users={users} onClose={() => setOpen(null)} onChanged={board.reload} />}
+  const all: any[] = board.data?.rows || [];
+  const rows = all.filter((r: any) => !q || `${r.name} ${r.designation} ${r.email}`.toLowerCase().includes(q.toLowerCase()));
+  const stageCount = (terms: string[]) => all.filter((r) => terms.some((term) => String(r.status || '').toLowerCase().includes(term))).length;
+  const metrics = [{ label: 'Total candidates', value: all.length, tone: 'orange' }, { label: 'Screening', value: stageCount(['screen']), tone: 'blue' }, { label: 'Interviews', value: stageCount(['interview']), tone: 'violet' }, { label: 'Offers', value: stageCount(['offer', 'selected']), tone: 'amber' }, { label: 'Joining', value: stageCount(['joining', 'joined', 'hired']), tone: 'green' }];
+  const tones: Record<string, string> = { orange: 'bg-orange-50 text-orange-600', blue: 'bg-sky-50 text-sky-600', violet: 'bg-violet-50 text-violet-600', amber: 'bg-amber-50 text-amber-600', green: 'bg-emerald-50 text-emerald-600' };
+  return <div className="space-y-4">
+    <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-5">{metrics.map((m) => <div key={m.label} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"><div className={`mb-3 flex h-9 w-9 items-center justify-center rounded-xl ${tones[m.tone]}`}><span className="text-lg font-bold">{m.label === 'Total candidates' ? '◎' : m.label === 'Screening' ? '▤' : m.label === 'Interviews' ? '◉' : m.label === 'Offers' ? '◇' : '✓'}</span></div><div className="text-2xl font-bold tracking-tight text-slate-950">{board.loading && !board.data ? '—' : m.value}</div><div className="mt-1 text-xs font-semibold text-slate-700">{m.label}</div><div className="mt-0.5 text-[11px] text-slate-400">Live pipeline count</div></div>)}</div>
+    <div className="grid gap-4 2xl:grid-cols-[minmax(0,1fr)_260px]">
+      <section className="min-w-0 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 p-4"><div><h2 className="text-sm font-bold text-slate-900">Candidates</h2><p className="mt-0.5 text-xs text-slate-500">Select a candidate to review their profile, score and next steps.</p></div><input className={`${input} w-full sm:!w-64`} placeholder="Search name, role or email…" value={q} onChange={(e) => setQ(e.target.value)} /></div>
+        <Loading error={board.error} loading={board.loading} />
+        {!board.loading && rows.length === 0 && <div className="p-5"><EmptyState title="No candidates found" text="Candidates arrive from your website, referrals, manual entry or CSV import (Applications screen)." /></div>}
+        {rows.length > 0 && <div className="overflow-x-auto"><table className="w-full min-w-[760px] text-left text-xs"><thead className="bg-slate-50 text-[10px] uppercase tracking-wider text-slate-500"><tr><th className="px-4 py-3 font-semibold">Candidate</th><th className="px-4 py-3 font-semibold">Role</th><th className="px-4 py-3 font-semibold">Stage</th><th className="px-4 py-3 font-semibold">Screening</th><th className="px-4 py-3 font-semibold">Next interview</th><th className="px-4 py-3 text-right font-semibold">Action</th></tr></thead><tbody className="divide-y divide-slate-100">{rows.map((r: any) => <tr key={r.id} className="transition-colors hover:bg-orange-50/40"><td className="px-4 py-3"><div className="font-semibold text-slate-900">{r.name}</div><div className="mt-0.5 text-[11px] text-slate-400">{r.email}</div></td><td className="px-4 py-3 text-slate-600">{r.designation || '—'}</td><td className="px-4 py-3"><Pill tone={stageTone(r.status)}>{r.status}</Pill></td><td className="px-4 py-3 text-slate-600">{r.screening ? <Pill tone={r.screening === 'PASS' ? 'green' : r.screening === 'FAIL' ? 'red' : 'amber'}>{r.screening}</Pill> : '—'}</td><td className="px-4 py-3 text-slate-600">{r.nextInterview ? when(r.nextInterview) : '—'}</td><td className="px-4 py-3 text-right"><button onClick={() => setOpen(r.id)} className="rounded-lg border border-slate-200 px-3 py-1.5 font-semibold text-slate-700 hover:border-[#FA7014] hover:text-[#FA7014]">View</button></td></tr>)}</tbody></table></div>}
+        <div className="flex items-center justify-between border-t border-slate-100 px-4 py-3 text-[11px] text-slate-400"><span>Showing {rows.length} of {all.length} candidates</span><button type="button" onClick={() => board.reload()} className="font-semibold text-[#F36B21] hover:underline">Refresh list</button></div>
+      </section>
+      <aside className="space-y-3">
+        <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"><h3 className="text-sm font-bold text-slate-900">Pipeline health</h3><p className="mt-1 text-xs text-slate-500">Candidate distribution by current stage.</p>{[['Screening', stageCount(['screen'])], ['Interview', stageCount(['interview'])], ['Offer', stageCount(['offer', 'selected'])], ['Joining', stageCount(['joining', 'joined', 'hired'])]].map(([label, value]) => <div key={label} className="mt-4"><div className="mb-1 flex justify-between text-xs"><span className="text-slate-600">{label}</span><b className="text-slate-800">{value}</b></div><div className="h-2 overflow-hidden rounded-full bg-slate-100"><div className="h-full rounded-full bg-[#F36B21]" style={{ width: `${all.length ? Math.round(Number(value) / all.length * 100) : 0}%` }} /></div></div>)}</section>
+        <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"><h3 className="text-sm font-bold text-slate-900">Next actions</h3><p className="mt-1 text-xs text-slate-500">Continue from the candidate details.</p><div className="mt-3 space-y-2 text-xs text-slate-600"><div className="rounded-lg bg-slate-50 px-3 py-2">Review candidate profiles and scores</div><div className="rounded-lg bg-slate-50 px-3 py-2">Record screening and assessment results</div><div className="rounded-lg bg-slate-50 px-3 py-2">Schedule interviews and send invites</div></div></section>
+      </aside>
     </div>
-  );
+    {open && <CandidateDrawer id={open} users={users} onClose={() => setOpen(null)} onChanged={board.reload} />}
+  </div>;
 };
