@@ -31,6 +31,8 @@ import { RecruitmentOverviewResult, SheetRowData, isExcludedSheetTab } from '../
 import { User, UserRole } from '../types';
 import { CandidateEvaluationSection } from './CandidateEvaluationSection';
 
+import { OverviewDashboard } from './hiring/OverviewDashboard';
+
 interface TalentAcquisitionOverviewProps {
   currentUser: User;
   onLogout?: () => void;
@@ -563,10 +565,10 @@ export const TalentAcquisitionOverview: React.FC<TalentAcquisitionOverviewProps>
             )}
           </div>
           <h1 className="text-[28px] leading-tight font-bold text-slate-900 tracking-tight mt-3">
-            Talent Acquisition — Overview
+            Talent Acquisition Overview
           </h1>
           <p className="text-sm text-slate-500 mt-1">
-            Recruitment overview and candidate application metrics synchronized with Google Sheets.
+            A bird's-eye view of your hiring efforts.
           </p>
         </div>
 
@@ -612,6 +614,11 @@ export const TalentAcquisitionOverview: React.FC<TalentAcquisitionOverviewProps>
           </button>
         </div>
       </div>
+
+      <OverviewDashboard refreshKey={refreshCount} />
+
+      <h2 className="pt-4 text-xl font-bold text-slate-950">Sheet data</h2>
+      <p className="-mt-3 text-sm text-slate-600">Recruitment numbers read from your connected Google Sheet.</p>
 
       {/* ---------------------------------------------------- */}
       {/* 2. CONFIGURATION / STATUS BANNER                      */}
