@@ -15,6 +15,7 @@ import {
   PanelLeftClose,
   PanelLeftOpen,
   LogOut,
+  HelpCircle,
   Shield,
   KeyRound,
   Sparkles,
@@ -616,6 +617,7 @@ export const HRAgentShell: React.FC<HRAgentShellProps> = ({
                     </div>
                   )}
                 </button>
+                {activeModule !== 'leave-management' && <ChevronRight aria-hidden className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />}
                 {activeModule === 'leave-management' && (
                   <button
                     id="nav-module-leave-toggle"
@@ -676,6 +678,7 @@ export const HRAgentShell: React.FC<HRAgentShellProps> = ({
                     </div>
                   )}
                 </button>
+                {activeModule !== 'payroll' && <ChevronRight aria-hidden className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />}
                 {activeModule === 'payroll' && (
                   <button
                     id="nav-module-payroll-toggle"
@@ -735,6 +738,7 @@ export const HRAgentShell: React.FC<HRAgentShellProps> = ({
                       </div>
                     )}
                   </button>
+                  {m.key === 'hrbp' && activeModule !== 'hrbp' && <ChevronRight aria-hidden className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />}
                   {m.key === 'hrbp' && activeModule === 'hrbp' && (
                     <button
                       id="nav-module-hrbp-toggle"
@@ -748,6 +752,7 @@ export const HRAgentShell: React.FC<HRAgentShellProps> = ({
                       {isHrbpExpanded ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
                     </button>
                   )}
+                  {m.key === 'performance' && activeModule !== 'performance' && <ChevronRight aria-hidden className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />}
                   {m.key === 'performance' && activeModule === 'performance' && (
                     <button
                       id="nav-module-performance-toggle"
@@ -761,6 +766,7 @@ export const HRAgentShell: React.FC<HRAgentShellProps> = ({
                       {isPmExpanded ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
                     </button>
                   )}
+                  {m.key === 'hiring-automation' && activeModule !== 'hiring-automation' && <ChevronRight aria-hidden className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />}
                   {m.key === 'hiring-automation' && activeModule === 'hiring-automation' && (
                     <button
                       id="nav-module-hiring-automation-toggle"
@@ -827,6 +833,7 @@ export const HRAgentShell: React.FC<HRAgentShellProps> = ({
                     </div>
                   )}
                 </button>
+                {activeModule !== 'people' && <ChevronRight aria-hidden className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />}
                 {activeModule === 'people' && (
                   <button
                     id="nav-module-people-toggle"
@@ -886,6 +893,7 @@ export const HRAgentShell: React.FC<HRAgentShellProps> = ({
                     </div>
                   )}
                 </button>
+                {activeModule !== 'employee' && <ChevronRight aria-hidden className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />}
                 {activeModule === 'employee' && (
                   <button
                     id="nav-module-employee-toggle"
@@ -952,6 +960,11 @@ export const HRAgentShell: React.FC<HRAgentShellProps> = ({
           {/* BOTTOM SECTION: CURRENT USER PROFILE & LOGOUT OPTION         */}
           {/* ============================================================ */}
           <div className="relative z-10 shrink-0 border-t border-white/10 bg-[#1b1740]/60 backdrop-blur-sm p-3 min-w-[16rem] space-y-2">
+            <div className="flex items-center gap-2.5 px-2 pb-1 text-xs font-semibold text-indigo-100/90">
+              <HelpCircle className="w-4 h-4" aria-hidden />
+              <span>Help &amp; Support</span>
+            </div>
+
             {/* User Identity Details */}
             <div className="flex items-center gap-2.5 px-0.5">
               <div className="w-9 h-9 rounded-full bg-[#6c4de6] text-white font-bold text-sm flex items-center justify-center shrink-0">
