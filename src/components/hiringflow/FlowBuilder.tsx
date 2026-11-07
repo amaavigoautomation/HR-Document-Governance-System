@@ -648,10 +648,10 @@ const ConfirmButtonLite: React.FC<{ label: string; question: string; onConfirm: 
 
 // ------------------------------------------------------------------ the screen: a list of flows, then one flow
 
-export const FlowBuilder: React.FC<{ onChanged?: () => void }> = ({ onChanged }) => {
+export const FlowBuilder: React.FC<{ onChanged?: () => void; initialFamilyId?: string | null; startAdding?: boolean }> = ({ onChanged, initialFamilyId = null, startAdding = false }) => {
   const { data, error, loading, reload } = useLoad(() => flowService.state(), []);
-  const [openId, setOpenId] = useState<string | null>(null);
-  const [adding, setAdding] = useState(false);
+  const [openId, setOpenId] = useState<string | null>(initialFamilyId);
+  const [adding, setAdding] = useState(startAdding);
   const st = data as (FlowState & { success: true }) | null;
   if (loading && !st) return <Loading loading />;
   if (error && !st) return <Loading error={error} />;

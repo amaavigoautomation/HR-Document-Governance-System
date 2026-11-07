@@ -23,6 +23,7 @@ export interface FlowRunRow {
   id: string; applicationId: string; candidateName: string; designation: string; status: string; stuckReason: string; flowVersion: number;
   flowName: string; familyId: string; stepId: string; stepNumber: number; stepTitle: string; since: string; waitUntil: string; owner: string; dueOn: string; late: boolean; updatedAt: string;
 }
+export interface FlowActivity { at: string; text: string; by: string; runId: string; candidateName: string; designation: string; flowName: string }
 export interface FlowTask {
   id: string; runId: string; applicationId: string; candidateName: string; designation: string; stepId: string; stepType: string; stepTitle: string;
   ownerUid: string; ownerName: string; instruction: string; question: string; decide: boolean; manualDone?: boolean; link: string; dueOn: string; status: string; late: boolean; resolution?: string; doneAt?: string;
@@ -41,6 +42,7 @@ export const flowService = {
   retire: (familyId: string) => post('flow-retire', { familyId }),
   runs: (status?: string) => get<{ items: FlowRunRow[] }>('flow-runs', status ? { status } : {}),
   run: (id: string) => get<{ run: any; flow: { steps: FlowStep[]; version: number } | null }>('flow-run', { id }),
+  activity: (limit = 100) => get<{ items: FlowActivity[] }>('flow-activity', { limit: String(limit) }),
   enroll: (applicationIds: string[]) => post<{ added: number; already: number; skipped: number }>('flow-enroll', { applicationIds }),
   checkNow: (runId?: string) => post<{ checked: number; enrolled: number }>('flow-check-now', { runId }),
   runAction: (runId: string, action: 'retry' | 'skip' | 'reject' | 'stop' | 'reassign', extra: { note?: string; ownerUid?: string } = {}) => post('flow-run-action', { runId, action, ...extra }),

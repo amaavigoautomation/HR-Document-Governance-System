@@ -13,6 +13,7 @@
  *   flow-discard          throw the draft away
  *   flow-activate         publish the draft as the next version (only when every check passes)
  *   flow-runs / flow-run  applicants in the flow, one applicant's history
+ *   flow-activity         recent automation activity across all applicants (Activity Log)
  *   flow-enroll           put existing applicants into the flow
  *   flow-check-now        move everybody forward right now
  *   flow-run-action       HR fixes a stuck applicant: retry, skip step, reject, stop
@@ -839,6 +840,18 @@ async function runsRoute(ctx: AuthContext, q: any): Promise<Res> {
   return ok({ items });
 }
 
+/** Recent things the automation did, across every applicant, newest first. Used by the Activity Log. */
+async function activityRoute(ctx: AuthContext, q: any): Promise<Res> {
+  const limit = Math.min(300, Math.max(10, Number(q.limit) || 100));
+  const runs = (await listItems(ctx.companyId!, 'flowRun')) as RunDoc[];
+  const items: { at: string; text: string; by: string; runId: string; candidateName: string; designation: string; flowName: string }[] = [];
+  for (const r of runs) for (const h of r.history || []) {
+    items.push({ at: h.at, text: h.text, by: h.by, runId: r.id, candidateName: r.candidateName, designation: r.designation, flowName: r.flowName || 'Default flow' });
+  }
+  items.sort((a, b) => String(b.at).localeCompare(String(a.at)));
+  return ok({ items: items.slice(0, limit) });
+}
+
 async function runRoute(ctx: AuthContext, q: any): Promise<Res> {
   const r = await loadRun(ctx.companyId!, str(q.id, 200) || runId(str(q.applicationId, 200)));
   if (!r) return fail(404, 'This applicant is not in the flow.');
@@ -982,6 +995,7 @@ const ROUTES: Record<string, Route> = {
   'flow-activate': { method: 'POST', who: 'manage', run: (c, b) => activate(c, b) },
   'flow-runs': { method: 'GET', who: 'manage', run: (c, _b, q) => runsRoute(c, q) },
   'flow-run': { method: 'GET', who: 'manage', run: (c, _b, q) => runRoute(c, q) },
+  'flow-activity': { method: 'GET', who: 'manage', run: (c, _b, q) => activityRoute(c, q) },
   'flow-enroll': { method: 'POST', who: 'manage', run: (c, b) => enrollRoute(c, b) },
   'flow-check-now': { method: 'POST', who: 'manage', run: (c, b) => checkNow(c, b) },
   'flow-run-action': { method: 'POST', who: 'manage', run: (c, b) => runAction(c, b) },
