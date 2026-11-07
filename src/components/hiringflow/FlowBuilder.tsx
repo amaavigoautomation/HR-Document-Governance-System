@@ -39,6 +39,49 @@ const Marker: React.FC<{ tone: 'start' | 'end'; text: string }> = ({ tone, text 
 );
 const Line: React.FC = () => <div className="w-0.5 h-4 bg-slate-300 mx-auto" aria-hidden />;
 
+// ------------------------------------------------------------------ the flow at a glance
+
+const NODE_TONE: Record<string, string> = {
+  'Check the candidate': 'bg-sky-50 border-sky-300',
+  Decide: 'bg-violet-50 border-violet-300',
+  'Talk to the candidate': 'bg-amber-50 border-amber-300',
+  Finish: 'bg-emerald-50 border-emerald-300',
+};
+
+/** The whole flow as connected boxes, so its shape can be seen in one look. Click a box to open that step below. */
+const FlowMap: React.FC<{ name: string; steps: FlowStep[]; status: React.ReactNode; problems: Problem[]; onPick: (id: string) => void }> = ({ name, steps, status, problems, onPick }) => {
+  const Arrow = () => <span className="text-slate-400 select-none text-lg leading-none self-center" aria-hidden>&rarr;</span>;
+  const End: React.FC<{ text: string; icon: string }> = ({ text, icon }) => (
+    <div className="w-28 shrink-0 rounded-xl border border-emerald-300 bg-emerald-50 px-2 py-3 text-center"><div className="text-xl" aria-hidden>{icon}</div><div className="mt-1 text-xs font-bold text-slate-800">{text}</div></div>
+  );
+  return (
+    <Card>
+      <div className="mb-3 flex flex-wrap items-center gap-2"><h3 className="text-base font-extrabold text-slate-900">Workflow: {name || 'Untitled flow'}</h3>{status}</div>
+      <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50/60 p-4">
+        <div className="flex flex-wrap items-stretch gap-x-2 gap-y-4">
+          <End text="Applicant applies" icon="📥" />
+          {steps.map((st, i) => {
+            const info = STEP_INFO[st.type]; const bad = problems.some((p) => p.stepId === st.id);
+            return (
+              <React.Fragment key={st.id}>
+                <Arrow />
+                <button type="button" onClick={() => onPick(st.id)} title={info?.label} className={`relative w-28 shrink-0 rounded-xl border px-2 py-3 text-center hover:shadow-md transition-shadow cursor-pointer ${bad ? 'border-amber-500 bg-amber-50' : NODE_TONE[info?.group || ''] || 'bg-white border-slate-300'}`}>
+                  <span className="absolute -top-2 -left-2 flex h-5 w-5 items-center justify-center rounded-full bg-[#FA7014] text-[10px] font-extrabold text-white">{i + 1}</span>
+                  <div className="text-xl" aria-hidden>{info?.icon || '•'}</div>
+                  <div className="mt-1 text-xs font-bold leading-tight text-slate-800 line-clamp-2">{st.title}</div>
+                  <div className="mt-0.5 text-[10px] font-semibold text-slate-500">{info?.manual ? 'A person' : 'Automatic'}</div>
+                </button>
+              </React.Fragment>
+            );
+          })}
+          <Arrow />
+          <End text="Hired, or rejected" icon="✅" />
+        </div>
+      </div>
+    </Card>
+  );
+};
+
 // ------------------------------------------------------------------ add-a-step picker
 
 const GROUPS = ['Check the candidate', 'Decide', 'Talk to the candidate', 'Finish'] as const;
@@ -398,6 +441,9 @@ const FlowEditorBody: React.FC<BodyProps> = ({ family, state, reload, onChanged 
   return (
     <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_20rem] items-start">
       <div className="space-y-3 min-w-0">
+        <FlowMap name={name} steps={steps} problems={problems}
+          status={live && !dirty && !draft ? <Pill tone="green">Version {live.version} is live</Pill> : <Pill tone="amber">Draft</Pill>}
+          onPick={(id) => { setOpen(id); setTimeout(() => document.getElementById(`step-${id}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 50); }} />
         <FixedPart />
         <Card>
           <div className="flex flex-wrap items-end gap-3">
