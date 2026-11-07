@@ -56,7 +56,7 @@ export const HomePage: React.FC<Props> = ({ fallbackName, onOpen }) => {
 
   return (
     <div className="w-full h-full overflow-y-auto bg-[#F7F8FA]">
-      <div className="max-w-[1440px] mx-auto p-4 sm:p-5 xl:p-6 space-y-4">
+      <div className="max-w-[1440px] mx-auto p-3 sm:p-4 xl:p-5 space-y-3">
         <Greeting first={first} today={today} actions={<>
           {canManage && (
             <button type="button" className={btnGhost} onClick={() => setManage(true)}>
@@ -72,12 +72,12 @@ export const HomePage: React.FC<Props> = ({ fallbackName, onOpen }) => {
 
         <TopTiles widgets={dash.data?.widgets || []} refreshKey={tick} onOpen={onOpen} />
 
-        <div className="grid gap-4 xl:grid-cols-[minmax(0,1.15fr)_minmax(0,1fr)] items-start">
-          <div className="space-y-4 min-w-0">
+        <div className="grid gap-3 xl:grid-cols-[minmax(0,1.15fr)_minmax(0,1fr)] items-start">
+          <div className="space-y-3 min-w-0">
             <PipelineChart refreshKey={tick} onOpen={onOpen} />
             <UpcomingCard refreshKey={tick} onOpen={onOpen} />
           </div>
-          <div className="space-y-4 min-w-0">
+          <div className="space-y-3 min-w-0">
             <QuickActionsGrid onOpen={onOpen} />
             <MyTasks widgets={dash.data?.widgets || []} onOpen={onOpen} />
             <LeaveBalanceCard refreshKey={tick} onOpen={onOpen} />
@@ -85,7 +85,7 @@ export const HomePage: React.FC<Props> = ({ fallbackName, onOpen }) => {
           </div>
         </div>
 
-        <h2 id="home-more" className="pt-3 text-lg font-bold text-slate-950">More for you</h2>
+        <h2 id="home-more" className="pt-2 text-base font-bold text-slate-950">More for you</h2>
 
         {/* Main dashboard: personal workspace on the left, company updates on the right. */}
         {L && <>
