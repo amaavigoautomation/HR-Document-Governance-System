@@ -27,6 +27,8 @@ import {
   ClipboardList,
   Contact,
   Workflow,
+  Search,
+  Bell,
 } from 'lucide-react';
 import { User, UserRole } from '../types';
 import { AmaavigoLogo } from './AmaavigoLogo';
@@ -78,6 +80,8 @@ interface HRAgentShellProps {
   onRefreshData?: () => void;
   /** Policies the person still has to acknowledge (badge on "My policies"). */
   pendingPolicyCount?: number;
+  /** Opens the notifications drawer (the bell in the top bar). */
+  onOpenNotifications?: () => void;
   children: React.ReactNode;
 }
 
@@ -91,6 +95,7 @@ export const HRAgentShell: React.FC<HRAgentShellProps> = ({
   onLogout,
   onRefreshData,
   pendingPolicyCount = 0,
+  onOpenNotifications,
   children,
 }) => {
   const isHR = currentUser.role === UserRole.CREATOR;
@@ -142,6 +147,29 @@ export const HRAgentShell: React.FC<HRAgentShellProps> = ({
       onSelectModule('document-version-control');
     }
   }, [activeModule, hasTalentAccess, hasDocGovAccess, onSelectModule]);
+
+  // Pages this person can open: used for the top bar title and the "go to a page" search.
+  const pages: { id: HRAgentModule; label: string }[] = ([
+    { id: 'home', label: 'Home', show: true },
+    { id: 'policies', label: 'My policies', show: canAcknowledge },
+    { id: 'talent-acquisition-requisitions', label: 'Hiring requests', show: hasRequestOnlyHiring },
+    { id: 'talent-acquisition-overview', label: 'Talent Acquisition', show: hasTalentAccess },
+    { id: 'document-version-control', label: 'Document Version Control', show: hasDocGovAccess },
+    { id: 'leave-management', label: 'Leave & Attendance', show: true },
+    { id: 'payroll', label: 'Payroll', show: true },
+    { id: 'my-hiring', label: 'Referrals & interviews', show: true },
+    { id: 'hrbp', label: 'HR Business Partner', show: true },
+    { id: 'performance', label: 'Performance', show: true },
+    { id: 'hiring-automation', label: 'Hiring Automation', show: true },
+    { id: 'people', label: 'People', show: true },
+    { id: 'employee', label: 'Employee', show: true },
+    { id: 'administration', label: 'Administration', show: hasAdminAccess },
+  ] as { id: HRAgentModule; label: string; show: boolean }[]).filter((p) => p.show);
+  const pageTitle = pages.find((p) => p.id === activeModule)?.label
+    || (activeModule.startsWith('talent-acquisition') ? 'Talent Acquisition' : 'HR Platform');
+  const [pageQuery, setPageQuery] = useState('');
+  const pageMatches = pageQuery.trim() ? pages.filter((p) => p.label.toLowerCase().includes(pageQuery.trim().toLowerCase())).slice(0, 6) : [];
+  const initial = (currentUser.name || 'U').split(/\s+/).filter(Boolean).slice(0, 2).map((x) => x[0]?.toUpperCase()).join('') || 'U';
 
   const displayId = currentUser.empId || currentUser.loginId || currentUser.id || '';
   const authLabel = hasTalentAccess && hasDocGovAccess ? 'All Modules' : hasTalentAccess ? 'Talent Acquisition' : hasDocGovAccess ? 'Document Version Control' : 'Employee Portal';
@@ -216,22 +244,22 @@ export const HRAgentShell: React.FC<HRAgentShellProps> = ({
             transition-all duration-200 ease-in-out
             ${
               isMobileSidebarOpen
-                ? 'translate-x-0 w-72 sm:w-76'
+                ? 'translate-x-0 w-64'
                 : '-translate-x-full lg:translate-x-0'
             }
             ${
               isSidebarOpen
-                ? 'lg:w-72 lg:sm:w-76 lg:border-r lg:opacity-100'
+                ? 'lg:w-64 lg:border-r lg:opacity-100'
                 : 'lg:w-0 lg:border-r-0 lg:overflow-hidden lg:pointer-events-none lg:opacity-0'
             }
           `}
         >
           {/* Top Section: Branding & Navigation Tree */}
-          <div className="flex flex-col flex-1 min-h-0 overflow-y-auto min-w-[18rem] sm:min-w-[19rem]">
+          <div className="flex flex-col flex-1 min-h-0 overflow-y-auto min-w-[16rem]">
             {/* Platform Brand Header */}
-            <div className="p-4 sm:p-5 border-b border-slate-100 flex flex-col gap-3 shrink-0">
+            <div className="px-4 py-4 flex flex-col gap-3 shrink-0">
               <div className="flex items-center justify-between">
-                <AmaavigoLogo size="md" variant="full" theme="light" height={40} className="shrink-0" />
+                <div className="flex items-center gap-2.5 min-w-0"><AmaavigoLogo size="md" variant="mark" theme="light" height={36} className="shrink-0" /><div className="leading-tight"><div className="text-lg font-extrabold tracking-tight text-slate-900">Amaavigo</div><div className="text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-500">HR Platform</div></div></div>
                 
                 <div className="flex items-center space-x-1">
                   {/* Desktop close button to collapse left side panel */}
@@ -258,37 +286,11 @@ export const HRAgentShell: React.FC<HRAgentShellProps> = ({
                 </div>
               </div>
 
-              {/* HR AI AGENT Platform Banner */}
-              <div className="rounded-xl bg-gradient-to-r from-slate-900 to-slate-800 p-3 text-white shadow-xs">
-                <div className="flex items-center space-x-2">
-                  <div className="w-6 h-6 rounded-md bg-[#FA7014] flex items-center justify-center text-white shadow-xs">
-                    <Bot className="w-3.5 h-3.5" />
-                  </div>
-                  <div>
-                    <h2 className="text-xs font-black tracking-wide uppercase text-white leading-tight flex items-center gap-1.5">
-                      HR AI Agent
-                    </h2>
-                    <p className="text-[10px] text-slate-300 font-medium leading-none mt-0.5">
-                      Autonomous People Ops
-                    </p>
-                  </div>
-                </div>
-              </div>
             </div>
 
             {/* Navigation Category Tree */}
-            <div className="px-3 sm:px-4 py-4 flex-1 flex flex-col min-h-0 space-y-4">
-              {/* Category Group Header */}
-              <div className="px-2 flex items-center justify-between shrink-0">
-                <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">
-                  Platform Modules
-                </span>
-                <span className="text-[10px] font-semibold text-slate-400 font-mono">
-                  {authorizedCount === 1 ? '1 Module' : `${authorizedCount} Modules`}
-                </span>
-              </div>
-
-              <nav className="space-y-1.5 flex-1">
+            <div className="px-3 py-3 flex-1 flex flex-col min-h-0 space-y-3">
+              <nav className="space-y-0.5 flex-1">
                 {/* HOME: every person's own dashboard */}
                 {([
                   { id: 'home' as const, label: 'Home', hint: 'What needs you today', icon: Home, show: true, badge: 0 },
@@ -304,16 +306,16 @@ export const HRAgentShell: React.FC<HRAgentShellProps> = ({
                       type="button"
                       onClick={() => { onSelectModule(n.id); setIsMobileSidebarOpen(false); }}
                       className={`w-full px-3 py-2.5 rounded-xl border flex items-center justify-between text-left transition-all cursor-pointer ${
-                        active ? 'bg-[#FA7014]/10 border-[#FA7014]/40 shadow-xs' : 'bg-white border-slate-200 hover:bg-slate-50 hover:border-slate-300'
+                        active ? 'bg-orange-50 border-transparent' : 'bg-transparent border-transparent hover:bg-slate-50'
                       }`}
                     >
                       <div className="flex items-center space-x-2.5 min-w-0">
-                        <div className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 ${active ? 'bg-[#FA7014] text-white' : 'bg-slate-100 text-slate-600'}`}>
+                        <div className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 ${active ? 'bg-transparent text-[#FA7014]' : 'bg-transparent text-slate-500'}`}>
                           <Icon className="w-4 h-4" />
                         </div>
                         <div className="truncate">
                           <span className={`text-xs font-bold block truncate ${active ? 'text-[#FA7014]' : 'text-slate-800'}`}>{n.label}</span>
-                          <span className="text-[10px] text-slate-500 font-medium block truncate">{n.hint}</span>
+                          <span className="hidden">{n.hint}</span>
                         </div>
                       </div>
                       {n.badge > 0 && <span className="shrink-0 min-w-5 h-5 px-1.5 rounded-full bg-[#FA7014] text-white text-[10px] font-bold flex items-center justify-center">{n.badge}</span>}
@@ -324,25 +326,23 @@ export const HRAgentShell: React.FC<HRAgentShellProps> = ({
                 {/* 1. TALENT ACQUISITION (Authorized check)             */}
                 {/* ---------------------------------------------------- */}
                 {hasTalentAccess && (
-                  <div className="rounded-xl border border-slate-200/80 bg-slate-50/50 overflow-hidden transition-all">
+                  <div className="rounded-xl overflow-hidden transition-all">
                     {/* Expandable Category Toggle Button */}
                     <button
                       id="nav-category-talent-acquisition"
                       type="button"
                       onClick={() => setIsTalentAcquisitionExpanded(!isTalentAcquisitionExpanded)}
-                      className="w-full px-3 py-2.5 flex items-center justify-between text-left hover:bg-slate-100/80 transition-colors cursor-pointer group"
+                      className="w-full px-3 py-2.5 rounded-xl flex items-center justify-between text-left hover:bg-slate-50 transition-colors cursor-pointer group"
                     >
                       <div className="flex items-center space-x-2.5">
-                        <div className="w-7 h-7 rounded-lg bg-orange-100 text-[#FA7014] flex items-center justify-center shrink-0">
+                        <div className="w-7 h-7 rounded-lg bg-transparent text-slate-500 group-hover:text-[#FA7014] flex items-center justify-center shrink-0">
                           <Users className="w-4 h-4" />
                         </div>
                         <div>
                           <span className="text-xs font-bold text-slate-800 group-hover:text-slate-900 block leading-tight">
                             Talent Acquisition
                           </span>
-                          <span className="text-[10px] text-slate-500 font-medium block">
-                            Overview, Requisitions & Onboarding
-                          </span>
+                          
                         </div>
                       </div>
                       <div className="text-slate-400 group-hover:text-slate-600 transition-transform">
@@ -356,7 +356,7 @@ export const HRAgentShell: React.FC<HRAgentShellProps> = ({
 
                     {/* Subcategories (Overview, Requisition Form & Candidate Onboarding Form) */}
                     {isTalentAcquisitionExpanded && (
-                      <div className="pl-4 pr-2 pb-2 pt-1 border-t border-slate-200/60 bg-white/70 space-y-1">
+                      <div className="pl-4 pr-1 pb-1 pt-1 space-y-0.5">
                         {/* Sub-item 1: Overview Dashboard */}
                         <button
                           id="nav-submodule-talent-overview"
@@ -529,8 +529,8 @@ export const HRAgentShell: React.FC<HRAgentShellProps> = ({
                     }}
                     className={`w-full px-3 py-2.5 rounded-xl border flex items-center justify-between text-left transition-all cursor-pointer ${
                       activeModule === 'document-version-control'
-                        ? 'bg-[#FA7014]/10 border-[#FA7014]/40 text-slate-900 shadow-xs'
-                        : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50 hover:border-slate-300'
+                        ? 'bg-orange-50 border-transparent text-slate-900'
+                        : 'bg-transparent border-transparent text-slate-700 hover:bg-slate-50'
                     }`}
                   >
                     <div className="flex items-center space-x-2.5 min-w-0">
@@ -555,7 +555,7 @@ export const HRAgentShell: React.FC<HRAgentShellProps> = ({
                             Document Version Control
                           </span>
                         </div>
-                        <span className="text-[10px] text-slate-500 font-medium block truncate">
+                        <span className="hidden">
                           {isHR ? 'Policy Governance & Lifecycle' : 'Review & Authorizations'}
                         </span>
                       </div>
@@ -583,14 +583,14 @@ export const HRAgentShell: React.FC<HRAgentShellProps> = ({
                   }}
                   className={`w-full ${activeModule === 'leave-management' ? 'pl-3 pr-10' : 'px-3'} py-2.5 rounded-xl border flex items-center justify-between text-left transition-all cursor-pointer ${
                     activeModule === 'leave-management'
-                      ? 'bg-[#FA7014]/10 border-[#FA7014]/40 text-slate-900 shadow-xs'
-                      : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50 hover:border-slate-300'
+                      ? 'bg-orange-50 border-transparent text-slate-900'
+                      : 'bg-transparent border-transparent text-slate-700 hover:bg-slate-50'
                   }`}
                 >
                   <div className="flex items-center space-x-2.5 min-w-0">
                     <div
                       className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 ${
-                        activeModule === 'leave-management' ? 'bg-[#FA7014] text-white shadow-xs' : 'bg-slate-100 text-slate-600'
+                        activeModule === 'leave-management' ? 'bg-transparent text-[#FA7014]' : 'bg-transparent text-slate-500'
                       }`}
                     >
                       <CalendarDays className="w-4 h-4" />
@@ -599,7 +599,7 @@ export const HRAgentShell: React.FC<HRAgentShellProps> = ({
                       <span className={`text-xs font-bold block truncate ${activeModule === 'leave-management' ? 'text-[#FA7014]' : 'text-slate-800'}`}>
                         Leave &amp; Attendance
                       </span>
-                      <span className="text-[10px] text-slate-500 font-medium block truncate">Leave, holidays, attendance &amp; approvals</span>
+                      <span className="hidden">Leave, holidays, attendance &amp; approvals</span>
                     </div>
                   </div>
                   <NavBadge count={sumOf(badges.leave)} className="ml-1.5" />
@@ -643,14 +643,14 @@ export const HRAgentShell: React.FC<HRAgentShellProps> = ({
                   }}
                   className={`w-full ${activeModule === 'payroll' ? 'pl-3 pr-10' : 'px-3'} py-2.5 rounded-xl border flex items-center justify-between text-left transition-all cursor-pointer ${
                     activeModule === 'payroll'
-                      ? 'bg-[#FA7014]/10 border-[#FA7014]/40 text-slate-900 shadow-xs'
-                      : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50 hover:border-slate-300'
+                      ? 'bg-orange-50 border-transparent text-slate-900'
+                      : 'bg-transparent border-transparent text-slate-700 hover:bg-slate-50'
                   }`}
                 >
                   <div className="flex items-center space-x-2.5 min-w-0">
                     <div
                       className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 ${
-                        activeModule === 'payroll' ? 'bg-[#FA7014] text-white shadow-xs' : 'bg-slate-100 text-slate-600'
+                        activeModule === 'payroll' ? 'bg-transparent text-[#FA7014]' : 'bg-transparent text-slate-500'
                       }`}
                     >
                       <Wallet className="w-4 h-4" />
@@ -659,7 +659,7 @@ export const HRAgentShell: React.FC<HRAgentShellProps> = ({
                       <span className={`text-xs font-bold block truncate ${activeModule === 'payroll' ? 'text-[#FA7014]' : 'text-slate-800'}`}>
                         Payroll
                       </span>
-                      <span className="text-[10px] text-slate-500 font-medium block truncate">Payslips, salary runs &amp; statutory setup</span>
+                      <span className="hidden">Payslips, salary runs &amp; statutory setup</span>
                     </div>
                   </div>
                   <NavBadge count={sumOf(badges.payroll)} className="ml-1.5" />
@@ -710,16 +710,16 @@ export const HRAgentShell: React.FC<HRAgentShellProps> = ({
                       setIsMobileSidebarOpen(false);
                     }}
                     className={`w-full ${activeModule === m.key ? (m.key === 'hrbp' || m.key === 'performance' || m.key === 'hiring-automation' ? 'pl-3 pr-10' : 'pl-3 pr-3') : 'px-3'} py-2.5 rounded-xl border flex items-center justify-between text-left transition-all cursor-pointer ${
-                      activeModule === m.key ? 'bg-[#FA7014]/10 border-[#FA7014]/40 text-slate-900 shadow-xs' : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50 hover:border-slate-300'
+                      activeModule === m.key ? 'bg-orange-50 border-transparent text-slate-900' : 'bg-transparent border-transparent text-slate-700 hover:bg-slate-50'
                     }`}
                   >
                     <div className="flex items-center space-x-2.5 min-w-0">
-                      <div className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 ${activeModule === m.key ? 'bg-[#FA7014] text-white shadow-xs' : 'bg-slate-100 text-slate-600'}`}>
+                      <div className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 ${activeModule === m.key ? 'bg-transparent text-[#FA7014]' : 'bg-transparent text-slate-500'}`}>
                         <m.Icon className="w-4 h-4" />
                       </div>
                       <div className="truncate">
                         <span className={`text-xs font-bold block truncate ${activeModule === m.key ? 'text-[#FA7014]' : 'text-slate-800'}`}>{m.title}</span>
-                        <span className="text-[10px] text-slate-500 font-medium block truncate">{m.sub}</span>
+                        <span className="hidden">{m.sub}</span>
                       </div>
                     </div>
                     {activeModule === m.key && (
@@ -794,14 +794,14 @@ export const HRAgentShell: React.FC<HRAgentShellProps> = ({
                   }}
                   className={`w-full ${activeModule === 'people' ? 'pl-3 pr-10' : 'px-3'} py-2.5 rounded-xl border flex items-center justify-between text-left transition-all cursor-pointer ${
                     activeModule === 'people'
-                      ? 'bg-[#FA7014]/10 border-[#FA7014]/40 text-slate-900 shadow-xs'
-                      : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50 hover:border-slate-300'
+                      ? 'bg-orange-50 border-transparent text-slate-900'
+                      : 'bg-transparent border-transparent text-slate-700 hover:bg-slate-50'
                   }`}
                 >
                   <div className="flex items-center space-x-2.5 min-w-0">
                     <div
                       className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 ${
-                        activeModule === 'people' ? 'bg-[#FA7014] text-white shadow-xs' : 'bg-slate-100 text-slate-600'
+                        activeModule === 'people' ? 'bg-transparent text-[#FA7014]' : 'bg-transparent text-slate-500'
                       }`}
                     >
                       <Users className="w-4 h-4" />
@@ -810,7 +810,7 @@ export const HRAgentShell: React.FC<HRAgentShellProps> = ({
                       <span className={`text-xs font-bold block truncate ${activeModule === 'people' ? 'text-[#FA7014]' : 'text-slate-800'}`}>
                         People
                       </span>
-                      <span className="text-[10px] text-slate-500 font-medium block truncate">Directory, onboarding, exits &amp; letters</span>
+                      <span className="hidden">Directory, onboarding, exits &amp; letters</span>
                     </div>
                   </div>
                   <NavBadge count={sumOf(badges.people)} className="ml-1.5" />
@@ -853,14 +853,14 @@ export const HRAgentShell: React.FC<HRAgentShellProps> = ({
                   }}
                   className={`w-full ${activeModule === 'employee' ? 'pl-3 pr-10' : 'px-3'} py-2.5 rounded-xl border flex items-center justify-between text-left transition-all cursor-pointer ${
                     activeModule === 'employee'
-                      ? 'bg-[#FA7014]/10 border-[#FA7014]/40 text-slate-900 shadow-xs'
-                      : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50 hover:border-slate-300'
+                      ? 'bg-orange-50 border-transparent text-slate-900'
+                      : 'bg-transparent border-transparent text-slate-700 hover:bg-slate-50'
                   }`}
                 >
                   <div className="flex items-center space-x-2.5 min-w-0">
                     <div
                       className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 ${
-                        activeModule === 'employee' ? 'bg-[#FA7014] text-white shadow-xs' : 'bg-slate-100 text-slate-600'
+                        activeModule === 'employee' ? 'bg-transparent text-[#FA7014]' : 'bg-transparent text-slate-500'
                       }`}
                     >
                       <Contact className="w-4 h-4" />
@@ -869,7 +869,7 @@ export const HRAgentShell: React.FC<HRAgentShellProps> = ({
                       <span className={`text-xs font-bold block truncate ${activeModule === 'employee' ? 'text-[#FA7014]' : 'text-slate-800'}`}>
                         Employee
                       </span>
-                      <span className="text-[10px] text-slate-500 font-medium block truncate">Master data, acknowledgements &amp; reports</span>
+                      <span className="hidden">Master data, acknowledgements &amp; reports</span>
                     </div>
                   </div>
                   <NavBadge count={sumOf(badges.employee)} className="ml-1.5" />
@@ -911,14 +911,14 @@ export const HRAgentShell: React.FC<HRAgentShellProps> = ({
                     }}
                     className={`w-full px-3 py-2.5 rounded-xl border flex items-center justify-between text-left transition-all cursor-pointer ${
                       activeModule === 'administration'
-                        ? 'bg-[#FA7014]/10 border-[#FA7014]/40 text-slate-900 shadow-xs'
-                        : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50 hover:border-slate-300'
+                        ? 'bg-orange-50 border-transparent text-slate-900'
+                        : 'bg-transparent border-transparent text-slate-700 hover:bg-slate-50'
                     }`}
                   >
                     <div className="flex items-center space-x-2.5 min-w-0">
                       <div
                         className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 ${
-                          activeModule === 'administration' ? 'bg-[#FA7014] text-white shadow-xs' : 'bg-slate-100 text-slate-600'
+                          activeModule === 'administration' ? 'bg-transparent text-[#FA7014]' : 'bg-transparent text-slate-500'
                         }`}
                       >
                         <Settings2 className="w-4 h-4" />
@@ -927,7 +927,7 @@ export const HRAgentShell: React.FC<HRAgentShellProps> = ({
                         <span className={`text-xs font-bold block truncate ${activeModule === 'administration' ? 'text-[#FA7014]' : 'text-slate-800'}`}>
                           Administration
                         </span>
-                        <span className="text-[10px] text-slate-500 font-medium block truncate">People, departments &amp; roles</span>
+                        <span className="hidden">People, departments &amp; roles</span>
                       </div>
                     </div>
                     {activeModule === 'administration' && (
@@ -944,10 +944,10 @@ export const HRAgentShell: React.FC<HRAgentShellProps> = ({
           {/* ============================================================ */}
           {/* BOTTOM SECTION: CURRENT USER PROFILE & LOGOUT OPTION         */}
           {/* ============================================================ */}
-          <div className="shrink-0 border-t border-slate-200 bg-slate-50/80 p-3 sm:p-3.5 min-w-[18rem] sm:min-w-[19rem] space-y-2">
+          <div className="shrink-0 border-t border-slate-200 bg-white p-3 min-w-[16rem] space-y-2">
             {/* User Identity Details */}
             <div className="flex items-center gap-2.5 px-0.5">
-              <div className="w-8 h-8 rounded-full bg-slate-900 text-white font-bold text-xs flex items-center justify-center shrink-0 shadow-2xs border border-slate-700/50">
+              <div className="w-9 h-9 rounded-full bg-orange-100 text-[#FA7014] font-bold text-sm flex items-center justify-center shrink-0">
                 {currentUser.name ? currentUser.name.charAt(0).toUpperCase() : 'U'}
               </div>
               <div className="min-w-0 flex-1">
@@ -1014,12 +1014,50 @@ export const HRAgentShell: React.FC<HRAgentShellProps> = ({
         {/* ============================================================ */}
         {/* RIGHT CONTENT AREA: HOSTS SELECTED MODULE                   */}
         {/* ============================================================ */}
-        <main
-          id="hr-agent-right-workspace"
-          className="flex-1 min-w-0 h-full overflow-y-auto bg-[#F8FAFC]"
-        >
-          {children}
-        </main>
+        <div className="flex-1 min-w-0 h-full flex flex-col">
+          {/* TOP BAR (desktop): page title, jump-to-page search, notifications, account */}
+          <header className="hidden lg:flex shrink-0 h-16 items-center gap-4 px-6 bg-white border-b border-slate-200">
+            <h1 className="text-xl font-bold tracking-tight text-slate-900 truncate">{pageTitle}</h1>
+            <div className="flex-1" />
+            <div className="relative w-full max-w-md">
+              <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" aria-hidden />
+              <input
+                id="topbar-page-search"
+                type="search"
+                value={pageQuery}
+                onChange={(e) => setPageQuery(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && pageMatches[0]) { onSelectModule(pageMatches[0].id); setPageQuery(''); }
+                  if (e.key === 'Escape') setPageQuery('');
+                }}
+                placeholder="Go to a page..."
+                aria-label="Go to a page"
+                className="w-full h-10 pl-9 pr-3 rounded-xl border border-slate-200 bg-white text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none focus:border-[#FA7014] focus:ring-2 focus:ring-[#FA7014]/20"
+              />
+              {pageMatches.length > 0 && (
+                <ul className="absolute left-0 right-0 top-11 z-50 rounded-xl border border-slate-200 bg-white shadow-lg py-1 overflow-hidden">
+                  {pageMatches.map((p) => (
+                    <li key={p.id}>
+                      <button type="button" onClick={() => { onSelectModule(p.id); setPageQuery(''); }} className="w-full text-left px-3 py-2 text-sm text-slate-700 hover:bg-orange-50 hover:text-[#FA7014] cursor-pointer">{p.label}</button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+            {onOpenNotifications && (
+              <button type="button" onClick={onOpenNotifications} aria-label="Notifications" title="Notifications" className="w-10 h-10 rounded-xl border border-slate-200 bg-white flex items-center justify-center text-slate-600 hover:text-[#FA7014] hover:border-orange-200 cursor-pointer">
+                <Bell className="w-5 h-5" />
+              </button>
+            )}
+            <div className="w-10 h-10 rounded-full bg-orange-100 text-[#FA7014] font-bold text-sm flex items-center justify-center shrink-0" title={currentUser.name || ''} aria-hidden>{initial}</div>
+          </header>
+          <main
+            id="hr-agent-right-workspace"
+            className="flex-1 min-h-0 min-w-0 overflow-y-auto bg-[#F8FAFC]"
+          >
+            {children}
+          </main>
+        </div>
       </div>
 
     </div>

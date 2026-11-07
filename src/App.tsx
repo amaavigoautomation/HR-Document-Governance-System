@@ -588,6 +588,7 @@ export default function App() {
           onLogout={handleLogout}
           onRefreshData={refreshData}
           pendingPolicyCount={employeePendingCount}
+          onOpenNotifications={() => setIsNotifDrawerOpen(true)}
         >
           {hrAgentModule === 'home' && (
             <div className="flex-1 min-w-0 overflow-y-auto">

@@ -17,6 +17,7 @@ import { CelebrationsCard } from './cards/CelebrationsCard';
 import { AnnouncementsCard } from './cards/AnnouncementsCard';
 import { LoginSummaryCard } from './cards/LoginSummaryCard';
 import { AcksCard } from './cards/AcksCard';
+import { StatTiles } from './StatTiles';
 
 interface Props { fallbackName?: string; onOpen: (target: WidgetTarget) => void }
 
@@ -59,13 +60,13 @@ export const HomePage: React.FC<Props> = ({ fallbackName, onOpen }) => {
         {/* Page heading and actions */}
         <header className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4">
           <div className="min-w-0">
-            <div className="text-[11px] font-bold uppercase tracking-[0.14em] text-slate-400">Workspace / Home</div>
-            <h1 className="mt-1 text-2xl sm:text-[28px] leading-tight font-bold tracking-tight text-slate-900">
+            <h1 className="text-2xl sm:text-[28px] leading-tight font-bold tracking-tight text-slate-900">
               {first ? `Good morning, ${first}` : 'Welcome back'} <span aria-hidden>👋</span>
             </h1>
-            <p className="mt-1 text-sm text-slate-500">{today || 'Your workday at a glance'}</p>
+            <p className="mt-1 text-sm text-slate-500">Here&rsquo;s what&rsquo;s happening for you today.</p>
           </div>
           <div className="flex items-center gap-2 shrink-0">
+            {today && <span className="hidden sm:inline-flex items-center h-9 px-3.5 rounded-xl border border-slate-200 bg-white text-xs font-semibold text-slate-700">{today}</span>}
             {canManage && (
               <button type="button" className={btnGhost} onClick={() => setManage(true)}>
                 <Settings2 className="w-3.5 h-3.5" />Customize
@@ -78,6 +79,8 @@ export const HomePage: React.FC<Props> = ({ fallbackName, onOpen }) => {
         </header>
 
         {layout.error && <Notice tone="error">{layout.error} <button type="button" className="underline font-bold" onClick={refresh}>Try again</button></Notice>}
+
+        <StatTiles widgets={dash.data?.widgets || []} refreshKey={tick} onOpen={onOpen} />
 
         {/* High-priority items use the first row, so the user sees actions before secondary information. */}
         {attention.length > 0 && (

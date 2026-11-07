@@ -13,11 +13,11 @@ export const btnDanger = 'inline-flex items-center justify-center gap-1.5 px-3 p
 export const btnBig = 'inline-flex items-center justify-center gap-2 px-5 py-3 rounded-xl text-sm font-bold bg-[#FA7014] text-white hover:bg-[#e0630f] disabled:opacity-50 transition-colors shadow-sm';
 
 export const Card: React.FC<{ title?: React.ReactNode; right?: React.ReactNode; children: React.ReactNode; className?: string; subtitle?: React.ReactNode }> = ({ title, right, children, className = '', subtitle }) => (
-  <section className={`bg-white border border-slate-200 rounded-xl p-4 ${className}`}>
+  <section className={`bg-white border border-slate-200 rounded-2xl p-5 shadow-[0_1px_2px_rgba(16,24,40,0.04)] ${className}`}>
     {(title || right) && (
       <div className="flex items-start justify-between gap-3 mb-3">
         <div className="min-w-0">
-          <h3 className="text-sm font-bold text-slate-800">{title}</h3>
+          <h3 className="text-base font-bold text-slate-900">{title}</h3>
           {subtitle && <p className="text-xs text-slate-500 mt-0.5">{subtitle}</p>}
         </div>
         {right}
