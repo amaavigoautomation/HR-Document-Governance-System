@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { CalendarPlus, Inbox, Palmtree, Sun, Users, Wrench } from 'lucide-react';
+import { CalendarDays, CalendarPlus, Clock, Inbox, Palmtree, Plane, Sun, Users, Wrench, CalendarCheck, BarChart3 } from 'lucide-react';
 import { leaveService } from '../../services/leaveService';
 import { PunchCard } from './AttendanceTab';
 import { Updates } from './HrGovernance';
@@ -22,7 +22,7 @@ export const BalanceStrip: React.FC<{ me: any; onApply?: (typeId: string) => voi
         const leftPct = b.requiresBalance && total > 0 ? Math.max(0, Math.min(100, Math.round((b.balance / total) * 100))) : 0;
         return (
           <button key={b.typeId} type="button" onClick={() => onApply?.(b.typeId)} title={onApply ? `Apply for ${b.name}` : undefined}
-            className="text-left bg-white border border-slate-200 rounded-xl p-3 hover:border-[#FA7014]/60 transition-colors">
+            className="text-left bg-white border border-slate-200 rounded-2xl p-4 shadow-sm hover:border-[#FA7014]/60 transition-colors">
             <div className="text-xs font-bold text-slate-600 truncate">{b.name}</div>
             {b.requiresBalance ? (
               <>
@@ -55,18 +55,43 @@ export const Today: React.FC<{ me: any; reload: () => void; onApply: (typeId?: s
   const coming = (mine || []).filter((r) => ['PENDING', 'APPROVED', 'CANCEL_REQUESTED', 'INFO_REQUESTED'].includes(r.status) && r.to >= me.today).sort((a, b) => a.from.localeCompare(b.from)).slice(0, 4);
   const holidays = (me.holidays || []).filter((h: any) => h.date >= me.today).slice(0, 3);
   const first = (me.person.name || '').split(' ')[0];
+  const left = (me.balances as any[]).filter((b) => !b.isLop && b.eligible && b.requiresBalance).reduce((n, b) => n + (b.balance || 0), 0);
+  const waiting = (mine || []).filter((r) => ['PENDING', 'INFO_REQUESTED', 'CANCEL_REQUESTED'].includes(r.status)).length;
+  const nextHoliday = holidays[0];
+  const tiles = [
+    { label: 'Leave days left', value: left, sub: 'across all leave types', tone: 'bg-orange-50', icon: 'bg-orange-100 text-orange-600', Icon: Plane },
+    { label: 'Waiting for approval', value: waiting, sub: 'your requests', tone: 'bg-sky-50', icon: 'bg-sky-100 text-sky-600', Icon: Clock },
+    { label: 'Away today', value: away ? away.length : '—', sub: 'in your team', tone: 'bg-emerald-50', icon: 'bg-emerald-100 text-emerald-600', Icon: Users },
+    { label: 'Next holiday', value: nextHoliday ? shortDate(nextHoliday.date) : '—', sub: nextHoliday?.name, tone: 'bg-violet-50', icon: 'bg-violet-100 text-violet-600', Icon: Sun },
+  ];
+  const actions = [
+    { label: 'Apply Leave', Icon: CalendarPlus, on: () => onApply() },
+    { label: 'Regularize', Icon: Wrench, on: () => onOpen('regularization') },
+    { label: 'Team Calendar', Icon: CalendarDays, on: () => onOpen('team') },
+    { label: 'Attendance', Icon: CalendarCheck, on: () => onOpen('attendance') },
+    { label: 'Reports', Icon: BarChart3, on: () => onOpen('reports') },
+  ];
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap items-end justify-between gap-3">
+      <header className="flex flex-wrap items-start justify-between gap-4">
         <div>
-          <h2 className="text-xl font-black text-slate-900">{greeting()}{first ? `, ${first}` : ''}</h2>
-          <p className="text-sm text-slate-500">{shortDate(me.today)}</p>
+          <h1 className="text-3xl font-bold tracking-tight text-slate-950">Leave &amp; Attendance</h1>
+          <p className="mt-1 text-sm text-slate-600">{greeting()}{first ? `, ${first}` : ''}. Track attendance, manage leaves and monitor team availability.</p>
         </div>
-        <div className="flex flex-wrap gap-2 w-full sm:w-auto">
-          <button className={`${btnBig} flex-1 sm:flex-none`} onClick={() => onApply()}><CalendarPlus className="w-5 h-5" />Apply for leave</button>
-          <button className={`${btnGhost} !py-3 !px-4 !text-sm`} onClick={onFix}><Wrench className="w-4 h-4" />Fix a day</button>
+        <div className="flex flex-wrap gap-2">
+          <button type="button" className="inline-flex h-11 items-center gap-2 rounded-xl bg-[#F36B21] px-5 text-sm font-bold text-white hover:bg-[#df5d18] cursor-pointer" onClick={() => onApply()}><CalendarPlus className="h-4 w-4" />Apply for leave</button>
+          <button type="button" className="inline-flex h-11 items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-800 hover:border-[#FA7014] hover:text-[#FA7014] cursor-pointer" onClick={onFix}><Wrench className="h-4 w-4" />Fix a day</button>
         </div>
+      </header>
+
+      <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
+        {tiles.map((t) => (
+          <div key={t.label} className={`flex items-center gap-4 rounded-2xl border border-white p-4 ${t.tone}`}>
+            <span className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-full ${t.icon}`}><t.Icon className="h-5 w-5" /></span>
+            <div className="min-w-0"><div className="text-sm font-semibold text-slate-700">{t.label}</div><div className="truncate text-3xl font-bold leading-tight text-slate-950">{t.value}</div>{t.sub && <div className="truncate text-xs text-slate-600">{t.sub}</div>}</div>
+          </div>
+        ))}
       </div>
 
       {me.approvals > 0 && (
@@ -84,11 +109,21 @@ export const Today: React.FC<{ me: any; reload: () => void; onApply: (typeId?: s
 
       <div>
         <div className="flex items-center justify-between mb-2">
-          <h3 className="text-sm font-bold text-slate-800">Your leave balance</h3>
+          <h3 className="text-lg font-bold text-slate-950">Leave balance <span className="text-sm font-normal text-slate-600">(My)</span></h3>
           <button className="text-xs font-bold text-slate-500 hover:text-slate-800" onClick={() => onOpen('my')}>History →</button>
         </div>
         <BalanceStrip me={me} onApply={(id) => onApply(id)} />
       </div>
+
+      <Card title="Quick actions">
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
+          {actions.map((a) => (
+            <button key={a.label} type="button" onClick={a.on} className="flex flex-col items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-4 text-sm font-semibold text-slate-800 hover:border-[#FA7014] hover:bg-orange-50/40 cursor-pointer">
+              <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-orange-50 text-[#F36B21]"><a.Icon className="h-5 w-5" /></span>{a.label}
+            </button>
+          ))}
+        </div>
+      </Card>
 
       <div className="grid md:grid-cols-3 gap-4">
         <Card title="Your upcoming leave" className="md:col-span-2" right={<button className="text-xs font-bold text-slate-500 hover:text-slate-800" onClick={() => onOpen('my')}>All requests →</button>}>

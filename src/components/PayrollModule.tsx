@@ -48,11 +48,12 @@ export const PayrollModule: React.FC<{ currentUser: User; inlineNav?: boolean }>
             <h2 className="text-lg font-bold text-slate-900">Payroll</h2>
           </div>
         ) : (
-          <div className="flex items-center gap-1.5 text-xs font-semibold text-slate-400" aria-label="You are here">
-            <span>Payroll</span><ChevronRight className="w-3.5 h-3.5" /><span className="text-slate-700">{activeLabel}</span>
+          <div aria-label="You are here">
+            <div className="text-sm text-slate-500">Payroll <ChevronRight className="inline h-3.5 w-3.5" /> <span className="font-semibold text-slate-800">{activeLabel}</span></div>
+            <h1 className="mt-2 text-3xl font-bold tracking-tight text-slate-950">Payroll</h1>
+            <p className="mt-1 text-sm text-slate-600">{me.canManage ? 'Manage employee payroll, salary structure and payments.' : me.canView ? 'You can view payroll (read-only).' : 'Your payslips appear here once a month is finalised.'}</p>
           </div>
         )}
-        <p className="text-xs text-slate-500 -mt-2">{me.canManage ? 'You can run payroll.' : me.canView ? 'You can view payroll (read-only).' : 'Your payslips appear here once a month is finalised.'}</p>
         {inlineNav && navItems.length > 1 && <ModuleSubNav nav={payrollNav} label="Payroll sections" variant="pills" />}
         {me.canView && !me.configured && !me.canManage && <Notice>Payroll has not been set up yet.</Notice>}
         {active === 'payslips' && <MyPayslips />}

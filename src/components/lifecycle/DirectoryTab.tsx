@@ -1,7 +1,9 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { lifecycleService } from '../../services/lifecycleService';
 import { buildOrgTree, flattenOrg, type OrgNode } from '../../../shared/lifecycleEngine';
+import { Search, ChevronLeft, ChevronRight } from 'lucide-react';
 import { Card, Notice, btnGhost, input, useRunner } from '../leave/ui';
+import { Avatar as ColorAvatar } from '../home/parts';
 
 const AUTO = '__auto';
 type P = { uid: string; name: string; email: string; empId: string; department: string; title: string; active: boolean; managerUid: string; managerName: string; managerManual: boolean; joinDate: string; directReports: number };
@@ -44,6 +46,7 @@ export const DirectoryTab: React.FC<{ canManage: boolean }> = ({ canManage }) =>
   const [q, setQ] = useState('');
   const [dept, setDept] = useState('');
   const [showAll, setShowAll] = useState(false);
+  const [page, setPage] = useState(1);
   const [open, setOpen] = useState<Set<string>>(new Set());
   const { busy, note, run } = useRunner();
 
@@ -60,6 +63,10 @@ export const DirectoryTab: React.FC<{ canManage: boolean }> = ({ canManage }) =>
   const rows = people.filter((p) => (!dept || p.department === dept) && (!needle || [p.name, p.email, p.empId, p.title, p.department].some((x) => x.toLowerCase().includes(needle))));
   const toggle = (uid: string) => setOpen((s) => { const n = new Set(s); n.has(uid) ? n.delete(uid) : n.add(uid); return n; });
   const allUids = flattenOrg(tree).filter((x) => x.total > 0).map((x) => x.person.uid);
+  const PAGE = 10;
+  const pages = Math.max(1, Math.ceil(rows.length / PAGE));
+  const cur = Math.min(page, pages);
+  const pageRows = rows.slice((cur - 1) * PAGE, cur * PAGE);
   const noManager = people.filter((p) => p.active && !p.managerUid).length;
 
   return (
@@ -72,9 +79,9 @@ export const DirectoryTab: React.FC<{ canManage: boolean }> = ({ canManage }) =>
         </div>
         {view === 'list' && (
           <>
-            <input className={`${input} max-w-xs`} placeholder="Search name, email, ID, title" value={q} onChange={(e) => setQ(e.target.value)} />
-            <select className={`${input} max-w-[12rem]`} value={dept} onChange={(e) => setDept(e.target.value)}>
-              <option value="">All departments</option>
+            <label className="relative min-w-[240px] max-w-md flex-1"><Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" /><input className="h-11 w-full rounded-xl border border-slate-200 bg-white pl-9 pr-3 text-sm outline-none focus:border-[#FA7014]" placeholder="Search employee by name, email or role…" value={q} onChange={(e) => { setQ(e.target.value); setPage(1); }} /></label>
+            <select className="h-11 rounded-xl border border-slate-200 bg-white px-3 text-sm outline-none focus:border-[#FA7014]" value={dept} onChange={(e) => { setDept(e.target.value); setPage(1); }}>
+              <option value="">All Departments</option>
               {depts.map((d) => <option key={d}>{d}</option>)}
             </select>
           </>
@@ -91,14 +98,14 @@ export const DirectoryTab: React.FC<{ canManage: boolean }> = ({ canManage }) =>
       {data.canEdit && noManager > 1 && <Notice>{noManager} active people have no reporting manager (one is normally the head of the company). Set them here so approvals and the chart are right.</Notice>}
 
       {view === 'list' ? (
-        <Card>
+        <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
           <div className="overflow-x-auto">
-            <table className="w-full text-xs">
-              <thead><tr className="text-left text-slate-500 border-b border-slate-200"><th className="p-2">Name</th><th className="p-2">Title</th><th className="p-2">Department</th><th className="p-2">Reports to</th><th className="p-2">Joined</th></tr></thead>
+            <table className="w-full text-sm">
+              <thead><tr className="bg-slate-50 text-left text-xs font-bold text-slate-700"><th className="p-3">Employee</th><th className="p-3">Role</th><th className="p-3">Department</th><th className="p-3">Reports to</th><th className="p-3">Joined</th><th className="p-3">Status</th></tr></thead>
               <tbody>
-                {rows.map((p) => (
+                {pageRows.map((p) => (
                   <tr key={p.uid} className="border-b border-slate-100 align-middle">
-                    <td className="p-2"><div className="flex items-center gap-2"><Avatar name={p.name} /><div><div className="font-bold text-slate-900">{p.name}{!p.active && <span className="ml-2 text-[10px] text-slate-400">inactive</span>}</div><a className="text-slate-500 hover:underline" href={`mailto:${p.email}`}>{p.email}</a></div></div></td>
+                    <td className="p-2"><div className="flex items-center gap-3"><ColorAvatar name={p.name} /><div><div className="font-bold text-slate-900">{p.name}</div><a className="text-slate-500 hover:underline" href={`mailto:${p.email}`}>{p.email}</a></div></div></td>
                     <td className="p-2">{p.title || '–'}{p.empId && <div className="text-slate-400">{p.empId}</div>}</td>
                     <td className="p-2">{p.department || '–'}</td>
                     <td className="p-2">
@@ -115,14 +122,24 @@ export const DirectoryTab: React.FC<{ canManage: boolean }> = ({ canManage }) =>
                       ) : (p.managerName || '–')}
                     </td>
                     <td className="p-2">{p.joinDate || '–'}</td>
+                    <td className="p-2"><span className={`inline-block rounded-full px-3 py-1 text-xs font-bold ${p.active ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-600'}`}>{p.active ? 'Active' : 'Inactive'}</span></td>
                   </tr>
                 ))}
-                {rows.length === 0 && <tr><td colSpan={5} className="p-4 text-center text-slate-400">Nobody matches.</td></tr>}
+                {rows.length === 0 && <tr><td colSpan={6} className="p-4 text-center text-slate-400">Nobody matches.</td></tr>}
               </tbody>
             </table>
           </div>
-          <p className="text-[11px] text-slate-400 mt-2">{rows.length} of {people.length} people</p>
-        </Card>
+          <div className="mt-3 flex flex-wrap items-center justify-between gap-3 text-sm text-slate-600">
+            <span>{rows.length === 0 ? 'Showing 0' : `Showing ${(cur - 1) * PAGE + 1} – ${Math.min(cur * PAGE, rows.length)}`} of {rows.length} people{rows.length !== people.length ? ` (${people.length} in total)` : ''}</span>
+            {pages > 1 && (
+              <div className="flex items-center gap-1.5">
+                <button type="button" aria-label="Previous page" disabled={cur === 1} onClick={() => setPage(cur - 1)} className="flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 disabled:opacity-40 cursor-pointer"><ChevronLeft className="h-4 w-4" /></button>
+                {Array.from({ length: pages }, (_, i) => i + 1).slice(Math.max(0, cur - 3), Math.max(0, cur - 3) + 5).map((k) => <button key={k} type="button" onClick={() => setPage(k)} className={`h-9 w-9 rounded-lg border text-sm font-semibold cursor-pointer ${k === cur ? 'border-[#F36B21] bg-[#F36B21] text-white' : 'border-slate-200 text-slate-700'}`}>{k}</button>)}
+                <button type="button" aria-label="Next page" disabled={cur === pages} onClick={() => setPage(cur + 1)} className="flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 disabled:opacity-40 cursor-pointer"><ChevronRight className="h-4 w-4" /></button>
+              </div>
+            )}
+          </div>
+        </div>
       ) : (
         <Card>
           {tree.length === 0 ? <p className="text-sm text-slate-400">No people yet.</p> : <ul className="space-y-0.5">{tree.map((n) => <OrgBranch key={n.person.uid} node={n} depth={0} open={open} toggle={toggle} me={data.me} />)}</ul>}

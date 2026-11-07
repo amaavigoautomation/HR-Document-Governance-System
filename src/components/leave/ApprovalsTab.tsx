@@ -243,9 +243,19 @@ export const TeamCalendar: React.FC = () => {
   // Phone list: one row per day that has someone away or a holiday.
   const agenda = Array.from({ length: daysInMonth }, (_, i) => iso(i + 1)).map((d) => ({ d, leaves: leavesOn(d), hol: holidayOn(d) })).filter((x) => x.leaves.length || x.hol);
 
+  const upcomingLeaves = items.filter((i) => i.to >= today && i.status === 'APPROVED').sort((a, b) => a.from.localeCompare(b.from)).slice(0, 5);
+  const byType: [string, number][] = Object.entries(items.filter((i) => i.status === 'APPROVED').reduce((acc: Record<string, number>, i) => { acc[i.type || 'On leave'] = (acc[i.type || 'On leave'] || 0) + (i.days || 1); return acc; }, {}) as Record<string, number>);
+  const totalDays = byType.reduce((n, [, v]) => n + v, 0);
+
   return (
-    <div className="space-y-3">
-      <div className="bg-white border border-slate-200 rounded-xl overflow-hidden">
+    <div className="space-y-5">
+      <header>
+        <h1 className="text-3xl font-bold tracking-tight text-slate-950">Leave Calendar</h1>
+        <p className="mt-1 text-sm text-slate-600">View team leave, plan your time and check availability at a glance.</p>
+      </header>
+      <div className="grid items-start gap-4 xl:grid-cols-[minmax(0,1fr)_320px]">
+      <div className="min-w-0 space-y-3">
+      <div className="bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden">
         <div className="flex flex-wrap items-center justify-between gap-2 px-3 sm:px-4 py-3 border-b border-slate-200">
           <div className="flex items-center gap-1">
             <button className={`${btnGhost} !px-2`} aria-label="Previous month" onClick={() => setMonth(shiftMonth(month, -1))}><ChevronLeft className="w-4 h-4" /></button>
@@ -336,6 +346,30 @@ export const TeamCalendar: React.FC = () => {
           )}
         </Card>
       )}
+      </div>
+      <div className="space-y-4">
+        <Card title="Upcoming leaves">
+          {upcomingLeaves.length === 0 ? <div className="text-xs text-slate-500">No approved leave coming up this month.</div> : (
+            <div className="divide-y divide-slate-100">
+              {upcomingLeaves.map((l, k) => (
+                <div key={k} className="flex items-center gap-3 py-2.5">
+                  <Avatar name={l.name} />
+                  <div className="min-w-0 flex-1"><div className="truncate text-sm font-bold text-slate-900">{l.name}</div><div className="truncate text-xs text-slate-500">{l.type || 'On leave'} · {range(l.from, l.to)}</div></div>
+                </div>
+              ))}
+            </div>
+          )}
+        </Card>
+        <Card title="Leave summary" subtitle={monthTitle(month)}>
+          {byType.length === 0 ? <div className="text-xs text-slate-500">No approved leave this month.</div> : (
+            <div className="space-y-2 text-sm">
+              {byType.map(([t, v]) => <div key={t} className="flex justify-between"><span className="text-slate-700">{t}</span><span className="font-bold text-slate-900">{v}</span></div>)}
+              <div className="flex justify-between border-t border-slate-100 pt-2"><span className="font-bold text-slate-900">Total leave days</span><span className="font-bold text-slate-900">{totalDays}</span></div>
+            </div>
+          )}
+        </Card>
+      </div>
+      </div>
     </div>
   );
 };

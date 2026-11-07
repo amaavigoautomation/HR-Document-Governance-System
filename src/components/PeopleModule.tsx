@@ -58,8 +58,10 @@ export const PeopleModule: React.FC<{ currentUser: User; inlineNav?: boolean }> 
             <p className="text-xs text-slate-500">Directory, joining tasks, exits and letters.</p>
           </div>
         ) : (
-          <div className="flex items-center gap-1.5 text-xs font-semibold text-slate-400" aria-label="You are here">
-            <span>People</span><ChevronRight className="w-3.5 h-3.5" /><span className="text-slate-700">{activeLabel}</span>
+          <div aria-label="You are here">
+            <div className="text-sm text-slate-500">People <ChevronRight className="inline h-3.5 w-3.5" /> <span className="font-semibold text-slate-800">{activeLabel}</span></div>
+            <h1 className="mt-2 text-3xl font-bold tracking-tight text-slate-950">{active === 'directory' ? 'People' : activeLabel}</h1>
+            {active === 'directory' && <p className="mt-1 text-sm text-slate-600">Explore and manage employee information across the organization.</p>}
           </div>
         )}
         {inlineNav && <ModuleSubNav nav={peopleNav} label="People sections" variant="pills" />}

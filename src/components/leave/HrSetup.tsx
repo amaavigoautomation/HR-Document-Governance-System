@@ -249,9 +249,9 @@ export const HrSetup: React.FC<{ onChanged: () => void }> = ({ onChanged }) => {
         )}
 
         {section === 'types' && (
-          <Card title="Leave types" subtitle="Click a type to change its rules. Save after adding a type, then add it to a policy." right={
+          <Card title="Leave Types" subtitle="Click a type to change its rules. Save after adding a type, then add it to a policy." right={
             <div className="flex gap-2">
-              <button className={btnGhost} onClick={() => { patch({ types: [...s.types, { id: '', code: 'NEW', name: 'New leave type', paid: true, active: true, requiresBalance: true, halfDay: true, dayCounting: 'WORKING', minNoticeDays: 0, maxDaysPerRequest: 0, docRequiredAfterDays: 0, gender: 'ANY', minServiceDays: 0, allowNegative: false, approval: 'MANAGER' }] }); setOpenType(s.types.length); }}>Add type</button>
+              <button className="inline-flex h-10 items-center gap-1.5 rounded-xl bg-[#F36B21] px-4 text-sm font-bold text-white hover:bg-[#df5d18] cursor-pointer" onClick={() => { patch({ types: [...s.types, { id: '', code: 'NEW', name: 'New leave type', paid: true, active: true, requiresBalance: true, halfDay: true, dayCounting: 'WORKING', minNoticeDays: 0, maxDaysPerRequest: 0, docRequiredAfterDays: 0, gender: 'ANY', minServiceDays: 0, allowNegative: false, approval: 'MANAGER' }] }); setOpenType(s.types.length); }}>+ Add Leave Type</button>
               {saveBtn}
             </div>}>
             <div className="space-y-2">
@@ -260,8 +260,10 @@ export const HrSetup: React.FC<{ onChanged: () => void }> = ({ onChanged }) => {
                 return (
                   <div key={t.id + i} className={`border rounded-xl ${open ? 'border-[#FA7014]/50' : 'border-slate-200'} ${t.active ? '' : 'opacity-60'}`}>
                     <button className="w-full flex items-center gap-3 px-3 py-2.5 text-left" onClick={() => setOpenType(open ? null : i)} aria-expanded={open}>
-                      <span className="text-[10px] font-black px-1.5 py-0.5 rounded bg-slate-100 text-slate-600 w-12 text-center">{t.code}</span>
-                      <span className="flex-1 min-w-0"><span className="block text-sm font-bold text-slate-800">{t.name}{!t.active && <span className="text-xs font-normal text-slate-400"> (switched off)</span>}</span><span className="block text-[11px] text-slate-500 truncate">{typeSummary(t)}</span></span>
+                      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-orange-50 text-[10px] font-black text-[#F36B21]">{t.code}</span>
+                      <span className="flex-1 min-w-0"><span className="block text-sm font-bold text-slate-900">{t.name}</span><span className="block text-[11px] text-slate-500 truncate">{typeSummary(t)}</span></span>
+                      <span className="hidden w-36 shrink-0 text-xs text-slate-700 sm:block"><span className="block text-[10px] font-bold uppercase text-slate-400">Approval flow</span>{t.approval === 'MANAGER' ? 'Manager' : t.approval === 'HR' ? 'HR' : 'Manager → HR'}</span>
+                      <span className={`shrink-0 rounded-full px-3 py-1 text-xs font-bold ${t.active ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-600'}`}>{t.active ? 'Active' : 'Off'}</span>
                       <ChevronDown className={`w-4 h-4 text-slate-400 transition-transform ${open ? 'rotate-180' : ''}`} />
                     </button>
                     {open && (
