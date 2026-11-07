@@ -1034,6 +1034,8 @@ export const HRAgentShell: React.FC<HRAgentShellProps> = ({
           <main
             id="hr-agent-right-workspace"
             className="flex-1 min-h-0 min-w-0 overflow-y-auto bg-[#F8FAFC]"
+            // Home and Hiring Pipeline are already built at the compact size; every other screen is scaled to match them.
+            style={activeModule === 'home' || activeModule === 'talent-acquisition-pipeline' ? undefined : { zoom: 0.86 }}
           >
             {children}
           </main>
