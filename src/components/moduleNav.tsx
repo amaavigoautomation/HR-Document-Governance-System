@@ -105,7 +105,7 @@ export const ModuleSubNav: React.FC<{ nav: ModuleNav; label: string; variant: 's
           <div key={g.title || gi} className="space-y-1">
             {titled && g.title && (
               <button type="button" onClick={() => setOpened((o) => ({ ...o, [g.title!]: !o[g.title!] }))} aria-expanded={!isClosed}
-                className={`w-full flex items-center justify-between px-2.5 rounded-lg text-[10px] font-bold uppercase tracking-wider ${isClosed && hasActive ? 'text-[#FA7014]' : 'text-slate-400 hover:text-slate-600'} hover:bg-slate-50 cursor-pointer py-1.5 ${gi > 0 ? 'mt-1' : ''}`}>
+                className={`w-full flex items-center justify-between px-2.5 rounded-lg text-[10px] font-bold uppercase tracking-wider ${isClosed && hasActive ? 'text-white' : 'text-slate-400 hover:text-slate-200'} hover:bg-white/10 cursor-pointer py-1.5 ${gi > 0 ? 'mt-1' : ''}`}>
                 <span>{g.title}</span>
                 <span className="flex items-center gap-1.5">
                   {isClosed ? <NavBadge count={hidden} className="normal-case tracking-normal" /> : null}
@@ -118,10 +118,10 @@ export const ModuleSubNav: React.FC<{ nav: ModuleNav; label: string; variant: 's
               const on = active === key;
               return (
                 <button key={key} id={idPrefix ? `${idPrefix}-${key}` : undefined} type="button" onClick={() => go(key)} aria-current={on ? 'page' : undefined}
-                  className={`w-full flex items-center justify-between px-2.5 py-2 rounded-lg text-xs font-semibold transition-all cursor-pointer ${on ? 'bg-[#FA7014]/15 text-[#FA7014] font-bold shadow-2xs' : 'text-slate-700 hover:text-[#FA7014] hover:bg-orange-50'}`}>
+                  className={`w-full flex items-center justify-between px-2.5 py-2 rounded-lg text-xs font-semibold transition-all cursor-pointer ${on ? 'bg-white/15 text-white font-bold' : 'text-slate-300 hover:text-white hover:bg-white/10'}`}>
                   <div className="flex items-center space-x-2 min-w-0">
-                    <span className={`w-1.5 h-1.5 rounded-full transition-colors shrink-0 ${on ? 'bg-[#FA7014]' : 'bg-slate-300'}`} />
-                    {Icon && <Icon className={`w-3.5 h-3.5 shrink-0 transition-colors ${on ? 'text-[#FA7014]' : 'text-slate-400'}`} />}
+                    <span className={`w-1.5 h-1.5 rounded-full transition-colors shrink-0 ${on ? 'bg-white' : 'bg-white/30'}`} />
+                    {Icon && <Icon className={`w-3.5 h-3.5 shrink-0 transition-colors ${on ? 'text-white' : 'text-slate-400'}`} />}
                     <span className="truncate">{text}</span>
                   </div>
                   <NavBadge count={badge} />

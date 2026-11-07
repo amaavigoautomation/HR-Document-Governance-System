@@ -239,7 +239,7 @@ export const HRAgentShell: React.FC<HRAgentShellProps> = ({
           className={`
             fixed lg:static inset-y-0 left-0 z-50 lg:z-30
             h-full shrink-0
-            bg-white border-r border-slate-200 shadow-sm
+            relative overflow-hidden bg-gradient-to-b from-[#1b1740] via-[#1c1845] to-[#241a5e] border-r border-[#2b2563] shadow-xl
             flex flex-col
             transition-all duration-200 ease-in-out
             ${
@@ -254,12 +254,19 @@ export const HRAgentShell: React.FC<HRAgentShellProps> = ({
             }
           `}
         >
+          {/* Decorative purple wave at the bottom */}
+          <svg aria-hidden className="pointer-events-none absolute bottom-0 left-0 w-full h-40 opacity-80" viewBox="0 0 256 160" preserveAspectRatio="none">
+            <defs><linearGradient id="sbWave" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stopColor="#5b3fd0" /><stop offset="1" stopColor="#3a2a8f" /></linearGradient></defs>
+            <path d="M0 90 C60 60 120 120 256 70 L256 160 L0 160 Z" fill="url(#sbWave)" opacity="0.55" />
+            <path d="M0 120 C70 95 150 150 256 105 L256 160 L0 160 Z" fill="url(#sbWave)" opacity="0.8" />
+          </svg>
+
           {/* Top Section: Branding & Navigation Tree */}
-          <div className="flex flex-col flex-1 min-h-0 overflow-y-auto min-w-[16rem]">
+          <div className="relative z-10 flex flex-col flex-1 min-h-0 overflow-y-auto min-w-[16rem]">
             {/* Platform Brand Header */}
             <div className="px-4 py-4 flex flex-col gap-3 shrink-0">
               <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2.5 min-w-0"><AmaavigoLogo size="md" variant="mark" theme="light" height={36} className="shrink-0" /><div className="leading-tight"><div className="text-lg font-extrabold tracking-tight text-slate-900">Amaavigo</div><div className="text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-500">HR Platform</div></div></div>
+                <div className="flex items-center gap-2.5 min-w-0"><AmaavigoLogo size="md" variant="mark" theme="dark" height={36} className="shrink-0" /><div className="leading-tight"><div className="text-lg font-extrabold tracking-tight text-white">Amaavigo</div><div className="text-[10px] font-semibold uppercase tracking-[0.12em] text-indigo-200/80">HR Platform</div></div></div>
                 
                 <div className="flex items-center space-x-1">
                   {/* Desktop close button to collapse left side panel */}
@@ -267,7 +274,7 @@ export const HRAgentShell: React.FC<HRAgentShellProps> = ({
                     id="btn-close-sidebar-desktop"
                     type="button"
                     onClick={onToggleSidebar}
-                    className="hidden lg:flex p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors cursor-pointer"
+                    className="hidden lg:flex p-1.5 rounded-lg text-indigo-200/70 hover:text-white hover:bg-white/10 transition-colors cursor-pointer"
                     title="Close left side panel"
                     aria-label="Close left side panel"
                   >
@@ -278,7 +285,7 @@ export const HRAgentShell: React.FC<HRAgentShellProps> = ({
                   <button
                     type="button"
                     onClick={() => setIsMobileSidebarOpen(false)}
-                    className="lg:hidden p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 cursor-pointer"
+                    className="lg:hidden p-1.5 rounded-lg text-indigo-200/70 hover:text-white hover:bg-white/10 cursor-pointer"
                     title="Close navigation"
                   >
                     <X className="w-5 h-5" />
@@ -306,15 +313,15 @@ export const HRAgentShell: React.FC<HRAgentShellProps> = ({
                       type="button"
                       onClick={() => { onSelectModule(n.id); setIsMobileSidebarOpen(false); }}
                       className={`w-full px-3 py-2.5 rounded-xl border flex items-center justify-between text-left transition-all cursor-pointer ${
-                        active ? 'bg-orange-50 border-transparent' : 'bg-transparent border-transparent hover:bg-slate-50'
+                        active ? 'bg-gradient-to-r from-[#6c4de6] to-[#8567f4] border-transparent shadow-lg shadow-black/30' : 'bg-transparent border-transparent hover:bg-white/10'
                       }`}
                     >
                       <div className="flex items-center space-x-2.5 min-w-0">
-                        <div className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 ${active ? 'bg-transparent text-[#FA7014]' : 'bg-transparent text-slate-500'}`}>
+                        <div className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 ${active ? 'bg-transparent text-white' : 'bg-transparent text-slate-300'}`}>
                           <Icon className="w-4 h-4" />
                         </div>
                         <div className="truncate">
-                          <span className={`text-xs font-bold block truncate ${active ? 'text-[#FA7014]' : 'text-slate-800'}`}>{n.label}</span>
+                          <span className={`text-xs font-bold block truncate ${active ? 'text-white' : 'text-slate-100'}`}>{n.label}</span>
                           <span className="hidden">{n.hint}</span>
                         </div>
                       </div>
@@ -332,20 +339,20 @@ export const HRAgentShell: React.FC<HRAgentShellProps> = ({
                       id="nav-category-talent-acquisition"
                       type="button"
                       onClick={() => setIsTalentAcquisitionExpanded(!isTalentAcquisitionExpanded)}
-                      className="w-full px-3 py-2.5 rounded-xl flex items-center justify-between text-left hover:bg-slate-50 transition-colors cursor-pointer group"
+                      className="w-full px-3 py-2.5 rounded-xl flex items-center justify-between text-left hover:bg-white/10 transition-colors cursor-pointer group"
                     >
                       <div className="flex items-center space-x-2.5">
-                        <div className="w-7 h-7 rounded-lg bg-transparent text-slate-500 group-hover:text-[#FA7014] flex items-center justify-center shrink-0">
+                        <div className="w-7 h-7 rounded-lg bg-transparent text-slate-300 group-hover:text-white flex items-center justify-center shrink-0">
                           <Users className="w-4 h-4" />
                         </div>
                         <div>
-                          <span className="text-xs font-bold text-slate-800 group-hover:text-slate-900 block leading-tight">
+                          <span className="text-xs font-bold text-slate-100 group-hover:text-white block leading-tight">
                             Talent Acquisition
                           </span>
                           
                         </div>
                       </div>
-                      <div className="text-slate-400 group-hover:text-slate-600 transition-transform">
+                      <div className="text-slate-400 group-hover:text-slate-200 transition-transform">
                         {isTalentAcquisitionExpanded ? (
                           <ChevronDown className="w-4 h-4" />
                         ) : (
@@ -367,8 +374,8 @@ export const HRAgentShell: React.FC<HRAgentShellProps> = ({
                           }}
                           className={`w-full flex items-center justify-between px-2.5 py-2 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
                             activeModule === 'talent-acquisition-overview' || activeModule === 'talent-acquisition'
-                              ? 'bg-[#FA7014]/15 text-[#FA7014] font-bold shadow-2xs'
-                              : 'text-slate-700 hover:text-[#FA7014] hover:bg-orange-50'
+                              ? 'bg-white/15 text-white font-bold'
+                              : 'text-slate-300 hover:text-white hover:bg-white/10'
                           }`}
                           title="View Talent Acquisition Recruitment Overview Dashboard"
                         >
@@ -376,21 +383,21 @@ export const HRAgentShell: React.FC<HRAgentShellProps> = ({
                             <span
                               className={`w-1.5 h-1.5 rounded-full transition-colors shrink-0 ${
                                 activeModule === 'talent-acquisition-overview' || activeModule === 'talent-acquisition'
-                                  ? 'bg-[#FA7014]'
-                                  : 'bg-slate-300'
+                                  ? 'bg-white'
+                                  : 'bg-white/30'
                               }`}
                             />
                             <LayoutDashboard
                               className={`w-3.5 h-3.5 shrink-0 transition-colors ${
                                 activeModule === 'talent-acquisition-overview' || activeModule === 'talent-acquisition'
-                                  ? 'text-[#FA7014]'
+                                  ? 'text-white'
                                   : 'text-slate-400'
                               }`}
                             />
                             <span className="truncate">Overview</span>
                           </div>
                           {(activeModule === 'talent-acquisition-overview' || activeModule === 'talent-acquisition') && (
-                            <span className="w-1.5 h-1.5 rounded-full bg-[#FA7014] shrink-0" />
+                            <span className="w-1.5 h-1.5 rounded-full bg-white shrink-0" />
                           )}
                         </button>
 
@@ -404,26 +411,26 @@ export const HRAgentShell: React.FC<HRAgentShellProps> = ({
                           }}
                           className={`w-full flex items-center justify-between px-2.5 py-2 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
                             activeModule === 'talent-acquisition-requisitions'
-                              ? 'bg-[#FA7014]/15 text-[#FA7014] font-bold shadow-2xs'
-                              : 'text-slate-700 hover:text-[#FA7014] hover:bg-orange-50'
+                              ? 'bg-white/15 text-white font-bold'
+                              : 'text-slate-300 hover:text-white hover:bg-white/10'
                           }`}
                           title="Hiring requisitions: request, approve and publish new roles"
                         >
                           <div className="flex items-center space-x-2 min-w-0">
                             <span
                               className={`w-1.5 h-1.5 rounded-full transition-colors shrink-0 ${
-                                activeModule === 'talent-acquisition-requisitions' ? 'bg-[#FA7014]' : 'bg-slate-300'
+                                activeModule === 'talent-acquisition-requisitions' ? 'bg-white' : 'bg-white/30'
                               }`}
                             />
                             <FileSpreadsheet
                               className={`w-3.5 h-3.5 shrink-0 transition-colors ${
-                                activeModule === 'talent-acquisition-requisitions' ? 'text-[#FA7014]' : 'text-slate-400'
+                                activeModule === 'talent-acquisition-requisitions' ? 'text-white' : 'text-slate-400'
                               }`}
                             />
                             <span className="truncate">Requisitions</span>
                           </div>
                           {activeModule === 'talent-acquisition-requisitions' && (
-                            <span className="w-1.5 h-1.5 rounded-full bg-[#FA7014] shrink-0" />
+                            <span className="w-1.5 h-1.5 rounded-full bg-white shrink-0" />
                           )}
                         </button>
 
@@ -437,20 +444,20 @@ export const HRAgentShell: React.FC<HRAgentShellProps> = ({
                           }}
                           className={`w-full flex items-center justify-between px-2.5 py-2 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
                             activeModule === 'talent-acquisition-applications'
-                              ? 'bg-[#FA7014]/15 text-[#FA7014] font-bold shadow-2xs'
-                              : 'text-slate-700 hover:text-[#FA7014] hover:bg-orange-50'
+                              ? 'bg-white/15 text-white font-bold'
+                              : 'text-slate-300 hover:text-white hover:bg-white/10'
                           }`}
                           title="Candidate applications: webhook, manual entry and CSV import"
                         >
                           <div className="flex items-center space-x-2 min-w-0">
                             <span
                               className={`w-1.5 h-1.5 rounded-full transition-colors shrink-0 ${
-                                activeModule === 'talent-acquisition-applications' ? 'bg-[#FA7014]' : 'bg-slate-300'
+                                activeModule === 'talent-acquisition-applications' ? 'bg-white' : 'bg-white/30'
                               }`}
                             />
                             <UserCheck
                               className={`w-3.5 h-3.5 shrink-0 transition-colors ${
-                                activeModule === 'talent-acquisition-applications' ? 'text-[#FA7014]' : 'text-slate-400'
+                                activeModule === 'talent-acquisition-applications' ? 'text-white' : 'text-slate-400'
                               }`}
                             />
                             <span className="truncate">Applications</span>
@@ -467,14 +474,14 @@ export const HRAgentShell: React.FC<HRAgentShellProps> = ({
                           }}
                           className={`w-full flex items-center justify-between px-2.5 py-2 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
                             activeModule === 'talent-acquisition-pipeline'
-                              ? 'bg-[#FA7014]/15 text-[#FA7014] font-bold shadow-2xs'
-                              : 'text-slate-700 hover:text-[#FA7014] hover:bg-orange-50'
+                              ? 'bg-white/15 text-white font-bold'
+                              : 'text-slate-300 hover:text-white hover:bg-white/10'
                           }`}
                           title="Candidate scores, screening, assessments, interviews, job postings and referrals"
                         >
                           <div className="flex items-center space-x-2 min-w-0">
-                            <span className={`w-1.5 h-1.5 rounded-full transition-colors shrink-0 ${activeModule === 'talent-acquisition-pipeline' ? 'bg-[#FA7014]' : 'bg-slate-300'}`} />
-                            <ClipboardList className={`w-3.5 h-3.5 shrink-0 transition-colors ${activeModule === 'talent-acquisition-pipeline' ? 'text-[#FA7014]' : 'text-slate-400'}`} />
+                            <span className={`w-1.5 h-1.5 rounded-full transition-colors shrink-0 ${activeModule === 'talent-acquisition-pipeline' ? 'bg-white' : 'bg-white/30'}`} />
+                            <ClipboardList className={`w-3.5 h-3.5 shrink-0 transition-colors ${activeModule === 'talent-acquisition-pipeline' ? 'text-white' : 'text-slate-400'}`} />
                             <span className="truncate">Hiring pipeline</span>
                           </div>
                         </button>
@@ -489,26 +496,26 @@ export const HRAgentShell: React.FC<HRAgentShellProps> = ({
                           }}
                           className={`w-full flex items-center justify-between px-2.5 py-2 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
                             activeModule === 'talent-acquisition-onboarding'
-                              ? 'bg-[#FA7014]/15 text-[#FA7014] font-bold shadow-2xs'
-                              : 'text-slate-700 hover:text-[#FA7014] hover:bg-orange-50'
+                              ? 'bg-white/15 text-white font-bold'
+                              : 'text-slate-300 hover:text-white hover:bg-white/10'
                           }`}
                           title="Onboard selected candidates"
                         >
                           <div className="flex items-center space-x-2 min-w-0">
                             <span
                               className={`w-1.5 h-1.5 rounded-full transition-colors shrink-0 ${
-                                activeModule === 'talent-acquisition-onboarding' ? 'bg-[#FA7014]' : 'bg-slate-300'
+                                activeModule === 'talent-acquisition-onboarding' ? 'bg-white' : 'bg-white/30'
                               }`}
                             />
                             <UserCheck
                               className={`w-3.5 h-3.5 shrink-0 transition-colors ${
-                                activeModule === 'talent-acquisition-onboarding' ? 'text-[#FA7014]' : 'text-slate-400'
+                                activeModule === 'talent-acquisition-onboarding' ? 'text-white' : 'text-slate-400'
                               }`}
                             />
                             <span className="truncate">Onboarding</span>
                           </div>
                           {activeModule === 'talent-acquisition-onboarding' && (
-                            <span className="w-1.5 h-1.5 rounded-full bg-[#FA7014] shrink-0" />
+                            <span className="w-1.5 h-1.5 rounded-full bg-white shrink-0" />
                           )}
                         </button>
                       </div>
@@ -529,16 +536,16 @@ export const HRAgentShell: React.FC<HRAgentShellProps> = ({
                     }}
                     className={`w-full px-3 py-2.5 rounded-xl border flex items-center justify-between text-left transition-all cursor-pointer ${
                       activeModule === 'document-version-control'
-                        ? 'bg-orange-50 border-transparent text-slate-900'
-                        : 'bg-transparent border-transparent text-slate-700 hover:bg-slate-50'
+                        ? 'bg-gradient-to-r from-[#6c4de6] to-[#8567f4] border-transparent text-white shadow-lg shadow-black/30'
+                        : 'bg-transparent border-transparent text-slate-200 hover:bg-white/10'
                     }`}
                   >
                     <div className="flex items-center space-x-2.5 min-w-0">
                       <div
                         className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 ${
                           activeModule === 'document-version-control'
-                            ? 'bg-[#FA7014] text-white shadow-xs'
-                            : 'bg-slate-100 text-slate-600'
+                            ? 'bg-white/20 text-white'
+                            : 'bg-white/10 text-slate-300'
                         }`}
                       >
                         <Layers className="w-4 h-4" />
@@ -548,8 +555,8 @@ export const HRAgentShell: React.FC<HRAgentShellProps> = ({
                           <span
                             className={`text-xs font-bold block truncate ${
                               activeModule === 'document-version-control'
-                                ? 'text-[#FA7014]'
-                                : 'text-slate-800'
+                                ? 'text-white'
+                                : 'text-slate-100'
                             }`}
                           >
                             Document Version Control
@@ -583,20 +590,20 @@ export const HRAgentShell: React.FC<HRAgentShellProps> = ({
                   }}
                   className={`w-full ${activeModule === 'leave-management' ? 'pl-3 pr-10' : 'px-3'} py-2.5 rounded-xl border flex items-center justify-between text-left transition-all cursor-pointer ${
                     activeModule === 'leave-management'
-                      ? 'bg-orange-50 border-transparent text-slate-900'
-                      : 'bg-transparent border-transparent text-slate-700 hover:bg-slate-50'
+                      ? 'bg-gradient-to-r from-[#6c4de6] to-[#8567f4] border-transparent text-white shadow-lg shadow-black/30'
+                      : 'bg-transparent border-transparent text-slate-200 hover:bg-white/10'
                   }`}
                 >
                   <div className="flex items-center space-x-2.5 min-w-0">
                     <div
                       className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 ${
-                        activeModule === 'leave-management' ? 'bg-transparent text-[#FA7014]' : 'bg-transparent text-slate-500'
+                        activeModule === 'leave-management' ? 'bg-transparent text-white' : 'bg-transparent text-slate-300'
                       }`}
                     >
                       <CalendarDays className="w-4 h-4" />
                     </div>
                     <div className="truncate">
-                      <span className={`text-xs font-bold block truncate ${activeModule === 'leave-management' ? 'text-[#FA7014]' : 'text-slate-800'}`}>
+                      <span className={`text-xs font-bold block truncate ${activeModule === 'leave-management' ? 'text-white' : 'text-slate-100'}`}>
                         Leave &amp; Attendance
                       </span>
                       <span className="hidden">Leave, holidays, attendance &amp; approvals</span>
@@ -617,7 +624,7 @@ export const HRAgentShell: React.FC<HRAgentShellProps> = ({
                     aria-expanded={isLeaveExpanded}
                     aria-label={isLeaveExpanded ? 'Hide leave sections' : 'Show leave sections'}
                     title={isLeaveExpanded ? 'Hide sections' : 'Show sections'}
-                    className="absolute right-1.5 top-1/2 -translate-y-1/2 w-7 h-7 rounded-lg flex items-center justify-center text-[#FA7014] hover:bg-[#FA7014]/15 cursor-pointer"
+                    className="absolute right-1.5 top-1/2 -translate-y-1/2 w-7 h-7 rounded-lg flex items-center justify-center text-white/80 hover:bg-white/10 cursor-pointer"
                   >
                     {isLeaveExpanded ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
                   </button>
@@ -643,20 +650,20 @@ export const HRAgentShell: React.FC<HRAgentShellProps> = ({
                   }}
                   className={`w-full ${activeModule === 'payroll' ? 'pl-3 pr-10' : 'px-3'} py-2.5 rounded-xl border flex items-center justify-between text-left transition-all cursor-pointer ${
                     activeModule === 'payroll'
-                      ? 'bg-orange-50 border-transparent text-slate-900'
-                      : 'bg-transparent border-transparent text-slate-700 hover:bg-slate-50'
+                      ? 'bg-gradient-to-r from-[#6c4de6] to-[#8567f4] border-transparent text-white shadow-lg shadow-black/30'
+                      : 'bg-transparent border-transparent text-slate-200 hover:bg-white/10'
                   }`}
                 >
                   <div className="flex items-center space-x-2.5 min-w-0">
                     <div
                       className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 ${
-                        activeModule === 'payroll' ? 'bg-transparent text-[#FA7014]' : 'bg-transparent text-slate-500'
+                        activeModule === 'payroll' ? 'bg-transparent text-white' : 'bg-transparent text-slate-300'
                       }`}
                     >
                       <Wallet className="w-4 h-4" />
                     </div>
                     <div className="truncate">
-                      <span className={`text-xs font-bold block truncate ${activeModule === 'payroll' ? 'text-[#FA7014]' : 'text-slate-800'}`}>
+                      <span className={`text-xs font-bold block truncate ${activeModule === 'payroll' ? 'text-white' : 'text-slate-100'}`}>
                         Payroll
                       </span>
                       <span className="hidden">Payslips, salary runs &amp; statutory setup</span>
@@ -677,7 +684,7 @@ export const HRAgentShell: React.FC<HRAgentShellProps> = ({
                     aria-expanded={isPayrollExpanded}
                     aria-label={isPayrollExpanded ? 'Hide payroll sections' : 'Show payroll sections'}
                     title={isPayrollExpanded ? 'Hide sections' : 'Show sections'}
-                    className="absolute right-1.5 top-1/2 -translate-y-1/2 w-7 h-7 rounded-lg flex items-center justify-center text-[#FA7014] hover:bg-[#FA7014]/15 cursor-pointer"
+                    className="absolute right-1.5 top-1/2 -translate-y-1/2 w-7 h-7 rounded-lg flex items-center justify-center text-white/80 hover:bg-white/10 cursor-pointer"
                   >
                     {isPayrollExpanded ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
                   </button>
@@ -710,15 +717,15 @@ export const HRAgentShell: React.FC<HRAgentShellProps> = ({
                       setIsMobileSidebarOpen(false);
                     }}
                     className={`w-full ${activeModule === m.key ? (m.key === 'hrbp' || m.key === 'performance' || m.key === 'hiring-automation' ? 'pl-3 pr-10' : 'pl-3 pr-3') : 'px-3'} py-2.5 rounded-xl border flex items-center justify-between text-left transition-all cursor-pointer ${
-                      activeModule === m.key ? 'bg-orange-50 border-transparent text-slate-900' : 'bg-transparent border-transparent text-slate-700 hover:bg-slate-50'
+                      activeModule === m.key ? 'bg-gradient-to-r from-[#6c4de6] to-[#8567f4] border-transparent text-white shadow-lg shadow-black/30' : 'bg-transparent border-transparent text-slate-200 hover:bg-white/10'
                     }`}
                   >
                     <div className="flex items-center space-x-2.5 min-w-0">
-                      <div className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 ${activeModule === m.key ? 'bg-transparent text-[#FA7014]' : 'bg-transparent text-slate-500'}`}>
+                      <div className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 ${activeModule === m.key ? 'bg-transparent text-white' : 'bg-transparent text-slate-300'}`}>
                         <m.Icon className="w-4 h-4" />
                       </div>
                       <div className="truncate">
-                        <span className={`text-xs font-bold block truncate ${activeModule === m.key ? 'text-[#FA7014]' : 'text-slate-800'}`}>{m.title}</span>
+                        <span className={`text-xs font-bold block truncate ${activeModule === m.key ? 'text-white' : 'text-slate-100'}`}>{m.title}</span>
                         <span className="hidden">{m.sub}</span>
                       </div>
                     </div>
@@ -736,7 +743,7 @@ export const HRAgentShell: React.FC<HRAgentShellProps> = ({
                       aria-expanded={isHrbpExpanded}
                       aria-label={isHrbpExpanded ? 'Hide HR Business Partner sections' : 'Show HR Business Partner sections'}
                       title={isHrbpExpanded ? 'Hide sections' : 'Show sections'}
-                      className="absolute right-1.5 top-1/2 -translate-y-1/2 w-7 h-7 rounded-lg flex items-center justify-center text-[#FA7014] hover:bg-[#FA7014]/15 cursor-pointer"
+                      className="absolute right-1.5 top-1/2 -translate-y-1/2 w-7 h-7 rounded-lg flex items-center justify-center text-white/80 hover:bg-white/10 cursor-pointer"
                     >
                       {isHrbpExpanded ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
                     </button>
@@ -749,7 +756,7 @@ export const HRAgentShell: React.FC<HRAgentShellProps> = ({
                       aria-expanded={isPmExpanded}
                       aria-label={isPmExpanded ? 'Hide Performance sections' : 'Show Performance sections'}
                       title={isPmExpanded ? 'Hide sections' : 'Show sections'}
-                      className="absolute right-1.5 top-1/2 -translate-y-1/2 w-7 h-7 rounded-lg flex items-center justify-center text-[#FA7014] hover:bg-[#FA7014]/15 cursor-pointer"
+                      className="absolute right-1.5 top-1/2 -translate-y-1/2 w-7 h-7 rounded-lg flex items-center justify-center text-white/80 hover:bg-white/10 cursor-pointer"
                     >
                       {isPmExpanded ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
                     </button>
@@ -762,7 +769,7 @@ export const HRAgentShell: React.FC<HRAgentShellProps> = ({
                       aria-expanded={isFlowExpanded}
                       aria-label={isFlowExpanded ? 'Hide Hiring Automation sections' : 'Show Hiring Automation sections'}
                       title={isFlowExpanded ? 'Hide sections' : 'Show sections'}
-                      className="absolute right-1.5 top-1/2 -translate-y-1/2 w-7 h-7 rounded-lg flex items-center justify-center text-[#FA7014] hover:bg-[#FA7014]/15 cursor-pointer"
+                      className="absolute right-1.5 top-1/2 -translate-y-1/2 w-7 h-7 rounded-lg flex items-center justify-center text-white/80 hover:bg-white/10 cursor-pointer"
                     >
                       {isFlowExpanded ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
                     </button>
@@ -794,20 +801,20 @@ export const HRAgentShell: React.FC<HRAgentShellProps> = ({
                   }}
                   className={`w-full ${activeModule === 'people' ? 'pl-3 pr-10' : 'px-3'} py-2.5 rounded-xl border flex items-center justify-between text-left transition-all cursor-pointer ${
                     activeModule === 'people'
-                      ? 'bg-orange-50 border-transparent text-slate-900'
-                      : 'bg-transparent border-transparent text-slate-700 hover:bg-slate-50'
+                      ? 'bg-gradient-to-r from-[#6c4de6] to-[#8567f4] border-transparent text-white shadow-lg shadow-black/30'
+                      : 'bg-transparent border-transparent text-slate-200 hover:bg-white/10'
                   }`}
                 >
                   <div className="flex items-center space-x-2.5 min-w-0">
                     <div
                       className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 ${
-                        activeModule === 'people' ? 'bg-transparent text-[#FA7014]' : 'bg-transparent text-slate-500'
+                        activeModule === 'people' ? 'bg-transparent text-white' : 'bg-transparent text-slate-300'
                       }`}
                     >
                       <Users className="w-4 h-4" />
                     </div>
                     <div className="truncate">
-                      <span className={`text-xs font-bold block truncate ${activeModule === 'people' ? 'text-[#FA7014]' : 'text-slate-800'}`}>
+                      <span className={`text-xs font-bold block truncate ${activeModule === 'people' ? 'text-white' : 'text-slate-100'}`}>
                         People
                       </span>
                       <span className="hidden">Directory, onboarding, exits &amp; letters</span>
@@ -828,7 +835,7 @@ export const HRAgentShell: React.FC<HRAgentShellProps> = ({
                     aria-expanded={isPeopleExpanded}
                     aria-label={isPeopleExpanded ? 'Hide people sections' : 'Show people sections'}
                     title={isPeopleExpanded ? 'Hide sections' : 'Show sections'}
-                    className="absolute right-1.5 top-1/2 -translate-y-1/2 w-7 h-7 rounded-lg flex items-center justify-center text-[#FA7014] hover:bg-[#FA7014]/15 cursor-pointer"
+                    className="absolute right-1.5 top-1/2 -translate-y-1/2 w-7 h-7 rounded-lg flex items-center justify-center text-white/80 hover:bg-white/10 cursor-pointer"
                   >
                     {isPeopleExpanded ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
                   </button>
@@ -853,20 +860,20 @@ export const HRAgentShell: React.FC<HRAgentShellProps> = ({
                   }}
                   className={`w-full ${activeModule === 'employee' ? 'pl-3 pr-10' : 'px-3'} py-2.5 rounded-xl border flex items-center justify-between text-left transition-all cursor-pointer ${
                     activeModule === 'employee'
-                      ? 'bg-orange-50 border-transparent text-slate-900'
-                      : 'bg-transparent border-transparent text-slate-700 hover:bg-slate-50'
+                      ? 'bg-gradient-to-r from-[#6c4de6] to-[#8567f4] border-transparent text-white shadow-lg shadow-black/30'
+                      : 'bg-transparent border-transparent text-slate-200 hover:bg-white/10'
                   }`}
                 >
                   <div className="flex items-center space-x-2.5 min-w-0">
                     <div
                       className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 ${
-                        activeModule === 'employee' ? 'bg-transparent text-[#FA7014]' : 'bg-transparent text-slate-500'
+                        activeModule === 'employee' ? 'bg-transparent text-white' : 'bg-transparent text-slate-300'
                       }`}
                     >
                       <Contact className="w-4 h-4" />
                     </div>
                     <div className="truncate">
-                      <span className={`text-xs font-bold block truncate ${activeModule === 'employee' ? 'text-[#FA7014]' : 'text-slate-800'}`}>
+                      <span className={`text-xs font-bold block truncate ${activeModule === 'employee' ? 'text-white' : 'text-slate-100'}`}>
                         Employee
                       </span>
                       <span className="hidden">Master data, acknowledgements &amp; reports</span>
@@ -887,7 +894,7 @@ export const HRAgentShell: React.FC<HRAgentShellProps> = ({
                     aria-expanded={isEmployeeExpanded}
                     aria-label={isEmployeeExpanded ? 'Hide employee sections' : 'Show employee sections'}
                     title={isEmployeeExpanded ? 'Hide sections' : 'Show sections'}
-                    className="absolute right-1.5 top-1/2 -translate-y-1/2 w-7 h-7 rounded-lg flex items-center justify-center text-[#FA7014] hover:bg-[#FA7014]/15 cursor-pointer"
+                    className="absolute right-1.5 top-1/2 -translate-y-1/2 w-7 h-7 rounded-lg flex items-center justify-center text-white/80 hover:bg-white/10 cursor-pointer"
                   >
                     {isEmployeeExpanded ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
                   </button>
@@ -911,20 +918,20 @@ export const HRAgentShell: React.FC<HRAgentShellProps> = ({
                     }}
                     className={`w-full px-3 py-2.5 rounded-xl border flex items-center justify-between text-left transition-all cursor-pointer ${
                       activeModule === 'administration'
-                        ? 'bg-orange-50 border-transparent text-slate-900'
-                        : 'bg-transparent border-transparent text-slate-700 hover:bg-slate-50'
+                        ? 'bg-gradient-to-r from-[#6c4de6] to-[#8567f4] border-transparent text-white shadow-lg shadow-black/30'
+                        : 'bg-transparent border-transparent text-slate-200 hover:bg-white/10'
                     }`}
                   >
                     <div className="flex items-center space-x-2.5 min-w-0">
                       <div
                         className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 ${
-                          activeModule === 'administration' ? 'bg-transparent text-[#FA7014]' : 'bg-transparent text-slate-500'
+                          activeModule === 'administration' ? 'bg-transparent text-white' : 'bg-transparent text-slate-300'
                         }`}
                       >
                         <Settings2 className="w-4 h-4" />
                       </div>
                       <div className="truncate">
-                        <span className={`text-xs font-bold block truncate ${activeModule === 'administration' ? 'text-[#FA7014]' : 'text-slate-800'}`}>
+                        <span className={`text-xs font-bold block truncate ${activeModule === 'administration' ? 'text-white' : 'text-slate-100'}`}>
                           Administration
                         </span>
                         <span className="hidden">People, departments &amp; roles</span>
@@ -944,26 +951,26 @@ export const HRAgentShell: React.FC<HRAgentShellProps> = ({
           {/* ============================================================ */}
           {/* BOTTOM SECTION: CURRENT USER PROFILE & LOGOUT OPTION         */}
           {/* ============================================================ */}
-          <div className="shrink-0 border-t border-slate-200 bg-white p-3 min-w-[16rem] space-y-2">
+          <div className="relative z-10 shrink-0 border-t border-white/10 bg-[#1b1740]/60 backdrop-blur-sm p-3 min-w-[16rem] space-y-2">
             {/* User Identity Details */}
             <div className="flex items-center gap-2.5 px-0.5">
-              <div className="w-9 h-9 rounded-full bg-orange-100 text-[#FA7014] font-bold text-sm flex items-center justify-center shrink-0">
+              <div className="w-9 h-9 rounded-full bg-[#6c4de6] text-white font-bold text-sm flex items-center justify-center shrink-0">
                 {currentUser.name ? currentUser.name.charAt(0).toUpperCase() : 'U'}
               </div>
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-1.5">
-                  <span className="text-xs font-bold text-slate-900 truncate block leading-tight">
+                  <span className="text-xs font-bold text-white truncate block leading-tight">
                     {currentUser.name || 'User'}
                   </span>
                 </div>
-                <div className="flex items-center gap-1.5 text-[10px] text-slate-500 truncate mt-0.5">
+                <div className="flex items-center gap-1.5 text-[10px] text-indigo-200/80 truncate mt-0.5">
                   {displayId && (
-                    <span className="font-mono font-medium text-slate-700 bg-white px-1.5 py-0.2 rounded border border-slate-200 text-[9px] shrink-0">
+                    <span className="font-mono font-medium text-indigo-100 bg-white/10 px-1.5 py-0.2 rounded border border-white/10 text-[9px] shrink-0">
                       {displayId}
                     </span>
                   )}
                   <span
-                    className="truncate text-slate-500 font-medium"
+                    className="truncate text-indigo-200/80 font-medium"
                     title={currentUser.title || (isHR ? 'HR Policy Lead' : 'Approver')}
                   >
                     {currentUser.title || (isHR ? 'HR Policy Lead' : 'Approver')}
@@ -973,7 +980,7 @@ export const HRAgentShell: React.FC<HRAgentShellProps> = ({
             </div>
 
             {/* Authorization Status Badge & Management Action */}
-            <div className="flex items-center justify-between px-2 py-1.5 rounded-lg bg-white border border-slate-200/80 shadow-2xs">
+            <div className="flex items-center justify-between px-2 py-1.5 rounded-lg bg-white/10 border border-white/10">
               <div className="flex items-center space-x-1.5 min-w-0">
                 <span
                   className={`w-2 h-2 rounded-full shrink-0 ${
@@ -984,7 +991,7 @@ export const HRAgentShell: React.FC<HRAgentShellProps> = ({
                       : 'bg-indigo-500'
                   }`}
                 />
-                <span className="text-[10px] font-bold text-slate-700 truncate" title={`Authorization: ${authLabel}`}>
+                <span className="text-[10px] font-bold text-indigo-100 truncate" title={`Authorization: ${authLabel}`}>
                   {authLabel}
                 </span>
               </div>
@@ -1000,11 +1007,11 @@ export const HRAgentShell: React.FC<HRAgentShellProps> = ({
                   setIsMobileSidebarOpen(false);
                   onLogout();
                 }}
-                className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-lg text-xs font-semibold text-slate-700 bg-white hover:text-rose-600 hover:bg-rose-50 hover:border-rose-200 border border-slate-200 transition-all cursor-pointer shadow-2xs group"
+                className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-lg text-xs font-semibold text-indigo-100 bg-white/10 hover:text-white hover:bg-rose-500/80 border border-white/10 transition-all cursor-pointer group"
                 title="Logout from platform"
                 aria-label="Logout"
               >
-                <LogOut className="w-3.5 h-3.5 text-slate-400 group-hover:text-rose-600 transition-colors" />
+                <LogOut className="w-3.5 h-3.5 text-indigo-200 group-hover:text-white transition-colors" />
                 <span>Log Out</span>
               </button>
             )}

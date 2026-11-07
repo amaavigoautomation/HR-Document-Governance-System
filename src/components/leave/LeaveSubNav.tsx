@@ -45,10 +45,10 @@ export const LeaveSubNav: React.FC<{ variant: 'sidebar' | 'pills'; onNavigate?: 
         const on = active === key;
         return (
           <button key={key} id={`nav-submodule-leave-${key}`} type="button" onClick={() => go(key)} aria-current={on ? 'page' : undefined}
-            className={`w-full flex items-center justify-between px-2.5 py-2 rounded-lg text-xs font-semibold transition-all cursor-pointer ${on ? 'bg-[#FA7014]/15 text-[#FA7014] font-bold shadow-2xs' : 'text-slate-700 hover:text-[#FA7014] hover:bg-orange-50'}`}>
+            className={`w-full flex items-center justify-between px-2.5 py-2 rounded-lg text-xs font-semibold transition-all cursor-pointer ${on ? 'bg-white/15 text-white font-bold' : 'text-slate-300 hover:text-white hover:bg-white/10'}`}>
             <div className="flex items-center space-x-2 min-w-0">
-              <span className={`w-1.5 h-1.5 rounded-full transition-colors shrink-0 ${on ? 'bg-[#FA7014]' : 'bg-slate-300'}`} />
-              <Icon className={`w-3.5 h-3.5 shrink-0 transition-colors ${on ? 'text-[#FA7014]' : 'text-slate-400'}`} />
+              <span className={`w-1.5 h-1.5 rounded-full transition-colors shrink-0 ${on ? 'bg-white' : 'bg-white/30'}`} />
+              <Icon className={`w-3.5 h-3.5 shrink-0 transition-colors ${on ? 'text-white' : 'text-slate-400'}`} />
               <span className="truncate">{label}</span>
             </div>
             <NavBadge count={badge} />
