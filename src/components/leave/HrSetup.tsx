@@ -1,8 +1,7 @@
 import React, { useEffect, useState } from 'react';
-import { CalendarRange, ChevronDown, Clock, FileCheck2, ListChecks, MapPin, Settings2, Tags } from 'lucide-react';
+import { CalendarRange, ChevronDown, Clock, ListChecks, MapPin, Settings2, Tags } from 'lucide-react';
 import { csvToObjects } from '../../../shared/csv';
 import { leaveService } from '../../services/leaveService';
-import { PolicyChanges } from './PolicyChanges';
 import { Card, Field, Notice, btnDanger, btnGhost, btnPrimary, dayName, input, niceDate, Skeleton, useRunner } from './ui';
 
 const DAYS = [1, 2, 3, 4, 5, 6, 0];
@@ -14,7 +13,6 @@ const SECTIONS: { key: Section; label: string; hint: string; icon: React.FC<{ cl
   { key: 'locations', label: 'Offices & holidays', hint: 'Weekly offs and holiday list per office', icon: MapPin },
   { key: 'types', label: 'Leave types', hint: 'Casual, sick, earned… and their rules', icon: Tags },
   { key: 'policies', label: 'Leave policies', hint: 'How many days each group gets', icon: ListChecks },
-  { key: 'versions', label: 'Policy changes', hint: 'Versions, approval and history', icon: FileCheck2 },
 ];
 
 const WeeklyOffEditor: React.FC<{ value: Record<string, any>; onChange: (v: Record<string, any>) => void }> = ({ value, onChange }) => (
@@ -142,7 +140,6 @@ export const HrSetup: React.FC<{ onChanged: () => void }> = ({ onChanged }) => {
       <div className="space-y-4 min-w-0">
         {note?.tone === 'error' && <Notice tone="error">{note.text}</Notice>}
 
-        {section === 'versions' && <PolicyChanges onChanged={() => { load(); onChanged(); }} />}
 
         {section === 'basics' && (
           <Card title="Leave year & approvals" right={saveBtn}>
