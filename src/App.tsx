@@ -816,7 +816,7 @@ export default function App() {
 
           {hrAgentModule === 'talent-acquisition-pipeline' && currentUser && (
             <div className="flex-1 flex flex-col min-w-0">
-              <HiringPipelineModule currentUser={currentUser} users={allUsers} onAddCandidate={() => handleSelectHRAgentModule('talent-acquisition-applications')} />
+              <HiringPipelineModule currentUser={currentUser} users={allUsers} onAddCandidate={() => handleSelectHRAgentModule('talent-acquisition-applications')} onOpenRequisitions={() => handleSelectHRAgentModule('talent-acquisition-requisitions')} />
             </div>
           )}
 

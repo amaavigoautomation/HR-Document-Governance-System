@@ -29,7 +29,7 @@ const ScoreBlock: React.FC<{ score: any }> = ({ score }) => (
   </div>
 );
 
-const CandidateDrawer: React.FC<{ id: string; users: User[]; onClose: () => void; onChanged: () => void }> = ({ id, users, onClose, onChanged }) => {
+export const CandidateDrawer: React.FC<{ id: string; users: User[]; onClose: () => void; onChanged: () => void }> = ({ id, users, onClose, onChanged }) => {
   const d = useLoad(() => pipelineService.candidate(id), [id]);
   const { run, busy, note } = useRunner();
   const a = d.data?.application;
