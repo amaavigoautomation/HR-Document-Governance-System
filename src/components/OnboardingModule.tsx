@@ -111,7 +111,7 @@ export const OnboardingModule: React.FC<{ currentUser: User }> = ({ currentUser 
         >
           <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} /> Refresh
         </button>
-      </div>
+      </header>
 
       {error && <div className="rounded-xl border border-rose-200 bg-rose-50 p-3 text-xs text-rose-700">{error}</div>}
       {note && <div className="rounded-xl bg-slate-900 p-3 text-xs text-white">{note}</div>}
