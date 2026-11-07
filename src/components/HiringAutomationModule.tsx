@@ -35,10 +35,10 @@ export const HiringAutomationModule: React.FC<{ currentUser: User; onNavigate: (
 
   return (
     <ToastProvider>
-      <div className="flex-1 min-w-0 space-y-4 overflow-y-auto p-4 sm:p-6">
+      <div className="flex-1 min-w-0 space-y-5 overflow-y-auto bg-[#F7F8FA] p-4 sm:p-6 xl:p-8">
         <div>
-          <h1 className="text-2xl font-black tracking-tight text-slate-900">Hiring Automation</h1>
-          <p className="text-xs text-slate-500 sm:text-sm">Decide what happens to every applicant, step by step. The app moves them along and tells people what to do.</p>
+          <h1 className="text-[28px] font-bold tracking-tight text-slate-900">Hiring automation</h1>
+          <p className="text-xs text-slate-500 sm:text-sm">Design recruitment workflows, monitor runs and action tasks assigned to you.</p>
         </div>
         {section === 'tasks' && <FlowTasks onOpenTab={openTab} onChanged={load} />}
         {section === 'flow' && manage && <FlowBuilder onChanged={load} />}

@@ -23,10 +23,10 @@ export const HiringPipelineModule: React.FC<{ currentUser: User; users: User[] }
     return 'candidates';
   });
   return (
-    <div className="flex-1 min-w-0 space-y-4 overflow-y-auto p-4 sm:p-6">
+    <div className="flex-1 min-w-0 space-y-5 overflow-y-auto bg-[#F7F8FA] p-4 sm:p-6 xl:p-8">
       <div>
-        <h1 className="text-2xl font-black tracking-tight text-slate-900">Talent Acquisition - Hiring pipeline</h1>
-        <p className="text-xs text-slate-500 sm:text-sm">From candidate to offer: score, screen, test, interview and collect blind feedback.</p>
+        <h1 className="text-[28px] font-bold tracking-tight text-slate-900">Hiring pipeline</h1>
+        <p className="mt-1 text-sm text-slate-500">From candidate to offer: score, screen, test, interview and collect blind feedback.</p>
       </div>
       <div className="overflow-x-auto">
         <Segmented<Tab> value={tab} onChange={setTab} options={[

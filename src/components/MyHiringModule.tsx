@@ -11,12 +11,12 @@ export const MyHiringModule: React.FC<{ currentUser: User }> = () => {
     return 'referrals';
   });
   return (
-    <div className="flex-1 min-w-0 space-y-4 overflow-y-auto p-4 sm:p-6">
+    <div className="flex-1 min-w-0 space-y-5 overflow-y-auto bg-[#F7F8FA] p-4 sm:p-6 xl:p-8">
       <div>
-        <h1 className="text-2xl font-black tracking-tight text-slate-900">Referrals &amp; interviews</h1>
-        <p className="text-xs text-slate-500 sm:text-sm">Help us hire: refer someone you know, or give feedback on a candidate you interviewed.</p>
+        <h1 className="text-[28px] font-bold tracking-tight text-slate-900">My hiring</h1>
+        <p className="text-xs text-slate-500 sm:text-sm">Refer talented people and manage your interview assignments.</p>
       </div>
-      <Segmented value={tab} onChange={setTab} options={[{ value: 'referrals', label: 'Refer a candidate' }, { value: 'interviews', label: 'My interviews' }]} />
+      <div className="rounded-xl border border-slate-200 bg-white p-2 shadow-sm"><Segmented value={tab} onChange={setTab} options={[{ value: 'referrals', label: 'Refer a candidate' }, { value: 'interviews', label: 'My interviews' }]} /></div>
       {tab === 'referrals' ? <ReferralsTab /> : <InterviewsTab />}
     </div>
   );
