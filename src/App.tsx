@@ -43,6 +43,7 @@ import { TalentAcquisitionHeader } from './components/TalentAcquisitionHeader';
 import { lazyPage } from './utils/lazyPage';
 import { hasModulePermission, normalizeAuthorizedModules } from './utils/authorization';
 import { DocumentSuggestion } from './types';
+import { LandingPage } from './components/LandingPage';
 
 // Big screens load when first opened, so the first page load stays small.
 const PlatformAdminView = lazyPage(() => import('./components/PlatformAdminView').then((m) => m.PlatformAdminView));
@@ -572,6 +573,8 @@ export default function App() {
           <p className="max-w-md text-sm font-bold text-slate-700">{session.message}</p>
           <button onClick={handleLogout} className="rounded-xl bg-slate-900 px-5 py-2 text-xs font-black text-white">Sign out</button>
         </div>
+      ) : (!currentUser || session.kind === 'signedOut') && window.location.pathname === '/' ? (
+        <LandingPage />
       ) : !currentUser || session.kind === 'signedOut' ? (
         <AuthScreen />
       ) : (
