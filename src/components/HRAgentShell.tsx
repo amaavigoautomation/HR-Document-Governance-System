@@ -147,7 +147,7 @@ export const HRAgentShell: React.FC<HRAgentShellProps> = ({
   const authLabel = hasTalentAccess && hasDocGovAccess ? 'All Modules' : hasTalentAccess ? 'Talent Acquisition' : hasDocGovAccess ? 'Document Version Control' : 'Employee Portal';
 
   return (
-    <div className="ama-app-shell h-screen w-full bg-[#F8FAFC] flex flex-col font-sans text-slate-900 overflow-hidden">
+    <div className="h-screen w-full bg-[#F8FAFC] flex flex-col font-sans text-slate-900 overflow-hidden">
       {/* MOBILE TOP BAR (Only visible on small screens to toggle sidebar) */}
       <div className="lg:hidden bg-white border-b border-slate-200 px-4 py-3 flex items-center justify-between sticky top-0 z-30 shadow-2xs shrink-0">
         <div className="flex items-center space-x-3">

@@ -64,11 +64,11 @@ export const AuthScreen: React.FC = () => {
   };
 
   return (
-    <div className="ama-auth-screen flex min-h-screen w-full flex-col bg-[#F8FAFC] lg:h-screen lg:flex-row lg:overflow-hidden">
-      <div className="ama-auth-panel relative flex w-full flex-col items-center justify-center overflow-y-auto px-4 py-8 sm:px-8 lg:h-full lg:w-[58%] xl:w-[60%]">
+    <div className="flex min-h-screen w-full flex-col bg-[#F8FAFC] lg:h-screen lg:flex-row lg:overflow-hidden">
+      <div className="relative flex w-full flex-col items-center justify-center overflow-y-auto px-4 py-8 sm:px-8 lg:h-full lg:w-[58%] xl:w-[60%]">
         <div className="pointer-events-none absolute left-1/2 top-1/4 h-96 w-96 -translate-x-1/2 rounded-full bg-[#FA7014]/5 blur-3xl" />
 
-        <div className="ama-auth-content relative z-10 w-full max-w-[460px]">
+        <div className="relative z-10 w-full max-w-[460px]">
           <div className="mb-5 text-center">
             <h1 className="text-2xl font-black tracking-tight text-slate-900">HR AI Agent</h1>
             <p className="mx-auto mt-1 max-w-sm text-xs text-slate-500">
@@ -76,7 +76,7 @@ export const AuthScreen: React.FC = () => {
             </p>
           </div>
 
-          <form onSubmit={submit} className="ama-auth-card space-y-3 rounded-2xl border border-slate-200/90 bg-white p-5 shadow-lg shadow-slate-200/50">
+          <form onSubmit={submit} className="space-y-3 rounded-2xl border border-slate-200/90 bg-white p-5 shadow-lg shadow-slate-200/50">
             <div>
               <h2 className="text-base font-black text-slate-900">
                 {mode === 'signin' ? 'Sign in' : mode === 'signup' ? 'Register your company' : 'Reset your password'}

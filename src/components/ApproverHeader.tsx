@@ -39,7 +39,7 @@ export const ApproverHeader: React.FC<ApproverHeaderProps> = ({
   return (
     <header
       id="approver-header"
-      className="ama-app-header bg-white/95 backdrop-blur-md border-b border-slate-200 text-slate-900 sticky top-0 z-40 shadow-xs"
+      className="bg-white/95 backdrop-blur-md border-b border-slate-200 text-slate-900 sticky top-0 z-40 shadow-xs"
     >
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex items-center justify-between h-16">

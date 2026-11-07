@@ -53,11 +53,11 @@ export const HomePage: React.FC<Props> = ({ fallbackName, onOpen }) => {
   const canManage = !!can && (can.announce || can.manageHome || can.people);
 
   return (
-    <div className="ama-home-page max-w-7xl mx-auto p-4 sm:p-6 space-y-5">
-      <div className="ama-page-heading flex items-center justify-between gap-3">
+    <div className="max-w-7xl mx-auto p-4 sm:p-6 space-y-5">
+      <div className="flex items-center justify-between gap-3">
         <div>
-          <h1 className="ama-page-title text-xl font-black text-slate-800">{first ? `Hello, ${first}` : 'Hello'}</h1>
-          <p className="ama-page-subtitle text-xs text-slate-500">{L?.today ? niceDate(L.today) : ' '}</p>
+          <h1 className="text-xl font-black text-slate-800">{first ? `Hello, ${first}` : 'Hello'}</h1>
+          <p className="text-xs text-slate-500">{L?.today ? niceDate(L.today) : ' '}</p>
         </div>
         <div className="flex gap-2">
           {canManage && <button type="button" className={btnGhost} onClick={() => setManage(true)}><Settings2 className="w-3.5 h-3.5" />Manage</button>}
@@ -71,7 +71,7 @@ export const HomePage: React.FC<Props> = ({ fallbackName, onOpen }) => {
 
       {attention.length > 0 && (
         <section aria-label="Needs your attention">
-          <h2 className="ama-section-label text-[11px] font-bold uppercase tracking-wide text-slate-400 mb-2 inline-flex items-center gap-1"><Sparkles className="w-3 h-3" />Needs your attention</h2>
+          <h2 className="text-[11px] font-bold uppercase tracking-wide text-slate-400 mb-2 inline-flex items-center gap-1"><Sparkles className="w-3 h-3" />Needs your attention</h2>
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
             {attention.map((w) => <WidgetCard key={w.id} w={w} onOpen={onOpen} />)}
           </div>
