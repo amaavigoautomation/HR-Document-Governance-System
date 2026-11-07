@@ -17,8 +17,8 @@ import { CelebrationsCard } from './cards/CelebrationsCard';
 import { AnnouncementsCard } from './cards/AnnouncementsCard';
 import { LoginSummaryCard } from './cards/LoginSummaryCard';
 import { AcksCard } from './cards/AcksCard';
-import { StatTiles } from './StatTiles';
-import { HiringDonut, MyTasks, WelcomeBanner } from './HomeOverview';
+import { MyTasks } from './HomeOverview';
+import { Greeting, LeaveBalanceCard, PipelineChart, QuickActionsGrid, TeamAttendanceCard, TopTiles, UpcomingCard } from './HomeBlocks';
 
 interface Props { fallbackName?: string; onOpen: (target: WidgetTarget) => void }
 
@@ -48,9 +48,7 @@ export const HomePage: React.FC<Props> = ({ fallbackName, onOpen }) => {
   const show = (id: string) => !hidden.has(id);
   const can = L?.can;
   const widgets = (dash.data?.widgets || []).filter((w) => !REPLACED.includes(w.id));
-  const attention = widgets.filter((w) => !LEFT_WIDGETS.includes(w.id));
   const left = widgets.filter((w) => LEFT_WIDGETS.includes(w.id));
-  const hiringWidget = (dash.data?.widgets || []).find((w) => w.id === 'hiring' && ((w.data as any)?.waiting || []).some((x: any) => x.count > 0));
   const name = dash.data?.name || fallbackName || '';
   const first = name.split(' ')[0];
   const canManage = !!can && (can.announce || can.manageHome || can.people);
@@ -59,9 +57,7 @@ export const HomePage: React.FC<Props> = ({ fallbackName, onOpen }) => {
   return (
     <div className="w-full h-full overflow-y-auto bg-[#F7F8FA]">
       <div className="max-w-[1440px] mx-auto p-4 sm:p-6 xl:p-8 space-y-5">
-        {/* Page heading and actions */}
-        <header className="flex items-center justify-end gap-2">
-          {today && <span className="hidden sm:inline-flex items-center h-9 px-3.5 rounded-xl border border-slate-200 bg-white text-xs font-semibold text-slate-700">{today}</span>}
+        <Greeting first={first} today={today} actions={<>
           {canManage && (
             <button type="button" className={btnGhost} onClick={() => setManage(true)}>
               <Settings2 className="w-3.5 h-3.5" />Customize
@@ -70,18 +66,26 @@ export const HomePage: React.FC<Props> = ({ fallbackName, onOpen }) => {
           <button type="button" className="inline-flex items-center justify-center gap-2 px-3.5 py-2 rounded-lg text-xs font-bold bg-[#F36B21] text-white hover:bg-[#df5d18] disabled:opacity-50 transition-colors shadow-sm" onClick={refresh} disabled={layout.loading || dash.loading}>
             <RefreshCw className={`w-3.5 h-3.5 ${layout.loading || dash.loading ? 'animate-spin' : ''}`} />Refresh
           </button>
-        </header>
-
-        <WelcomeBanner first={first} />
+        </>} />
 
         {layout.error && <Notice tone="error">{layout.error} <button type="button" className="underline font-bold" onClick={refresh}>Try again</button></Notice>}
 
-        <StatTiles widgets={dash.data?.widgets || []} refreshKey={tick} onOpen={onOpen} />
+        <TopTiles widgets={dash.data?.widgets || []} refreshKey={tick} onOpen={onOpen} />
 
-        <div className="grid gap-4 lg:grid-cols-2 items-start">
-          {hiringWidget && <HiringDonut widget={hiringWidget} onOpen={onOpen} />}
-          <MyTasks widgets={dash.data?.widgets || []} onOpen={onOpen} />
+        <div className="grid gap-4 xl:grid-cols-[minmax(0,1.15fr)_minmax(0,1fr)] items-start">
+          <div className="space-y-4 min-w-0">
+            <PipelineChart refreshKey={tick} onOpen={onOpen} />
+            <UpcomingCard refreshKey={tick} onOpen={onOpen} />
+          </div>
+          <div className="space-y-4 min-w-0">
+            <QuickActionsGrid onOpen={onOpen} />
+            <MyTasks widgets={dash.data?.widgets || []} onOpen={onOpen} />
+            <LeaveBalanceCard refreshKey={tick} onOpen={onOpen} />
+            <TeamAttendanceCard refreshKey={tick} onOpen={onOpen} />
+          </div>
         </div>
+
+        <h2 id="home-more" className="pt-4 text-xl font-bold text-slate-950">More for you</h2>
 
         {/* Main dashboard: personal workspace on the left, company updates on the right. */}
         {L && <>

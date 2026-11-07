@@ -170,6 +170,16 @@ export const HRAgentShell: React.FC<HRAgentShellProps> = ({
     || (activeModule.startsWith('talent-acquisition') ? 'Talent Acquisition' : 'HR Platform');
   const [pageQuery, setPageQuery] = useState('');
   const [isAccountOpen, setIsAccountOpen] = useState(false);
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
+        const el = document.getElementById('topbar-page-search') as HTMLInputElement | null;
+        if (el && el.offsetParent !== null) { e.preventDefault(); el.focus(); el.select(); }
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
   const pageMatches = pageQuery.trim() ? pages.filter((p) => p.label.toLowerCase().includes(pageQuery.trim().toLowerCase())).slice(0, 6) : [];
   const initial = (currentUser.name || 'U').split(/\s+/).filter(Boolean).slice(0, 2).map((x) => x[0]?.toUpperCase()).join('') || 'U';
 
@@ -983,8 +993,9 @@ export const HRAgentShell: React.FC<HRAgentShellProps> = ({
                 }}
                 placeholder="Go to a page..."
                 aria-label="Go to a page"
-                className="w-full h-10 pl-9 pr-3 rounded-xl border border-slate-200 bg-white text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none focus:border-[#FA7014] focus:ring-2 focus:ring-[#FA7014]/20"
+                className="w-full h-10 pl-9 pr-20 rounded-xl border border-slate-200 bg-white text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none focus:border-[#FA7014] focus:ring-2 focus:ring-[#FA7014]/20"
               />
+              {!pageQuery && <kbd className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 rounded-md border border-slate-200 bg-slate-50 px-1.5 py-0.5 text-[11px] font-medium text-slate-500">Ctrl + K</kbd>}
               {pageMatches.length > 0 && (
                 <ul className="absolute left-0 right-0 top-11 z-50 rounded-xl border border-slate-200 bg-white shadow-lg py-1 overflow-hidden">
                   {pageMatches.map((p) => (
@@ -1001,7 +1012,10 @@ export const HRAgentShell: React.FC<HRAgentShellProps> = ({
               </button>
             )}
             <div className="relative shrink-0">
-              <button type="button" onClick={() => setIsAccountOpen((v) => !v)} aria-haspopup="menu" aria-expanded={isAccountOpen} aria-label="Account menu" title={currentUser.name || 'Account'} className="w-10 h-10 rounded-full bg-orange-100 text-[#FA7014] font-bold text-sm flex items-center justify-center cursor-pointer">{initial}</button>
+              <button type="button" onClick={() => setIsAccountOpen((v) => !v)} aria-haspopup="menu" aria-expanded={isAccountOpen} aria-label="Account menu" title={currentUser.name || 'Account'} className="flex items-center gap-3 cursor-pointer">
+                <span className="hidden xl:block text-right leading-tight"><span className="block max-w-[10rem] truncate text-sm font-bold text-slate-900">{currentUser.name || 'User'}</span>{currentUser.title && <span className="block max-w-[10rem] truncate text-xs text-slate-500">{currentUser.title}</span>}</span>
+                <span className="w-10 h-10 rounded-full bg-orange-100 text-[#FA7014] font-bold text-sm flex items-center justify-center">{initial}</span>
+              </button>
               {isAccountOpen && (
                 <>
                   <div className="fixed inset-0 z-40" onClick={() => setIsAccountOpen(false)} aria-hidden />
