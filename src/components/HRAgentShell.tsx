@@ -1,4 +1,6 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
+import { homeService } from '../services/homeService';
+import { toProfilePhoto } from '../utils/profilePhoto';
 import {
   Layers,
   Users,
@@ -15,6 +17,7 @@ import {
   PanelLeftClose,
   PanelLeftOpen,
   LogOut,
+  Camera,
   HelpCircle,
   Shield,
   KeyRound,
@@ -170,6 +173,18 @@ export const HRAgentShell: React.FC<HRAgentShellProps> = ({
     || (activeModule.startsWith('talent-acquisition') ? 'Talent Acquisition' : 'HR Platform');
   const [pageQuery, setPageQuery] = useState('');
   const [isAccountOpen, setIsAccountOpen] = useState(false);
+  const [photo, setPhoto] = useState('');
+  const [photoMsg, setPhotoMsg] = useState('');
+  const photoInput = useRef<HTMLInputElement>(null);
+  useEffect(() => { homeService.myPhoto().then((r) => setPhoto(r.photo || '')).catch(() => undefined); }, [currentUser.id]);
+  const choosePhoto = async (file?: File | null) => {
+    if (!file) return;
+    setPhotoMsg('Saving…');
+    try { const p = await toProfilePhoto(file); const r = await homeService.saveMyPhoto(p); setPhoto(r.photo || p); setPhotoMsg(''); }
+    catch (e: any) { setPhotoMsg(e?.message || 'Could not save the photo.'); }
+    if (photoInput.current) photoInput.current.value = '';
+  };
+  const removePhoto = async () => { setPhotoMsg('Removing…'); try { await homeService.saveMyPhoto(''); setPhoto(''); setPhotoMsg(''); } catch (e: any) { setPhotoMsg(e?.message || 'Could not remove the photo.'); } };
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
@@ -1014,7 +1029,7 @@ export const HRAgentShell: React.FC<HRAgentShellProps> = ({
             <div className="relative shrink-0">
               <button type="button" onClick={() => setIsAccountOpen((v) => !v)} aria-haspopup="menu" aria-expanded={isAccountOpen} aria-label="Account menu" title={currentUser.name || 'Account'} className="flex items-center gap-3 cursor-pointer">
                 <span className="hidden xl:block text-right leading-tight"><span className="block max-w-[10rem] truncate text-sm font-bold text-slate-900">{currentUser.name || 'User'}</span>{currentUser.title && <span className="block max-w-[10rem] truncate text-xs text-slate-500">{currentUser.title}</span>}</span>
-                <span className="w-10 h-10 rounded-full bg-orange-100 text-[#FA7014] font-bold text-sm flex items-center justify-center">{initial}</span>
+                <span className="w-10 h-10 rounded-full bg-orange-100 text-[#FA7014] font-bold text-sm flex items-center justify-center overflow-hidden">{photo ? <img src={photo} alt="" className="h-full w-full object-cover" /> : initial}</span>
               </button>
               {isAccountOpen && (
                 <>
@@ -1025,6 +1040,10 @@ export const HRAgentShell: React.FC<HRAgentShellProps> = ({
                       <div className="truncate text-xs text-slate-500">{[displayId, currentUser.title].filter(Boolean).join(' · ')}</div>
                       <div className="mt-1 text-[11px] text-slate-400">{authLabel}</div>
                     </div>
+                    <input ref={photoInput} type="file" accept="image/*" className="hidden" aria-label="Choose a profile photo" onChange={(e) => void choosePhoto(e.target.files?.[0])} />
+                    <button type="button" role="menuitem" onClick={() => photoInput.current?.click()} className="flex w-full items-center gap-2 rounded-lg border-t border-slate-100 px-2 pt-3 pb-2 text-sm font-semibold text-slate-700 hover:text-[#FA7014] cursor-pointer"><Camera className="h-4 w-4" />{photo ? 'Change photo' : 'Upload photo'}</button>
+                    {photo && <button type="button" role="menuitem" onClick={() => void removePhoto()} className="flex w-full items-center gap-2 rounded-lg px-2 pb-2 text-sm font-semibold text-slate-700 hover:text-rose-600 cursor-pointer">Remove photo</button>}
+                    {photoMsg && <p className="px-2 pb-2 text-xs text-slate-600" role="status">{photoMsg}</p>}
                     {onLogout && <button id="btn-sidebar-logout" type="button" role="menuitem" onClick={() => { setIsAccountOpen(false); onLogout(); }} className="flex w-full items-center gap-2 rounded-lg border-t border-slate-100 px-2 pt-3 pb-1 text-sm font-semibold text-slate-700 hover:text-rose-600 cursor-pointer"><LogOut className="h-4 w-4" />Log Out</button>}
                   </div>
                 </>

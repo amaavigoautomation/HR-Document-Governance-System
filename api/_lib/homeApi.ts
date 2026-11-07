@@ -11,6 +11,7 @@
  *   punches           recent check-ins and check-outs, five at a time
  *   on-leave          who is on leave today / later
  *   wishes            birthdays, work anniversaries, marriage anniversaries (day and month only, never the year)
+ *   my-photo          a person's own profile picture (read, set or remove)
  *   my-dates          a person's own birth / marriage date and whether to show them; people-dates / save-people-dates are the HR view
  *   files             organisation documents (published policies) and the person's own letters and payslips
  *   acks              policies to acknowledge / already acknowledged
@@ -329,6 +330,23 @@ async function saveMyDates(w: Who, body: any): Promise<Result> {
   return ok({ saved: true });
 }
 
+/** A person's own profile picture: a small square JPEG kept as a data URL. Only that person can set it; everyone in the company may see it. */
+const MAX_PHOTO_CHARS = 150_000;
+const photoId = (cid: string, uid: string) => `${cid}__${uid}`;
+async function myPhoto(w: Who): Promise<Result> {
+  const snap = await db().collection('profilePhotos').doc(photoId(w.cid, w.ctx.uid)).get();
+  return ok({ photo: snap.exists ? String((snap.data() as any).photo || '') : '' });
+}
+async function saveMyPhoto(w: Who, body: any): Promise<Result> {
+  const photo = typeof body?.photo === 'string' ? body.photo : '';
+  const ref = db().collection('profilePhotos').doc(photoId(w.cid, w.ctx.uid));
+  if (!photo) { await ref.delete(); return ok({ photo: '' }); }
+  if (!photo.startsWith('data:image/jpeg;base64,')) return fail(400, 'Upload a photo (JPG or PNG).');
+  if (photo.length > MAX_PHOTO_CHARS) return fail(400, 'That photo is too large. Try a smaller one.');
+  await ref.set({ companyId: w.cid, uid: w.ctx.uid, photo, updatedAt: nowIso() });
+  return ok({ photo });
+}
+
 const needUsers = (w: Who) => {
   if (!(w.isAdmin || hasPerm(w.perms, 'users.manage'))) throw new LeaveError(403, 'Only people who manage users can do this.');
 };
@@ -642,6 +660,7 @@ export async function routeHome(r: HomeRequestIn): Promise<Result> {
       case 'on-leave': if (GET) return await onLeave(w, r.query); break;
       case 'wishes': if (GET) return await wishes(w, r.query); break;
       case 'my-dates': if (GET) return await myDates(w); if (POST) return await saveMyDates(w, body); break;
+      case 'my-photo': if (GET) return await myPhoto(w); if (POST) return await saveMyPhoto(w, body); break;
       case 'people-dates': if (GET) return await peopleDates(w); break;
       case 'save-people-dates': if (POST) return await savePeopleDates(w, body); break;
       case 'files': if (GET) return await files(w, r.query); break;

@@ -527,6 +527,7 @@ service cloud.firestore {
     match /moodCheckins/{id} { allow read, write: if false; }
     match /loginDaily/{id} { allow read, write: if false; }
     match /personalDates/{id} { allow read, write: if false; }
+    match /profilePhotos/{id} { allow read, write: if false; }
     match /employeeProfiles/{id} { allow read, write: if false; }
     match /employeeIdentities/{id} { allow read, write: if false; }
     match /employeeIdentityFiles/{id} { allow read, write: if false; }

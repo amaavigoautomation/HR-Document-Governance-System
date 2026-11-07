@@ -104,6 +104,8 @@ export const homeService = {
   loginSummary: (days = 5) => get<{ days: number; series: { date: string; web: number; mobile: number }[] }>('login-summary', { days }),
   myDates: () => get<{ dob: string; marriageDate: string; showCelebrations: boolean; showMarriage: boolean }>('my-dates'),
   saveMyDates: (b: unknown) => post('my-dates', b),
+  myPhoto: () => get<{ photo: string }>('my-photo'),
+  saveMyPhoto: (photo: string) => post<{ photo: string }>('my-photo', { photo }),
   peopleDates: () => get<{ people: PersonDates[] }>('people-dates'),
   savePeopleDates: (rows: unknown[]) => post<{ saved: number; skipped: string[] }>('save-people-dates', { rows }),
   settings: () => get<{ settings: HomeSettingsView; cards: string[] }>('settings'),
