@@ -82,22 +82,22 @@ export const PipelineStats: React.FC<{ d: PipelineData }> = ({ d }) => {
     { label: 'Joined', value: count(4), tone: 'violet', Icon: CheckCircle2 },
   ];
   return (
-    <section aria-label="Pipeline summary" className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-5">
+    <section aria-label="Pipeline summary" className="grid grid-cols-2 gap-2.5 sm:grid-cols-3 xl:grid-cols-5">
       {tiles.map((t) => (
-        <div key={t.label} className={`flex items-center gap-3 rounded-2xl border border-white px-4 py-3.5 ${TONES[t.tone][0]}`}>
-          <span className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-full ${TONES[t.tone][1]}`}><t.Icon className="h-5 w-5" /></span>
+        <div key={t.label} className={`flex items-center gap-2.5 rounded-xl border border-white px-3.5 py-2.5 ${TONES[t.tone][0]}`}>
+          <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full ${TONES[t.tone][1]}`}><t.Icon className="h-4 w-4" /></span>
           <span className="min-w-0 flex-1">
-            <span className="block text-2xl font-bold leading-tight tabular-nums text-slate-950">{busy ? '—' : t.value}</span>
-            <span className="block truncate text-xs text-slate-700">{t.label}</span>
+            <span className="block text-xl font-bold leading-tight tabular-nums text-slate-950">{busy ? '—' : t.value}</span>
+            <span className="block truncate text-[11px] text-slate-700">{t.label}</span>
           </span>
-          {t.trend !== undefined && t.trend !== null && t.trend !== 0 && <span className={`self-end text-xs font-bold ${t.trend > 0 ? 'text-emerald-600' : 'text-rose-600'}`}>{t.trend > 0 ? '↑ +' : '↓ '}{t.trend}%</span>}
+          {t.trend !== undefined && t.trend !== null && t.trend !== 0 && <span className={`self-end text-[11px] font-bold ${t.trend > 0 ? 'text-emerald-600' : 'text-rose-600'}`}>{t.trend > 0 ? '↑ +' : '↓ '}{t.trend}%</span>}
         </div>
       ))}
     </section>
   );
 };
 
-const SELECT = 'h-10 rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-800 outline-none focus:border-[#FA7014]';
+const SELECT = 'h-9 rounded-lg border border-slate-200 bg-white px-3 text-xs text-slate-800 outline-none focus:border-[#FA7014]';
 
 export const PipelineBoard: React.FC<{ d: PipelineData; onOpenCandidate: (id: string) => void; onOpenRequisitions?: () => void }> = ({ d, onOpenCandidate, onOpenRequisitions }) => {
   const [role, setRole] = useState('');
@@ -127,40 +127,40 @@ export const PipelineBoard: React.FC<{ d: PipelineData; onOpenCandidate: (id: st
   const applicants = (title: string) => d.all.filter((r) => String(r.designation || '').toLowerCase() === title.toLowerCase() && stageOf(r.status) !== null).length;
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-end gap-3">
         <select className={SELECT} value={role} onChange={(e) => setRole(e.target.value)} aria-label="Role"><option value="">All Roles</option>{roles.map((x) => <option key={x} value={x}>{x}</option>)}</select>
         {depts.length > 0 && <select className={SELECT} value={dept} onChange={(e) => setDept(e.target.value)} aria-label="Department"><option value="">All Departments</option>{depts.map((x) => <option key={x} value={x}>{x}</option>)}</select>}
-        <button type="button" onClick={() => setMore((v) => !v)} aria-expanded={more} className={`inline-flex h-10 items-center gap-2 rounded-xl border bg-white px-4 text-sm font-semibold ${more || filtered ? 'border-[#FA7014] text-[#FA7014]' : 'border-slate-200 text-slate-800'}`}><Filter className="h-4 w-4" />More Filters</button>
+        <button type="button" onClick={() => setMore((v) => !v)} aria-expanded={more} className={`inline-flex h-9 items-center gap-2 rounded-lg border bg-white px-3 text-xs font-semibold ${more || filtered ? 'border-[#FA7014] text-[#FA7014]' : 'border-slate-200 text-slate-800'}`}><Filter className="h-4 w-4" />More Filters</button>
       </div>
       {more && (
         <div className="flex flex-wrap items-center gap-3 rounded-2xl border border-slate-200 bg-white p-3">
-          <div className="relative min-w-[220px] flex-1"><Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" aria-hidden /><input className="h-10 w-full rounded-xl border border-slate-200 bg-white pl-9 pr-3 text-sm outline-none focus:border-[#FA7014]" placeholder="Search by name, email or role..." value={q} onChange={(e) => setQ(e.target.value)} aria-label="Search candidates" /></div>
+          <div className="relative min-w-[220px] flex-1"><Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" aria-hidden /><input className="h-9 w-full rounded-lg border border-slate-200 bg-white pl-9 pr-3 text-xs outline-none focus:border-[#FA7014]" placeholder="Search by name, email or role..." value={q} onChange={(e) => setQ(e.target.value)} aria-label="Search candidates" /></div>
           <select className={SELECT} value={source} onChange={(e) => setSource(e.target.value)} aria-label="Source"><option value="">Source: All</option>{sources.map((x) => <option key={x} value={x}>{x}</option>)}</select>
-          {filtered && <button type="button" className="h-10 rounded-xl border border-slate-200 px-3 text-sm font-semibold text-slate-700 hover:text-[#FA7014]" onClick={() => { setRole(''); setDept(''); setSource(''); setQ(''); }}>Clear filters</button>}
+          {filtered && <button type="button" className="h-9 rounded-lg border border-slate-200 px-3 text-xs font-semibold text-slate-700 hover:text-[#FA7014]" onClick={() => { setRole(''); setDept(''); setSource(''); setQ(''); }}>Clear filters</button>}
         </div>
       )}
       {d.error && <p className="rounded-xl bg-rose-50 px-4 py-3 text-sm text-rose-700" role="alert">{d.error}</p>}
 
-      <div className="grid gap-3 md:grid-cols-3 xl:grid-cols-5" aria-label="Candidates by stage">
+      <div className="grid gap-2.5 md:grid-cols-3 xl:grid-cols-5" aria-label="Candidates by stage">
         {COLUMNS.map((c, i) => {
           const list = shown.filter((r) => stageOf(r.status) === i);
           return (
             <section key={c.label} className={`flex min-w-0 flex-col rounded-2xl border border-white ${c.body}`}>
-              <header className={`flex items-center justify-between rounded-t-2xl px-3.5 py-3 ${c.head}`}>
-                <h3 className="text-base font-bold text-slate-900">{c.label}</h3>
-                <span className={`min-w-8 rounded-full px-2.5 py-0.5 text-center text-sm font-bold ${c.chip}`}>{list.length}</span>
+              <header className={`flex items-center justify-between rounded-t-2xl px-3 py-2 ${c.head}`}>
+                <h3 className="text-sm font-bold text-slate-900">{c.label}</h3>
+                <span className={`min-w-7 rounded-full px-2 py-0.5 text-center text-xs font-bold ${c.chip}`}>{list.length}</span>
               </header>
-              <ul className="max-h-[34rem] space-y-2.5 overflow-y-auto p-2.5">
+              <ul className="max-h-[28rem] space-y-2 overflow-y-auto p-2">
                 {list.length === 0 && <li className="px-2 py-6 text-center text-xs text-slate-500">{d.loading ? 'Loading…' : 'No candidates'}</li>}
                 {list.map((r) => (
                   <li key={r.id}>
-                    <button type="button" onClick={() => onOpenCandidate(r.id)} className="w-full cursor-pointer rounded-xl border border-slate-100 bg-white p-3 text-left shadow-sm transition-shadow hover:shadow-md">
-                      <div className="flex items-center gap-2.5">
+                    <button type="button" onClick={() => onOpenCandidate(r.id)} className="w-full cursor-pointer rounded-lg border border-slate-100 bg-white p-2.5 text-left shadow-sm transition-shadow hover:shadow-md">
+                      <div className="flex items-center gap-2">
                         <Avatar name={r.name || '?'} />
-                        <div className="min-w-0"><div className="truncate text-sm font-bold text-slate-900">{r.name}</div><div className="truncate text-xs text-slate-600">{r.designation || '—'}</div></div>
+                        <div className="min-w-0"><div className="truncate text-[13px] font-bold text-slate-900">{r.name}</div><div className="truncate text-[11px] text-slate-600">{r.designation || '—'}</div></div>
                       </div>
-                      <div className="mt-2.5 flex items-center gap-1.5 text-xs text-slate-600">
+                      <div className="mt-2 flex items-center gap-1.5 text-[11px] text-slate-600">
                         {i >= 3 ? <><CheckCircle2 className="h-3.5 w-3.5 shrink-0 text-emerald-600" /><span className="truncate">{r.status}</span></>
                           : i === 2 && r.nextInterview ? <><CalendarDays className="h-3.5 w-3.5 shrink-0" /><span className="truncate">{new Date(r.nextInterview).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' })}</span></>
                           : <><CalendarDays className="h-3.5 w-3.5 shrink-0" /><span>{ago(r.createdAt) || '—'}</span></>}
@@ -174,22 +174,22 @@ export const PipelineBoard: React.FC<{ d: PipelineData; onOpenCandidate: (id: st
         })}
       </div>
 
-      <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-        <div className="mb-3 flex items-center justify-between"><h2 className="text-lg font-bold text-slate-950">Open Requisitions</h2>
-          {onOpenRequisitions && <button type="button" onClick={onOpenRequisitions} className="cursor-pointer text-sm font-bold text-[#4f46e5] hover:underline">View All <ArrowRight className="inline h-3.5 w-3.5" /></button>}</div>
+      <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+        <div className="mb-2 flex items-center justify-between"><h2 className="text-base font-bold text-slate-950">Open Requisitions</h2>
+          {onOpenRequisitions && <button type="button" onClick={onOpenRequisitions} className="cursor-pointer text-xs font-bold text-[#4f46e5] hover:underline">View All <ArrowRight className="inline h-3.5 w-3.5" /></button>}</div>
         {openReqs.length === 0 ? <p className="py-6 text-center text-sm text-slate-500">No requisitions are open for applications.</p> : (
-          <div className="overflow-x-auto"><table className="w-full min-w-[720px] text-left text-sm">
-            <thead className="bg-slate-50 text-xs text-slate-600"><tr>{['Requisition ID', 'Role', 'Department', 'Hiring Manager', 'Opened On', 'Applicants', 'Status'].map((h) => <th key={h} className="px-3 py-2.5 font-semibold">{h}</th>)}</tr></thead>
+          <div className="overflow-x-auto"><table className="w-full min-w-[720px] text-left text-xs">
+            <thead className="bg-slate-50 text-xs text-slate-600"><tr>{['Requisition ID', 'Role', 'Department', 'Hiring Manager', 'Opened On', 'Applicants', 'Status'].map((h) => <th key={h} className="px-3 py-2 font-semibold">{h}</th>)}</tr></thead>
             <tbody className="divide-y divide-slate-100">
               {openReqs.map((r) => (
                 <tr key={r.id}>
-                  <td className="px-3 py-3 text-slate-800">{r.reqNo}</td>
-                  <td className="px-3 py-3 font-medium text-slate-900">{r.positionTitle}</td>
-                  <td className="px-3 py-3 text-slate-700">{r.departmentName}</td>
-                  <td className="px-3 py-3"><span className="inline-flex items-center gap-2"><Avatar name={r.requestedBy?.name || '?'} /><span className="font-semibold text-slate-900">{r.requestedBy?.name || '—'}</span></span></td>
-                  <td className="px-3 py-3 text-slate-700">{(r.publishedAt || r.createdAt) ? niceDate(String(r.publishedAt || r.createdAt).slice(0, 10)) : '—'}</td>
-                  <td className="px-3 py-3 text-slate-800">{applicants(r.positionTitle)}</td>
-                  <td className="px-3 py-3"><span className="rounded-full bg-emerald-100 px-3 py-1 text-xs font-bold text-emerald-700">Active</span></td>
+                  <td className="px-3 py-2 text-slate-800">{r.reqNo}</td>
+                  <td className="px-3 py-2 font-medium text-slate-900">{r.positionTitle}</td>
+                  <td className="px-3 py-2 text-slate-700">{r.departmentName}</td>
+                  <td className="px-3 py-2"><span className="inline-flex items-center gap-2"><Avatar name={r.requestedBy?.name || '?'} /><span className="font-semibold text-slate-900">{r.requestedBy?.name || '—'}</span></span></td>
+                  <td className="px-3 py-2 text-slate-700">{(r.publishedAt || r.createdAt) ? niceDate(String(r.publishedAt || r.createdAt).slice(0, 10)) : '—'}</td>
+                  <td className="px-3 py-2 text-slate-800">{applicants(r.positionTitle)}</td>
+                  <td className="px-3 py-2"><span className="rounded-full bg-emerald-100 px-3 py-1 text-xs font-bold text-emerald-700">Active</span></td>
                 </tr>
               ))}
             </tbody></table></div>
