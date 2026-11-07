@@ -118,7 +118,7 @@ export const ModuleSubNav: React.FC<{ nav: ModuleNav; label: string; variant: 's
               const on = active === key;
               return (
                 <button key={key} id={idPrefix ? `${idPrefix}-${key}` : undefined} type="button" onClick={() => go(key)} aria-current={on ? 'page' : undefined}
-                  className={`w-full flex items-center justify-between px-2.5 py-2 rounded-lg text-xs font-semibold transition-all cursor-pointer ${on ? 'bg-white/15 text-white font-bold' : 'text-slate-300 hover:text-white hover:bg-white/10'}`}>
+                  className={`w-full flex items-center justify-between px-2.5 py-1.5 rounded-lg text-[12px] font-semibold transition-all cursor-pointer ${on ? 'bg-white/15 text-white font-bold' : 'text-slate-300 hover:text-white hover:bg-white/10'}`}>
                   <div className="flex items-center space-x-2 min-w-0">
                     <span className={`w-1.5 h-1.5 rounded-full transition-colors shrink-0 ${on ? 'bg-white' : 'bg-white/30'}`} />
                     {Icon && <Icon className={`w-3.5 h-3.5 shrink-0 transition-colors ${on ? 'text-white' : 'text-slate-400'}`} />}

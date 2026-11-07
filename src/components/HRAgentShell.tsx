@@ -247,22 +247,22 @@ export const HRAgentShell: React.FC<HRAgentShellProps> = ({
             transition-all duration-200 ease-in-out
             ${
               isMobileSidebarOpen
-                ? 'translate-x-0 w-64'
+                ? 'translate-x-0 w-60'
                 : '-translate-x-full lg:translate-x-0'
             }
             ${
               isSidebarOpen
-                ? 'lg:w-64 lg:border-r lg:opacity-100'
+                ? 'lg:w-60 lg:border-r lg:opacity-100'
                 : 'lg:w-0 lg:border-r-0 lg:overflow-hidden lg:pointer-events-none lg:opacity-0'
             }
           `}
         >
           {/* Top Section: Branding & Navigation Tree */}
-          <div className="relative z-10 flex flex-col flex-1 min-h-0 overflow-y-auto min-w-[16rem]">
+          <div className="relative z-10 flex flex-col flex-1 min-h-0 overflow-y-auto min-w-[15rem]">
             {/* Platform Brand Header */}
-            <div className="px-4 pt-5 pb-3 flex flex-col gap-3 shrink-0">
+            <div className="px-4 pt-4 pb-2 flex flex-col gap-3 shrink-0">
               <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2.5 min-w-0"><AmaavigoLogo size="md" variant="mark" theme="dark" height={36} className="shrink-0" /><div className="text-xl font-bold tracking-tight text-white">Amaavigo HR</div></div>
+                <div className="flex items-center gap-2.5 min-w-0"><AmaavigoLogo size="md" variant="mark" theme="dark" height={30} className="shrink-0" /><div className="text-[17px] font-bold tracking-tight text-white">Amaavigo HR</div></div>
                 
                 <div className="flex items-center space-x-1">
                   {/* Desktop close button to collapse left side panel */}
@@ -308,7 +308,7 @@ export const HRAgentShell: React.FC<HRAgentShellProps> = ({
                       id={`nav-module-${n.id}`}
                       type="button"
                       onClick={() => { onSelectModule(n.id); setIsMobileSidebarOpen(false); }}
-                      className={`w-full px-3 py-3 rounded-xl border flex items-center justify-between text-left transition-all cursor-pointer ${
+                      className={`w-full px-3 py-2.5 rounded-xl border flex items-center justify-between text-left transition-all cursor-pointer ${
                         active ? 'bg-gradient-to-r from-[#5f4fcf] to-[#7566dd] border-transparent shadow-md shadow-black/20' : 'bg-transparent border-transparent hover:bg-white/10'
                       }`}
                     >
@@ -317,7 +317,7 @@ export const HRAgentShell: React.FC<HRAgentShellProps> = ({
                           <Icon className="w-4 h-4" />
                         </div>
                         <div className="truncate">
-                          <span className={`text-sm font-medium block truncate ${active ? 'text-white' : 'text-slate-100'}`}>{n.label}</span>
+                          <span className={`text-[13px] font-medium block truncate ${active ? 'text-white' : 'text-slate-100'}`}>{n.label}</span>
                           <span className="hidden">{n.hint}</span>
                         </div>
                       </div>
@@ -335,14 +335,14 @@ export const HRAgentShell: React.FC<HRAgentShellProps> = ({
                       id="nav-category-talent-acquisition"
                       type="button"
                       onClick={() => setIsTalentAcquisitionExpanded(!isTalentAcquisitionExpanded)}
-                      className="w-full px-3 py-3 rounded-xl flex items-center justify-between text-left hover:bg-white/10 transition-colors cursor-pointer group"
+                      className="w-full px-3 py-2.5 rounded-xl flex items-center justify-between text-left hover:bg-white/10 transition-colors cursor-pointer group"
                     >
                       <div className="flex items-center space-x-2.5">
                         <div className="w-7 h-7 rounded-lg bg-transparent text-slate-300 group-hover:text-white flex items-center justify-center shrink-0">
                           <Users className="w-4 h-4" />
                         </div>
                         <div>
-                          <span className="text-sm font-medium text-slate-100 group-hover:text-white block leading-tight">
+                          <span className="text-[13px] font-medium text-slate-100 group-hover:text-white block leading-tight">
                             Talent Acquisition
                           </span>
                           
@@ -368,7 +368,7 @@ export const HRAgentShell: React.FC<HRAgentShellProps> = ({
                             onSelectModule('talent-acquisition-overview');
                             setIsMobileSidebarOpen(false);
                           }}
-                          className={`w-full flex items-center justify-between px-2.5 py-2 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+                          className={`w-full flex items-center justify-between px-2.5 py-2 rounded-lg text-[12px] font-semibold transition-all cursor-pointer ${
                             activeModule === 'talent-acquisition-overview' || activeModule === 'talent-acquisition'
                               ? 'bg-white/15 text-white font-bold'
                               : 'text-slate-300 hover:text-white hover:bg-white/10'
@@ -405,7 +405,7 @@ export const HRAgentShell: React.FC<HRAgentShellProps> = ({
                             onSelectModule('talent-acquisition-requisitions');
                             setIsMobileSidebarOpen(false);
                           }}
-                          className={`w-full flex items-center justify-between px-2.5 py-2 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+                          className={`w-full flex items-center justify-between px-2.5 py-2 rounded-lg text-[12px] font-semibold transition-all cursor-pointer ${
                             activeModule === 'talent-acquisition-requisitions'
                               ? 'bg-white/15 text-white font-bold'
                               : 'text-slate-300 hover:text-white hover:bg-white/10'
@@ -438,7 +438,7 @@ export const HRAgentShell: React.FC<HRAgentShellProps> = ({
                             onSelectModule('talent-acquisition-applications');
                             setIsMobileSidebarOpen(false);
                           }}
-                          className={`w-full flex items-center justify-between px-2.5 py-2 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+                          className={`w-full flex items-center justify-between px-2.5 py-2 rounded-lg text-[12px] font-semibold transition-all cursor-pointer ${
                             activeModule === 'talent-acquisition-applications'
                               ? 'bg-white/15 text-white font-bold'
                               : 'text-slate-300 hover:text-white hover:bg-white/10'
@@ -468,7 +468,7 @@ export const HRAgentShell: React.FC<HRAgentShellProps> = ({
                             onSelectModule('talent-acquisition-pipeline');
                             setIsMobileSidebarOpen(false);
                           }}
-                          className={`w-full flex items-center justify-between px-2.5 py-2 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+                          className={`w-full flex items-center justify-between px-2.5 py-2 rounded-lg text-[12px] font-semibold transition-all cursor-pointer ${
                             activeModule === 'talent-acquisition-pipeline'
                               ? 'bg-white/15 text-white font-bold'
                               : 'text-slate-300 hover:text-white hover:bg-white/10'
@@ -490,7 +490,7 @@ export const HRAgentShell: React.FC<HRAgentShellProps> = ({
                             onSelectModule('talent-acquisition-onboarding');
                             setIsMobileSidebarOpen(false);
                           }}
-                          className={`w-full flex items-center justify-between px-2.5 py-2 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+                          className={`w-full flex items-center justify-between px-2.5 py-2 rounded-lg text-[12px] font-semibold transition-all cursor-pointer ${
                             activeModule === 'talent-acquisition-onboarding'
                               ? 'bg-white/15 text-white font-bold'
                               : 'text-slate-300 hover:text-white hover:bg-white/10'
@@ -530,7 +530,7 @@ export const HRAgentShell: React.FC<HRAgentShellProps> = ({
                       onSelectModule('document-version-control');
                       setIsMobileSidebarOpen(false);
                     }}
-                    className={`w-full px-3 py-3 rounded-xl border flex items-center justify-between text-left transition-all cursor-pointer ${
+                    className={`w-full px-3 py-2.5 rounded-xl border flex items-center justify-between text-left transition-all cursor-pointer ${
                       activeModule === 'document-version-control'
                         ? 'bg-gradient-to-r from-[#6c4de6] to-[#8567f4] border-transparent text-white shadow-lg shadow-black/30'
                         : 'bg-transparent border-transparent text-slate-200 hover:bg-white/10'
@@ -549,7 +549,7 @@ export const HRAgentShell: React.FC<HRAgentShellProps> = ({
                       <div className="truncate">
                         <div className="flex items-center space-x-1.5">
                           <span
-                            className={`text-sm font-medium block truncate ${
+                            className={`text-[13px] font-medium block truncate ${
                               activeModule === 'document-version-control'
                                 ? 'text-white'
                                 : 'text-slate-100'
@@ -599,7 +599,7 @@ export const HRAgentShell: React.FC<HRAgentShellProps> = ({
                       <CalendarDays className="w-4 h-4" />
                     </div>
                     <div className="truncate">
-                      <span className={`text-sm font-medium block truncate ${activeModule === 'leave-management' ? 'text-white' : 'text-slate-100'}`}>
+                      <span className={`text-[13px] font-medium block truncate ${activeModule === 'leave-management' ? 'text-white' : 'text-slate-100'}`}>
                         Leave &amp; Attendance
                       </span>
                       <span className="hidden">Leave, holidays, attendance &amp; approvals</span>
@@ -660,7 +660,7 @@ export const HRAgentShell: React.FC<HRAgentShellProps> = ({
                       <Wallet className="w-4 h-4" />
                     </div>
                     <div className="truncate">
-                      <span className={`text-sm font-medium block truncate ${activeModule === 'payroll' ? 'text-white' : 'text-slate-100'}`}>
+                      <span className={`text-[13px] font-medium block truncate ${activeModule === 'payroll' ? 'text-white' : 'text-slate-100'}`}>
                         Payroll
                       </span>
                       <span className="hidden">Payslips, salary runs &amp; statutory setup</span>
@@ -723,7 +723,7 @@ export const HRAgentShell: React.FC<HRAgentShellProps> = ({
                         <m.Icon className="w-4 h-4" />
                       </div>
                       <div className="truncate">
-                        <span className={`text-sm font-medium block truncate ${activeModule === m.key ? 'text-white' : 'text-slate-100'}`}>{m.title}</span>
+                        <span className={`text-[13px] font-medium block truncate ${activeModule === m.key ? 'text-white' : 'text-slate-100'}`}>{m.title}</span>
                         <span className="hidden">{m.sub}</span>
                       </div>
                     </div>
@@ -815,7 +815,7 @@ export const HRAgentShell: React.FC<HRAgentShellProps> = ({
                       <Users className="w-4 h-4" />
                     </div>
                     <div className="truncate">
-                      <span className={`text-sm font-medium block truncate ${activeModule === 'people' ? 'text-white' : 'text-slate-100'}`}>
+                      <span className={`text-[13px] font-medium block truncate ${activeModule === 'people' ? 'text-white' : 'text-slate-100'}`}>
                         People
                       </span>
                       <span className="hidden">Directory, onboarding, exits &amp; letters</span>
@@ -875,7 +875,7 @@ export const HRAgentShell: React.FC<HRAgentShellProps> = ({
                       <Contact className="w-4 h-4" />
                     </div>
                     <div className="truncate">
-                      <span className={`text-sm font-medium block truncate ${activeModule === 'employee' ? 'text-white' : 'text-slate-100'}`}>
+                      <span className={`text-[13px] font-medium block truncate ${activeModule === 'employee' ? 'text-white' : 'text-slate-100'}`}>
                         Employee
                       </span>
                       <span className="hidden">Master data, acknowledgements &amp; reports</span>
@@ -919,7 +919,7 @@ export const HRAgentShell: React.FC<HRAgentShellProps> = ({
                       onSelectModule('administration');
                       setIsMobileSidebarOpen(false);
                     }}
-                    className={`w-full px-3 py-3 rounded-xl border flex items-center justify-between text-left transition-all cursor-pointer ${
+                    className={`w-full px-3 py-2.5 rounded-xl border flex items-center justify-between text-left transition-all cursor-pointer ${
                       activeModule === 'administration'
                         ? 'bg-gradient-to-r from-[#6c4de6] to-[#8567f4] border-transparent text-white shadow-lg shadow-black/30'
                         : 'bg-transparent border-transparent text-slate-200 hover:bg-white/10'
@@ -934,7 +934,7 @@ export const HRAgentShell: React.FC<HRAgentShellProps> = ({
                         <Settings2 className="w-4 h-4" />
                       </div>
                       <div className="truncate">
-                        <span className={`text-sm font-medium block truncate ${activeModule === 'administration' ? 'text-white' : 'text-slate-100'}`}>
+                        <span className={`text-[13px] font-medium block truncate ${activeModule === 'administration' ? 'text-white' : 'text-slate-100'}`}>
                           Administration
                         </span>
                         <span className="hidden">People, departments &amp; roles</span>
@@ -954,9 +954,9 @@ export const HRAgentShell: React.FC<HRAgentShellProps> = ({
           {/* ============================================================ */}
           {/* BOTTOM SECTION: CURRENT USER PROFILE & LOGOUT OPTION         */}
           {/* ============================================================ */}
-          <div className="relative z-10 shrink-0 p-3 min-w-[16rem]">
-            <div className="flex items-center gap-3 rounded-xl border border-white/10 bg-white/[0.06] px-4 py-3 text-sm font-medium text-slate-100">
-              <HelpCircle className="w-5 h-5" aria-hidden />
+          <div className="relative z-10 shrink-0 p-3 min-w-[15rem]">
+            <div className="flex items-center gap-3 rounded-xl border border-white/10 bg-white/[0.06] px-3.5 py-2.5 text-[13px] font-medium text-slate-100">
+              <HelpCircle className="w-4 h-4" aria-hidden />
               <span>Help &amp; Support</span>
             </div>
           </div>
