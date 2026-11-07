@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { ChevronLeft, ChevronRight, LogIn, LogOut, PartyPopper, Wrench } from 'lucide-react';
+import { CalendarCheck, CalendarDays, CalendarX, CheckCircle2, ChevronLeft, ChevronRight, Clock, Download, Hourglass, LogIn, LogOut, Palmtree, Wrench } from 'lucide-react';
 import { leaveService } from '../../services/leaveService';
 import {
   btnBig, btnGhost, btnPrimary, Card, DAY_LOOK, dayName, Drawer, EmptyState, Field, hm, input, niceDate, Notice, Segmented, Skeleton,
@@ -260,21 +260,182 @@ export const FixDayDrawer: React.FC<{ me: any; day: any | null; open: boolean; o
 
 // ------------------------------------------------------------------ attendance screen
 
+const PAGE = 10;
+const pill: Record<string, string> = {
+  PRESENT: 'bg-emerald-50 text-emerald-700', LATE: 'bg-amber-50 text-amber-700', HALF_DAY: 'bg-orange-50 text-orange-700',
+  INCOMPLETE: 'bg-rose-50 text-rose-700', ABSENT: 'bg-rose-50 text-rose-700', LEAVE: 'bg-sky-50 text-sky-700', HALF_LEAVE: 'bg-sky-50 text-sky-700',
+  HOLIDAY: 'bg-violet-50 text-violet-700', WEEKLY_OFF: 'bg-slate-100 text-slate-600', TODAY: 'bg-orange-50 text-orange-700',
+};
+const calCell: Record<string, string> = {
+  PRESENT: 'bg-emerald-50 text-emerald-700 font-bold', LATE: 'bg-orange-50 text-orange-600 font-bold', HALF_DAY: 'bg-orange-50 text-orange-600 font-bold',
+  INCOMPLETE: 'bg-violet-50 text-violet-600 font-bold', ABSENT: 'bg-rose-100 text-rose-600 font-bold', LEAVE: 'bg-sky-50 text-sky-700 font-bold', HALF_LEAVE: 'bg-sky-50 text-sky-700 font-bold',
+  HOLIDAY: 'bg-violet-50 text-violet-700', WEEKLY_OFF: 'bg-slate-100 text-slate-500',
+};
+const longDay = (iso: string) => new Date(`${iso}T00:00:00Z`).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' });
+
+const StatTile: React.FC<{ label: string; value: number | string; unit?: string; tone: string; Icon: React.FC<{ className?: string }>; icon: string }> = ({ label, value, unit, tone, Icon, icon }) => (
+  <div className={`flex items-center gap-4 rounded-2xl border border-white p-4 ${tone}`}>
+    <span className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-full ${icon}`}><Icon className="h-5 w-5" /></span>
+    <div className="min-w-0"><div className="text-sm font-semibold text-slate-700">{label}</div><div className="text-3xl font-bold leading-tight text-slate-950">{value}{unit && <span className="ml-1 text-lg font-semibold">{unit}</span>}</div></div>
+  </div>
+);
+
 export const AttendanceTab: React.FC<{ me: any; reload: () => void }> = ({ me, reload }) => {
   const [regs, setRegs] = useState<any[] | null>(null);
-  const [tick, setTick] = useState(0);
   const [fix, setFix] = useState<{ open: boolean; day: any | null }>({ open: false, day: null });
+  const [month, setMonth] = useState(thisMonth());
+  const [data, setData] = useState<any | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [page, setPage] = useState(1);
+  const { busy, note, run } = useRunner();
+  const clock = useIstClock();
 
   const loadRegs = useCallback(() => leaveService.myRegularizations().then((r) => setRegs(r.items)).catch(() => setRegs([])), []);
   useEffect(() => { loadRegs(); }, [loadRegs]);
+  const loadMonth = useCallback(() => {
+    setError(null);
+    leaveService.attendance(month).then(setData).catch((e) => setError(e.message));
+  }, [month]);
+  useEffect(() => { loadMonth(); setPage(1); }, [loadMonth]);
+
+  const shiftMonth = (n: number) => { const [y, m] = month.split('-').map(Number); setMonth(new Date(Date.UTC(y, m - 1 + n, 1)).toISOString().slice(0, 7)); };
+  const isNow = month === thisMonth();
+  const s = data?.summary;
+  const all: any[] = data?.days || [];
+  const inMonth = all.filter((d) => d.status !== 'NOT_EMPLOYED');
+  const count = (...st: string[]) => inMonth.filter((d) => st.includes(d.status)).length;
+  const workingDays = inMonth.filter((d) => !['HOLIDAY', 'WEEKLY_OFF'].includes(d.status)).length;
+  const records = inMonth.filter((d) => d.date <= todayIst() && !['FUTURE', 'WEEKLY_OFF', 'HOLIDAY'].includes(d.status)).sort((a, b) => b.date.localeCompare(a.date));
+  const pages = Math.max(1, Math.ceil(records.length / PAGE));
+  const cur = Math.min(page, pages);
+  const rows = records.slice((cur - 1) * PAGE, cur * PAGE);
+  const lead = all.length ? new Date(`${all[0].date}T00:00:00Z`).getUTCDay() : 0;
+  const today = todayIst();
+
+  const exportCsv = () => {
+    const q = (v: unknown) => `"${String(v ?? '').replace(/"/g, '""')}"`;
+    const lines = [['Date', 'Check-in', 'Check-out', 'Work hours', 'Status'].join(',')].concat(
+      records.map((d) => [d.date, d.checkIn, d.checkOut, hm(d.workedMinutes), STATUS_LABEL[d.status] || d.status].map(q).join(','))
+    );
+    const url = URL.createObjectURL(new Blob([lines.join('\n')], { type: 'text/csv' }));
+    const a = document.createElement('a'); a.href = url; a.download = `attendance-${month}.csv`; a.click(); URL.revokeObjectURL(url);
+  };
+
+  // Today's activity
+  const att = me.attendanceToday;
+  const shiftCfg = me.settings.shift;
+  const worked = (att.workedMinutes || 0) + (att.open && att.openSince ? Math.max(0, clock.mins - toMin(att.openSince)) : 0);
+  const state: 'out' | 'in' | 'back' = !att.checkIn ? 'out' : att.open ? 'in' : 'back';
+  const punch = (kind: 'in' | 'out') => run(async () => {
+    if (kind === 'in') await leaveService.checkIn(); else await leaveService.checkOut();
+    await reload(); loadMonth();
+  }, kind === 'in' ? 'Checked in. Have a good day!' : 'Checked out.');
+
+  const legend: [string, string, number][] = [
+    ['bg-emerald-500', 'Present', count('PRESENT')], ['bg-orange-400', 'Late', count('LATE')], ['bg-violet-400', 'Missed check-out', count('INCOMPLETE')],
+    ['bg-rose-400', 'Absent', count('ABSENT')], ['bg-sky-400', 'On leave', count('LEAVE', 'HALF_LEAVE')], ['bg-slate-300', 'Weekend / Off', count('WEEKLY_OFF', 'HOLIDAY')],
+  ];
 
   return (
-    <div className="grid lg:grid-cols-3 gap-4">
-      <div className="lg:col-span-2 space-y-4">
-        <PunchCard me={me} reload={reload} onChanged={() => setTick((t) => t + 1)} />
-        <MonthView key={tick} onFixDay={(d) => setFix({ open: true, day: d })} />
-      </div>
-      <div className="space-y-4">
+    <div className="space-y-5">
+      <header className="flex flex-wrap items-start justify-between gap-4">
+        <div>
+          <h1 className="text-3xl font-bold tracking-tight text-slate-950">Attendance</h1>
+          <p className="mt-1 text-sm text-slate-600">Track your daily check-in, check-out and attendance records.</p>
+        </div>
+        <div className="flex items-center gap-2">
+          <div className="flex h-11 items-center gap-1 rounded-xl border border-slate-200 bg-white px-1.5">
+            <button type="button" aria-label="Previous month" onClick={() => shiftMonth(-1)} className="rounded-lg p-1.5 hover:bg-slate-100 cursor-pointer"><ChevronLeft className="h-4 w-4" /></button>
+            <span className="min-w-[8.5rem] text-center text-sm font-semibold text-slate-800">{monthTitle(month)}</span>
+            <button type="button" aria-label="Next month" disabled={isNow} onClick={() => shiftMonth(1)} className="rounded-lg p-1.5 hover:bg-slate-100 disabled:opacity-40 cursor-pointer"><ChevronRight className="h-4 w-4" /></button>
+          </div>
+          <button type="button" disabled={records.length === 0} onClick={exportCsv} className="inline-flex h-11 items-center gap-2 rounded-xl bg-[#F36B21] px-5 text-sm font-bold text-white hover:bg-[#df5d18] disabled:opacity-50 cursor-pointer"><Download className="h-4 w-4" />Export</button>
+        </div>
+      </header>
+      {error && <Notice tone="error">{error}</Notice>}
+      {!data && !error && <Skeleton rows={4} />}
+
+      {s && (
+        <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
+          <StatTile label="Present" value={s.present} unit={s.present === 1 ? 'day' : 'days'} tone="bg-emerald-50" icon="bg-emerald-100 text-emerald-600" Icon={CalendarCheck} />
+          <StatTile label="Late check-in" value={s.late} unit={s.late === 1 ? 'day' : 'days'} tone="bg-orange-50" icon="bg-orange-100 text-orange-600" Icon={Clock} />
+          <StatTile label="On leave" value={s.leave} unit={s.leave === 1 ? 'day' : 'days'} tone="bg-sky-50" icon="bg-sky-100 text-sky-600" Icon={Palmtree} />
+          <StatTile label="Absent" value={s.absent} unit={s.absent === 1 ? 'day' : 'days'} tone="bg-rose-50" icon="bg-rose-100 text-rose-600" Icon={CalendarX} />
+          <StatTile label="Total working days" value={workingDays} unit="days" tone="bg-indigo-50" icon="bg-indigo-100 text-indigo-600" Icon={CalendarDays} />
+        </div>
+      )}
+      {s?.lateDeductionDays > 0 && <Notice tone="warn">You were late {s.late} times this month. Your company's rule may cut {s.lateDeductionDays} day(s) of pay for that.</Notice>}
+
+      {data && (
+        <div className="grid items-start gap-4 xl:grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)]">
+          <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+            <h2 className="mb-3 text-lg font-bold text-slate-950">Attendance records <span className="text-sm font-normal text-slate-600">({monthTitle(month)})</span></h2>
+            <div className="overflow-x-auto rounded-xl">
+              <table className="w-full text-left text-sm">
+                <thead><tr className="bg-slate-50 text-xs font-bold text-slate-700"><th className="px-3 py-2.5">Date</th><th className="px-3 py-2.5">Check-in</th><th className="px-3 py-2.5">Check-out</th><th className="px-3 py-2.5">Work hours</th><th className="px-3 py-2.5">Status</th><th className="px-3 py-2.5" /></tr></thead>
+                <tbody className="divide-y divide-slate-100">
+                  {rows.length === 0 && <tr><td colSpan={6} className="px-3 py-8 text-center text-slate-500">No records for this month yet.</td></tr>}
+                  {rows.map((d) => (
+                    <tr key={d.date} className={d.date === today ? 'bg-orange-50/40' : ''}>
+                      <td className="whitespace-nowrap px-3 py-3 text-slate-800">{longDay(d.date)}</td>
+                      <td className="whitespace-nowrap px-3 py-3 text-slate-700">{d.checkIn || '—'}</td>
+                      <td className="whitespace-nowrap px-3 py-3 text-slate-700">{d.checkOut || '—'}</td>
+                      <td className="whitespace-nowrap px-3 py-3 text-slate-700">{hm(d.workedMinutes) || '—'}</td>
+                      <td className="px-3 py-3"><span className={`inline-block whitespace-nowrap rounded-full px-3 py-1 text-xs font-bold ${pill[d.status] || 'bg-slate-100 text-slate-600'}`}>{STATUS_LABEL[d.status] || '—'}</span></td>
+                      <td className="px-3 py-3 text-right">{canFix(d) && <button type="button" className="text-xs font-bold text-[#F36B21] hover:underline cursor-pointer" onClick={() => setFix({ open: true, day: d })}>Fix</button>}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <div className="mt-3 flex flex-wrap items-center justify-between gap-3 text-sm text-slate-600">
+              <span>{records.length === 0 ? 'Showing 0' : `Showing ${(cur - 1) * PAGE + 1} – ${Math.min(cur * PAGE, records.length)}`} of {records.length} records</span>
+              {pages > 1 && (
+                <div className="flex items-center gap-1.5">
+                  <button type="button" aria-label="Previous page" disabled={cur === 1} onClick={() => setPage(cur - 1)} className="flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 disabled:opacity-40 cursor-pointer"><ChevronLeft className="h-4 w-4" /></button>
+                  {Array.from({ length: pages }, (_, i) => i + 1).map((n) => <button key={n} type="button" onClick={() => setPage(n)} className={`h-9 w-9 rounded-lg border text-sm font-semibold cursor-pointer ${n === cur ? 'border-[#F36B21] bg-[#F36B21] text-white' : 'border-slate-200 text-slate-700'}`}>{n}</button>)}
+                  <button type="button" aria-label="Next page" disabled={cur === pages} onClick={() => setPage(cur + 1)} className="flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 disabled:opacity-40 cursor-pointer"><ChevronRight className="h-4 w-4" /></button>
+                </div>
+              )}
+            </div>
+          </section>
+
+          <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+            <h2 className="mb-3 text-lg font-bold text-slate-950">Monthly attendance</h2>
+            <div className="flex flex-wrap gap-5">
+              <div className="min-w-[17rem] flex-1">
+                <div className="mb-1.5 grid grid-cols-7 gap-1">{WEEK.map((w) => <div key={w} className="text-center text-[11px] font-semibold text-slate-500">{w}</div>)}</div>
+                <div className="grid grid-cols-7 gap-1">
+                  {Array.from({ length: lead }).map((_, i) => <div key={`b${i}`} />)}
+                  {all.map((d) => {
+                    const na = d.status === 'NOT_EMPLOYED';
+                    return <div key={d.date} title={`${longDay(d.date)}: ${STATUS_LABEL[d.status] || ''}`} className={`flex h-9 items-center justify-center rounded-lg text-sm ${na ? 'text-slate-300' : calCell[d.status] || 'bg-slate-50 text-slate-600'} ${d.date === today ? 'ring-2 ring-[#F36B21]' : ''}`}>{Number(d.date.slice(8))}</div>;
+                  })}
+                </div>
+              </div>
+              <ul className="space-y-2.5 text-sm text-slate-700">
+                {legend.map(([dot, label, n]) => <li key={label} className="flex items-center gap-2"><span className={`h-3 w-3 rounded-full ${dot}`} />{label} ({n})</li>)}
+              </ul>
+            </div>
+          </section>
+        </div>
+      )}
+
+      <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+        <h2 className="mb-4 text-lg font-bold text-slate-950">Today's activity</h2>
+        <div className="grid items-center gap-5 md:grid-cols-[1fr_1fr_1.2fr_auto]">
+          <div className="flex items-center gap-3"><span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-emerald-50 text-emerald-600"><CheckCircle2 className="h-6 w-6" /></span><div><div className="text-sm text-slate-600">{att.checkIn ? 'Checked in at' : 'Not checked in yet'}</div><div className="text-2xl font-bold text-slate-950">{att.checkIn || '—'}</div></div></div>
+          <div className="flex items-center gap-3"><span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-slate-100 text-slate-500"><Clock className="h-6 w-6" /></span><div><div className="text-sm text-slate-600">{state === 'back' ? 'Checked out at' : 'Not checked out yet'}</div><div className="text-2xl font-bold text-slate-950">{state === 'back' ? att.checkOut : '—'}</div></div></div>
+          <div className="flex items-center gap-3"><span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-orange-50 text-[#F36B21]"><Hourglass className="h-6 w-6" /></span><div><div className="text-sm text-slate-600">Work duration</div><div className="flex flex-wrap items-center gap-2"><span className="text-2xl font-bold text-slate-950">{hm(worked) || '0h 00m'}</span>{state === 'in' && <span className="rounded-md bg-emerald-50 px-2 py-0.5 text-xs font-bold text-emerald-700">In progress</span>}</div></div></div>
+          {state === 'in'
+            ? <button type="button" disabled={busy} onClick={() => punch('out')} className="inline-flex h-12 items-center justify-center gap-2 rounded-xl border border-[#F36B21] bg-white px-6 text-sm font-bold text-[#F36B21] hover:bg-orange-50 disabled:opacity-50 cursor-pointer"><LogOut className="h-4 w-4" />Check out</button>
+            : <button type="button" disabled={busy} onClick={() => punch('in')} className="inline-flex h-12 items-center justify-center gap-2 rounded-xl bg-[#F36B21] px-6 text-sm font-bold text-white hover:bg-[#df5d18] disabled:opacity-50 cursor-pointer"><LogIn className="h-4 w-4" />{state === 'back' ? 'Check in again' : 'Check in'}</button>}
+        </div>
+        <div className="mt-3 text-xs text-slate-500">Shift {shiftCfg.start}–{shiftCfg.end}{att.sessions?.length > 1 ? ` · Today: ${att.sessions.map((x: any) => `${x.in}–${x.out || 'now'}`).join(' · ')}` : ''}</div>
+        {note && <div className="mt-3"><Notice tone={note.tone === 'ok' ? 'ok' : 'error'}>{note.text}</Notice></div>}
+      </section>
+
+      <div className="grid gap-4 lg:grid-cols-2">
         <Card title="Something wrong?" subtitle="Missed a check-in or check-out, or the time is wrong.">
           <button className={`${btnPrimary} w-full`} onClick={() => setFix({ open: true, day: null })}><Wrench className="w-3.5 h-3.5" />Fix a day</button>
         </Card>
@@ -291,7 +452,7 @@ export const AttendanceTab: React.FC<{ me: any; reload: () => void }> = ({ me, r
           )}
         </Card>
       </div>
-      <FixDayDrawer me={me} day={fix.day} open={fix.open} onClose={() => setFix({ open: false, day: null })} onSent={() => { loadRegs(); setTick((t) => t + 1); }} />
+      <FixDayDrawer me={me} day={fix.day} open={fix.open} onClose={() => setFix({ open: false, day: null })} onSent={() => { loadRegs(); loadMonth(); }} />
     </div>
   );
 };
