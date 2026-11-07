@@ -847,12 +847,6 @@ export default function App() {
           {/* Module: Talent Acquisition - Onboarding (HR) */}
           {hrAgentModule === 'talent-acquisition-onboarding' && currentUser && (
             <div className="flex-1 flex flex-col min-w-0">
-              <TalentAcquisitionHeader
-                currentUser={currentUser}
-                onLogout={handleLogout}
-                isSidebarOpen={isSidebarOpen}
-                onToggleSidebar={handleToggleSidebar}
-              />
               <OnboardingModule currentUser={currentUser} />
             </div>
           )}
