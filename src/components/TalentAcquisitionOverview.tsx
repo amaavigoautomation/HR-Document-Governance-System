@@ -538,11 +538,11 @@ export const TalentAcquisitionOverview: React.FC<TalentAcquisitionOverviewProps>
   };
 
   return (
-    <div className="flex-1 w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6">
+    <div className="flex-1 w-full max-w-[1600px] mx-auto px-4 sm:px-6 xl:px-8 py-6 space-y-5 bg-[#F7F8FA]">
       {/* ---------------------------------------------------- */}
       {/* 1. HEADER SECTION                                     */}
       {/* ---------------------------------------------------- */}
-      <div className="bg-white rounded-2xl p-6 border border-slate-200 shadow-xs flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
+      <div className="bg-transparent rounded-2xl py-1 flex flex-col lg:flex-row lg:items-end lg:justify-between gap-4">
         <div>
           <div className="flex items-center space-x-2.5">
             <span className="inline-flex items-center space-x-1.5 px-2.5 py-1 rounded-md text-xs font-bold bg-orange-100/90 text-[#FA7014]">
@@ -562,10 +562,10 @@ export const TalentAcquisitionOverview: React.FC<TalentAcquisitionOverviewProps>
               </span>
             )}
           </div>
-          <h1 className="text-2xl font-black text-slate-900 tracking-tight mt-2">
+          <h1 className="text-[28px] leading-tight font-bold text-slate-900 tracking-tight mt-3">
             Talent Acquisition — Overview
           </h1>
-          <p className="text-xs sm:text-sm text-slate-500 mt-0.5">
+          <p className="text-sm text-slate-500 mt-1">
             Recruitment overview and candidate application metrics synchronized with Google Sheets.
           </p>
         </div>
@@ -707,9 +707,9 @@ export const TalentAcquisitionOverview: React.FC<TalentAcquisitionOverviewProps>
       {/* ---------------------------------------------------- */}
       {/* 3. KPI CARDS SECTION                                 */}
       {/* ---------------------------------------------------- */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
         {/* KPI 1: Open Positions */}
-        <div className="bg-white rounded-2xl p-5 border border-slate-200 shadow-xs flex flex-col justify-between hover:border-slate-300 transition-all">
+        <div className="bg-white rounded-2xl p-5 border border-slate-200/80 shadow-sm flex flex-col justify-between min-h-[148px] hover:border-slate-300 hover:shadow-md transition-all">
           <div className="flex items-center justify-between">
             <span className="text-xs font-bold uppercase tracking-wider text-slate-500">
               Open Positions
@@ -826,10 +826,10 @@ export const TalentAcquisitionOverview: React.FC<TalentAcquisitionOverviewProps>
       {/* ---------------------------------------------------- */}
       {/* 4. DESIGNATION FILTER & VISUAL ANALYTICS              */}
       {/* ---------------------------------------------------- */}
-      <div className="bg-white rounded-2xl p-6 border border-slate-200 shadow-xs space-y-6">
+      <div className="bg-white rounded-2xl p-5 sm:p-6 border border-slate-200/80 shadow-sm space-y-5">
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 pb-4 border-b border-slate-100">
           <div>
-            <h2 className="text-base font-black text-slate-900 flex items-center gap-2">
+            <h2 className="text-base font-bold text-slate-900 flex items-center gap-2">
               <BarChart3 className="w-4 h-4 text-[#FA7014]" />
               <span>Applications by Designation</span>
             </h2>
