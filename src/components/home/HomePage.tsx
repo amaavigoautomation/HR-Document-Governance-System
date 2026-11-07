@@ -56,7 +56,7 @@ export const HomePage: React.FC<Props> = ({ fallbackName, onOpen }) => {
 
   return (
     <div className="w-full h-full overflow-y-auto bg-[#F7F8FA]">
-      <div className="max-w-[1440px] mx-auto p-4 sm:p-6 xl:p-8 space-y-5">
+      <div className="max-w-[1440px] mx-auto p-4 sm:p-5 xl:p-6 space-y-4">
         <Greeting first={first} today={today} actions={<>
           {canManage && (
             <button type="button" className={btnGhost} onClick={() => setManage(true)}>
@@ -85,7 +85,7 @@ export const HomePage: React.FC<Props> = ({ fallbackName, onOpen }) => {
           </div>
         </div>
 
-        <h2 id="home-more" className="pt-4 text-xl font-bold text-slate-950">More for you</h2>
+        <h2 id="home-more" className="pt-3 text-lg font-bold text-slate-950">More for you</h2>
 
         {/* Main dashboard: personal workspace on the left, company updates on the right. */}
         {L && <>

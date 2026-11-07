@@ -102,8 +102,8 @@ export const MyTasks: React.FC<{ widgets: DashboardWidget[]; onOpen: (t: WidgetT
         <ul className="divide-y divide-slate-100">
           {rows.map((r) => (
             <li key={r.key}>
-              <button type="button" disabled={!r.target} onClick={() => r.target && onOpen(r.target)} className="w-full flex items-center gap-3 py-2.5 text-left rounded-lg hover:bg-orange-50/60 disabled:hover:bg-transparent cursor-pointer disabled:cursor-default px-1">
-                <span className="w-9 h-9 rounded-full bg-violet-50 text-violet-600 flex items-center justify-center shrink-0"><r.Icon className="w-4 h-4" /></span>
+              <button type="button" disabled={!r.target} onClick={() => r.target && onOpen(r.target)} className="w-full flex items-center gap-3 py-2 text-left rounded-lg hover:bg-orange-50/60 disabled:hover:bg-transparent cursor-pointer disabled:cursor-default px-1">
+                <span className="w-8 h-8 rounded-full bg-violet-50 text-violet-600 flex items-center justify-center shrink-0"><r.Icon className="w-4 h-4" /></span>
                 <span className="flex-1 min-w-0 truncate text-sm font-medium text-slate-800">{r.text}</span>
                 <span className={`shrink-0 rounded-md px-2.5 py-1 text-xs font-semibold ${tagFor(r.key)[1]}`}>{tagFor(r.key)[0]}</span>
               </button>

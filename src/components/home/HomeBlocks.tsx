@@ -22,11 +22,11 @@ const greeting = () => {
 export const Greeting: React.FC<{ first: string; today: string; actions?: React.ReactNode }> = ({ first, today, actions }) => (
   <header className="flex flex-wrap items-start justify-between gap-3">
     <div>
-      <h1 className="text-3xl font-bold tracking-tight text-slate-950">{greeting()}{first ? `, ${first}` : ''} <span aria-hidden>👋</span></h1>
-      <p className="mt-1 text-sm text-slate-600">Here&apos;s what&apos;s happening today.</p>
+      <h1 className="text-2xl font-bold tracking-tight text-slate-950">{greeting()}{first ? `, ${first}` : ''} <span aria-hidden>👋</span></h1>
+      <p className="mt-0.5 text-[13px] text-slate-600">Here&apos;s what&apos;s happening today.</p>
     </div>
     <div className="flex items-center gap-2">
-      {today && <span className="hidden sm:inline-flex h-9 items-center gap-2 rounded-xl px-3 text-sm font-semibold text-slate-700"><CalendarDays className="h-4 w-4" />{today}</span>}
+      {today && <span className="hidden sm:inline-flex h-8 items-center gap-2 rounded-xl px-3 text-[13px] font-semibold text-slate-700"><CalendarDays className="h-4 w-4" />{today}</span>}
       {actions}
     </div>
   </header>
@@ -51,7 +51,7 @@ const attendancePct = (people: AttPerson[]): number | null => {
 const Trend: React.FC<{ delta: number | null; unit?: string }> = ({ delta, unit = '%' }) => {
   if (delta === null || delta === 0 || !Number.isFinite(delta)) return null;
   const up = delta > 0;
-  return <span className={`self-end text-sm font-bold ${up ? 'text-emerald-600' : 'text-rose-600'}`}>{up ? '↑' : '↓'} {up ? '+' : ''}{delta}{unit}</span>;
+  return <span className={`self-end text-xs font-bold ${up ? 'text-emerald-600' : 'text-rose-600'}`}>{up ? '↑' : '↓'} {up ? '+' : ''}{delta}{unit}</span>;
 };
 
 const TONES = {
@@ -65,15 +65,15 @@ const Tile: React.FC<{ label: string; value: string | number; tone: keyof typeof
   const t = TONES[tone];
   const body = (
     <>
-      <span className={`flex h-14 w-14 shrink-0 items-center justify-center rounded-full ${t.icon}`}><Icon className="h-6 w-6" /></span>
+      <span className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-full ${t.icon}`}><Icon className="h-5 w-5" /></span>
       <span className="min-w-0 flex-1 text-left">
-        <span className="block text-3xl font-bold leading-tight tabular-nums text-slate-950">{value}</span>
-        <span className="block truncate text-sm text-slate-700">{label}</span>
+        <span className="block text-2xl font-bold leading-tight tabular-nums text-slate-950">{value}</span>
+        <span className="block truncate text-xs text-slate-700">{label}</span>
       </span>
       {trend}
     </>
   );
-  const cls = `flex items-center gap-4 rounded-2xl border px-5 py-5 ${t.tile}`;
+  const cls = `flex items-center gap-3 rounded-2xl border px-4 py-3.5 ${t.tile}`;
   return onClick ? <button type="button" onClick={onClick} className={`${cls} w-full cursor-pointer transition-shadow hover:shadow-sm`}>{body}</button> : <div className={cls}>{body}</div>;
 };
 
@@ -124,7 +124,7 @@ export const TopTiles: React.FC<{ widgets: DashboardWidget[]; refreshKey: number
   if (tiles.length < 4 && tasks > 0) tiles.push(<Tile key="tk" label="Waiting on you" value={tasks} tone="blue" Icon={FileText} />);
 
   if (tiles.length === 0) return null;
-  return <section aria-label="At a glance" className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">{tiles.slice(0, 4)}</section>;
+  return <section aria-label="At a glance" className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">{tiles.slice(0, 4)}</section>;
 };
 
 // ------------------------------------------------------------------ hiring pipeline
@@ -151,25 +151,25 @@ export const PipelineChart: React.FC<{ refreshKey: number; onOpen: (t: WidgetTar
   const ticks = [max, (max * 3) / 4, max / 2, max / 4, 0].map(Math.round);
   return (
     <Card className="min-w-0" title={<span className="inline-flex items-center gap-2"><Users className="h-5 w-5" />Hiring Pipeline</span>} right={
-      <select value={days} onChange={(e) => setDays(Number(e.target.value))} className="h-9 rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-700 outline-none" aria-label="Period">
+      <select value={days} onChange={(e) => setDays(Number(e.target.value))} className="h-8 rounded-lg border border-slate-200 bg-white px-2.5 text-xs text-slate-700 outline-none" aria-label="Period">
         {PERIODS.map((p) => <option key={p.days} value={p.days}>{p.label}</option>)}
       </select>}>
       <div className="flex gap-3" role="img" aria-label={STAGES.map((s, i) => `${s.label} ${counts[i]}`).join(', ')}>
-        <div className="flex h-52 flex-col justify-between pb-7 text-right text-xs text-slate-600">{ticks.map((t, i) => <span key={i}>{t}</span>)}</div>
+        <div className="flex h-40 flex-col justify-between pb-6 text-right text-[11px] text-slate-600">{ticks.map((t, i) => <span key={i}>{t}</span>)}</div>
         <div className="relative flex-1">
           <div className="absolute inset-x-0 top-2 bottom-7 flex flex-col justify-between" aria-hidden>{ticks.map((_, i) => <div key={i} className="border-t border-dashed border-slate-200" />)}</div>
-          <div className="relative flex h-52 items-end justify-around gap-3 pt-2">
+          <div className="relative flex h-40 items-end justify-around gap-3 pt-2">
             {STAGES.map((s, i) => (
               <div key={s.label} className="flex h-full flex-1 flex-col items-center justify-end">
-                <span className="mb-1 text-sm font-bold text-slate-900">{counts[i]}</span>
-                <div className="w-full max-w-[84px] rounded-t-md" style={{ height: `${(counts[i] / max) * (100 - 14)}%`, minHeight: counts[i] ? 4 : 0, background: SHADES[i] }} />
-                <span className="mt-2 h-5 text-sm text-slate-800">{s.label}</span>
+                <span className="mb-1 text-xs font-bold text-slate-900">{counts[i]}</span>
+                <div className="w-full max-w-[64px] rounded-t-md" style={{ height: `${(counts[i] / max) * (100 - 14)}%`, minHeight: counts[i] ? 4 : 0, background: SHADES[i] }} />
+                <span className="mt-1.5 h-4 text-xs text-slate-800">{s.label}</span>
               </div>
             ))}
           </div>
         </div>
       </div>
-      <div className="mt-2 text-right"><button type="button" onClick={() => onOpen({ module: 'talent-acquisition-overview' })} className="text-sm font-bold text-[#F36B21] hover:underline cursor-pointer">Open pipeline <ArrowRight className="inline h-3.5 w-3.5" /></button></div>
+      <div className="mt-2 text-right"><button type="button" onClick={() => onOpen({ module: 'talent-acquisition-overview' })} className="text-xs font-bold text-[#F36B21] hover:underline cursor-pointer">Open pipeline <ArrowRight className="inline h-3.5 w-3.5" /></button></div>
     </Card>
   );
 };
@@ -189,12 +189,12 @@ const ACTIONS: { label: string; Icon: React.FC<{ className?: string }>; target?:
 
 export const QuickActionsGrid: React.FC<{ onOpen: (t: WidgetTarget) => void }> = ({ onOpen }) => (
   <Card className="min-w-0" title={<span className="inline-flex items-center gap-2"><Zap className="h-5 w-5" />Quick Actions</span>}>
-    <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+    <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-4">
       {ACTIONS.map((a) => (
         <button key={a.label} type="button"
           onClick={() => (a.target ? onOpen(a.target) : document.getElementById('home-more')?.scrollIntoView({ behavior: 'smooth', block: 'start' }))}
-          className="flex min-h-[5.5rem] flex-col items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-2 py-3 text-center text-[13px] font-medium leading-tight text-slate-800 shadow-sm hover:border-[#F36B21]/60 hover:bg-orange-50/40 cursor-pointer">
-          <a.Icon className="h-6 w-6 text-slate-700" />{a.label}
+          className="flex min-h-[4.25rem] flex-col items-center justify-center gap-1.5 rounded-xl border border-slate-200 bg-white px-2 py-2.5 text-center text-xs font-medium leading-tight text-slate-800 shadow-sm hover:border-[#F36B21]/60 hover:bg-orange-50/40 cursor-pointer">
+          <a.Icon className="h-5 w-5 text-slate-700" />{a.label}
         </button>
       ))}
     </div>
@@ -237,17 +237,17 @@ export const UpcomingCard: React.FC<{ refreshKey: number; onOpen: (t: WidgetTarg
 
   return (
     <Card className="min-w-0" title={<span className="inline-flex items-center gap-2"><CalendarDays className="h-5 w-5" />Upcoming</span>} right={
-      <div className="inline-flex rounded-full bg-slate-100 p-0.5 text-sm" role="tablist" aria-label="Upcoming">
-        {TABS.map((t) => <button key={t} type="button" role="tab" aria-selected={tab === t} onClick={() => setTab(t)} className={`rounded-full px-3 py-1 font-medium cursor-pointer ${tab === t ? 'bg-violet-200 text-violet-900' : 'text-slate-600 hover:text-slate-900'}`}>{t}</button>)}
+      <div className="inline-flex rounded-full bg-slate-100 p-0.5 text-xs" role="tablist" aria-label="Upcoming">
+        {TABS.map((t) => <button key={t} type="button" role="tab" aria-selected={tab === t} onClick={() => setTab(t)} className={`rounded-full px-2.5 py-0.5 text-xs font-medium cursor-pointer ${tab === t ? 'bg-violet-200 text-violet-900' : 'text-slate-600 hover:text-slate-900'}`}>{t}</button>)}
       </div>}>
       {loading && shown.length === 0 ? <p className="py-6 text-center text-sm text-slate-500">Loading…</p>
         : shown.length === 0 ? <p className="py-6 text-center text-sm text-slate-500">Nothing coming up.</p> : (
           <ul className="divide-y divide-slate-100">
             {shown.map((x) => (
               <li key={x.key}>
-                <button type="button" disabled={!x.target} onClick={() => x.target && onOpen(x.target)} className="flex w-full items-center gap-3 py-3 text-left disabled:cursor-default cursor-pointer">
-                  <span className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-full ${x.tone}`}><x.Icon className="h-5 w-5" /></span>
-                  <span className="min-w-0 flex-1"><span className="block truncate text-[15px] text-slate-900">{x.title}</span><span className="block truncate text-sm text-slate-600">{x.sub}</span></span>
+                <button type="button" disabled={!x.target} onClick={() => x.target && onOpen(x.target)} className="flex w-full items-center gap-3 py-2 text-left disabled:cursor-default cursor-pointer">
+                  <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full ${x.tone}`}><x.Icon className="h-4 w-4" /></span>
+                  <span className="min-w-0 flex-1"><span className="block truncate text-[13px] text-slate-900">{x.title}</span><span className="block truncate text-xs text-slate-600">{x.sub}</span></span>
                   {x.target && <ArrowRight className="h-4 w-4 shrink-0 text-slate-500" />}
                 </button>
               </li>
@@ -266,16 +266,16 @@ export const LeaveBalanceCard: React.FC<{ refreshKey: number; onOpen: (t: Widget
   if (!me.loading && (me.error || list.length === 0)) return null;
   return (
     <Card className="min-w-0" title={<span className="inline-flex items-center gap-2"><Palmtree className="h-5 w-5" />Leave Balance</span>}
-      right={<button type="button" onClick={() => onOpen({ module: 'leave-management', section: 'my' })} className="text-sm font-bold text-[#4f46e5] hover:underline cursor-pointer">View Details <ArrowRight className="inline h-3.5 w-3.5" /></button>}>
+      right={<button type="button" onClick={() => onOpen({ module: 'leave-management', section: 'my' })} className="text-xs font-bold text-[#4f46e5] hover:underline cursor-pointer">View Details <ArrowRight className="inline h-3.5 w-3.5" /></button>}>
       {me.loading ? <p className="py-6 text-center text-sm text-slate-500">Loading…</p> : (
-        <ul className="space-y-4 py-1">
+        <ul className="space-y-3 py-1">
           {list.slice(0, 5).map((b) => {
             const total = Math.max(b.credited, b.balance + b.used + (b.pending || 0), 1);
             const pct = Math.max(0, Math.min(100, Math.round((b.balance / total) * 100)));
             return (
-              <li key={b.typeId} className="grid grid-cols-[7.5rem_1fr_6.5rem] items-center gap-4 text-[15px]">
+              <li key={b.typeId} className="grid grid-cols-[6.5rem_1fr_5.5rem] items-center gap-3 text-[13px]">
                 <span className="truncate text-slate-900">{b.name}</span>
-                <span className="h-2.5 overflow-hidden rounded-full bg-slate-100" title={`${b.balance} of ${total} days left`}><span className="block h-full rounded-full bg-[#8b7df3]" style={{ width: `${pct}%` }} /></span>
+                <span className="h-2 overflow-hidden rounded-full bg-slate-100" title={`${b.balance} of ${total} days left`}><span className="block h-full rounded-full bg-[#8b7df3]" style={{ width: `${pct}%` }} /></span>
                 <span className="text-right text-slate-800">{b.balance} / {total} days</span>
               </li>
             );
@@ -303,23 +303,23 @@ export const TeamAttendanceCard: React.FC<{ refreshKey: number; onOpen: (t: Widg
   const R = 34; const C = 2 * Math.PI * R;
   return (
     <Card className="min-w-0" title={<span className="inline-flex items-center gap-2"><Users className="h-5 w-5" />Team Attendance (Today)</span>}
-      right={<button type="button" onClick={() => onOpen({ module: 'leave-management', section: 'reports' })} className="text-sm font-bold text-[#4f46e5] hover:underline cursor-pointer">View Team <ArrowRight className="inline h-3.5 w-3.5" /></button>}>
+      right={<button type="button" onClick={() => onOpen({ module: 'leave-management', section: 'reports' })} className="text-xs font-bold text-[#4f46e5] hover:underline cursor-pointer">View Team <ArrowRight className="inline h-3.5 w-3.5" /></button>}>
       {att.loading ? <p className="py-6 text-center text-sm text-slate-500">Loading…</p> : (
-        <div className="flex flex-wrap items-center gap-5 py-2">
+        <div className="flex flex-wrap items-center gap-4 py-1">
           <div className="flex items-center">
             {here.slice(0, 4).map((p, i) => <span key={p.uid} className={i ? '-ml-2' : ''} title={p.name}><Avatar name={p.name} /></span>)}
             {here.length > 4 && <span className="-ml-2 flex h-8 w-8 items-center justify-center rounded-full bg-violet-100 text-[11px] font-bold text-violet-700">+{here.length - 4}</span>}
           </div>
           <div className="border-l border-slate-200 pl-5">
-            <div className="text-2xl font-bold text-slate-950">{here.length} / {expected.length}</div>
-            <div className="text-sm text-slate-600">Team Present</div>
+            <div className="text-xl font-bold text-slate-950">{here.length} / {expected.length}</div>
+            <div className="text-xs text-slate-600">Team Present</div>
           </div>
-          <div className="relative ml-auto h-20 w-20 shrink-0" role="img" aria-label={`${pct}% present`}>
+          <div className="relative ml-auto h-16 w-16 shrink-0" role="img" aria-label={`${pct}% present`}>
             <svg viewBox="0 0 80 80" className="h-full w-full -rotate-90">
               <circle cx="40" cy="40" r={R} fill="none" stroke="#e5e7eb" strokeWidth="8" />
               <circle cx="40" cy="40" r={R} fill="none" stroke="#22a64a" strokeWidth="8" strokeLinecap="round" strokeDasharray={`${(pct / 100) * C} ${C}`} />
             </svg>
-            <span className="absolute inset-0 flex items-center justify-center text-lg font-bold text-slate-950">{pct}%</span>
+            <span className="absolute inset-0 flex items-center justify-center text-sm font-bold text-slate-950">{pct}%</span>
           </div>
         </div>
       )}
