@@ -169,6 +169,7 @@ export const HRAgentShell: React.FC<HRAgentShellProps> = ({
   const pageTitle = pages.find((p) => p.id === activeModule)?.label
     || (activeModule.startsWith('talent-acquisition') ? 'Talent Acquisition' : 'HR Platform');
   const [pageQuery, setPageQuery] = useState('');
+  const [isAccountOpen, setIsAccountOpen] = useState(false);
   const pageMatches = pageQuery.trim() ? pages.filter((p) => p.label.toLowerCase().includes(pageQuery.trim().toLowerCase())).slice(0, 6) : [];
   const initial = (currentUser.name || 'U').split(/\s+/).filter(Boolean).slice(0, 2).map((x) => x[0]?.toUpperCase()).join('') || 'U';
 
@@ -205,6 +206,7 @@ export const HRAgentShell: React.FC<HRAgentShellProps> = ({
           <span className="text-xs font-semibold text-slate-600 font-mono bg-slate-100 px-2.5 py-1 rounded-md border border-slate-200">
             {displayId}
           </span>
+          {onLogout && <button type="button" onClick={onLogout} aria-label="Log out" title="Log out" className="p-2 rounded-lg text-slate-600 hover:text-rose-600 hover:bg-slate-100 cursor-pointer"><LogOut className="w-4 h-4" /></button>}
         </div>
       </div>
 
@@ -959,75 +961,11 @@ export const HRAgentShell: React.FC<HRAgentShellProps> = ({
           {/* ============================================================ */}
           {/* BOTTOM SECTION: CURRENT USER PROFILE & LOGOUT OPTION         */}
           {/* ============================================================ */}
-          <div className="relative z-10 shrink-0 border-t border-white/10 bg-[#1b1740]/60 backdrop-blur-sm p-3 min-w-[16rem] space-y-2">
-            <div className="flex items-center gap-2.5 px-2 pb-1 text-xs font-semibold text-indigo-100/90">
+          <div className="relative z-10 shrink-0 p-3 min-w-[16rem]">
+            <div className="flex items-center gap-2.5 px-2 py-1.5 text-xs font-semibold text-indigo-100/90">
               <HelpCircle className="w-4 h-4" aria-hidden />
               <span>Help &amp; Support</span>
             </div>
-
-            {/* User Identity Details */}
-            <div className="flex items-center gap-2.5 px-0.5">
-              <div className="w-9 h-9 rounded-full bg-[#6c4de6] text-white font-bold text-sm flex items-center justify-center shrink-0">
-                {currentUser.name ? currentUser.name.charAt(0).toUpperCase() : 'U'}
-              </div>
-              <div className="min-w-0 flex-1">
-                <div className="flex items-center gap-1.5">
-                  <span className="text-xs font-bold text-white truncate block leading-tight">
-                    {currentUser.name || 'User'}
-                  </span>
-                </div>
-                <div className="flex items-center gap-1.5 text-[10px] text-indigo-200/80 truncate mt-0.5">
-                  {displayId && (
-                    <span className="font-mono font-medium text-indigo-100 bg-white/10 px-1.5 py-0.2 rounded border border-white/10 text-[9px] shrink-0">
-                      {displayId}
-                    </span>
-                  )}
-                  <span
-                    className="truncate text-indigo-200/80 font-medium"
-                    title={currentUser.title || (isHR ? 'HR Policy Lead' : 'Approver')}
-                  >
-                    {currentUser.title || (isHR ? 'HR Policy Lead' : 'Approver')}
-                  </span>
-                </div>
-              </div>
-            </div>
-
-            {/* Authorization Status Badge & Management Action */}
-            <div className="flex items-center justify-between px-2 py-1.5 rounded-lg bg-white/10 border border-white/10">
-              <div className="flex items-center space-x-1.5 min-w-0">
-                <span
-                  className={`w-2 h-2 rounded-full shrink-0 ${
-                    hasTalentAccess && hasDocGovAccess
-                      ? 'bg-emerald-500'
-                      : hasTalentAccess
-                      ? 'bg-[#FA7014]'
-                      : 'bg-indigo-500'
-                  }`}
-                />
-                <span className="text-[10px] font-bold text-indigo-100 truncate" title={`Authorization: ${authLabel}`}>
-                  {authLabel}
-                </span>
-              </div>
-
-            </div>
-
-            {/* Logout Option */}
-            {onLogout && (
-              <button
-                id="btn-sidebar-logout"
-                type="button"
-                onClick={() => {
-                  setIsMobileSidebarOpen(false);
-                  onLogout();
-                }}
-                className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-lg text-xs font-semibold text-indigo-100 bg-white/10 hover:text-white hover:bg-rose-500/80 border border-white/10 transition-all cursor-pointer group"
-                title="Logout from platform"
-                aria-label="Logout"
-              >
-                <LogOut className="w-3.5 h-3.5 text-indigo-200 group-hover:text-white transition-colors" />
-                <span>Log Out</span>
-              </button>
-            )}
           </div>
         </aside>
 
@@ -1069,7 +1007,22 @@ export const HRAgentShell: React.FC<HRAgentShellProps> = ({
                 <Bell className="w-5 h-5" />
               </button>
             )}
-            <div className="w-10 h-10 rounded-full bg-orange-100 text-[#FA7014] font-bold text-sm flex items-center justify-center shrink-0" title={currentUser.name || ''} aria-hidden>{initial}</div>
+            <div className="relative shrink-0">
+              <button type="button" onClick={() => setIsAccountOpen((v) => !v)} aria-haspopup="menu" aria-expanded={isAccountOpen} aria-label="Account menu" title={currentUser.name || 'Account'} className="w-10 h-10 rounded-full bg-orange-100 text-[#FA7014] font-bold text-sm flex items-center justify-center cursor-pointer">{initial}</button>
+              {isAccountOpen && (
+                <>
+                  <div className="fixed inset-0 z-40" onClick={() => setIsAccountOpen(false)} aria-hidden />
+                  <div role="menu" className="absolute right-0 top-12 z-50 w-64 rounded-xl border border-slate-200 bg-white p-3 shadow-lg">
+                    <div className="px-1 pb-2">
+                      <div className="truncate text-sm font-bold text-slate-900">{currentUser.name || 'User'}</div>
+                      <div className="truncate text-xs text-slate-500">{[displayId, currentUser.title].filter(Boolean).join(' · ')}</div>
+                      <div className="mt-1 text-[11px] text-slate-400">{authLabel}</div>
+                    </div>
+                    {onLogout && <button id="btn-sidebar-logout" type="button" role="menuitem" onClick={() => { setIsAccountOpen(false); onLogout(); }} className="flex w-full items-center gap-2 rounded-lg border-t border-slate-100 px-2 pt-3 pb-1 text-sm font-semibold text-slate-700 hover:text-rose-600 cursor-pointer"><LogOut className="h-4 w-4" />Log Out</button>}
+                  </div>
+                </>
+              )}
+            </div>
           </header>
           <main
             id="hr-agent-right-workspace"
