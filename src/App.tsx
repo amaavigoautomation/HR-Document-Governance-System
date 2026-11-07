@@ -37,6 +37,7 @@ import { TalentAcquisitionOverview } from './components/TalentAcquisitionOvervie
 import { TalentAcquisitionHeader } from './components/TalentAcquisitionHeader';
 import { hasModulePermission, normalizeAuthorizedModules } from './utils/authorization';
 import { DocumentSuggestion } from './types';
+import { LandingPage } from './components/LandingPage';
 
 const CURRENT_USER_STORAGE_KEY = 'amaavigo_current_user_id';
 const CURRENT_USER_DATA_KEY = 'amaavigo_current_user_data';
@@ -653,7 +654,9 @@ export default function App() {
 
   return (
     <>
-      {!currentUser ? (
+      {!currentUser && window.location.pathname === '/' ? (
+        <LandingPage />
+      ) : !currentUser ? (
         /* 1. Unauthenticated Login Screen */
         <div className="h-screen max-h-screen overflow-hidden bg-[#F8FAFC] flex flex-col font-sans text-slate-900">
           <main className="flex-1 w-full h-full p-0 flex flex-col overflow-hidden">
