@@ -108,7 +108,7 @@ export const ModuleSubNav: React.FC<{ nav: ModuleNav; label: string; variant: 's
                 className={`w-full flex items-center justify-between px-2.5 rounded-lg text-[10px] font-bold uppercase tracking-wider ${isClosed && hasActive ? 'text-white' : 'text-slate-400 hover:text-slate-200'} hover:bg-white/10 cursor-pointer py-1.5 ${gi > 0 ? 'mt-1' : ''}`}>
                 <span>{g.title}</span>
                 <span className="flex items-center gap-1.5">
-                  {isClosed ? <NavBadge count={hidden} className="normal-case tracking-normal" /> : null}
+                  {isClosed ? <NavBadge tone="dark" count={hidden} className="normal-case tracking-normal" /> : null}
                   {isClosed ? <ChevronRight className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
                 </span>
               </button>
@@ -124,7 +124,7 @@ export const ModuleSubNav: React.FC<{ nav: ModuleNav; label: string; variant: 's
                     {Icon && <Icon className={`w-3.5 h-3.5 shrink-0 transition-colors ${on ? 'text-white' : 'text-slate-400'}`} />}
                     <span className="truncate">{text}</span>
                   </div>
-                  <NavBadge count={badge} />
+                  <NavBadge tone="dark" count={badge} />
                 </button>
               );
             })}

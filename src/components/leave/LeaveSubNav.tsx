@@ -51,7 +51,7 @@ export const LeaveSubNav: React.FC<{ variant: 'sidebar' | 'pills'; onNavigate?: 
               <Icon className={`w-3.5 h-3.5 shrink-0 transition-colors ${on ? 'text-white' : 'text-slate-400'}`} />
               <span className="truncate">{label}</span>
             </div>
-            <NavBadge count={badge} />
+            <NavBadge tone="dark" count={badge} />
           </button>
         );
       })}

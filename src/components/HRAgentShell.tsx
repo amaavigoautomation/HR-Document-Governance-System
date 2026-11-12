@@ -396,7 +396,7 @@ export const HRAgentShell: React.FC<HRAgentShellProps> = ({
                           <span className="hidden">{n.hint}</span>
                         </div>
                       </div>
-                      {n.badge > 0 && <span className="shrink-0 min-w-5 h-5 px-1.5 rounded-full bg-[#FA7014] text-white text-[10px] font-bold flex items-center justify-center">{n.badge}</span>}
+                      {n.badge > 0 && <span className="shrink-0 min-w-5 h-5 px-1.5 rounded-full bg-white text-violet-700 text-[10px] font-bold flex items-center justify-center">{n.badge}</span>}
                     </button>
                   );
                 })}
@@ -640,7 +640,7 @@ export const HRAgentShell: React.FC<HRAgentShellProps> = ({
                     </div>
 
                     {activeModule === 'document-version-control' && (
-                      <div className="w-5 h-5 rounded-full bg-[#FA7014] text-white flex items-center justify-center shrink-0 ml-1.5">
+                      <div className="w-5 h-5 rounded-full bg-white text-violet-700 flex items-center justify-center shrink-0 ml-1.5">
                         <Check className="w-3 h-3 stroke-[3]" />
                       </div>
                     )}
@@ -680,9 +680,9 @@ export const HRAgentShell: React.FC<HRAgentShellProps> = ({
                       <span className="hidden">Leave, holidays, attendance &amp; approvals</span>
                     </div>
                   </div>
-                  <NavBadge count={sumOf(badges.leave)} className="ml-1.5" />
+                  <NavBadge tone="dark" count={sumOf(badges.leave)} className="ml-1.5" />
                   {activeModule === 'leave-management' && (
-                    <div className="w-5 h-5 rounded-full bg-[#FA7014] text-white flex items-center justify-center shrink-0 ml-1.5">
+                    <div className="w-5 h-5 rounded-full bg-white text-violet-700 flex items-center justify-center shrink-0 ml-1.5">
                       <Check className="w-3 h-3 stroke-[3]" />
                     </div>
                   )}
@@ -741,9 +741,9 @@ export const HRAgentShell: React.FC<HRAgentShellProps> = ({
                       <span className="hidden">Payslips, salary runs &amp; statutory setup</span>
                     </div>
                   </div>
-                  <NavBadge count={sumOf(badges.payroll)} className="ml-1.5" />
+                  <NavBadge tone="dark" count={sumOf(badges.payroll)} className="ml-1.5" />
                   {activeModule === 'payroll' && (
-                    <div className="w-5 h-5 rounded-full bg-[#FA7014] text-white flex items-center justify-center shrink-0 ml-1.5">
+                    <div className="w-5 h-5 rounded-full bg-white text-violet-700 flex items-center justify-center shrink-0 ml-1.5">
                       <Check className="w-3 h-3 stroke-[3]" />
                     </div>
                   )}
@@ -803,7 +803,7 @@ export const HRAgentShell: React.FC<HRAgentShellProps> = ({
                       </div>
                     </div>
                     {activeModule === m.key && (
-                      <div className="w-5 h-5 rounded-full bg-[#FA7014] text-white flex items-center justify-center shrink-0 ml-1.5">
+                      <div className="w-5 h-5 rounded-full bg-white text-violet-700 flex items-center justify-center shrink-0 ml-1.5">
                         <Check className="w-3 h-3 stroke-[3]" />
                       </div>
                     )}
@@ -896,9 +896,9 @@ export const HRAgentShell: React.FC<HRAgentShellProps> = ({
                       <span className="hidden">Directory, onboarding, exits &amp; letters</span>
                     </div>
                   </div>
-                  <NavBadge count={sumOf(badges.people)} className="ml-1.5" />
+                  <NavBadge tone="dark" count={sumOf(badges.people)} className="ml-1.5" />
                   {activeModule === 'people' && (
-                    <div className="w-5 h-5 rounded-full bg-[#FA7014] text-white flex items-center justify-center shrink-0 ml-1.5">
+                    <div className="w-5 h-5 rounded-full bg-white text-violet-700 flex items-center justify-center shrink-0 ml-1.5">
                       <Check className="w-3 h-3 stroke-[3]" />
                     </div>
                   )}
@@ -956,9 +956,9 @@ export const HRAgentShell: React.FC<HRAgentShellProps> = ({
                       <span className="hidden">Master data, acknowledgements &amp; reports</span>
                     </div>
                   </div>
-                  <NavBadge count={sumOf(badges.employee)} className="ml-1.5" />
+                  <NavBadge tone="dark" count={sumOf(badges.employee)} className="ml-1.5" />
                   {activeModule === 'employee' && (
-                    <div className="w-5 h-5 rounded-full bg-[#FA7014] text-white flex items-center justify-center shrink-0 ml-1.5">
+                    <div className="w-5 h-5 rounded-full bg-white text-violet-700 flex items-center justify-center shrink-0 ml-1.5">
                       <Check className="w-3 h-3 stroke-[3]" />
                     </div>
                   )}
@@ -1016,7 +1016,7 @@ export const HRAgentShell: React.FC<HRAgentShellProps> = ({
                       </div>
                     </div>
                     {activeModule === 'administration' && (
-                      <div className="w-5 h-5 rounded-full bg-[#FA7014] text-white flex items-center justify-center shrink-0 ml-1.5">
+                      <div className="w-5 h-5 rounded-full bg-white text-violet-700 flex items-center justify-center shrink-0 ml-1.5">
                         <Check className="w-3 h-3 stroke-[3]" />
                       </div>
                     )}
