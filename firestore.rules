@@ -536,5 +536,7 @@ service cloud.firestore {
     match /employeeFamily/{id} { allow read, write: if false; }
     match /employeeQualifications/{id} { allow read, write: if false; }
     match /employeeQualificationData/{id} { allow read, write: if false; }
+    match /assistantLogs/{id} { allow read, write: if false; }
+    match /assistantUsage/{id} { allow read, write: if false; }
   }
 }

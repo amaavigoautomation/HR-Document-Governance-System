@@ -53,6 +53,7 @@ import {
   normalizeAuthorizedModules,
 } from '../utils/authorization';
 import { hasAnyPerm } from '../../shared/permissions';
+import { AskHrPanel, openAskHr } from './assistant/AskHrPanel';
 
 export type HRAgentModule =
   | 'home'
@@ -1060,13 +1061,16 @@ export const HRAgentShell: React.FC<HRAgentShellProps> = ({
                 className="w-full h-9 pl-9 pr-20 rounded-xl border border-slate-200 bg-white text-[13px] text-slate-800 placeholder:text-slate-400 focus:outline-none focus:border-[#FA7014] focus:ring-2 focus:ring-[#FA7014]/20"
               />
               {!pageQuery && <kbd className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 rounded-md border border-slate-200 bg-slate-50 px-1.5 py-0.5 text-[10px] font-medium text-slate-500">Ctrl + K</kbd>}
-              {pageMatches.length > 0 && (
+              {pageQuery.trim().length > 1 && (
                 <ul className="absolute left-0 right-0 top-10 z-50 rounded-xl border border-slate-200 bg-white shadow-lg py-1 overflow-hidden">
                   {pageMatches.map((p) => (
                     <li key={p.id}>
                       <button type="button" onClick={() => { onSelectModule(p.id); setPageQuery(''); }} className="w-full text-left px-3 py-2 text-sm text-slate-700 hover:bg-orange-50 hover:text-[#FA7014] cursor-pointer">{p.label}</button>
                     </li>
                   ))}
+                  <li className={pageMatches.length ? 'border-t border-slate-100' : ''}>
+                    <button type="button" onClick={() => { openAskHr(pageQuery.trim()); setPageQuery(''); }} className="w-full text-left px-3 py-2 text-sm text-slate-700 hover:bg-orange-50 hover:text-[#FA7014] cursor-pointer truncate">Ask HR: {pageQuery.trim()}</button>
+                  </li>
                 </ul>
               )}
             </div>
@@ -1109,6 +1113,7 @@ export const HRAgentShell: React.FC<HRAgentShellProps> = ({
           </main>
         </div>
       </div>
+      <AskHrPanel userId={currentUser.authUid || currentUser.id} />
 
     </div>
   );

@@ -85,8 +85,8 @@ Everyone lands on Home after signing in. It shows a profile card (reporting and 
 
 ## Vercel function budget
 
-Vercel's Hobby plan allows 12 serverless functions. The app uses 9: `[...catchall]` (also answers `/api/health`), `apply/[webhookId]`,
-`email/[action]`, `hrbp/[action]`, `leave/[action]`, `onboarding/[action]`, `pm/[action]` (Performance), `recruitment/[action]` and `tenant/[action]`.
+Vercel's Hobby plan allows 12 serverless functions. The app uses 10: `[...catchall]` (also answers `/api/health`), `apply/[webhookId]`,
+`assistant/[action]` (Ask HR), `email/[action]`, `hrbp/[action]`, `leave/[action]`, `onboarding/[action]`, `pm/[action]` (Performance), `recruitment/[action]` and `tenant/[action]`.
 All hiring routes share `recruitment/[action]` through `api/_lib/hiringRouter.ts`, told apart by the action name:
 `app-<action>` (candidate applications, was `/api/applications/<action>`), `careers-publish` (was `/api/careers/publish`),
 `generate-jd` (was `/api/requisitions/generate-jd`), plus the overview and job-description actions.
@@ -194,3 +194,7 @@ Existing roles need the permissions `hrbp.manage`, `hrbp.view` and `hiring.budge
 - Old uploaded-file links have no signature; set `LEGACY_OPEN_STORAGE=true` while migrating, then off.
 - Requisition step-by-step workflow rules are enforced in the app; the Firestore rules enforce tenant and
   permission checks only.
+
+## Ask HR assistant
+
+A floating "Ask HR" button (all roles) opens a chat panel; Ctrl+K search also offers "Ask HR: ...". Read-only: it answers about the person's own leave, holidays, notice period, payslips and the published policies they may read. Code: `api/_lib/assistantApi.ts` (tools run as the caller through the existing routers), `shared/assistantEngine.ts`, `src/components/assistant/`. Logs in `assistantLogs`, daily counts in `assistantUsage` (server-only). Env: `OPENAI_ASSISTANT_MODEL` (optional), `ASSISTANT_DAILY_LIMIT` (per person, default 30); it also counts against `AI_MONTHLY_CALLS`. Test: `npx tsx tests/assistant.engine.test.ts`.

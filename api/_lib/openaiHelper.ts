@@ -35,6 +35,9 @@ async function reserve(cid: string): Promise<string> {
   });
 }
 
+/** Same monthly company limit, for features that make their own OpenAI calls (the Ask HR assistant). Returns '' when allowed, otherwise the reason. */
+export const reserveAiCall = (cid: string): Promise<string> => reserve(cid);
+
 export type Part = { type: 'text'; text: string } | { type: 'image_url'; image_url: { url: string } } | { type: 'file'; file: { filename: string; file_data: string } };
 
 export interface AiResult { data?: any; error?: string; off?: boolean; cached?: boolean }
