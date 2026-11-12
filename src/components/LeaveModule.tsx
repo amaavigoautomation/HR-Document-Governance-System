@@ -95,7 +95,7 @@ const LeaveScreens: React.FC<{ currentUser: User; inlineNav?: boolean }> = ({ cu
 
         {!ok && me.canManage && <Notice tone="warn">Leave is not set up yet. Pick a template below to start. Everyone else will see the leave screens once you save.</Notice>}
 
-        {active === 'today' && <Today me={me} reload={reload} refreshKey={refreshKey} onApply={(typeId) => setApply({ open: true, typeId })} onFix={() => setFixOpen(true)} onOpen={(t) => leaveNav.setSection(t as LeaveSection)} />}
+        {active === 'today' && <Today me={me} reload={reload} refreshKey={refreshKey} onApply={(typeId) => setApply({ open: true, typeId })} onOpen={(t) => leaveNav.setSection(t as LeaveSection)} />}
         {active === 'my' && <MyLeave me={me} reload={reload} refreshKey={refreshKey} onApply={(typeId) => setApply({ open: true, typeId })} />}
         {active === 'attendance' && <AttendanceTab me={me} reload={reload} />}
         {active === 'regularization' && <RegularizationPage me={me} onChanged={reload} />}
