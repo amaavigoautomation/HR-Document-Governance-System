@@ -5,7 +5,9 @@
  *
  *   map-*      HRBP-001  employee business mapping (business unit, cost centre, client allocation, billable, HRBP)
  *   bu-*       HRBP-002  business units
- *   org / headcount / resource   HRBP-002..004  org structure, headcount against approved numbers, resource planning (computed)
+ *   org / headcount / resource   HRBP-002..004  org structure and chart, headcount against approved numbers (by department, manager or company), resource planning (computed)
+ *   pos-*      HRBP-002  positions, so vacant and critical roles show on the org chart
+ *   transfer-* HRBP-002  department / business unit / manager moves, kept in step with the mapping and org chart
  *   talent-*   HRBP-005  quarterly talent review (9-box, flight risk)
  *   kpi-*      HRBP-006  KPI governance
  *   pip-*      HRBP-007  performance improvement plan workflow
@@ -22,7 +24,9 @@
 import { createHash } from 'node:crypto';
 import { adminDb } from './firebaseAdmin.js';
 import { authErrorResponse, requireActiveTenant, type AuthContext } from './authContext.js';
-import { loadPeople, loadProfiles, notify, type Person } from './leaveCore.js';
+import { loadPeople, loadProfiles, notify, profileId, type Person } from './leaveCore.js';
+import { syncDepartmentManagers } from './deptManager.js';
+import { wouldCycle } from '../../shared/lifecycleEngine.js';
 import { routeCycle } from './talentCycleApi.js';
 import {
   allocationSummary, certStatus, cleanAllocations, kpiAttainment, kpiStatus, nineBox, pipTransition, successionGap, surveyAggregate, validatePipPlan,
@@ -101,7 +105,9 @@ const SPECS: Record<string, KindSpec> = {
       if (!name) return { error: 'Give the business unit a name.' };
       const head = b.headUid ? person(c, b.headUid) : null;
       if (b.headUid && !head) return { error: 'The head must be an employee of your company.' };
-      return { value: { name, headUid: head?.uid || '', headName: head?.name || '', description: str(b.description, 300) } };
+      const dh = b.defaultHrbpUid ? person(c, b.defaultHrbpUid) : null;
+      if (b.defaultHrbpUid && !dh) return { error: 'The default HRBP must be an employee of your company.' };
+      return { value: { name, headUid: head?.uid || '', headName: head?.name || '', defaultHrbpUid: dh?.uid || '', defaultHrbpName: dh?.name || '', description: str(b.description, 300) } };
     },
   },
   map: {
@@ -119,7 +125,24 @@ const SPECS: Record<string, KindSpec> = {
       return { value: {
         employeeUid: r.p.uid, employeeName: r.p.name, businessUnit: str(b.businessUnit, 80), costCentre: str(b.costCentre, 40), clientAllocation: alloc.value, billable,
         hrbpUid: hr?.uid || '', hrbpName: hr?.name || '', employmentStatus: oneOf(b.employmentStatus, ['PROBATION', 'CONFIRMED', 'NOTICE', 'CONTRACT'] as const, 'CONFIRMED'),
-        managerUid: b.managerUid ? person(c, b.managerUid)?.uid || '' : '', notes: str(b.notes, 500),
+        managerUid: b.managerUid ? person(c, b.managerUid)?.uid || '' : '', notes: str(b.notes, 500), draft: false,
+      } };
+    },
+  },
+  pos: {
+    kind: 'position', read: 'any',
+    build: (b, c) => {
+      const title = str(b.title, 100);
+      if (!title) return { error: 'Give the position a title.' };
+      const rt = b.reportsToUid ? person(c, b.reportsToUid) : null;
+      if (b.reportsToUid && !rt) return { error: 'The manager must be an employee of your company.' };
+      const status = oneOf(b.status, ['VACANT', 'FILLED'] as const, 'VACANT');
+      const inc = status === 'FILLED' && b.incumbentUid ? person(c, b.incumbentUid) : null;
+      if (status === 'FILLED' && b.incumbentUid && !inc) return { error: 'The person in the role must be an employee of your company.' };
+      return { value: {
+        title, department: str(b.department, 80), businessUnit: str(b.businessUnit, 80), reportsToUid: rt?.uid || '', reportsToName: rt?.name || '',
+        critical: b.critical === true || b.critical === 'true', status, incumbentUid: inc?.uid || '', incumbentName: inc?.name || '',
+        requisitionRef: str(b.requisitionRef, 60), notes: str(b.notes, 500),
       } };
     },
   },
@@ -254,6 +277,12 @@ async function genericSave(spec: KindSpec, c: Ctx, b: any): Promise<Result> {
   if (b.id && !prev) return fail(404, 'Not found.');
   const built = spec.build(b, c, prev);
   if (!built.value) return fail(400, built.error || 'Not valid.');
+  // A mapping saved without an HRBP gets its business unit's default HRBP, when the unit has one.
+  if (spec.kind === 'mapping' && !built.value.hrbpUid && built.value.businessUnit) {
+    const unit = (await listK(c.cid, 'businessUnit')).find((u) => String(u.name).toLowerCase() === String(built.value!.businessUnit).toLowerCase());
+    const dh = unit?.defaultHrbpUid ? person(c, unit.defaultHrbpUid) : null;
+    if (dh) { built.value.hrbpUid = dh.uid; built.value.hrbpName = dh.name; }
+  }
   let existing = prev;
   if (!existing && spec.unique) {
     const key = spec.unique(built.value);
@@ -269,6 +298,61 @@ async function genericDelete(spec: KindSpec, c: Ctx, b: any): Promise<Result> {
   if (!it) return fail(404, 'Not found.');
   await db().collection('hrbpItems').doc(it.id).delete();
   return ok();
+}
+
+// ------------------------------------------------------------------ transfers
+
+async function transferList(c: Ctx): Promise<Result> {
+  return ok({ items: (await listK(c.cid, 'transfer')).sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt))).slice(0, 100) });
+}
+
+/**
+ * Moves someone to another department, business unit or manager. The employee record, reporting line and HRBP mapping
+ * are all updated here, so the org chart and headcount follow without a second edit.
+ */
+async function transferSave(c: Ctx, b: any): Promise<Result> {
+  const p = person(c, b.employeeUid);
+  if (!p) return fail(400, 'Choose an employee from your company.');
+  const profiles = await loadProfiles(c.cid);
+  const prof = profiles.get(p.uid);
+  const maps = await mappingsByUid(c.cid);
+  const m = maps.get(p.uid);
+  const department = str(b.department, 80);
+  const businessUnit = str(b.businessUnit, 80);
+  const newMgr = b.managerUid ? person(c, b.managerUid) : null;
+  if (b.managerUid && !newMgr) return fail(400, 'The new manager must be an employee of your company.');
+  const effectiveDate = str(b.effectiveDate, 10) || today();
+  if (!isDate(effectiveDate)) return fail(400, 'Enter the effective date as a real date.');
+  if (effectiveDate > today()) return fail(400, 'A transfer is applied straight away, so the effective date cannot be in the future. Record it on the day it takes effect.');
+  const reason = str(b.reason, 300);
+  if (!reason) return fail(400, 'Say why the person is being moved.');
+  const changesDept = !!department && department !== p.department;
+  const changesBu = !!businessUnit && businessUnit !== (m?.businessUnit || '');
+  const changesMgr = !!newMgr && newMgr.uid !== (prof?.managerUid || '');
+  if (!changesDept && !changesBu && !changesMgr) return fail(400, 'Nothing is changing. Choose a new department, business unit or manager.');
+  if (changesMgr) {
+    const org = c.people.map((x) => ({ uid: x.uid, name: x.name, managerUid: profiles.get(x.uid)?.managerUid || '' }));
+    if (wouldCycle(org, p.uid, newMgr!.uid)) return fail(409, 'That would make a reporting loop (someone would end up reporting to themselves).');
+  }
+
+  if (changesDept) await db().collection('employees').doc(p.docId).update({ departmentName: department });
+  if (changesMgr) {
+    // A manager picked by hand sticks and is not overridden by the department head.
+    await db().collection('leaveProfiles').doc(profileId(c.cid, p.uid)).set(clean({ ...(prof || { uid: p.uid }), uid: p.uid, managerUid: newMgr!.uid, managerManual: true, companyId: c.cid, updatedAt: nowIso() }));
+  } else if (changesDept && prof && prof.managerManual !== true) {
+    await syncDepartmentManagers(c.cid, { uids: [p.uid] });
+  }
+  const managerNow = changesMgr ? newMgr!.uid : (await loadProfiles(c.cid)).get(p.uid)?.managerUid || '';
+  const base: Item = m || { id: newId(), companyId: c.cid, kind: 'mapping', employeeUid: p.uid, employeeName: p.name, businessUnit: '', costCentre: '', clientAllocation: [], billable: false, hrbpUid: '', hrbpName: '', employmentStatus: 'CONFIRMED', notes: '', draft: true, createdAt: nowIso(), createdBy: c.who };
+  await putK({ ...base, businessUnit: changesBu ? businessUnit : base.businessUnit, managerUid: managerNow, updatedAt: nowIso(), updatedBy: c.who });
+
+  const it: Item = {
+    id: newId(), companyId: c.cid, kind: 'transfer', employeeUid: p.uid, employeeName: p.name, effectiveDate, reason, createdAt: nowIso(), createdBy: c.who,
+    from: { department: p.department, businessUnit: m?.businessUnit || '', managerName: nameOf(c, prof?.managerUid) },
+    to: { department: changesDept ? department : p.department, businessUnit: changesBu ? businessUnit : m?.businessUnit || '', managerName: nameOf(c, managerNow) },
+  };
+  await putK(it);
+  return ok({ item: it });
 }
 
 // ------------------------------------------------------------------ PIP workflow
@@ -496,15 +580,17 @@ async function pathProgress(c: Ctx, b: any): Promise<Result> {
 async function mappingsByUid(cid: string) { return new Map((await listK(cid, 'mapping')).map((m) => [m.employeeUid as string, m])); }
 
 async function orgView(c: Ctx): Promise<Result> {
-  const [maps, units, profiles] = await Promise.all([mappingsByUid(c.cid), listK(c.cid, 'businessUnit'), loadProfiles(c.cid)]);
+  const [maps, units, profiles, positions] = await Promise.all([mappingsByUid(c.cid), listK(c.cid, 'businessUnit'), loadProfiles(c.cid), listK(c.cid, 'position')]);
   const active = c.people.filter((p) => p.active && profiles.get(p.uid)?.hidden !== true);
   const bu = new Map<string, { name: string; head: string; people: number; billable: number; departments: Record<string, number>; hrbps: Set<string> }>();
   const slot = (name: string) => { if (!bu.has(name)) bu.set(name, { name, head: '', people: 0, billable: 0, departments: {}, hrbps: new Set() }); return bu.get(name)!; };
   units.forEach((u) => { slot(u.name).head = u.headName || ''; });
   let unmapped = 0;
+  const awaiting: { uid: string; name: string; department: string; reason: 'NO_MAPPING' | 'DRAFT'; status: string }[] = [];
   for (const p of active) {
     const m = maps.get(p.uid);
-    if (!m) { unmapped++; continue; }
+    // A draft (made by the system when someone joined or was confirmed) still needs HR to assign the business unit and HRBP.
+    if (!m || m.draft === true) { unmapped++; awaiting.push({ uid: p.uid, name: p.name, department: p.department, reason: m ? 'DRAFT' : 'NO_MAPPING', status: m?.employmentStatus || '' }); continue; }
     const s = slot(m.businessUnit || 'No business unit');
     s.people++;
     if (m.billable) s.billable++;
@@ -513,10 +599,33 @@ async function orgView(c: Ctx): Promise<Result> {
   }
   const hrbpLoad: Record<string, number> = {};
   maps.forEach((m) => { if (m.hrbpName) hrbpLoad[m.hrbpName] = (hrbpLoad[m.hrbpName] || 0) + 1; });
-  return ok({ units: [...bu.values()].map((u) => ({ ...u, hrbps: [...u.hrbps] })), unmapped, total: active.length, hrbpLoad });
+
+  // Reporting structure: who reports to whom, how many directly (span of control) and in total.
+  const activeIds = new Set(active.map((p) => p.uid));
+  const nodes = active.map((p) => {
+    const m = maps.get(p.uid);
+    const mgr = profiles.get(p.uid)?.managerUid || '';
+    return { uid: p.uid, name: p.name, title: p.title, department: p.department, empId: p.empId, managerUid: activeIds.has(mgr) && mgr !== p.uid ? mgr : '', businessUnit: m?.businessUnit || '', hrbp: m?.hrbpName || '', billable: !!m?.billable, mapped: !!m && m.draft !== true };
+  });
+  const kids = new Map<string, string[]>();
+  nodes.forEach((n) => { if (n.managerUid) kids.set(n.managerUid, [...(kids.get(n.managerUid) || []), n.uid]); });
+  const totalUnder = (uid: string, seen = new Set<string>()): number => {
+    if (seen.has(uid)) return 0;
+    seen.add(uid);
+    return (kids.get(uid) || []).reduce((a, k) => a + 1 + totalUnder(k, seen), 0);
+  };
+  const spans = nodes.filter((n) => kids.has(n.uid)).map((n) => ({ uid: n.uid, name: n.name, title: n.title, direct: kids.get(n.uid)!.length, total: totalUnder(n.uid) })).sort((a, b) => b.direct - a.direct || a.name.localeCompare(b.name));
+  const average = spans.length ? Math.round((spans.reduce((a, x) => a + x.direct, 0) / spans.length) * 10) / 10 : 0;
+  const vacant = positions.filter((x) => x.status !== 'FILLED');
+  return ok({
+    units: [...bu.values()].map((u) => ({ ...u, hrbps: [...u.hrbps] })), unmapped, total: active.length, hrbpLoad, awaiting,
+    tree: { nodes, spans, averageSpan: average },
+    positions: positions.map((x) => ({ id: x.id, title: x.title, department: x.department, reportsToUid: activeIds.has(x.reportsToUid) ? x.reportsToUid : '', reportsToName: x.reportsToName || '', critical: !!x.critical, status: x.status, incumbentName: x.incumbentName || '' })),
+    vacantCount: vacant.length, criticalVacant: vacant.filter((x) => x.critical).length,
+  });
 }
 
-async function headcountView(c: Ctx): Promise<Result> {
+async function headcountView(c: Ctx, by = 'department'): Promise<Result> {
   const [maps, budgets, reqs, profiles] = await Promise.all([
     mappingsByUid(c.cid),
     db().collection('hiringBudgets').where('companyId', '==', c.cid).get(),
@@ -526,11 +635,17 @@ async function headcountView(c: Ctx): Promise<Result> {
   const active = c.people.filter((p) => p.active && profiles.get(p.uid)?.hidden !== true);
   const rows = new Map<string, { department: string; headcount: number; billable: number; approved: number | null; openVacancies: number }>();
   const slot = (d: string) => { const k = d || 'No department'; if (!rows.has(k)) rows.set(k, { department: k, headcount: 0, billable: 0, approved: null, openVacancies: 0 }); return rows.get(k)!; };
-  for (const p of active) { const s = slot(p.department); s.headcount++; if (maps.get(p.uid)?.billable) s.billable++; }
-  budgets.docs.forEach((d) => { const s = slot(String(d.get('departmentName'))); s.approved = d.get('approvedHeadcount') ?? null; });
-  reqs.docs.forEach((d) => { if (['JD_DRAFT', 'JOB_OPEN'].includes(d.get('status'))) slot(String(d.get('departmentName'))).openVacancies += Number(d.get('vacancies')) || 0; });
+  const mode = ['department', 'manager', 'company'].includes(by) ? by : 'department';
+  // How people are grouped: by department (the default), by their manager, or the whole company as one row.
+  const groupOf = (p: Person) => (mode === 'company' ? 'Whole company' : mode === 'manager' ? c.byKey.get(profiles.get(p.uid)?.managerUid || '')?.name || 'No manager' : p.department);
+  for (const p of active) { const s = slot(groupOf(p)); s.headcount++; if (maps.get(p.uid)?.billable) s.billable++; }
+  // Approved numbers and open vacancies are kept per department, so they add up for the company and are not available per manager.
+  if (mode !== 'manager') {
+    budgets.docs.forEach((d) => { const s = slot(mode === 'company' ? 'Whole company' : String(d.get('departmentName'))); const a = d.get('approvedHeadcount'); if (a !== null && a !== undefined) s.approved = (s.approved ?? 0) + Number(a); });
+    reqs.docs.forEach((d) => { if (['JD_DRAFT', 'JOB_OPEN'].includes(d.get('status'))) slot(mode === 'company' ? 'Whole company' : String(d.get('departmentName'))).openVacancies += Number(d.get('vacancies')) || 0; });
+  }
   const out = [...rows.values()].map((r) => ({ ...r, gap: r.approved === null ? null : r.approved - r.headcount - r.openVacancies })).sort((a, b) => a.department.localeCompare(b.department));
-  return ok({ rows: out, total: { headcount: out.reduce((a, r) => a + r.headcount, 0), billable: out.reduce((a, r) => a + r.billable, 0), openVacancies: out.reduce((a, r) => a + r.openVacancies, 0) } });
+  return ok({ by: mode, rows: out, total: { headcount: out.reduce((a, r) => a + r.headcount, 0), billable: out.reduce((a, r) => a + r.billable, 0), openVacancies: out.reduce((a, r) => a + r.openVacancies, 0) } });
 }
 
 async function resourceView(c: Ctx): Promise<Result> {
@@ -596,6 +711,7 @@ async function me(c: Ctx): Promise<Result> {
 type Who = 'any' | 'manage' | 'view';
 const ROUTES: Record<string, { method: 'GET' | 'POST'; who: Who }> = {
   me: { method: 'GET', who: 'any' },
+  'transfer-list': { method: 'GET', who: 'view' }, 'transfer-save': { method: 'POST', who: 'manage' },
   org: { method: 'GET', who: 'view' }, headcount: { method: 'GET', who: 'view' }, resource: { method: 'GET', who: 'view' }, dash: { method: 'GET', who: 'view' },
   'pip-list': { method: 'GET', who: 'manage' }, 'pip-save': { method: 'POST', who: 'manage' }, 'pip-act': { method: 'POST', who: 'manage' },
   'survey-list': { method: 'GET', who: 'any' }, 'survey-save': { method: 'POST', who: 'manage' }, 'survey-close': { method: 'POST', who: 'manage' }, 'survey-respond': { method: 'POST', who: 'any' }, 'survey-results': { method: 'GET', who: 'manage' },
@@ -604,7 +720,7 @@ const ROUTES: Record<string, { method: 'GET' | 'POST'; who: Who }> = {
   'assign-list': { method: 'GET', who: 'any' }, 'path-assign': { method: 'POST', who: 'manage' }, 'path-progress': { method: 'POST', who: 'any' },
 };
 for (const [prefix, spec] of Object.entries(SPECS)) {
-  const readWho: Who = spec.read === 'any' ? 'any' : prefix === 'bu' ? 'view' : 'manage';
+  const readWho: Who = prefix === 'bu' || prefix === 'pos' ? 'view' : spec.read === 'any' ? 'any' : 'manage';
   ROUTES[`${prefix}-list`] = { method: 'GET', who: readWho };
   ROUTES[`${prefix}-save`] = { method: 'POST', who: 'manage' };
   ROUTES[`${prefix}-delete`] = { method: 'POST', who: 'manage' };
@@ -632,7 +748,9 @@ export async function routeHrbp(r: HrbpRequest): Promise<Result> {
     switch (r.action) {
       case 'me': return await me(c);
       case 'org': return await orgView(c);
-      case 'headcount': return await headcountView(c);
+      case 'headcount': return await headcountView(c, str(r.query.by, 20));
+      case 'transfer-list': return await transferList(c);
+      case 'transfer-save': return await transferSave(c, b);
       case 'resource': return await resourceView(c);
       case 'dash': return await dashboard(c);
       case 'pip-list': return await pipList(c, r.query);

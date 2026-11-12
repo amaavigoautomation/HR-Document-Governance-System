@@ -20,6 +20,7 @@ import { MAX_QUALIFICATIONS, cleanQualification } from '../../shared/employeeQua
 import { MAX_FAMILY_MEMBERS, cleanFamilyMember } from '../../shared/employeeFamily.js';
 import { istToday } from '../../shared/leaveEngine.js';
 import { isManualManager, syncDepartmentManagers } from './deptManager.js';
+import { ensureDraftMapping, setMappingStatus } from './hrbpOrg.js';
 import {
   ASSIGNEE_LABEL, DEFAULT_CLEARANCE, DEFAULT_LETTERS, DEFAULT_TASK_TEMPLATES, EXIT_REASONS, EXIT_STATUS_LABEL, MERGE_FIELDS,
   addDaysIso, clearanceTotals, dueDateFor, earliestLastDay, fieldsIn, isDate, noticeServed, noticeShortfall, prettyDate, renderTemplate,
@@ -188,6 +189,8 @@ export async function startChecklist(cid: string, uid: string, opts: { joinDate?
     await ref.set(clean(doc));
     created++;
   }
+  // A new joiner starts on probation: give HR a draft HRBP mapping to complete.
+  await ensureDraftMapping(cid, uid, 'PROBATION');
   return { created, existing };
 }
 
@@ -455,6 +458,7 @@ async function exitStart(w: Who, body: any): Promise<Result> {
   const req = body?.noticeRequiredDays;
   applyNotice(e, req === undefined || req === '' ? settings.noticeDays : Math.max(0, Math.min(365, Math.round(Number(req) || 0))));
   await saveExit(e);
+  await setMappingStatus(w.cid, uid, 'NOTICE');
   return ok({ exit: await view(w.cid, e) });
 }
 
@@ -488,6 +492,7 @@ async function exitDecide(w: Who, body: any): Promise<Result> {
   applyNotice(next, req === undefined || req === '' ? e.noticeRequiredDays || settings.noticeDays : Math.max(0, Math.min(365, Math.round(Number(req) || 0))));
   next.events = [...e.events, ev(name, 'APPROVED', note || `Last working day ${last}; notice shortfall ${next.noticeShortfallDays} day(s)`)];
   await saveExit(next);
+  await setMappingStatus(w.cid, uid, 'NOTICE');
   const person = await personByUid(w.cid, uid);
   if (person?.email) await notify(w.cid, [person.email], 'Your resignation has been accepted', `Your last working day is ${prettyDate(last)}. Please complete the no-dues clearance before then.`);
   return ok({ exit: await view(w.cid, next) });

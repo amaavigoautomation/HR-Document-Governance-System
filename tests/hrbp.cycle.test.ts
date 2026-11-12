@@ -100,7 +100,7 @@ async function main() {
   const blocked = await call(HR, 'POST', 'prob-decide', { id: pid, decision: 'CONFIRM' });
   assert.equal(blocked.status, 400);
   assert.ok(/concern/i.test(blocked.json.error));
-  fdb.seed('hrbpItems', 'map1', { id: 'map1', companyId: CID, kind: 'map', employeeUid: 'u_e', employmentStatus: 'PROBATION' });
+  fdb.seed('hrbpItems', 'map1', { id: 'map1', companyId: CID, kind: 'mapping', employeeUid: 'u_e', employmentStatus: 'PROBATION' });
   const [d1, d2] = await Promise.all([
     call(HR, 'POST', 'prob-decide', { id: pid, decision: 'CONFIRM', override: true, note: 'Improved since, Mona agrees' }),
     call(HR, 'POST', 'prob-decide', { id: pid, decision: 'TERMINATE', note: 'x' }),

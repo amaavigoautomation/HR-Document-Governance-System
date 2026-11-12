@@ -4,6 +4,7 @@ import { hasAnyPerm } from '../../shared/permissions';
 import { GenericManager, FieldSpec } from './hrbp/GenericManager';
 import { DashboardView, OrgView } from './hrbp/Views';
 import { Pips } from './hrbp/Pips';
+import { Transfers } from './hrbp/Transfers';
 import { Surveys } from './hrbp/Surveys';
 import { Okrs, Probation, Promotions, Quarterly } from './hrbp/TalentCycle';
 import { MyHrbp, MyLearning, Recognition, WellnessList } from './hrbp/SelfService';
@@ -47,15 +48,35 @@ export const HrbpModule: React.FC<{ currentUser: User; users: User[] }> = ({ cur
       case 'dash': return <DashboardView />;
       case 'org': return <OrgView />;
       case 'map': return (
-        <GenericManager key="map" title="People mapping" subtitle="Business unit, cost centre, client allocation, billable status and HRBP for every employee." prefix="map" users={users}
+        <GenericManager key="map" title="People mapping" subtitle="Business unit, cost centre, client allocation, billable status and HRBP for every employee. Drafts made when someone joins or is confirmed show here until you complete them." prefix="map" users={users}
           fields={[
             { key: 'employeeUid', label: 'Employee', type: 'person' }, { key: 'businessUnit', label: 'Business unit', type: 'text' }, { key: 'costCentre', label: 'Cost centre', type: 'text' },
             { key: 'hrbpUid', label: 'HR business partner', type: 'person' }, { key: 'employmentStatus', label: 'Employment status', type: 'select', options: ['PROBATION', 'CONFIRMED', 'NOTICE', 'CONTRACT'] },
             { key: 'billable', label: 'Billable', type: 'checkbox' }, { key: 'clientAllocation', label: 'Client allocation', type: 'lines', hint: 'One per line, like: Acme 60', parse: allocParse, format: allocFormat, wide: true },
           ] as FieldSpec[]}
           blank={{ employmentStatus: 'CONFIRMED' }}
-          row={(m) => ({ title: m.employeeName, sub: `${m.businessUnit || 'No business unit'}${m.costCentre ? ` - ${m.costCentre}` : ''} - HRBP: ${m.hrbpName || 'none'}${m.clientAllocation?.length ? ` - ${m.clientAllocation.map((a: any) => `${a.client} ${a.percent}%`).join(', ')}` : ''}`, pill: { text: m.billable ? 'billable' : 'non-billable', tone: m.billable ? 'green' : 'slate' } })} />
+          row={(m) => ({ title: m.employeeName, sub: `${m.businessUnit || 'No business unit'}${m.costCentre ? ` - ${m.costCentre}` : ''} - HRBP: ${m.hrbpName || 'none'}${m.clientAllocation?.length ? ` - ${m.clientAllocation.map((a: any) => `${a.client} ${a.percent}%`).join(', ')}` : ''}`, pill: m.draft ? { text: 'needs completing', tone: 'amber' } : { text: m.billable ? 'billable' : 'non-billable', tone: m.billable ? 'green' : 'slate' } })} />
       );
+      case 'bunits': return (
+        <GenericManager key="bunits" title="Business units" subtitle="The head and default HRBP of each unit. A mapping saved without an HRBP gets its unit's default." prefix="bu" users={users}
+          fields={[
+            { key: 'name', label: 'Name', type: 'text' }, { key: 'headUid', label: 'Head of the unit', type: 'person' },
+            { key: 'defaultHrbpUid', label: 'Default HR business partner', type: 'person' }, { key: 'description', label: 'Description', type: 'textarea' },
+          ] as FieldSpec[]}
+          row={(u) => ({ title: u.name, sub: `${u.headName ? `Head: ${u.headName}` : 'No head set'}${u.defaultHrbpName ? ` - HRBP: ${u.defaultHrbpName}` : ''}` })} />
+      );
+      case 'pos': return (
+        <GenericManager key="pos" title="Positions" subtitle="Roles in the organisation, filled or vacant. Vacant ones show as dashed boxes on the org chart." prefix="pos" users={users}
+          fields={[
+            { key: 'title', label: 'Position', type: 'text' }, { key: 'department', label: 'Department', type: 'text' }, { key: 'businessUnit', label: 'Business unit', type: 'text' },
+            { key: 'reportsToUid', label: 'Reports to', type: 'person' }, { key: 'status', label: 'Status', type: 'select', options: ['VACANT', 'FILLED'] },
+            { key: 'incumbentUid', label: 'Person in the role (if filled)', type: 'person' }, { key: 'critical', label: 'Critical role', type: 'checkbox' },
+            { key: 'requisitionRef', label: 'Hiring requisition (optional)', type: 'text', hint: 'The requisition number, if one is open.' }, { key: 'notes', label: 'Notes', type: 'textarea' },
+          ] as FieldSpec[]}
+          blank={{ status: 'VACANT' }}
+          row={(p) => ({ title: p.title, sub: `${p.department || 'No department'}${p.reportsToName ? ` - reports to ${p.reportsToName}` : ''}${p.status === 'FILLED' && p.incumbentName ? ` - ${p.incumbentName}` : ''}${p.requisitionRef ? ` - ${p.requisitionRef}` : ''}`, pill: { text: `${p.critical ? 'critical, ' : ''}${p.status.toLowerCase()}`, tone: p.status === 'VACANT' ? (p.critical ? 'red' : 'amber') : 'green' } })} />
+      );
+      case 'transfer': return <Transfers users={users} />;
       case 'talent': return (
         <GenericManager key="talent" title="Quarterly talent review" subtitle="Rate performance and potential from 1 to 3 to place each person on the 9-box grid." prefix="talent" users={users} allowDelete={false}
           fields={[

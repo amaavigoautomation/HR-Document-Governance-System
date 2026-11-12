@@ -2,7 +2,7 @@ import { createModuleNav, NavItem } from '../moduleNav';
 
 export type Section =
   | 'dash' | 'org' | 'map' | 'talent' | 'kpi' | 'pip' | 'retention' | 'succ' | 'needs' | 'paths' | 'certs' | 'surveysAdmin' | 'wellAdmin'
-  | 'probation' | 'okr' | 'promo' | 'quarterly' | 'me' | 'learning' | 'pulse' | 'recog' | 'well';
+  | 'pos' | 'transfer' | 'bunits' | 'probation' | 'okr' | 'promo' | 'quarterly' | 'me' | 'learning' | 'pulse' | 'recog' | 'well';
 
 type Entry = { key: Section; label: string };
 
@@ -12,7 +12,7 @@ const SELF: Entry[] = [
 ];
 const VIEW: Entry[] = [{ key: 'dash', label: 'Leadership dashboard' }, { key: 'org', label: 'Org & resources' }];
 const MANAGE: Entry[] = [
-  { key: 'map', label: 'People mapping' }, { key: 'talent', label: 'Talent review' }, { key: 'kpi', label: 'KPIs' }, { key: 'pip', label: 'Improvement plans' },
+  { key: 'map', label: 'People mapping' }, { key: 'bunits', label: 'Business units' }, { key: 'pos', label: 'Positions' }, { key: 'transfer', label: 'Transfers' }, { key: 'talent', label: 'Talent review' }, { key: 'kpi', label: 'KPIs' }, { key: 'pip', label: 'Improvement plans' },
   { key: 'retention', label: 'Retention' }, { key: 'succ', label: 'Succession' }, { key: 'needs', label: 'Training needs' }, { key: 'paths', label: 'Learning paths' },
   { key: 'certs', label: 'Certificates' }, { key: 'surveysAdmin', label: 'Survey admin' }, { key: 'wellAdmin', label: 'Wellness admin' },
 ];
