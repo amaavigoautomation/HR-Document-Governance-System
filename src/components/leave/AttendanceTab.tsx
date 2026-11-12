@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { CalendarCheck, CalendarDays, CalendarX, CheckCircle2, ChevronLeft, ChevronRight, Clock, Download, Hourglass, LogIn, LogOut, Palmtree, Wrench } from 'lucide-react';
 import { leaveService } from '../../services/leaveService';
+import { btnViolet, dmy, Kpi, MonthChip, PageHead, Pager, Panel, Pill, shiftMonthStr, t12, Tabs, THead } from './kit';
 import {
   btnBig, btnGhost, btnPrimary, Card, DAY_LOOK, dayName, Drawer, EmptyState, Field, hm, input, niceDate, Notice, Segmented, Skeleton,
   STATUS_LABEL, StatusPill, shortDate, thisMonth, todayIst, addDaysIso, useRunner,
@@ -260,199 +261,201 @@ export const FixDayDrawer: React.FC<{ me: any; day: any | null; open: boolean; o
 
 // ------------------------------------------------------------------ attendance screen
 
-const PAGE = 10;
-const pill: Record<string, string> = {
-  PRESENT: 'bg-emerald-50 text-emerald-700', LATE: 'bg-amber-50 text-amber-700', HALF_DAY: 'bg-orange-50 text-orange-700',
-  INCOMPLETE: 'bg-rose-50 text-rose-700', ABSENT: 'bg-rose-50 text-rose-700', LEAVE: 'bg-sky-50 text-sky-700', HALF_LEAVE: 'bg-sky-50 text-sky-700',
-  HOLIDAY: 'bg-violet-50 text-violet-700', WEEKLY_OFF: 'bg-slate-100 text-slate-600', TODAY: 'bg-orange-50 text-orange-700',
+const PER = 5;
+const statusTone: Record<string, string> = { PRESENT: 'green', LATE: 'amber', HALF_DAY: 'orange', INCOMPLETE: 'rose', ABSENT: 'rose', LEAVE: 'violet', HALF_LEAVE: 'violet', HOLIDAY: 'blue', WEEKLY_OFF: 'slate', TODAY: 'violet' };
+const dayCircle: Record<string, string> = {
+  PRESENT: 'bg-emerald-100 text-emerald-800', LATE: 'bg-amber-100 text-amber-800', HALF_DAY: 'bg-amber-100 text-amber-800', INCOMPLETE: 'bg-violet-100 text-violet-800',
+  ABSENT: 'bg-rose-100 text-rose-700', LEAVE: 'bg-sky-100 text-sky-800', HALF_LEAVE: 'bg-sky-100 text-sky-800', HOLIDAY: 'bg-slate-200 text-slate-600', WEEKLY_OFF: 'text-slate-800',
 };
-const calCell: Record<string, string> = {
-  PRESENT: 'bg-emerald-50 text-emerald-700 font-bold', LATE: 'bg-orange-50 text-orange-600 font-bold', HALF_DAY: 'bg-orange-50 text-orange-600 font-bold',
-  INCOMPLETE: 'bg-violet-50 text-violet-600 font-bold', ABSENT: 'bg-rose-100 text-rose-600 font-bold', LEAVE: 'bg-sky-50 text-sky-700 font-bold', HALF_LEAVE: 'bg-sky-50 text-sky-700 font-bold',
-  HOLIDAY: 'bg-violet-50 text-violet-700', WEEKLY_OFF: 'bg-slate-100 text-slate-500',
-};
-const longDay = (iso: string) => new Date(`${iso}T00:00:00Z`).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' });
+const longDay = (iso: string) => new Date(`${iso}T00:00:00Z`).toLocaleDateString('en-GB', { weekday: 'short', day: '2-digit', month: 'short', year: 'numeric', timeZone: 'UTC' }).replace(/^(\w+) /, '$1, ');
+/** Time between check-in and check-out that was not worked (lunch, breaks). */
+const breakOf = (d: any) => (d.checkIn && d.checkOut && d.workedMinutes > 0 ? Math.max(0, toMin(d.checkOut) - toMin(d.checkIn) - d.workedMinutes) : 0);
+const shortMin = (m: number) => (m >= 60 ? hm(m) : `${m}m`);
 
-const StatTile: React.FC<{ label: string; value: number | string; unit?: string; tone: string; Icon: React.FC<{ className?: string }>; icon: string }> = ({ label, value, unit, tone, Icon, icon }) => (
-  <div className={`flex items-center gap-4 rounded-2xl border border-white p-4 ${tone}`}>
-    <span className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-full ${icon}`}><Icon className="h-5 w-5" /></span>
-    <div className="min-w-0"><div className="text-sm font-semibold text-slate-700">{label}</div><div className="text-3xl font-bold leading-tight text-slate-950">{value}{unit && <span className="ml-1 text-lg font-semibold">{unit}</span>}</div></div>
-  </div>
-);
-
-export const AttendanceTab: React.FC<{ me: any; reload: () => void }> = ({ me, reload }) => {
-  const [regs, setRegs] = useState<any[] | null>(null);
+export const AttendanceTab: React.FC<{ me: any; reload: () => void }> = ({ me }) => {
   const [fix, setFix] = useState<{ open: boolean; day: any | null }>({ open: false, day: null });
   const [month, setMonth] = useState(thisMonth());
   const [data, setData] = useState<any | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [page, setPage] = useState(1);
-  const { busy, note, run } = useRunner();
-  const clock = useIstClock();
+  const [tab, setTab] = useState('logs');
+  const [mode, setMode] = useState<'hours' | 'days'>('hours');
+  const [hover, setHover] = useState<string | null>(null);
+  const [sel, setSel] = useState<string | null>(null);
 
-  const loadRegs = useCallback(() => leaveService.myRegularizations().then((r) => setRegs(r.items)).catch(() => setRegs([])), []);
-  useEffect(() => { loadRegs(); }, [loadRegs]);
-  const loadMonth = useCallback(() => {
-    setError(null);
-    leaveService.attendance(month).then(setData).catch((e) => setError(e.message));
-  }, [month]);
-  useEffect(() => { loadMonth(); setPage(1); }, [loadMonth]);
+  const loadMonth = useCallback(() => { setError(null); leaveService.attendance(month).then(setData).catch((e) => setError(e.message)); }, [month]);
+  useEffect(() => { loadMonth(); setPage(1); setSel(null); }, [loadMonth]);
 
-  const shiftMonth = (n: number) => { const [y, m] = month.split('-').map(Number); setMonth(new Date(Date.UTC(y, m - 1 + n, 1)).toISOString().slice(0, 7)); };
   const isNow = month === thisMonth();
+  const today = todayIst();
   const s = data?.summary;
   const all: any[] = data?.days || [];
   const inMonth = all.filter((d) => d.status !== 'NOT_EMPLOYED');
   const count = (...st: string[]) => inMonth.filter((d) => st.includes(d.status)).length;
   const workingDays = inMonth.filter((d) => !['HOLIDAY', 'WEEKLY_OFF'].includes(d.status)).length;
-  const records = inMonth.filter((d) => d.date <= todayIst() && !['FUTURE', 'WEEKLY_OFF', 'HOLIDAY'].includes(d.status)).sort((a, b) => b.date.localeCompare(a.date));
-  const pages = Math.max(1, Math.ceil(records.length / PAGE));
-  const cur = Math.min(page, pages);
-  const rows = records.slice((cur - 1) * PAGE, cur * PAGE);
+  const records = inMonth.filter((d) => d.date <= today && !['FUTURE', 'WEEKLY_OFF', 'HOLIDAY'].includes(d.status)).sort((a, b) => b.date.localeCompare(a.date));
+  const workedDays = inMonth.filter((d) => d.workedMinutes > 0);
+  const totalWorked = workedDays.reduce((n, d) => n + d.workedMinutes, 0);
+  const avgWorked = workedDays.length ? Math.round(totalWorked / workedDays.length) : 0;
+  const totalBreak = workedDays.reduce((n, d) => n + breakOf(d), 0);
+  const breakDays = workedDays.filter((d) => breakOf(d) > 0).length;
+  const avgBreak = breakDays ? Math.round(totalBreak / breakDays) : 0;
+  const elapsed = inMonth.filter((d) => d.date <= today && !['WEEKLY_OFF', 'HOLIDAY'].includes(d.status)).length;
+  const presentPct = elapsed ? Math.round(((s?.present || 0) / elapsed) * 100) : 0;
   const lead = all.length ? new Date(`${all[0].date}T00:00:00Z`).getUTCDay() : 0;
-  const today = todayIst();
+  const shift = me.settings.shift;
+  const target = Math.max(1, toMin(shift.end) - toMin(shift.start));
+  const rows = records.slice((Math.min(page, Math.max(1, Math.ceil(records.length / PER))) - 1) * PER).slice(0, PER);
 
   const exportCsv = () => {
     const q = (v: unknown) => `"${String(v ?? '').replace(/"/g, '""')}"`;
-    const lines = [['Date', 'Check-in', 'Check-out', 'Work hours', 'Status'].join(',')].concat(
-      records.map((d) => [d.date, d.checkIn, d.checkOut, hm(d.workedMinutes), STATUS_LABEL[d.status] || d.status].map(q).join(','))
+    const lines = [['Date', 'Check-in', 'Check-out', 'Work hours', 'Break', 'Status'].join(',')].concat(
+      records.map((d) => [d.date, d.checkIn, d.checkOut, hm(d.workedMinutes), breakOf(d) ? `${breakOf(d)}m` : '', STATUS_LABEL[d.status] || d.status].map(q).join(','))
     );
     const url = URL.createObjectURL(new Blob([lines.join('\n')], { type: 'text/csv' }));
     const a = document.createElement('a'); a.href = url; a.download = `attendance-${month}.csv`; a.click(); URL.revokeObjectURL(url);
   };
 
-  // Today's activity
-  const att = me.attendanceToday;
-  const shiftCfg = me.settings.shift;
-  const worked = (att.workedMinutes || 0) + (att.open && att.openSince ? Math.max(0, clock.mins - toMin(att.openSince)) : 0);
-  const state: 'out' | 'in' | 'back' = !att.checkIn ? 'out' : att.open ? 'in' : 'back';
-  const punch = (kind: 'in' | 'out') => run(async () => {
-    if (kind === 'in') await leaveService.checkIn(); else await leaveService.checkOut();
-    await reload(); loadMonth();
-  }, kind === 'in' ? 'Checked in. Have a good day!' : 'Checked out.');
+  // Chart: one bar per day with recorded hours (hours mode) or per week with days present (days mode).
+  const bars = mode === 'hours'
+    ? workedDays.map((d) => ({ key: d.date, label: `${Number(d.date.slice(8))} ${new Date(`${d.date}T00:00:00Z`).toLocaleString('en-GB', { month: 'short', timeZone: 'UTC' })}`, value: d.workedMinutes, text: hm(d.workedMinutes), title: dmy(d.date) }))
+    : [1, 2, 3, 4, 5, 6].map((w) => {
+        const wk = inMonth.filter((d) => Math.ceil((Number(d.date.slice(8)) + lead) / 7) === w && ['PRESENT', 'LATE', 'HALF_DAY'].includes(d.status));
+        return { key: `w${w}`, label: `Week ${w}`, value: wk.length, text: `${wk.length} day${wk.length === 1 ? '' : 's'}`, title: `Week ${w}` };
+      }).filter((b) => b.value > 0);
+  const top = mode === 'hours' ? Math.max(Math.ceil((Math.max(0, ...bars.map((b) => b.value)) || target) / 120) * 120, Math.ceil((target * 1.25) / 120) * 120) : Math.max(5, ...bars.map((b) => b.value));
+  const ticks = mode === 'hours' ? Array.from({ length: Math.floor(top / 120) + 1 }, (_, i) => i * 120) : Array.from({ length: top + 1 }, (_, i) => i);
+  const maxTicks = ticks.length > 7 ? ticks.filter((_, i) => i % 2 === 0) : ticks;
+  const shownBar = bars.find((b) => b.key === hover);
 
-  const legend: [string, string, number][] = [
-    ['bg-emerald-500', 'Present', count('PRESENT')], ['bg-orange-400', 'Late', count('LATE')], ['bg-violet-400', 'Missed check-out', count('INCOMPLETE')],
-    ['bg-rose-400', 'Absent', count('ABSENT')], ['bg-sky-400', 'On leave', count('LEAVE', 'HALF_LEAVE')], ['bg-slate-300', 'Weekend / Off', count('WEEKLY_OFF', 'HOLIDAY')],
-  ];
+  const pickedDay = sel ? all.find((d) => d.date === sel) : null;
 
   return (
     <div className="space-y-5">
-      <header className="flex flex-wrap items-start justify-between gap-4">
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight text-slate-950">Attendance</h1>
-          <p className="mt-1 text-sm text-slate-600">Track your daily check-in, check-out and attendance records.</p>
-        </div>
-        <div className="flex items-center gap-2">
-          <div className="flex h-11 items-center gap-1 rounded-xl border border-slate-200 bg-white px-1.5">
-            <button type="button" aria-label="Previous month" onClick={() => shiftMonth(-1)} className="rounded-lg p-1.5 hover:bg-slate-100 cursor-pointer"><ChevronLeft className="h-4 w-4" /></button>
-            <span className="min-w-[8.5rem] text-center text-sm font-semibold text-slate-800">{monthTitle(month)}</span>
-            <button type="button" aria-label="Next month" disabled={isNow} onClick={() => shiftMonth(1)} className="rounded-lg p-1.5 hover:bg-slate-100 disabled:opacity-40 cursor-pointer"><ChevronRight className="h-4 w-4" /></button>
-          </div>
-          <button type="button" disabled={records.length === 0} onClick={exportCsv} className="inline-flex h-11 items-center gap-2 rounded-xl bg-[#F36B21] px-5 text-sm font-bold text-white hover:bg-[#df5d18] disabled:opacity-50 cursor-pointer"><Download className="h-4 w-4" />Export</button>
-        </div>
-      </header>
+      <PageHead title="Attendance" subtitle="View and track your attendance, working hours and daily logs.">
+        <MonthChip month={month} onShift={(n) => setMonth(shiftMonthStr(month, n))} disableNext={isNow} />
+        <button type="button" disabled={records.length === 0} onClick={exportCsv} className={btnViolet}><Download className="h-4 w-4" />Download Report</button>
+      </PageHead>
       {error && <Notice tone="error">{error}</Notice>}
       {!data && !error && <Skeleton rows={4} />}
 
       {s && (
-        <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
-          <StatTile label="Present" value={s.present} unit={s.present === 1 ? 'day' : 'days'} tone="bg-emerald-50" icon="bg-emerald-100 text-emerald-600" Icon={CalendarCheck} />
-          <StatTile label="Late check-in" value={s.late} unit={s.late === 1 ? 'day' : 'days'} tone="bg-orange-50" icon="bg-orange-100 text-orange-600" Icon={Clock} />
-          <StatTile label="On leave" value={s.leave} unit={s.leave === 1 ? 'day' : 'days'} tone="bg-sky-50" icon="bg-sky-100 text-sky-600" Icon={Palmtree} />
-          <StatTile label="Absent" value={s.absent} unit={s.absent === 1 ? 'day' : 'days'} tone="bg-rose-50" icon="bg-rose-100 text-rose-600" Icon={CalendarX} />
-          <StatTile label="Total working days" value={workingDays} unit="days" tone="bg-indigo-50" icon="bg-indigo-100 text-indigo-600" Icon={CalendarDays} />
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-5">
+          <Kpi label="Present Days" value={s.present} sub={<span className="font-semibold text-emerald-600">↑ {presentPct}%</span>} tone="green" Icon={CalendarCheck} />
+          <Kpi label="Working Hours" value={hm(totalWorked) || '0h'} sub={avgWorked ? `Avg. ${hm(avgWorked)} / day` : undefined} tone="violet" Icon={Clock} />
+          <Kpi label="Break Time" value={totalBreak ? hm(totalBreak) : '0m'} sub={avgBreak ? `Avg. ${avgBreak}m / day` : undefined} tone="orange" Icon={Hourglass} />
+          <Kpi label="Absent Days" value={s.absent} tone="rose" Icon={CalendarX} />
+          <Kpi label="Late Check-ins" value={s.late} tone="blue" Icon={CalendarDays} />
         </div>
       )}
       {s?.lateDeductionDays > 0 && <Notice tone="warn">You were late {s.late} times this month. Your company's rule may cut {s.lateDeductionDays} day(s) of pay for that.</Notice>}
 
       {data && (
         <div className="grid items-start gap-4 xl:grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)]">
-          <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-            <h2 className="mb-3 text-lg font-bold text-slate-950">Attendance records <span className="text-sm font-normal text-slate-600">({monthTitle(month)})</span></h2>
-            <div className="overflow-x-auto rounded-xl">
-              <table className="w-full text-left text-sm">
-                <thead><tr className="bg-slate-50 text-xs font-bold text-slate-700"><th className="px-3 py-2.5">Date</th><th className="px-3 py-2.5">Check-in</th><th className="px-3 py-2.5">Check-out</th><th className="px-3 py-2.5">Work hours</th><th className="px-3 py-2.5">Status</th><th className="px-3 py-2.5" /></tr></thead>
-                <tbody className="divide-y divide-slate-100">
-                  {rows.length === 0 && <tr><td colSpan={6} className="px-3 py-8 text-center text-slate-500">No records for this month yet.</td></tr>}
-                  {rows.map((d) => (
-                    <tr key={d.date} className={d.date === today ? 'bg-orange-50/40' : ''}>
-                      <td className="whitespace-nowrap px-3 py-3 text-slate-800">{longDay(d.date)}</td>
-                      <td className="whitespace-nowrap px-3 py-3 text-slate-700">{d.checkIn || '—'}</td>
-                      <td className="whitespace-nowrap px-3 py-3 text-slate-700">{d.checkOut || '—'}</td>
-                      <td className="whitespace-nowrap px-3 py-3 text-slate-700">{hm(d.workedMinutes) || '—'}</td>
-                      <td className="px-3 py-3"><span className={`inline-block whitespace-nowrap rounded-full px-3 py-1 text-xs font-bold ${pill[d.status] || 'bg-slate-100 text-slate-600'}`}>{STATUS_LABEL[d.status] || '—'}</span></td>
-                      <td className="px-3 py-3 text-right">{canFix(d) && <button type="button" className="text-xs font-bold text-[#F36B21] hover:underline cursor-pointer" onClick={() => setFix({ open: true, day: d })}>Fix</button>}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-            <div className="mt-3 flex flex-wrap items-center justify-between gap-3 text-sm text-slate-600">
-              <span>{records.length === 0 ? 'Showing 0' : `Showing ${(cur - 1) * PAGE + 1} – ${Math.min(cur * PAGE, records.length)}`} of {records.length} records</span>
-              {pages > 1 && (
-                <div className="flex items-center gap-1.5">
-                  <button type="button" aria-label="Previous page" disabled={cur === 1} onClick={() => setPage(cur - 1)} className="flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 disabled:opacity-40 cursor-pointer"><ChevronLeft className="h-4 w-4" /></button>
-                  {Array.from({ length: pages }, (_, i) => i + 1).map((n) => <button key={n} type="button" onClick={() => setPage(n)} className={`h-9 w-9 rounded-lg border text-sm font-semibold cursor-pointer ${n === cur ? 'border-[#F36B21] bg-[#F36B21] text-white' : 'border-slate-200 text-slate-700'}`}>{n}</button>)}
-                  <button type="button" aria-label="Next page" disabled={cur === pages} onClick={() => setPage(cur + 1)} className="flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 disabled:opacity-40 cursor-pointer"><ChevronRight className="h-4 w-4" /></button>
+          <Panel title="Attendance Overview" right={
+            <div className="inline-flex rounded-full border border-slate-200 bg-white p-0.5 text-sm font-semibold" role="group" aria-label="Chart units">
+              {(['hours', 'days'] as const).map((m) => <button key={m} type="button" aria-pressed={mode === m} onClick={() => setMode(m)} className={`rounded-full px-4 py-1 cursor-pointer ${mode === m ? 'bg-violet-100 text-violet-700 ring-1 ring-violet-300' : 'text-slate-700'}`}>{m === 'hours' ? 'Hours' : 'Days'}</button>)}
+            </div>}>
+            {bars.length === 0 ? <p className="py-12 text-center text-sm text-slate-500">No hours recorded this month yet.</p> : (
+              <div className="relative">
+                <div className="flex h-56">
+                  <div className="flex w-10 shrink-0 flex-col-reverse justify-between pb-6 text-xs text-slate-600" aria-hidden>{maxTicks.map((t) => <span key={t}>{mode === 'hours' ? `${t / 60}h` : t}</span>)}</div>
+                  <div className="relative flex-1">
+                    <div className="absolute inset-x-0 top-0 bottom-6">
+                      {mode === 'hours' && <div className="absolute inset-x-0 border-t-2 border-dashed border-violet-400" style={{ bottom: `${(target / top) * 100}%` }} />}
+                      <div className="absolute inset-0 flex items-end justify-around gap-1.5">
+                        {bars.map((b) => (
+                          <div key={b.key} className="relative flex h-full flex-1 items-end justify-center" onMouseEnter={() => setHover(b.key)} onMouseLeave={() => setHover(null)}>
+                            <div className={`w-full max-w-[3rem] rounded-t-md transition-colors ${hover === b.key ? 'bg-violet-600' : 'bg-violet-200'}`} style={{ height: `${Math.max(2, (b.value / top) * 100)}%` }} role="img" aria-label={`${b.title}: ${b.text}`} />
+                            {hover === b.key && <div className="absolute z-10 -translate-y-1 whitespace-nowrap rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs shadow-lg" style={{ bottom: `${Math.min(92, (b.value / top) * 100 + 4)}%` }}><div className="font-semibold text-slate-800">{b.title}</div><div className="flex items-center gap-1.5 font-bold text-slate-950"><span className="h-2 w-2 rounded-full bg-violet-600" />{b.text}</div></div>}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                    <div className="absolute inset-x-0 bottom-0 flex justify-around gap-1.5 text-[11px] text-slate-600">{bars.map((b) => <span key={b.key} className="flex-1 truncate text-center">{b.label}</span>)}</div>
+                  </div>
                 </div>
-              )}
-            </div>
-          </section>
+                {mode === 'hours' && <div className="mt-2 flex items-center gap-2 text-sm text-slate-700"><span className="inline-block w-6 border-t-2 border-dashed border-violet-400" />Target: {Math.round(target / 6) / 10}h / day</div>}
+                <span className="sr-only">{shownBar ? `${shownBar.title}: ${shownBar.text}` : ''}</span>
+              </div>
+            )}
+          </Panel>
 
-          <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-            <h2 className="mb-3 text-lg font-bold text-slate-950">Monthly attendance</h2>
-            <div className="flex flex-wrap gap-5">
-              <div className="min-w-[17rem] flex-1">
-                <div className="mb-1.5 grid grid-cols-7 gap-1">{WEEK.map((w) => <div key={w} className="text-center text-[11px] font-semibold text-slate-500">{w}</div>)}</div>
-                <div className="grid grid-cols-7 gap-1">
+          <Panel title="Attendance Calendar" right={
+            <div className="flex items-center gap-2">
+              <button type="button" aria-label="Previous month" onClick={() => setMonth(shiftMonthStr(month, -1))} className="flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 hover:bg-slate-50 cursor-pointer"><ChevronLeft className="h-4 w-4" /></button>
+              <span className="min-w-[5.5rem] text-center text-sm font-semibold text-slate-800">{monthTitle(month).replace(/^(\w{3})\w* /, '$1 ')}</span>
+              <button type="button" aria-label="Next month" disabled={isNow} onClick={() => setMonth(shiftMonthStr(month, 1))} className="flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 hover:bg-slate-50 disabled:opacity-40 cursor-pointer"><ChevronRight className="h-4 w-4" /></button>
+            </div>}>
+            <div className="flex flex-wrap gap-4">
+              <div className="min-w-[16rem] flex-1">
+                <div className="mb-1.5 grid grid-cols-7 gap-1">{WEEK.map((w) => <div key={w} className="text-center text-xs font-semibold text-slate-800">{w}</div>)}</div>
+                <div className="grid grid-cols-7 gap-y-1.5">
                   {Array.from({ length: lead }).map((_, i) => <div key={`b${i}`} />)}
                   {all.map((d) => {
-                    const na = d.status === 'NOT_EMPLOYED';
-                    return <div key={d.date} title={`${longDay(d.date)}: ${STATUS_LABEL[d.status] || ''}`} className={`flex h-9 items-center justify-center rounded-lg text-sm ${na ? 'text-slate-300' : calCell[d.status] || 'bg-slate-50 text-slate-600'} ${d.date === today ? 'ring-2 ring-[#F36B21]' : ''}`}>{Number(d.date.slice(8))}</div>;
+                    const na = d.status === 'NOT_EMPLOYED' || d.status === 'FUTURE';
+                    const cls = na ? 'text-slate-400' : dayCircle[d.status] || 'text-slate-800';
+                    return (
+                      <button key={d.date} type="button" disabled={na} onClick={() => setSel(sel === d.date ? null : d.date)} title={`${dmy(d.date)}: ${STATUS_LABEL[d.status] || ''}`}
+                        className={`mx-auto flex h-9 w-9 items-center justify-center rounded-full text-sm font-semibold ${cls} ${d.date === today || sel === d.date ? 'ring-2 ring-violet-500 ring-offset-1' : ''}`}>{Number(d.date.slice(8))}</button>
+                    );
                   })}
                 </div>
               </div>
-              <ul className="space-y-2.5 text-sm text-slate-700">
-                {legend.map(([dot, label, n]) => <li key={label} className="flex items-center gap-2"><span className={`h-3 w-3 rounded-full ${dot}`} />{label} ({n})</li>)}
+              <ul className="space-y-2 rounded-xl border border-slate-100 bg-slate-50/60 p-3 text-sm text-slate-800" aria-label="Legend">
+                {[['bg-emerald-500', 'Present'], ['bg-rose-500', 'Absent'], ['bg-amber-400', 'Late'], ['border-2 border-violet-500 bg-white', 'Selected'], ['bg-slate-300', 'Holiday']].map(([c, l]) => <li key={l} className="flex items-center gap-2"><span className={`h-3 w-3 rounded-full ${c}`} />{l}</li>)}
               </ul>
             </div>
-          </section>
+            {pickedDay && (
+              <div className="mt-3 flex flex-wrap items-center gap-x-5 gap-y-1 rounded-xl border border-slate-200 bg-slate-50 p-3 text-xs text-slate-700">
+                <b className="text-sm text-slate-900">{dmy(pickedDay.date)}</b>
+                <Pill tone={statusTone[pickedDay.status] || 'slate'}>{STATUS_LABEL[pickedDay.status] || 'No record'}</Pill>
+                <span>In <b>{t12(pickedDay.checkIn)}</b></span><span>Out <b>{t12(pickedDay.checkOut)}</b></span>
+                {canFix(pickedDay) && <button type="button" className="ml-auto font-bold text-violet-700 hover:underline cursor-pointer" onClick={() => setFix({ open: true, day: pickedDay })}>Fix this day</button>}
+              </div>
+            )}
+          </Panel>
         </div>
       )}
 
-      <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-        <h2 className="mb-4 text-lg font-bold text-slate-950">Today's activity</h2>
-        <div className="grid items-center gap-5 md:grid-cols-[1fr_1fr_1.2fr_auto]">
-          <div className="flex items-center gap-3"><span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-emerald-50 text-emerald-600"><CheckCircle2 className="h-6 w-6" /></span><div><div className="text-sm text-slate-600">{att.checkIn ? 'Checked in at' : 'Not checked in yet'}</div><div className="text-2xl font-bold text-slate-950">{att.checkIn || '—'}</div></div></div>
-          <div className="flex items-center gap-3"><span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-slate-100 text-slate-500"><Clock className="h-6 w-6" /></span><div><div className="text-sm text-slate-600">{state === 'back' ? 'Checked out at' : 'Not checked out yet'}</div><div className="text-2xl font-bold text-slate-950">{state === 'back' ? att.checkOut : '—'}</div></div></div>
-          <div className="flex items-center gap-3"><span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-orange-50 text-[#F36B21]"><Hourglass className="h-6 w-6" /></span><div><div className="text-sm text-slate-600">Work duration</div><div className="flex flex-wrap items-center gap-2"><span className="text-2xl font-bold text-slate-950">{hm(worked) || '0h 00m'}</span>{state === 'in' && <span className="rounded-md bg-emerald-50 px-2 py-0.5 text-xs font-bold text-emerald-700">In progress</span>}</div></div></div>
-          {state === 'in'
-            ? <button type="button" disabled={busy} onClick={() => punch('out')} className="inline-flex h-12 items-center justify-center gap-2 rounded-xl border border-[#F36B21] bg-white px-6 text-sm font-bold text-[#F36B21] hover:bg-orange-50 disabled:opacity-50 cursor-pointer"><LogOut className="h-4 w-4" />Check out</button>
-            : <button type="button" disabled={busy} onClick={() => punch('in')} className="inline-flex h-12 items-center justify-center gap-2 rounded-xl bg-[#F36B21] px-6 text-sm font-bold text-white hover:bg-[#df5d18] disabled:opacity-50 cursor-pointer"><LogIn className="h-4 w-4" />{state === 'back' ? 'Check in again' : 'Check in'}</button>}
-        </div>
-        <div className="mt-3 text-xs text-slate-500">Shift {shiftCfg.start}–{shiftCfg.end}{att.sessions?.length > 1 ? ` · Today: ${att.sessions.map((x: any) => `${x.in}–${x.out || 'now'}`).join(' · ')}` : ''}</div>
-        {note && <div className="mt-3"><Notice tone={note.tone === 'ok' ? 'ok' : 'error'}>{note.text}</Notice></div>}
-      </section>
-
-      <div className="grid gap-4 lg:grid-cols-2">
-        <Card title="Something wrong?" subtitle="Missed a check-in or check-out, or the time is wrong.">
-          <button className={`${btnPrimary} w-full`} onClick={() => setFix({ open: true, day: null })}><Wrench className="w-3.5 h-3.5" />Fix a day</button>
-        </Card>
-        <Card title="My fix requests">
-          {!regs ? <Skeleton rows={2} /> : regs.length === 0 ? <EmptyState icon={Wrench} title="No fix requests" text="If a day looks wrong, ask for a fix and your manager will approve it." /> : (
-            <div className="divide-y divide-slate-100">
-              {regs.slice(0, 12).map((r) => (
-                <div key={r.id} className="py-2 flex justify-between items-center gap-2 text-xs">
-                  <div><div className="font-semibold text-slate-700">{shortDate(r.date)}</div><div className="text-slate-500">{r.checkIn || '…'}–{r.checkOut || '…'}{r.reason ? ` · ${r.reason}` : ''}</div></div>
-                  <StatusPill status={r.status} short />
+      {data && (
+        <div>
+          <Tabs tabs={[{ key: 'logs', label: 'Daily Logs' }, { key: 'summary', label: 'Summary' }]} value={tab} onChange={setTab} />
+          <Panel className="mt-4">
+            {tab === 'logs' ? (
+              <>
+                <div className="overflow-x-auto">
+                  <table className="w-full min-w-[720px] text-left text-sm">
+                    <THead cols={['Date', 'Check In', 'Check Out', 'Working Hours', 'Break Time', 'Status', 'Remarks']} />
+                    <tbody className="divide-y divide-slate-100">
+                      {rows.length === 0 && <tr><td colSpan={7} className="px-3 py-8 text-center text-slate-500">No records for this month yet.</td></tr>}
+                      {rows.map((d) => (
+                        <tr key={d.date} className={d.date === today ? 'bg-violet-50/40' : ''}>
+                          <td className="whitespace-nowrap px-3 py-3 font-medium text-slate-900">{longDay(d.date)}</td>
+                          <td className="whitespace-nowrap px-3 py-3 tabular-nums text-slate-800">{t12(d.checkIn)}</td>
+                          <td className="whitespace-nowrap px-3 py-3 tabular-nums text-slate-800">{t12(d.checkOut)}</td>
+                          <td className="whitespace-nowrap px-3 py-3 tabular-nums text-slate-800">{hm(d.workedMinutes) || '--'}</td>
+                          <td className="whitespace-nowrap px-3 py-3 tabular-nums text-slate-800">{breakOf(d) ? `${breakOf(d)}m` : '--'}</td>
+                          <td className="px-3 py-3"><Pill tone={statusTone[d.status] || 'slate'}>{STATUS_LABEL[d.status] || '—'}</Pill></td>
+                          <td className="px-3 py-3 text-slate-700">{d.note ? d.note : canFix(d) ? <button type="button" className="text-xs font-semibold text-violet-700 hover:underline cursor-pointer" onClick={() => setFix({ open: true, day: d })}>Fix</button> : '--'}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
                 </div>
-              ))}
-            </div>
-          )}
-        </Card>
-      </div>
-      <FixDayDrawer me={me} day={fix.day} open={fix.open} onClose={() => setFix({ open: false, day: null })} onSent={() => { loadRegs(); loadMonth(); }} />
+                <Pager page={page} total={records.length} per={PER} noun="records" onPage={setPage} />
+              </>
+            ) : (
+              <ul className="grid gap-3 text-sm sm:grid-cols-2 lg:grid-cols-4">
+                {[['Present', count('PRESENT')], ['Late', count('LATE')], ['On leave', count('LEAVE', 'HALF_LEAVE')], ['Absent', count('ABSENT')], ['Missed check-out', count('INCOMPLETE')], ['Holidays / weekly offs', count('HOLIDAY', 'WEEKLY_OFF')], ['Working days', workingDays], ['Avg. hours a day', avgWorked ? hm(avgWorked) : '–']].map(([l, v]) => (
+                  <li key={String(l)} className="flex items-center justify-between rounded-xl border border-slate-100 bg-slate-50/60 px-4 py-3"><span className="text-slate-700">{l}</span><b className="text-slate-950">{v}</b></li>
+                ))}
+              </ul>
+            )}
+          </Panel>
+        </div>
+      )}
+      <FixDayDrawer me={me} day={fix.day} open={fix.open} onClose={() => setFix({ open: false, day: null })} onSent={() => { loadMonth(); }} />
     </div>
   );
 };

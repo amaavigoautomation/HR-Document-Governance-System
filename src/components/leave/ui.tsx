@@ -5,12 +5,12 @@ import {
 
 // ------------------------------------------------------------------ base styles (shared with payroll screens)
 
-export const input = 'w-full border border-slate-300 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#FA7014]/40 disabled:bg-slate-50';
-export const btnPrimary = 'inline-flex items-center justify-center gap-1.5 px-3.5 py-2 rounded-lg text-xs font-bold bg-[#FA7014] text-white hover:bg-[#e0630f] disabled:opacity-50 transition-colors';
+export const input = 'w-full border border-slate-300 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#6d4cf0]/40 disabled:bg-slate-50';
+export const btnPrimary = 'inline-flex items-center justify-center gap-1.5 px-3.5 py-2 rounded-lg text-xs font-bold bg-[#6d4cf0] text-white hover:bg-[#5b3ad6] disabled:opacity-50 transition-colors';
 export const btnGhost = 'inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-xs font-bold border border-slate-300 bg-white text-slate-700 hover:bg-slate-50 disabled:opacity-50 transition-colors';
 export const btnDanger = 'inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-xs font-bold border border-rose-300 bg-white text-rose-700 hover:bg-rose-50 disabled:opacity-50 transition-colors';
 /** Large primary action for the main thing on a screen. */
-export const btnBig = 'inline-flex items-center justify-center gap-2 px-5 py-3 rounded-xl text-sm font-bold bg-[#FA7014] text-white hover:bg-[#e0630f] disabled:opacity-50 transition-colors shadow-sm';
+export const btnBig = 'inline-flex items-center justify-center gap-2 px-5 py-3 rounded-xl text-sm font-bold bg-[#6d4cf0] text-white hover:bg-[#5b3ad6] disabled:opacity-50 transition-colors shadow-sm';
 
 export const Card: React.FC<{ title?: React.ReactNode; right?: React.ReactNode; children: React.ReactNode; className?: string; subtitle?: React.ReactNode }> = ({ title, right, children, className = '', subtitle }) => (
   <section className={`bg-white border border-slate-200 rounded-2xl p-5 shadow-[0_1px_2px_rgba(16,24,40,0.04)] ${className}`}>
@@ -108,7 +108,7 @@ export const DAY_LOOK: Record<string, { cell: string; dot: string; icon: React.F
   HALF_LEAVE: { cell: 'bg-sky-50 border-sky-200 text-sky-800', dot: 'bg-sky-400', icon: Sunset },
   HOLIDAY: { cell: 'bg-violet-50 border-violet-200 text-violet-800', dot: 'bg-violet-500', icon: Sun },
   WEEKLY_OFF: { cell: 'bg-slate-100 border-slate-200 text-slate-500', dot: 'bg-slate-400', icon: Coffee },
-  TODAY: { cell: 'bg-white border-[#FA7014] text-slate-600', dot: 'bg-[#FA7014]', icon: Clock },
+  TODAY: { cell: 'bg-white border-[#6d4cf0] text-slate-600', dot: 'bg-[#6d4cf0]', icon: Clock },
 };
 export const NoDayIcon = CalendarOff;
 
@@ -261,7 +261,7 @@ export function Segmented<T extends string>({ value, options, onChange, size = '
     <div className="inline-flex rounded-lg border border-slate-200 bg-slate-50 p-0.5" role="radiogroup">
       {options.map((o) => (
         <button key={o.value} type="button" role="radio" aria-checked={value === o.value} disabled={o.disabled} onClick={() => onChange(o.value)}
-          className={`${size === 'sm' ? 'px-2.5 py-1 text-[11px]' : 'px-3.5 py-1.5 text-xs'} font-bold rounded-md transition-colors disabled:opacity-40 ${value === o.value ? 'bg-white text-[#FA7014] shadow-sm' : 'text-slate-600 hover:text-slate-900'}`}>
+          className={`${size === 'sm' ? 'px-2.5 py-1 text-[11px]' : 'px-3.5 py-1.5 text-xs'} font-bold rounded-md transition-colors disabled:opacity-40 ${value === o.value ? 'bg-white text-[#6d4cf0] shadow-sm' : 'text-slate-600 hover:text-slate-900'}`}>
           {o.label}
         </button>
       ))}

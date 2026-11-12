@@ -572,7 +572,20 @@ async function inbox(who: Who): Promise<Result> {
   const { leaves, regularizations } = await inboxFor(who, people);
   // Tell HR which requests are waiting on a manager who is on leave.
   const away = await awayOn(who.cid, leaves.map((l) => l.managerUid), istToday());
-  return ok({ leaves: leaves.map((l) => ({ ...l, managerAway: away.has(l.managerUid) })), regularizations, canManage: who.canManage });
+  // Recently decided requests this person could have decided, so the screen can show Approved and Rejected too.
+  const today = istToday();
+  const since = addDays(today, -90);
+  const covered = await coveredManagers(who.cid, who.ctx.uid, today);
+  const mayDecide = (r: any) => (r.uid !== who.ctx.uid || who.ctx.isCompanyAdmin) && (who.canManage || r.managerUid === who.ctx.uid || covered.has(r.managerUid));
+  const [doneLeaves, doneRegs] = await Promise.all([
+    db().collection('leaveRequests').where('companyId', '==', who.cid).where('status', 'in', ['APPROVED', 'REJECTED']).get(),
+    db().collection('leaveRegularizations').where('companyId', '==', who.cid).where('status', 'in', ['APPROVED', 'REJECTED']).get(),
+  ]);
+  const decidedLeaves = doneLeaves.docs.map((d: any) => d.data() as LeaveRequest).filter((r) => r.to >= since && mayDecide(r))
+    .sort((a, b) => b.createdAt.localeCompare(a.createdAt)).slice(0, 200).map(viewRequest);
+  const decidedRegs = doneRegs.docs.map((d: any) => d.data()).filter((r: any) => String(r.date || '') >= since && mayDecide(r))
+    .sort((a: any, b: any) => String(b.date).localeCompare(String(a.date))).slice(0, 200);
+  return ok({ leaves: leaves.map((l) => ({ ...l, managerAway: away.has(l.managerUid) })), regularizations, decided: { leaves: decidedLeaves, regularizations: decidedRegs }, canManage: who.canManage });
 }
 
 async function decide(who: Who, body: any): Promise<Result> {
@@ -861,7 +874,7 @@ async function teamCalendar(who: Who, q: any): Promise<Result> {
     .map((r) => {
       const detailed = who.canReport || r.uid === c.me.uid || profiles.get(r.uid)?.managerUid === c.me.uid;
       return {
-        uid: r.uid, name: r.name, from: r.from, to: r.to, days: r.days, status: r.status === 'PENDING' || r.status === 'INFO_REQUESTED' ? 'PENDING' : 'APPROVED',
+        uid: r.uid, name: r.name, department: people.find((x) => x.uid === r.uid)?.department || '', from: r.from, to: r.to, days: r.days, status: r.status === 'PENDING' || r.status === 'INFO_REQUESTED' ? 'PENDING' : 'APPROVED',
         halfDay: r.days === 0.5, type: detailed ? r.typeName : null, reason: detailed ? r.reason : null,
       };
     });
