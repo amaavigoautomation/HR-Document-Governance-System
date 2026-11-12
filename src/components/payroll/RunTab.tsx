@@ -84,7 +84,7 @@ export const RunTab: React.FC<{ canManage: boolean }> = ({ canManage }) => {
             return (
               <React.Fragment key={k}>
                 {i > 0 && <span className="text-slate-300">›</span>}
-                <span className={`text-[11px] font-bold px-2.5 py-1 rounded-full border ${reached ? 'bg-[#FA7014] text-white border-[#FA7014]' : 'bg-white text-slate-400 border-slate-200'}`}>{label}</span>
+                <span className={`text-[11px] font-bold px-2.5 py-1 rounded-full border ${reached ? 'bg-[#6d4cf0] text-white border-[#6d4cf0]' : 'bg-white text-slate-400 border-slate-200'}`}>{label}</span>
               </React.Fragment>
             );
           })}

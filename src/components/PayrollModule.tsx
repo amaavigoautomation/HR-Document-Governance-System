@@ -16,6 +16,9 @@ import { Salaries } from './payroll/Salaries';
 import { ModuleSubNav } from './moduleNav';
 import { payrollNav, payrollNavItems } from './payroll/payrollNav';
 
+/** Screens that draw their own page title. */
+const OWN_HEAD: string[] = ['payslips', 'claims', 'tax', 'approvals'];
+
 /**
  * Payroll for every role: everyone sees their payslips; people with payroll access get the rest.
  * The section menu is shown in the app sidebar under "Payroll". Screens without a sidebar (the employee portal)
@@ -50,8 +53,12 @@ export const PayrollModule: React.FC<{ currentUser: User; inlineNav?: boolean }>
         ) : (
           <div aria-label="You are here">
             <div className="text-sm text-slate-500">Payroll <ChevronRight className="inline h-3.5 w-3.5" /> <span className="font-semibold text-slate-800">{activeLabel}</span></div>
-            <h1 className="mt-2 text-3xl font-bold tracking-tight text-slate-950">Payroll</h1>
-            <p className="mt-1 text-sm text-slate-600">{me.canManage ? 'Manage employee payroll, salary structure and payments.' : me.canView ? 'You can view payroll (read-only).' : 'Your payslips appear here once a month is finalised.'}</p>
+            {!OWN_HEAD.includes(active) && (
+              <>
+                <h1 className="mt-2 text-3xl font-bold tracking-tight text-slate-950">Payroll</h1>
+                <p className="mt-1 text-sm text-slate-600">{me.canManage ? 'Manage employee payroll, salary structure and payments.' : me.canView ? 'You can view payroll (read-only).' : 'Your payslips appear here once a month is finalised.'}</p>
+              </>
+            )}
           </div>
         )}
         {inlineNav && navItems.length > 1 && <ModuleSubNav nav={payrollNav} label="Payroll sections" variant="pills" />}

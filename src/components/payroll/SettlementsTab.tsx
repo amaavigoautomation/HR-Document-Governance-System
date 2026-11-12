@@ -42,7 +42,7 @@ export const SettlementStatement: React.FC<{ s: any; company?: any }> = ({ s, co
         ))}
       </div>
       {c.gratuity?.note && <div className="text-[11px] text-slate-500">Gratuity: {c.gratuity.note}</div>}
-      <div className={`flex items-center justify-between rounded-lg text-white px-4 py-3 ${c.totals.recoverable > 0 ? 'bg-rose-600' : 'bg-[#FA7014]'}`}>
+      <div className={`flex items-center justify-between rounded-lg text-white px-4 py-3 ${c.totals.recoverable > 0 ? 'bg-rose-600' : 'bg-[#6d4cf0]'}`}>
         <span className="text-sm font-bold">{c.totals.recoverable > 0 ? 'Recoverable from the employee' : 'Net settlement'}</span>
         <span className="text-lg font-bold tabular-nums">{inr(c.totals.recoverable > 0 ? c.totals.recoverable : c.totals.net)}</span>
       </div>
