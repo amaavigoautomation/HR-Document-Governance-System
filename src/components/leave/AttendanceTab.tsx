@@ -160,7 +160,7 @@ export const MonthView: React.FC<{ uid?: string; onPickDay?: (d: any) => void; o
               return (
                 <button key={d.date} type="button" disabled={d.status === 'NOT_EMPLOYED'} onClick={() => pick(d)}
                   aria-label={`${niceDate(d.date)}: ${STATUS_LABEL[d.status] || 'no record'}`}
-                  className={`min-h-[3.25rem] sm:min-h-[4.5rem] text-left rounded-lg border p-1 sm:p-1.5 transition-shadow hover:shadow-sm ${na ? 'bg-slate-50 border-slate-100 text-slate-300' : look.cell} ${d.date === today ? 'ring-2 ring-[#FA7014]/70' : ''} ${sel ? 'outline outline-2 outline-slate-800' : ''}`}>
+                  className={`min-h-[3.25rem] sm:min-h-[4.5rem] text-left rounded-lg border p-1 sm:p-1.5 transition-shadow hover:shadow-sm ${na ? 'bg-slate-50 border-slate-100 text-slate-300' : look.cell} ${d.date === today ? 'ring-2 ring-[#6d4cf0]/70' : ''} ${sel ? 'outline outline-2 outline-slate-800' : ''}`}>
                   <div className="flex items-center justify-between">
                     <span className="text-xs font-bold">{Number(d.date.slice(8))}</span>
                     {!na && Icon && <Icon className="w-3.5 h-3.5" />}
@@ -208,7 +208,7 @@ export const MonthView: React.FC<{ uid?: string; onPickDay?: (d: any) => void; o
                   <td className="p-2">{STATUS_LABEL[d.status] ? <StatusPill status={d.status} /> : <span className="text-slate-300">—</span>}</td>
                   <td className="p-2">{d.checkIn || '—'}</td><td className="p-2">{d.checkOut || '—'}</td>
                   <td className="p-2 hidden sm:table-cell">{hm(d.workedMinutes)}</td>
-                  <td className="p-2 text-right">{onFixDay && canFix(d) && <button className="text-[#FA7014] font-bold" onClick={() => onFixDay(d)}>Fix</button>}</td>
+                  <td className="p-2 text-right">{onFixDay && canFix(d) && <button className="text-[#6d4cf0] font-bold" onClick={() => onFixDay(d)}>Fix</button>}</td>
                 </tr>
               ))}
             </tbody>

@@ -39,7 +39,7 @@ export const BalanceStrip: React.FC<{ me: any; onApply?: (typeId: string) => voi
         const leftPct = b.requiresBalance && total > 0 ? Math.max(0, Math.min(100, Math.round((b.balance / total) * 100))) : 0;
         return (
           <button key={b.typeId} type="button" onClick={() => onApply?.(b.typeId)} title={onApply ? `Apply for ${b.name}` : undefined}
-            className="text-left bg-white border border-slate-200 rounded-2xl p-4 shadow-sm hover:border-[#FA7014]/60 transition-colors">
+            className="text-left bg-white border border-slate-200 rounded-2xl p-4 shadow-sm hover:border-[#6d4cf0]/60 transition-colors">
             <div className="text-xs font-bold text-slate-600 truncate">{b.name}</div>
             {b.requiresBalance ? (
               <>

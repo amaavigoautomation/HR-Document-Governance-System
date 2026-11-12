@@ -16,7 +16,7 @@ const monthLabel = (m: string) => {
   const names = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
   return `${names[parseInt(m.slice(5, 7), 10) - 1] || m} ${m.slice(0, 4)}`;
 };
-const sel = 'border border-slate-300 rounded-lg px-2.5 py-1.5 text-xs bg-white text-slate-700 focus:outline-none focus:ring-2 focus:ring-[#FA7014]/40';
+const sel = 'border border-slate-300 rounded-lg px-2.5 py-1.5 text-xs bg-white text-slate-700 focus:outline-none focus:ring-2 focus:ring-[#6d4cf0]/40';
 
 interface FlagSettings { payroll: boolean; late: boolean; leave: boolean; latePer30: number; lateStreak: number; payChangePct: number; totalChangePct: number; leaveAdjacent: number; shortSick: number }
 
@@ -40,7 +40,7 @@ const Thresholds: React.FC<{ canEdit: boolean; onSaved: () => void }> = ({ canEd
       <button type="button" onClick={() => setOpen(!open)} className="w-full flex items-center gap-2 text-left">
         <SlidersHorizontal className="w-3.5 h-3.5" />
         <span>Thresholds: {s.latePer30} late marks per 30 days, {s.payChangePct}% pay change</span>
-        <span className="ml-auto text-[#FA7014] font-bold inline-flex items-center gap-1">{canEdit ? 'Edit' : 'View'}<ChevronDown className={`w-3.5 h-3.5 transition-transform ${open ? 'rotate-180' : ''}`} /></span>
+        <span className="ml-auto text-[#6d4cf0] font-bold inline-flex items-center gap-1">{canEdit ? 'Edit' : 'View'}<ChevronDown className={`w-3.5 h-3.5 transition-transform ${open ? 'rotate-180' : ''}`} /></span>
       </button>
       {open && (
         <div className="mt-3 space-y-3">
@@ -184,7 +184,7 @@ export const HrDashboard: React.FC = () => {
     <div className="space-y-4">
       <div className="flex items-center justify-between gap-2">
         <div className="text-xs text-slate-500">As of {niceDate(d.today)}</div>
-        <label className="flex items-center gap-1.5 text-xs text-slate-600"><input type="checkbox" className="accent-[#FA7014]" checked={mgmt} onChange={(e) => setMgmt(e.target.checked)} />Management view (no names)</label>
+        <label className="flex items-center gap-1.5 text-xs text-slate-600"><input type="checkbox" className="accent-[#6d4cf0]" checked={mgmt} onChange={(e) => setMgmt(e.target.checked)} />Management view (no names)</label>
       </div>
       <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
         <Tile label="Pending approvals" value={d.pendingApprovals} tone={d.overdue ? 'warn' : undefined} />
@@ -202,7 +202,7 @@ export const HrDashboard: React.FC = () => {
             {d.trend.map((t: any) => (
               <div key={t.month} className="flex-1 flex flex-col items-center justify-end gap-1">
                 <span className="text-[10px] text-slate-500">{t.days}</span>
-                <div className="w-full rounded-t bg-[#FA7014]/80" style={{ height: `${Math.max(3, (t.days / peak) * 100)}%` }} />
+                <div className="w-full rounded-t bg-[#6d4cf0]/80" style={{ height: `${Math.max(3, (t.days / peak) * 100)}%` }} />
                 <span className="text-[10px] text-slate-400">{t.month.slice(5)}</span>
               </div>
             ))}
@@ -232,7 +232,7 @@ export const Updates: React.FC<{ onOpen?: (link: string) => void; refreshKey?: n
   if (!data || data.items.length === 0) return null;
   const list = data.items.slice(0, 5);
   return (
-    <Card title={<span className="inline-flex items-center gap-1.5"><BellRing className="w-4 h-4 text-[#FA7014]" />Updates{data.unread > 0 && <b className="text-[10px] bg-[#FA7014] text-white rounded-full px-1.5">{data.unread}</b>}</span>}
+    <Card title={<span className="inline-flex items-center gap-1.5"><BellRing className="w-4 h-4 text-[#6d4cf0]" />Updates{data.unread > 0 && <b className="text-[10px] bg-[#6d4cf0] text-white rounded-full px-1.5">{data.unread}</b>}</span>}
       right={data.unread > 0 ? <button className="text-xs font-bold text-slate-500 hover:text-slate-800" onClick={() => leaveService.readNotifications('all').then(load)}>Mark all read</button> : undefined}>
       <ul className="divide-y divide-slate-100">
         {list.map((n) => (

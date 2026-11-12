@@ -39,7 +39,7 @@ export const DocAttach: React.FC<{ value: Picked | null; onChange: (p: Picked | 
           <button type="button" aria-label="Remove attachment" onClick={() => onChange(null)}><X className="w-3.5 h-3.5 text-slate-400 hover:text-slate-700" /></button>
         </div>
       ) : (
-        <button type="button" className="inline-flex items-center gap-1.5 text-xs font-bold text-[#FA7014] hover:underline" onClick={() => input.current?.click()}>
+        <button type="button" className="inline-flex items-center gap-1.5 text-xs font-bold text-[#6d4cf0] hover:underline" onClick={() => input.current?.click()}>
           <Paperclip className="w-3.5 h-3.5" />{label}
         </button>
       )}
@@ -66,7 +66,7 @@ export const OpenDoc: React.FC<{ requestId: string; name?: string; canOpen: bool
   };
   return (
     <span className="inline-flex items-center gap-1 text-[11px]">
-      <button type="button" className="font-bold text-[#FA7014] underline flex items-center gap-1" disabled={busy} onClick={open}><FileText className="w-3.5 h-3.5" />{name || 'Open document'}</button>
+      <button type="button" className="font-bold text-[#6d4cf0] underline flex items-center gap-1" disabled={busy} onClick={open}><FileText className="w-3.5 h-3.5" />{name || 'Open document'}</button>
       {error && <span className="text-rose-600">{error}</span>}
     </span>
   );

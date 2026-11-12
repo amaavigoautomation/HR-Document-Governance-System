@@ -37,7 +37,7 @@ const WeeklyOffEditor: React.FC<{ value: Record<string, any>; onChange: (v: Reco
             <span className="flex items-center gap-1.5 text-slate-500">
               {[1, 2, 3, 4, 5].map((w) => (
                 <label key={w} className="flex items-center gap-0.5">
-                  <input type="checkbox" className="accent-[#FA7014]" checked={(rule as number[]).includes(w)} onChange={(e) => set('WEEKS', e.target.checked ? [...rule, w] : (rule as number[]).filter((x) => x !== w))} />{['1st', '2nd', '3rd', '4th', '5th'][w - 1]}
+                  <input type="checkbox" className="accent-[#6d4cf0]" checked={(rule as number[]).includes(w)} onChange={(e) => set('WEEKS', e.target.checked ? [...rule, w] : (rule as number[]).filter((x) => x !== w))} />{['1st', '2nd', '3rd', '4th', '5th'][w - 1]}
                 </label>
               ))}
             </span>
@@ -50,7 +50,7 @@ const WeeklyOffEditor: React.FC<{ value: Record<string, any>; onChange: (v: Reco
 
 const Check: React.FC<{ checked: boolean; disabled?: boolean; onChange: (v: boolean) => void; label: string; hint?: string }> = ({ checked, disabled, onChange, label, hint }) => (
   <label className={`flex items-start gap-2 text-xs ${disabled ? 'opacity-50' : 'cursor-pointer'}`}>
-    <input type="checkbox" className="mt-0.5 w-4 h-4 accent-[#FA7014]" disabled={disabled} checked={checked} onChange={(e) => onChange(e.target.checked)} />
+    <input type="checkbox" className="mt-0.5 w-4 h-4 accent-[#6d4cf0]" disabled={disabled} checked={checked} onChange={(e) => onChange(e.target.checked)} />
     <span><span className="font-semibold text-slate-700">{label}</span>{hint && <span className="block text-slate-400">{hint}</span>}</span>
   </label>
 );
@@ -130,8 +130,8 @@ export const HrSetup: React.FC<{ onChanged: () => void }> = ({ onChanged }) => {
       <nav className="flex lg:flex-col gap-1 overflow-x-auto lg:overflow-visible -mx-1 px-1 lg:sticky lg:top-2" aria-label="Settings sections">
         {SECTIONS.map(({ key, label, hint, icon: Icon }) => (
           <button key={key} onClick={() => setSection(key)}
-            className={`shrink-0 text-left rounded-xl px-3 py-2 flex items-start gap-2 border ${section === key ? 'bg-white border-[#FA7014]/50 shadow-sm' : 'border-transparent hover:bg-white/70'}`}>
-            <Icon className={`w-4 h-4 mt-0.5 ${section === key ? 'text-[#FA7014]' : 'text-slate-400'}`} />
+            className={`shrink-0 text-left rounded-xl px-3 py-2 flex items-start gap-2 border ${section === key ? 'bg-white border-[#6d4cf0]/50 shadow-sm' : 'border-transparent hover:bg-white/70'}`}>
+            <Icon className={`w-4 h-4 mt-0.5 ${section === key ? 'text-[#6d4cf0]' : 'text-slate-400'}`} />
             <span><span className={`block text-xs font-bold whitespace-nowrap ${section === key ? 'text-slate-900' : 'text-slate-600'}`}>{label}</span><span className="hidden lg:block text-[11px] text-slate-400">{hint}</span></span>
           </button>
         ))}
@@ -219,7 +219,7 @@ export const HrSetup: React.FC<{ onChanged: () => void }> = ({ onChanged }) => {
                   <div className="flex flex-wrap gap-2 items-end mb-2">
                     <input type="date" aria-label="Holiday date" className={`${input} max-w-[10rem]`} value={newHoliday.date} onChange={(e) => setNewHoliday({ ...newHoliday, date: e.target.value })} />
                     <input className={`${input} max-w-xs`} placeholder="e.g. Diwali" value={newHoliday.name} onChange={(e) => setNewHoliday({ ...newHoliday, name: e.target.value })} />
-                    <label className="text-xs flex items-center gap-1"><input type="checkbox" className="accent-[#FA7014]" checked={newHoliday.optional} onChange={(e) => setNewHoliday({ ...newHoliday, optional: e.target.checked })} /> Optional</label>
+                    <label className="text-xs flex items-center gap-1"><input type="checkbox" className="accent-[#6d4cf0]" checked={newHoliday.optional} onChange={(e) => setNewHoliday({ ...newHoliday, optional: e.target.checked })} /> Optional</label>
                     <button className={btnGhost} disabled={!newHoliday.date || !newHoliday.name.trim()} onClick={() => { setLocation({ holidays: [...location.holidays.filter((h: any) => h.date !== newHoliday.date), newHoliday].sort((a: any, b: any) => a.date.localeCompare(b.date)) }); setNewHoliday({ date: '', name: '', optional: false }); }}>Add holiday</button>
                     <label className={`${btnGhost} cursor-pointer`}>Import from CSV
                       <input type="file" accept=".csv" className="hidden" onChange={async (e) => {
@@ -258,7 +258,7 @@ export const HrSetup: React.FC<{ onChanged: () => void }> = ({ onChanged }) => {
               {s.types.map((t: any, i: number) => {
                 const open = openType === i;
                 return (
-                  <div key={t.id + i} className={`border rounded-xl ${open ? 'border-[#FA7014]/50' : 'border-slate-200'} ${t.active ? '' : 'opacity-60'}`}>
+                  <div key={t.id + i} className={`border rounded-xl ${open ? 'border-[#6d4cf0]/50' : 'border-slate-200'} ${t.active ? '' : 'opacity-60'}`}>
                     <button className="w-full flex items-center gap-3 px-3 py-2.5 text-left" onClick={() => setOpenType(open ? null : i)} aria-expanded={open}>
                       <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-orange-50 text-[10px] font-black text-[#F36B21]">{t.code}</span>
                       <span className="flex-1 min-w-0"><span className="block text-sm font-bold text-slate-900">{t.name}</span><span className="block text-[11px] text-slate-500 truncate">{typeSummary(t)}</span></span>
@@ -314,7 +314,7 @@ export const HrSetup: React.FC<{ onChanged: () => void }> = ({ onChanged }) => {
                 <div key={p.id + pi} className="border border-slate-200 rounded-xl p-3">
                   <div className="flex flex-wrap items-end gap-3 mb-3">
                     <div className="max-w-xs flex-1"><Field label="Policy name"><input className={input} value={p.name} onChange={(e) => setPolicy(pi, { name: e.target.value })} /></Field></div>
-                    <label className="text-xs flex items-center gap-1.5 pb-2"><input type="radio" className="accent-[#FA7014]" checked={!!p.isDefault} onChange={() => patch({ policies: s.policies.map((x: any, j: number) => ({ ...x, isDefault: j === pi })) })} /> New people get this one</label>
+                    <label className="text-xs flex items-center gap-1.5 pb-2"><input type="radio" className="accent-[#6d4cf0]" checked={!!p.isDefault} onChange={() => patch({ policies: s.policies.map((x: any, j: number) => ({ ...x, isDefault: j === pi })) })} /> New people get this one</label>
                     {s.policies.length > 1 && <button className={btnDanger} onClick={() => patch({ policies: s.policies.filter((_: any, j: number) => j !== pi) })}>Remove</button>}
                   </div>
                   <div className="overflow-x-auto">

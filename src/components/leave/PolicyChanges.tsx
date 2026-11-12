@@ -42,7 +42,7 @@ export const PolicyChanges: React.FC<{ onChanged: () => void }> = ({ onChanged }
           <div className="min-w-0"><div className="text-[11px] text-slate-400">Policy document</div><div className="font-semibold truncate">{st.governanceRef || 'Not linked'}</div></div>
         </div>
         <label className="mt-4 flex items-start gap-2 text-xs text-slate-600">
-          <input type="checkbox" className="mt-0.5 accent-[#FA7014]" checked={st.requireApproval} disabled={busy || !st.canApprove}
+          <input type="checkbox" className="mt-0.5 accent-[#6d4cf0]" checked={st.requireApproval} disabled={busy || !st.canApprove}
             onChange={(e) => after(() => leaveService.policyRequire(e.target.checked), e.target.checked ? 'Policy changes now need approval.' : 'HR can save policy changes directly again.')} />
           <span><b>Policy changes need approval.</b> HR prepares a change as a draft, an administrator approves it, and it goes live on the effective date. Requests already decided keep the version they were decided under.{!st.canApprove && ' Only an administrator can change this.'}</span>
         </label>

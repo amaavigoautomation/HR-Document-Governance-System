@@ -6,6 +6,8 @@ import { leaveService } from '../services/leaveService';
 import { AttendanceTab, FixDayDrawer } from './leave/AttendanceTab';
 import { AttendanceReportsPage } from './leave/AttendanceReportsPage';
 import { AttendanceApplicationPage } from './leave/AttendanceApplicationPage';
+import { HrPolicies } from './leave/HrPolicies';
+import { PageHead } from './leave/kit';
 import { RegularizationPage } from './leave/RegularizationPage';
 import { ApprovalsTab, TeamCalendar } from './leave/ApprovalsTab';
 import { ApplyLeaveDrawer } from './leave/ApplyLeaveDrawer';
@@ -18,7 +20,7 @@ import { MyLeave } from './leave/MyLeave';
 import { Today } from './leave/Today';
 import { Card, EmptyState, Notice, Skeleton, ToastProvider } from './leave/ui';
 
-type Admin = 'overview' | 'requests' | 'people' | 'balances' | 'reports' | 'exceptions' | 'audit' | 'yearend' | 'setup';
+type Admin = 'policies' | 'overview' | 'requests' | 'people' | 'balances' | 'reports' | 'exceptions' | 'audit' | 'yearend' | 'setup';
 const ADMIN_KEY = 'amaavigo_leave_admin_tab';
 const readKey = (k: string) => { try { return localStorage.getItem(k) || ''; } catch { return ''; } };
 const writeKey = (k: string, v: string) => { try { localStorage.setItem(k, v); } catch { /* private mode */ } };
@@ -61,6 +63,7 @@ const LeaveScreens: React.FC<{ currentUser: User; inlineNav?: boolean }> = ({ cu
   const activeLabel = navItems.find((i) => i.key === active)?.label || '';
 
   const admins: { key: Admin; label: string; icon: React.FC<{ className?: string }>; show: boolean }[] = [
+    { key: 'policies', label: 'Leave Policies', icon: ScrollText, show: me.canManage && ok },
     { key: 'overview', label: 'Overview', icon: Gauge, show: me.canReport && ok },
     { key: 'requests', label: 'All requests', icon: ClipboardList, show: me.canManage && ok },
     { key: 'people', label: 'People', icon: Users, show: me.canManage && ok },
@@ -104,15 +107,17 @@ const LeaveScreens: React.FC<{ currentUser: User; inlineNav?: boolean }> = ({ cu
         {active === 'team' && <TeamCalendar />}
         {active === 'approvals' && <ApprovalsTab reload={reload} />}
         {active === 'manage' && (
-          <div className="space-y-4">
-            <div className="flex flex-wrap items-center gap-x-4 gap-y-2 border-b border-slate-200">
-              {visibleAdmin.map(({ key, label, icon: Icon }) => (
-                <button key={key} onClick={() => setAdmin(key)}
-                  className={`inline-flex items-center gap-1.5 pb-2 text-xs font-bold border-b-2 -mb-px ${activeAdmin === key ? 'border-[#FA7014] text-[#FA7014]' : 'border-transparent text-slate-500 hover:text-slate-800'}`}>
-                  <Icon className="w-3.5 h-3.5" />{label}
+          <div className="space-y-5">
+            <PageHead title="Manage" subtitle="Manage leave policies, rules and settings." />
+            <div className="flex flex-wrap items-center gap-x-6 gap-y-2 border-b border-slate-200" role="tablist">
+              {visibleAdmin.map(({ key, label }) => (
+                <button key={key} role="tab" aria-selected={activeAdmin === key} onClick={() => setAdmin(key)}
+                  className={`-mb-px border-b-2 px-1 pb-3 text-sm font-semibold cursor-pointer ${activeAdmin === key ? 'border-violet-600 text-violet-700' : 'border-transparent text-slate-600 hover:text-slate-900'}`}>
+                  {label}
                 </button>
               ))}
             </div>
+            {activeAdmin === 'policies' && <HrPolicies onEdit={() => setAdmin('setup')} />}
             {activeAdmin === 'overview' && <HrDashboard />}
             {activeAdmin === 'exceptions' && <HrExceptions />}
             {activeAdmin === 'yearend' && <HrYearEnd onChanged={reload} />}

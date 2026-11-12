@@ -104,10 +104,10 @@ export const ApplyLeaveDrawer: React.FC<{ me: any; open: boolean; onClose: () =>
                 const sel = b.typeId === typeId;
                 return (
                   <button key={b.typeId} type="button" onClick={() => setTypeId(b.typeId)}
-                    className={`text-left rounded-xl border-2 px-3 py-2.5 transition-colors ${sel ? 'border-[#FA7014] bg-orange-50/60' : 'border-slate-200 hover:border-slate-300 bg-white'}`}>
+                    className={`text-left rounded-xl border-2 px-3 py-2.5 transition-colors ${sel ? 'border-[#6d4cf0] bg-orange-50/60' : 'border-slate-200 hover:border-slate-300 bg-white'}`}>
                     <div className="flex items-center justify-between gap-1">
                       <span className="text-sm font-bold text-slate-800 truncate">{b.name}</span>
-                      {sel && <CheckCircle2 className="w-4 h-4 text-[#FA7014] shrink-0" />}
+                      {sel && <CheckCircle2 className="w-4 h-4 text-[#6d4cf0] shrink-0" />}
                     </div>
                     <div className={`text-xs mt-0.5 ${empty ? 'text-rose-600 font-semibold' : 'text-slate-500'}`}>
                       {!b.requiresBalance ? (b.isLop ? 'Unpaid' : 'No limit') : empty ? 'None left' : `${b.balance} left`}
@@ -125,7 +125,7 @@ export const ApplyLeaveDrawer: React.FC<{ me: any; open: boolean; onClose: () =>
           <div className="flex gap-1.5 mb-2">
             {quick.map((q) => (
               <button key={q.label} type="button" onClick={() => { setFrom(q.from); setTo(q.to); }}
-                className={`px-3 py-1 rounded-full text-xs font-bold border ${from === q.from && to === q.to ? 'bg-[#FA7014] border-[#FA7014] text-white' : 'border-slate-300 text-slate-600 hover:bg-slate-50'}`}>{q.label}</button>
+                className={`px-3 py-1 rounded-full text-xs font-bold border ${from === q.from && to === q.to ? 'bg-[#6d4cf0] border-[#6d4cf0] text-white' : 'border-slate-300 text-slate-600 hover:bg-slate-50'}`}>{q.label}</button>
             ))}
           </div>
           <div className="grid grid-cols-2 gap-x-3 gap-y-2">
@@ -175,7 +175,7 @@ export const ApplyLeaveDrawer: React.FC<{ me: any; open: boolean; onClose: () =>
             : preview?.valid === false ? <Notice tone="error">{preview.error}</Notice>
             : preview?.valid ? (
               <div className={`rounded-xl border border-slate-200 bg-slate-50 p-3 ${checking ? 'opacity-60' : ''}`}>
-                <div className="flex items-center gap-2 text-sm font-bold text-slate-900"><CalendarDays className="w-4 h-4 text-[#FA7014]" />{days(preview.days)} of {bal?.name}</div>
+                <div className="flex items-center gap-2 text-sm font-bold text-slate-900"><CalendarDays className="w-4 h-4 text-[#6d4cf0]" />{days(preview.days)} of {bal?.name}</div>
                 <ul className="mt-1.5 space-y-1 text-xs text-slate-600">
                   {bal?.requiresBalance && after !== undefined && <li>Balance: <b>{bal.balance}</b> → <b className={after < 0 ? 'text-rose-600' : 'text-slate-900'}>{after}</b></li>}
                   {who && <li>Goes to <b>{who}</b> for approval</li>}

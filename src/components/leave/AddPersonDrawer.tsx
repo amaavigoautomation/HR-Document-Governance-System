@@ -138,7 +138,7 @@ export const AddPersonDrawer: React.FC<Props> = ({ open, onClose, currentUser, s
             <legend className="text-xs font-semibold text-slate-600 mb-1">Roles</legend>
             <div className="grid grid-cols-2 gap-1.5">
               {assignable.map((r) => (
-                <label key={r.id} className={`flex items-center gap-2 rounded-lg border px-2.5 py-1.5 text-xs ${f.roleIds.includes(r.id) ? 'border-[#FA7014] bg-orange-50' : 'border-slate-200'}`}>
+                <label key={r.id} className={`flex items-center gap-2 rounded-lg border px-2.5 py-1.5 text-xs ${f.roleIds.includes(r.id) ? 'border-[#6d4cf0] bg-orange-50' : 'border-slate-200'}`}>
                   <input type="checkbox" checked={f.roleIds.includes(r.id)} onChange={() => toggleRole(r.id)} />
                   <span className="font-bold text-slate-800">{r.name}</span>
                 </label>
