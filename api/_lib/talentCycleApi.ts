@@ -15,6 +15,7 @@ import { adminDb } from './firebaseAdmin.js';
 import { authErrorResponse, requireActiveTenant, type AuthContext } from './authContext.js';
 import { loadPeople, loadProfiles, notify, type Person } from './leaveCore.js';
 import { PIP_FINAL } from '../../shared/hrbpEngine.js';
+import { ensureDraftMapping } from './hrbpOrg.js';
 import {
   QUARTER_STEPS, addDays, addMonths, cleanKeyResults, diffDays, elapsedFraction, isDay, isQuarter, objectiveProgress, okrStatus, probationMilestones,
   probationReminders, promoTransition, quarterBounds, quarterDueDate, quarterOf, validateFeedback, krProgress, type KeyResult, type Milestone, type PromoAction, type PromoStatus,
@@ -171,7 +172,9 @@ async function probDecide(c: Ctx, b: any): Promise<Result> {
   const person = c.byUid.get(p.uid);
   if (decision === 'CONFIRM') {
     // Keep the HR Business Partner mapping in step, when the person has one.
-    for (const m of (await listK(c.cid, 'map')).filter((x) => x.employeeUid === p.uid)) await putK({ ...m, employmentStatus: 'CONFIRMED', updatedAt: nowIso() });
+    for (const m of (await listK(c.cid, 'mapping')).filter((x) => x.employeeUid === p.uid)) await putK({ ...m, employmentStatus: 'CONFIRMED', updatedAt: nowIso() });
+    // No mapping yet: make a draft so HR is prompted to assign the business unit and HRBP.
+    await ensureDraftMapping(c.cid, p.uid, 'CONFIRMED');
     await mailTo(c, [person], 'Your probation is confirmed', `Dear ${p.name},\n\nWe are pleased to confirm that you have successfully completed your probation. Thank you for your work so far.${note ? `\n\n${note}` : ''}\n\nHR will share your confirmation letter.`);
   } else if (decision === 'EXTEND') {
     await mailTo(c, [person, c.byUid.get(p.managerUid)], `Probation extended: ${p.name}`, `${p.name}'s probation has been extended to ${p.endDate}.\n\nReason: ${note}\n\nA further review is due on ${(p.milestones as Milestone[]).slice(-1)[0].dueOn}.`);
