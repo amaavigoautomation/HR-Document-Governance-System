@@ -35,6 +35,8 @@ assert.equal(d.pipeline.find((p) => p.stage === 'Interviewed')!.count, 1, 'stage
 assert.equal(d.timeToHire.sample, 2, 'only offers with a known approval date and acceptance date count (o6 has no acceptance date)');
 assert.equal(d.timeToHire.averageDays, 15, '(20 + 10) / 2');
 assert.equal(d.timeToHire.slowest[0].days, 20);
+assert.equal(d.recentHires.length, d.offers.byStatus.ACCEPTED + (d.offers.byStatus.JOINED || 0), 'accepted or joined offers only');
+assert.ok(d.recentHires[0].date >= d.recentHires[1].date, 'newest first');
 assert.equal(d.timeToHire.byMonth.length, 6, 'six months of time-to-hire, ending this month');
 assert.equal(d.timeToHire.byMonth.at(-1)!.month, '2026-11');
 const sep = d.timeToHire.byMonth.find((m) => m.month === '2026-09')!;

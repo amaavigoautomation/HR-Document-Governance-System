@@ -31,6 +31,7 @@ export interface Dashboard {
   timeToHire: { averageDays: number | null; sample: number; slowest: { position: string; days: number }[]; byMonth: { month: string; averageDays: number | null; hires: number }[]; changePct: number | null };
   offers: { total: number; byStatus: Record<string, number>; acceptanceRate: number | null; answered: number };
   costs: { total: number; hires: number; perHire: number | null; byCategory: { category: string; amount: number }[] };
+  recentHires: { candidateName: string; designation: string; department: string; date: string }[];
   upcomingJoinings: { next30Days: number; list: { candidateName: string; designation: string; joiningDate: string; daysAway: number }[] };
   budgetVsActual: { department: string; budgetedLpa: number; actualLpa: number; varianceLpa: number }[];
   sources: { source: string; applications: number; selected: number; hires: number; conversionPct: number | null }[];
@@ -157,6 +158,10 @@ export function computeDashboard(input: { requisitions: ReqRec[]; applications: 
       total: costTotal, hires, perHire: hires && costTotal ? Math.round(costTotal / hires) : null,
       byCategory: [...catTotals.entries()].map(([category, amount]) => ({ category, amount })).sort((a, b) => b.amount - a.amount),
     },
+    recentHires: offers
+      .filter((o) => HIRED.includes(o.status) && (o.acceptedAt || o.joiningDate))
+      .map((o) => ({ candidateName: o.candidateName || 'Candidate', designation: o.designation || (o.requisitionId ? reqById.get(o.requisitionId)?.positionTitle : '') || '', department: o.department || (o.requisitionId ? reqById.get(o.requisitionId)?.departmentName : '') || '', date: day((o.acceptedAt || o.joiningDate)!) }))
+      .sort((a, b) => b.date.localeCompare(a.date)).slice(0, 4),
     upcomingJoinings: { next30Days: upcoming.filter((u) => u.daysAway <= 30).length, list: upcoming.slice(0, 10) },
     budgetVsActual: [...budget.entries()].map(([department, v]) => ({ department, budgetedLpa: r2(v.b), actualLpa: r2(v.a), varianceLpa: r2(v.b - v.a) })).sort((a, b) => b.budgetedLpa - a.budgetedLpa),
     sources: [...src.entries()].map(([source, v]) => ({ source, ...v, conversionPct: v.applications ? r1((v.hires / v.applications) * 100) : null })).sort((a, b) => b.hires - a.hires || b.applications - a.applications),

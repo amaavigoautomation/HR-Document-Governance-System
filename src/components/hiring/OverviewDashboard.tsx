@@ -1,9 +1,11 @@
 import React, { useMemo, useState } from 'react';
 import { Briefcase, CheckCircle2, Handshake, UserCheck, Users, UserRound } from 'lucide-react';
 import { dashService } from '../../services/hiringExtraService';
+import { Requisition } from '../../types';
 import { flowService } from '../../services/flowService';
 import { useLoad } from '../common/loadUi';
 import { stageOf, usePipelineData } from './PipelineBoard';
+import { Avatar } from '../home/parts';
 
 const ago = (iso: string) => {
   const m = Math.max(0, Math.round((Date.now() - new Date(iso).getTime()) / 60000));
@@ -28,8 +30,8 @@ const Tile: React.FC<{ label: string; value: React.ReactNode; tone: keyof typeof
 );
 
 const SHADES = ['#6d4cf0', '#8b6cf3', '#a99af6', '#c4baf9', '#ddd6fc'];
-const Card: React.FC<{ title: string; right?: React.ReactNode; children: React.ReactNode }> = ({ title, right, children }) => (
-  <section className="min-w-0 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"><div className="mb-3 flex items-center justify-between"><h2 className="text-lg font-bold text-slate-950">{title}</h2>{right}</div>{children}</section>
+const Card: React.FC<{ title: string; right?: React.ReactNode; className?: string; children: React.ReactNode }> = ({ title, right, className = '', children }) => (
+  <section className={`min-w-0 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm ${className}`}><div className="mb-3 flex items-center justify-between"><h2 className="text-lg font-bold text-slate-950">{title}</h2>{right}</div>{children}</section>
 );
 
 const monthName = (m: string) => new Date(`${m}-01T00:00:00Z`).toLocaleString('en-GB', { month: 'short', timeZone: 'UTC' });
@@ -54,8 +56,61 @@ const TthChart: React.FC<{ series: { month: string; averageDays: number | null; 
   );
 };
 
+const REQ_STATUS: Record<string, [string, string]> = {
+  JOB_OPEN: ['Open', 'bg-emerald-50 text-emerald-700'],
+  JD_DRAFT: ['In Progress', 'bg-sky-50 text-sky-700'],
+  PENDING_ASSIGNMENT: ['Awaiting HR', 'bg-amber-50 text-amber-700'],
+  PENDING_HR: ['Awaiting HR', 'bg-amber-50 text-amber-700'],
+  PENDING_FOUNDER: ['Awaiting approval', 'bg-amber-50 text-amber-700'],
+};
+const PAGE = 5;
+/** Requisitions that are still live (open or on their way to opening), newest first, with how many candidates each has. */
+const OpenRequisitions: React.FC<{ reqs: Requisition[]; rows: any[]; onViewAll?: () => void }> = ({ reqs, rows, onViewAll }) => {
+  const [page, setPage] = useState(1);
+  const list = useMemo(() => reqs.filter((r) => REQ_STATUS[r.status]).sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt))), [reqs]);
+  const pages = Math.max(1, Math.ceil(list.length / PAGE));
+  const cur = Math.min(page, pages);
+  const shown = list.slice((cur - 1) * PAGE, cur * PAGE);
+  const applicants = (r: Requisition) => rows.filter((a) => a.requisitionId === r.id || (!a.requisitionId && String(a.designation || '').toLowerCase() === r.positionTitle.toLowerCase())).length;
+  if (!list.length) return null;
+  return (
+    <Card title="Open Requisitions" right={onViewAll ? <button type="button" onClick={onViewAll} className="text-sm font-semibold text-violet-700 hover:underline">View All →</button> : undefined}>
+      <div className="overflow-x-auto">
+        <table className="w-full min-w-[640px] text-left text-sm">
+          <thead><tr className="bg-slate-50 text-xs font-semibold text-slate-600">{['Requisition ID', 'Role', 'Department', 'Hiring Manager', 'Open Since', 'Applicants', 'Status'].map((h) => <th key={h} className="px-3 py-2.5 first:rounded-l-lg last:rounded-r-lg">{h}</th>)}</tr></thead>
+          <tbody className="divide-y divide-slate-100">
+            {shown.map((r) => {
+              const [label, tone] = REQ_STATUS[r.status];
+              const mgr = r.reportingManager?.name || r.requestedBy?.name || '';
+              return (
+                <tr key={r.id} className="text-slate-800">
+                  <td className="px-3 py-2.5 font-semibold">{r.reqNo}</td>
+                  <td className="px-3 py-2.5">{r.positionTitle}</td>
+                  <td className="px-3 py-2.5">{r.departmentName}</td>
+                  <td className="px-3 py-2.5"><span className="flex items-center gap-2">{mgr && <Avatar name={mgr} />}<span className="truncate">{mgr || '—'}</span></span></td>
+                  <td className="px-3 py-2.5 whitespace-nowrap">{new Date(r.publishedAt || r.createdAt).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}</td>
+                  <td className="px-3 py-2.5 tabular-nums">{applicants(r)}</td>
+                  <td className="px-3 py-2.5"><span className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${tone}`}>{label}</span></td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+      <div className="mt-3 flex flex-wrap items-center justify-between gap-2 text-xs text-slate-500">
+        <span>Showing {(cur - 1) * PAGE + 1}–{Math.min(cur * PAGE, list.length)} of {list.length} requisitions</span>
+        {pages > 1 && <div className="flex items-center gap-1">
+          <button type="button" aria-label="Previous page" disabled={cur === 1} onClick={() => setPage(cur - 1)} className="h-7 w-7 rounded-lg border border-slate-200 disabled:opacity-40">‹</button>
+          {Array.from({ length: pages }, (_, i) => i + 1).slice(0, 7).map((n) => <button key={n} type="button" onClick={() => setPage(n)} aria-current={n === cur ? 'page' : undefined} className={`h-7 w-7 rounded-lg border text-xs font-semibold ${n === cur ? 'border-violet-600 bg-violet-600 text-white' : 'border-slate-200 text-slate-700'}`}>{n}</button>)}
+          <button type="button" aria-label="Next page" disabled={cur === pages} onClick={() => setPage(cur + 1)} className="h-7 w-7 rounded-lg border border-slate-200 disabled:opacity-40">›</button>
+        </div>}
+      </div>
+    </Card>
+  );
+};
+
 /** Bird's-eye hiring numbers from the candidate board, requisitions, the founder dashboard and the automation log. A card is left out when its data is not available to this person. */
-export const OverviewDashboard: React.FC<{ refreshKey: number; days: number }> = ({ refreshKey, days }) => {
+export const OverviewDashboard: React.FC<{ refreshKey: number; days: number; onOpenRequisitions?: () => void }> = ({ refreshKey, days, onOpenRequisitions }) => {
   const d = usePipelineData(days, refreshKey);
   const dash = useLoad(() => dashService.dashboard(), [refreshKey]);
   const [allActivity, setAllActivity] = useState(false);
@@ -93,11 +148,11 @@ export const OverviewDashboard: React.FC<{ refreshKey: number; days: number }> =
         {boardOk && <Tile label="Joined" value={rows.filter((r) => stageOf(r.status) === 4).length} tone="blue" Icon={UserCheck} trend={d.trend.joined} />}
       </section>
 
-      <div className="grid gap-5 lg:grid-cols-[minmax(0,1.15fr)_minmax(0,1fr)]">
+      <div className="grid items-start gap-5 md:grid-cols-2 xl:grid-cols-3">
         {boardOk && (
           <Card title="Hiring Funnel">
             <div className="flex flex-wrap items-center gap-6">
-              <svg viewBox="0 0 240 170" className="h-40 w-60 shrink-0" role="img" aria-label={funnel.map(([l, v]) => `${l} ${v}`).join(', ')}>
+              <svg viewBox="0 0 240 170" className="h-36 w-48 shrink-0" role="img" aria-label={funnel.map(([l, v]) => `${l} ${v}`).join(', ')}>
                 {funnel.map((_, i) => {
                   const top = 120 - i * 22; const bot = top - 20; const y = i * 33;
                   return <polygon key={i} points={`${120 - top},${y} ${120 + top},${y} ${120 + bot},${y + 30} ${120 - bot},${y + 30}`} fill={SHADES[i]} />;
@@ -143,8 +198,22 @@ export const OverviewDashboard: React.FC<{ refreshKey: number; days: number }> =
           </Card>
         )}
 
+        {x && x.recentHires.length > 0 && (
+          <Card title="Recent Hires" right={onOpenRequisitions ? <button type="button" onClick={onOpenRequisitions} className="text-sm font-semibold text-violet-700 hover:underline">View All →</button> : undefined}>
+            <ul className="divide-y divide-slate-100">
+              {x.recentHires.map((h, i) => (
+                <li key={i} className="flex items-center gap-3 py-2.5">
+                  <Avatar name={h.candidateName} />
+                  <span className="min-w-0 flex-1"><span className="block truncate text-sm font-bold text-slate-900">{h.candidateName}</span><span className="block truncate text-xs text-slate-500">{h.designation}{h.department ? ` · ${h.department}` : ''}</span></span>
+                  <span className="shrink-0 text-xs text-slate-500">{new Date(`${h.date}T00:00:00`).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}</span>
+                </li>
+              ))}
+            </ul>
+          </Card>
+        )}
+
         {act.data && act.data.items.length > 0 && (
-          <Card title="Recent Activity" right={<button type="button" onClick={() => setAllActivity((v) => !v)} className="text-sm font-semibold text-violet-700 hover:underline">{allActivity ? 'Show less' : 'View All →'}</button>}>
+          <Card className="xl:col-start-3 xl:row-span-2 xl:row-start-1" title="Recent Activity" right={<button type="button" onClick={() => setAllActivity((v) => !v)} className="text-sm font-semibold text-violet-700 hover:underline">{allActivity ? 'Show less' : 'View All →'}</button>}>
             <ul className="divide-y divide-slate-100">
               {act.data.items.map((a, i) => (
                 <li key={i} className="flex items-center gap-3 py-2.5">
@@ -157,6 +226,8 @@ export const OverviewDashboard: React.FC<{ refreshKey: number; days: number }> =
           </Card>
         )}
       </div>
+
+      <OpenRequisitions reqs={d.reqs} rows={d.all} onViewAll={onOpenRequisitions} />
     </div>
   );
 };

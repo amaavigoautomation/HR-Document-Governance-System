@@ -605,7 +605,7 @@ export const TalentAcquisitionOverview: React.FC<TalentAcquisitionOverviewProps>
         </div>
       </div>
 
-      <OverviewDashboard refreshKey={refreshCount} days={days} />
+      <OverviewDashboard refreshKey={refreshCount} days={days} onOpenRequisitions={onOpenRequisitions} />
 
       <h2 className="pt-4 text-lg font-bold text-slate-950">Sheet data</h2>
       <p className="-mt-3 text-sm text-slate-600">Recruitment numbers read from your connected Google Sheet.</p>
