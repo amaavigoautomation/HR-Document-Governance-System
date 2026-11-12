@@ -1,7 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import {
   ArrowRight, Briefcase, CalendarCheck, CalendarDays, CalendarPlus, CheckCircle2, CreditCard, FileText, Fingerprint, LayoutGrid, Palmtree,
-  Receipt, ShieldCheck, Users, UserPlus, Zap,
+  ListChecks, Receipt, ShieldCheck, Users, UserPlus, Zap,
 } from 'lucide-react';
 import type { DashboardWidget, WidgetTarget } from '../../../shared/dashboard';
 import { homeService } from '../../services/homeService';
@@ -10,6 +10,7 @@ import { lifecycleService } from '../../services/lifecycleService';
 import { pipelineService } from '../../services/pipelineService';
 import { Card, addDaysIso, niceDate, shortDate, shortRange, todayIst } from '../leave/ui';
 import { Avatar } from './parts';
+import { taskRows } from './HomeOverview';
 import { useLoad } from './useLoad';
 
 // ------------------------------------------------------------------ greeting
@@ -113,7 +114,7 @@ export const TopTiles: React.FC<{ widgets: DashboardWidget[]; refreshKey: number
   const pct = att.data ? attendancePct(att.data.cur) : null;
   const prevPct = att.data?.prev ? attendancePct(att.data.prev) : null;
   const scopeAll = (att.data?.cur.length || 0) > 1;
-  const tasks = widgets.reduce((n, w) => n + (typeof (w.data as any)?.count === 'number' ? (w.data as any).count : 0), 0);
+  const tasks = taskRows(widgets).reduce((n, r) => n + r.count, 0);
   const go = (w?: DashboardWidget) => (w?.target ? () => onOpen(w.target!) : undefined);
 
   const tiles: React.ReactNode[] = [];
@@ -121,7 +122,7 @@ export const TopTiles: React.FC<{ widgets: DashboardWidget[]; refreshKey: number
   if (typeof open === 'number') tiles.push(<Tile key="op" label="Open Roles" value={open} tone="blue" Icon={Briefcase} onClick={go(hiring)} />);
   if (leave.data) tiles.push(<Tile key="ol" label="On Leave Today" value={leave.data.count} tone="green" Icon={CalendarDays} />);
   if (pct !== null) tiles.push(<Tile key="at" label={scopeAll ? 'Attendance (MTD)' : 'Your Attendance (MTD)'} value={`${pct}%`} tone="orange" Icon={CheckCircle2} trend={<Trend delta={prevPct === null ? null : pct - prevPct} />} />);
-  if (tiles.length < 4 && tasks > 0) tiles.push(<Tile key="tk" label="Waiting on you" value={tasks} tone="blue" Icon={FileText} />);
+  if (tiles.length < 4) tiles.push(<Tile key="tk" label="Waiting on you" value={tasks} tone="purple" Icon={ListChecks} onClick={() => document.getElementById('home-my-tasks')?.scrollIntoView({ behavior: 'smooth', block: 'center' })} />);
 
   if (tiles.length === 0) return null;
   return <section aria-label="At a glance" className="grid gap-2.5 sm:grid-cols-2 xl:grid-cols-4">{tiles.slice(0, 4)}</section>;

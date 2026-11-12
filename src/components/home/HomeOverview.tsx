@@ -72,7 +72,7 @@ export const HiringDonut: React.FC<{ widget: DashboardWidget; onOpen: (t: Widget
   );
 };
 
-interface TaskRow { key: string; text: string; target?: WidgetTarget; Icon: React.FC<{ className?: string }> }
+interface TaskRow { key: string; text: string; count: number; target?: WidgetTarget; Icon: React.FC<{ className?: string }> }
 
 /** One row per thing waiting on this person, built from the dashboard widgets (counts are real). */
 const TAGS: Record<string, [string, string]> = {
@@ -82,20 +82,26 @@ const TAGS: Record<string, [string, string]> = {
 };
 const tagFor = (key: string): [string, string] => TAGS[key] || (key.startsWith('h-') ? ['Hiring', 'bg-sky-100 text-sky-700'] : ['General', 'bg-slate-100 text-slate-700']);
 
-export const MyTasks: React.FC<{ widgets: DashboardWidget[]; onOpen: (t: WidgetTarget) => void }> = ({ widgets, onOpen }) => {
+/** Everything waiting on this person, one row per kind of work. Shared by the My Tasks card and the "Waiting on you" tile so their numbers always agree. */
+export const taskRows = (widgets: DashboardWidget[]): TaskRow[] => {
   const rows: TaskRow[] = [];
   const d = (id: string) => widgets.find((w) => w.id === id);
   const num = (n: any) => (typeof n === 'number' ? n : 0);
-  const a = d('approvals'); if (a && num((a.data as any).leave) > 0) rows.push({ key: 'ap', text: `Review leave requests (${(a.data as any).leave})`, target: a.target, Icon: CalendarCheck });
-  const rq = d('review-queue'); if (rq && num((rq.data as any).count) > 0) rows.push({ key: 'rq', text: `Review documents (${(rq.data as any).count})`, target: rq.target, Icon: FileText });
-  const mr = d('my-revisions'); if (mr && num((mr.data as any).count) > 0) rows.push({ key: 'mr', text: `Fix documents sent back (${(mr.data as any).count})`, target: mr.target, Icon: FileText });
-  const rr = d('rereview-due'); if (rr && num((rr.data as any).count) > 0) rows.push({ key: 'rr', text: `Documents due for re-review (${(rr.data as any).count})`, target: rr.target, Icon: FileText });
-  const ak = d('acknowledgements'); if (ak && num((ak.data as any).count) > 0) rows.push({ key: 'ak', text: `Acknowledge policies (${(ak.data as any).count})`, target: ak.target, Icon: FileCheck2 });
-  const mt = d('my-tasks'); if (mt && num((mt.data as any).openTasks) > 0) rows.push({ key: 'mt', text: `Finish your tasks (${(mt.data as any).openTasks})`, target: mt.target, Icon: ListChecks });
-  const h = d('hiring'); if (h) for (const w of ((h.data as any).waiting || []) as { label: string; count: number }[]) rows.push({ key: `h-${w.label}`, text: `${w.label} (${w.count})`, target: h.target, Icon: Briefcase });
-  const pt = d('people-tasks'); if (pt && num((pt.data as any).open) > 0) rows.push({ key: 'pt', text: `Onboarding and exit tasks (${(pt.data as any).open})`, target: pt.target, Icon: Users });
+  const a = d('approvals'); if (a && num((a.data as any).leave) > 0) rows.push({ key: 'ap', count: num((a.data as any).leave), text: `Review leave requests (${(a.data as any).leave})`, target: a.target, Icon: CalendarCheck });
+  const rq = d('review-queue'); if (rq && num((rq.data as any).count) > 0) rows.push({ key: 'rq', count: num((rq.data as any).count), text: `Review documents (${(rq.data as any).count})`, target: rq.target, Icon: FileText });
+  const mr = d('my-revisions'); if (mr && num((mr.data as any).count) > 0) rows.push({ key: 'mr', count: num((mr.data as any).count), text: `Fix documents sent back (${(mr.data as any).count})`, target: mr.target, Icon: FileText });
+  const rr = d('rereview-due'); if (rr && num((rr.data as any).count) > 0) rows.push({ key: 'rr', count: num((rr.data as any).count), text: `Documents due for re-review (${(rr.data as any).count})`, target: rr.target, Icon: FileText });
+  const ak = d('acknowledgements'); if (ak && num((ak.data as any).count) > 0) rows.push({ key: 'ak', count: num((ak.data as any).count), text: `Acknowledge policies (${(ak.data as any).count})`, target: ak.target, Icon: FileCheck2 });
+  const mt = d('my-tasks'); if (mt && num((mt.data as any).openTasks) > 0) rows.push({ key: 'mt', count: num((mt.data as any).openTasks), text: `Finish your tasks (${(mt.data as any).openTasks})`, target: mt.target, Icon: ListChecks });
+  const h = d('hiring'); if (h) for (const w of ((h.data as any).waiting || []) as { label: string; count: number }[]) rows.push({ key: `h-${w.label}`, count: num(w.count), text: `${w.label} (${w.count})`, target: h.target, Icon: Briefcase });
+  const pt = d('people-tasks'); if (pt && num((pt.data as any).open) > 0) rows.push({ key: 'pt', count: num((pt.data as any).open), text: `Onboarding and exit tasks (${(pt.data as any).open})`, target: pt.target, Icon: Users });
+  return rows;
+};
+
+export const MyTasks: React.FC<{ widgets: DashboardWidget[]; onOpen: (t: WidgetTarget) => void }> = ({ widgets, onOpen }) => {
+  const rows = taskRows(widgets);
   return (
-    <Card className="min-w-0" title={`My Tasks${rows.length ? ` (${rows.length})` : ''}`}>
+    <div id="home-my-tasks"><Card className="min-w-0" title={`My Tasks${rows.length ? ` (${rows.length})` : ''}`}>
       {rows.length === 0 ? (
         <p className="py-6 text-center text-sm text-slate-500">You are all caught up. Nothing needs you right now.</p>
       ) : (
@@ -111,6 +117,6 @@ export const MyTasks: React.FC<{ widgets: DashboardWidget[]; onOpen: (t: WidgetT
           ))}
         </ul>
       )}
-    </Card>
+    </Card></div>
   );
 };
