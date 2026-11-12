@@ -1042,7 +1042,7 @@ export const HRAgentShell: React.FC<HRAgentShellProps> = ({
         {/* ============================================================ */}
         <div className="flex-1 min-w-0 h-full flex flex-col">
           {/* TOP BAR (desktop): page title, jump-to-page search, notifications, account */}
-          <header className="hidden lg:flex shrink-0 h-14 items-center gap-3 px-5 bg-white border-b border-slate-200">
+          <header className="hidden lg:flex shrink-0 h-11 items-center gap-3 px-5 bg-white border-b border-slate-200">
             <h1 className="text-lg font-bold tracking-tight text-slate-900 truncate">{pageTitle}</h1>
             <div className="flex-1" />
             <div className="relative w-full max-w-sm">
@@ -1058,11 +1058,11 @@ export const HRAgentShell: React.FC<HRAgentShellProps> = ({
                 }}
                 placeholder="Go to a page..."
                 aria-label="Go to a page"
-                className="w-full h-9 pl-9 pr-20 rounded-xl border border-slate-200 bg-white text-[13px] text-slate-800 placeholder:text-slate-400 focus:outline-none focus:border-[#FA7014] focus:ring-2 focus:ring-[#FA7014]/20"
+                className="w-full h-8 pl-9 pr-20 rounded-xl border border-slate-200 bg-white text-[13px] text-slate-800 placeholder:text-slate-400 focus:outline-none focus:border-[#FA7014] focus:ring-2 focus:ring-[#FA7014]/20"
               />
               {!pageQuery && <kbd className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 rounded-md border border-slate-200 bg-slate-50 px-1.5 py-0.5 text-[10px] font-medium text-slate-500">Ctrl + K</kbd>}
               {pageQuery.trim().length > 1 && (
-                <ul className="absolute left-0 right-0 top-10 z-50 rounded-xl border border-slate-200 bg-white shadow-lg py-1 overflow-hidden">
+                <ul className="absolute left-0 right-0 top-9 z-50 rounded-xl border border-slate-200 bg-white shadow-lg py-1 overflow-hidden">
                   {pageMatches.map((p) => (
                     <li key={p.id}>
                       <button type="button" onClick={() => { onSelectModule(p.id); setPageQuery(''); }} className="w-full text-left px-3 py-2 text-sm text-slate-700 hover:bg-orange-50 hover:text-[#FA7014] cursor-pointer">{p.label}</button>
@@ -1075,14 +1075,14 @@ export const HRAgentShell: React.FC<HRAgentShellProps> = ({
               )}
             </div>
             {onOpenNotifications && (
-              <button type="button" onClick={onOpenNotifications} aria-label="Notifications" title="Notifications" className="w-9 h-9 rounded-xl border border-slate-200 bg-white flex items-center justify-center text-slate-600 hover:text-[#FA7014] hover:border-orange-200 cursor-pointer">
+              <button type="button" onClick={onOpenNotifications} aria-label="Notifications" title="Notifications" className="w-8 h-8 rounded-lg border border-slate-200 bg-white flex items-center justify-center text-slate-600 hover:text-[#FA7014] hover:border-orange-200 cursor-pointer">
                 <Bell className="w-[18px] h-[18px]" />
               </button>
             )}
             <div className="relative shrink-0">
               <button type="button" onClick={() => setIsAccountOpen((v) => !v)} aria-haspopup="menu" aria-expanded={isAccountOpen} aria-label="Account menu" title={currentUser.name || 'Account'} className="flex items-center gap-2.5 cursor-pointer">
                 <span className="hidden xl:block text-right leading-tight"><span className="block max-w-[10rem] truncate text-[13px] font-bold text-slate-900">{currentUser.name || 'User'}</span>{currentUser.title && <span className="block max-w-[10rem] truncate text-[11px] text-slate-500">{currentUser.title}</span>}</span>
-                <span className="w-9 h-9 rounded-full bg-orange-100 text-[#FA7014] font-bold text-[13px] flex items-center justify-center overflow-hidden">{photo ? <img src={photo} alt="" className="h-full w-full object-cover" /> : initial}</span>
+                <span className="w-8 h-8 rounded-full bg-orange-100 text-[#FA7014] font-bold text-[13px] flex items-center justify-center overflow-hidden">{photo ? <img src={photo} alt="" className="h-full w-full object-cover" /> : initial}</span>
               </button>
               {isAccountOpen && (
                 <>
