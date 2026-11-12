@@ -37,6 +37,7 @@ import {
 import { User, UserRole } from '../types';
 import { AmaavigoLogo } from './AmaavigoLogo';
 import { LeaveSubNav } from './leave/LeaveSubNav';
+import { useLeaveNav, resolveSection as resolveLeaveSection } from './leave/leaveNav';
 import { NavBadge } from './NavBadge';
 import { sumOf, useNavBadges } from '../services/navBadges';
 import { ModuleSubNav } from './moduleNav';
@@ -172,6 +173,46 @@ export const HRAgentShell: React.FC<HRAgentShellProps> = ({
   ] as { id: HRAgentModule; label: string; show: boolean }[]).filter((p) => p.show);
   const pageTitle = pages.find((p) => p.id === activeModule)?.label
     || (activeModule.startsWith('talent-acquisition') ? 'Talent Acquisition' : 'HR Platform');
+
+  // Top bar breadcrumb: "Section › Page". The page is whatever is open in that module's sidebar menu.
+  const leaveState = useLeaveNav();
+  const payrollState = payrollNav.useNav();
+  const peopleState = peopleNav.useNav();
+  const pmState = pmNav.useNav();
+  const flowState = flowNav.useNav();
+  const hrbpState = hrbpNav.useNav();
+  const employeeState = employeeNav.useNav();
+  const labelOf = (nav: { resolve: (s: string, i: any[]) => string }, st: { section: string; items: { key: string; label: string }[] }) => {
+    if (!st.items.length) return '';
+    const key = nav.resolve(st.section, st.items);
+    return st.items.find((i) => i.key === key)?.label || '';
+  };
+  const TA_PAGES: Record<string, string> = {
+    'talent-acquisition': 'Overview',
+    'talent-acquisition-overview': 'Overview',
+    'talent-acquisition-requisitions': 'Requisitions',
+    'talent-acquisition-applications': 'Applications',
+    'talent-acquisition-pipeline': 'Hiring pipeline',
+    'talent-acquisition-onboarding': 'Onboarding',
+  };
+  const crumb: { section: string; page: string } | null = (() => {
+    if (activeModule === 'home') return null;
+    if (activeModule.startsWith('talent-acquisition')) {
+      if (activeModule === 'talent-acquisition-requisitions' && !hasTalentAccess) return { section: pageTitle, page: '' };
+      return { section: 'Talent Acquisition', page: TA_PAGES[activeModule] || '' };
+    }
+    let page = '';
+    if (activeModule === 'leave-management') {
+      page = leaveState.items.find((i) => i.key === resolveLeaveSection(leaveState.section, leaveState.items))?.label || '';
+    }
+    else if (activeModule === 'payroll') page = labelOf(payrollNav, payrollState);
+    else if (activeModule === 'people') page = labelOf(peopleNav, peopleState);
+    else if (activeModule === 'performance') page = labelOf(pmNav, pmState);
+    else if (activeModule === 'hiring-automation') page = labelOf(flowNav, flowState);
+    else if (activeModule === 'hrbp') page = labelOf(hrbpNav, hrbpState);
+    else if (activeModule === 'employee') page = labelOf(employeeNav, employeeState);
+    return { section: pageTitle, page };
+  })();
   const [pageQuery, setPageQuery] = useState('');
   const [isAccountOpen, setIsAccountOpen] = useState(false);
   const [photo, setPhoto] = useState('');
@@ -1043,7 +1084,21 @@ export const HRAgentShell: React.FC<HRAgentShellProps> = ({
         <div className="flex-1 min-w-0 h-full flex flex-col">
           {/* TOP BAR (desktop): page title, jump-to-page search, notifications, account */}
           <header className="hidden lg:flex shrink-0 h-11 items-center gap-3 px-5 bg-white border-b border-slate-200">
-            <h1 className="text-lg font-bold tracking-tight text-slate-900 truncate">{pageTitle}</h1>
+            {crumb && (
+              <nav aria-label="Breadcrumb" className="min-w-0">
+                <ol className="flex items-center gap-1.5 text-[13px] min-w-0">
+                  {crumb.page ? (
+                    <>
+                      <li className="text-slate-500 truncate">{crumb.section}</li>
+                      <li aria-hidden className="shrink-0 text-slate-400"><ChevronRight className="w-3.5 h-3.5" /></li>
+                      <li aria-current="page" className="font-semibold text-slate-900 truncate">{crumb.page}</li>
+                    </>
+                  ) : (
+                    <li aria-current="page" className="font-semibold text-slate-900 truncate">{crumb.section}</li>
+                  )}
+                </ol>
+              </nav>
+            )}
             <div className="flex-1" />
             <div className="relative w-full max-w-sm">
               <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" aria-hidden />
