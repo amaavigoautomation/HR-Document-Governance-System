@@ -39,7 +39,6 @@ import { downloadDocumentWithIntactFormat } from './utils/documentStamper';
 import { FileText, X, Download, ExternalLink, Users, FileSpreadsheet, UserCheck } from 'lucide-react';
 import { StatusBadge } from './components/StatusBadge';
 import { HRAgentShell, HRAgentModule } from './components/HRAgentShell';
-import { TalentAcquisitionHeader } from './components/TalentAcquisitionHeader';
 import { lazyPage } from './utils/lazyPage';
 import { hasModulePermission, normalizeAuthorizedModules } from './utils/authorization';
 import { DocumentSuggestion } from './types';
@@ -781,12 +780,6 @@ export default function App() {
             <div className="flex-1 flex flex-col min-w-0">
               {hasModulePermission(currentUser, 'talent-acquisition') ? (
                 <>
-                  <TalentAcquisitionHeader
-                    currentUser={currentUser}
-                    onLogout={handleLogout}
-                    isSidebarOpen={isSidebarOpen}
-                    onToggleSidebar={handleToggleSidebar}
-                  />
                   <RequisitionsModule currentUser={currentUser} users={allUsers} />
                 </>
               ) : (
@@ -798,12 +791,6 @@ export default function App() {
           {/* Module: Talent Acquisition - Applications (per company) */}
           {hrAgentModule === 'talent-acquisition-applications' && currentUser && (
             <div className="flex-1 flex flex-col min-w-0">
-              <TalentAcquisitionHeader
-                currentUser={currentUser}
-                onLogout={handleLogout}
-                isSidebarOpen={isSidebarOpen}
-                onToggleSidebar={handleToggleSidebar}
-              />
               <ApplicationsModule currentUser={currentUser} />
             </div>
           )}
