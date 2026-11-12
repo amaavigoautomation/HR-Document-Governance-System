@@ -18,6 +18,7 @@ import { AnnouncementsCard } from './cards/AnnouncementsCard';
 import { LoginSummaryCard } from './cards/LoginSummaryCard';
 import { AcksCard } from './cards/AcksCard';
 import { MyTasks } from './HomeOverview';
+import { Masonry } from './Masonry';
 import { Greeting, LeaveBalanceCard, PipelineChart, QuickActionsGrid, TeamAttendanceCard, TopTiles, UpcomingCard } from './HomeBlocks';
 
 interface Props { fallbackName?: string; onOpen: (target: WidgetTarget) => void }
@@ -72,45 +73,34 @@ export const HomePage: React.FC<Props> = ({ fallbackName, onOpen }) => {
 
         <TopTiles widgets={dash.data?.widgets || []} refreshKey={tick} onOpen={onOpen} />
 
-        <div className="grid gap-3 xl:grid-cols-[minmax(0,1.15fr)_minmax(0,1fr)] items-start">
-          <div className="space-y-3 min-w-0">
-            <PipelineChart refreshKey={tick} onOpen={onOpen} />
-            <UpcomingCard refreshKey={tick} onOpen={onOpen} />
-          </div>
-          <div className="space-y-3 min-w-0">
-            <QuickActionsGrid onOpen={onOpen} />
-            <MyTasks widgets={dash.data?.widgets || []} onOpen={onOpen} />
-            <LeaveBalanceCard refreshKey={tick} onOpen={onOpen} />
-            <TeamAttendanceCard refreshKey={tick} onOpen={onOpen} />
-          </div>
-        </div>
-
-        <h2 id="home-more" className="pt-2 text-base font-bold text-slate-950">More for you</h2>
-
-        {/* Masonry: cards flow into two balanced columns on wide screens (CSS columns, so every card keeps its place in one parent and nothing remounts); one column below xl. */}
-        {L && <>
-        <div className="xl:columns-2 xl:gap-4">
-          {[
-            <ProfileCard key="profile" fallbackName={fallbackName || ''} refreshKey={tick} />,
-            show('attendance') && <AttendanceCard key="attendance" refreshKey={tick} onChanged={refresh} />,
-            show('celebrations') && <CelebrationsCard key="celebrations" refreshKey={tick} />,
-            show('ceo-speak') && <AnnouncementsCard key="ceo-speak" kind="CEO_SPEAK" canManage={!!can?.announce} onManage={() => setManage(true)} refreshKey={tick} />,
-            show('announcements') && <AnnouncementsCard key="announcements" kind="ANNOUNCEMENT" canManage={!!can?.announce} onManage={() => setManage(true)} refreshKey={tick} />,
-            show('calendar') && <CalendarCard key="calendar" refreshKey={tick} />,
-            show('mood') && <MoodCard key="mood" showSummary={!!can?.moodSummary} />,
-            show('login-summary') && can?.loginSummary && <LoginSummaryCard key="login-summary" refreshKey={tick} />,
-            show('acknowledgements') && can?.acknowledge && <AcksCard key="acknowledgements" onOpen={onOpen} refreshKey={tick} />,
-            show('quick-links') && <QuickLinksCard key="quick-links" links={L?.quickLinks || []} onOpen={onOpen} />,
-            show('quick-reports') && <QuickReportsCard key="quick-reports" reports={L?.quickReports || []} onOpen={onOpen} />,
-            ...left.map((w) => <WidgetCard key={w.id} w={w} onOpen={onOpen} />),
-          ].filter(Boolean).map((card, i) => (
-            <div key={(card as React.ReactElement).key ?? i} className="mb-4 break-inside-avoid">{card}</div>
-          ))}
-        </div>
+        {/* One masonry for every card: columns end together, so there are no empty gaps between boxes. */}
+        <Masonry id="home-more">
+            {[
+              <PipelineChart key="pipeline" refreshKey={tick} onOpen={onOpen} />,
+              <QuickActionsGrid key="quick-actions" onOpen={onOpen} />,
+              <UpcomingCard key="upcoming" refreshKey={tick} onOpen={onOpen} />,
+              <MyTasks key="my-tasks" widgets={dash.data?.widgets || []} onOpen={onOpen} />,
+              <LeaveBalanceCard key="leave-balance" refreshKey={tick} onOpen={onOpen} />,
+              <TeamAttendanceCard key="team-attendance" refreshKey={tick} onOpen={onOpen} />,
+              ...(L ? [
+              <ProfileCard key="profile" fallbackName={fallbackName || ''} refreshKey={tick} />,
+              show('attendance') && <AttendanceCard key="attendance" refreshKey={tick} onChanged={refresh} />,
+              show('celebrations') && <CelebrationsCard key="celebrations" refreshKey={tick} />,
+              show('ceo-speak') && <AnnouncementsCard key="ceo-speak" kind="CEO_SPEAK" canManage={!!can?.announce} onManage={() => setManage(true)} refreshKey={tick} />,
+              show('announcements') && <AnnouncementsCard key="announcements" kind="ANNOUNCEMENT" canManage={!!can?.announce} onManage={() => setManage(true)} refreshKey={tick} />,
+              show('calendar') && <CalendarCard key="calendar" refreshKey={tick} />,
+              show('mood') && <MoodCard key="mood" showSummary={!!can?.moodSummary} />,
+              show('login-summary') && can?.loginSummary && <LoginSummaryCard key="login-summary" refreshKey={tick} />,
+              show('acknowledgements') && can?.acknowledge && <AcksCard key="acknowledgements" onOpen={onOpen} refreshKey={tick} />,
+              show('quick-links') && <QuickLinksCard key="quick-links" links={L?.quickLinks || []} onOpen={onOpen} />,
+              show('quick-reports') && <QuickReportsCard key="quick-reports" reports={L?.quickReports || []} onOpen={onOpen} />,
+              ...left.map((w) => <WidgetCard key={w.id} w={w} onOpen={onOpen} />),
+              ] : []),
+            ]}
+        </Masonry>
 
         {/* Company-wide availability is a useful scan across the full page width. */}
-        {show('on-leave') && <OnLeaveCard refreshKey={tick} />}
-        </>}
+        {L && show('on-leave') && <OnLeaveCard refreshKey={tick} />}
 
         {can && <ManageHome open={manage} onClose={() => setManage(false)} can={can} onChanged={refresh} />}
       </div>
