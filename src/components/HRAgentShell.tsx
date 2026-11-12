@@ -176,6 +176,49 @@ export const HRAgentShell: React.FC<HRAgentShellProps> = ({
   const [photo, setPhoto] = useState('');
   const [photoMsg, setPhotoMsg] = useState('');
   const photoInput = useRef<HTMLInputElement>(null);
+  // Docked "HR AI Agent" tab: can be dragged up and down the left edge; the position is remembered in this browser.
+  const DOCK_KEY = 'hr-agent-dock-top';
+  const DOCK_MIN = 64;
+  const dockBtn = useRef<HTMLButtonElement>(null);
+  const dockDrag = useRef<{ startY: number; startTop: number; moved: boolean } | null>(null);
+  const dockSkipClick = useRef(false);
+  const clampDock = (top: number) => {
+    const h = dockBtn.current?.offsetHeight || 36;
+    return Math.max(DOCK_MIN, Math.min(top, Math.max(DOCK_MIN, window.innerHeight - h - 8)));
+  };
+  const [dockTop, setDockTop] = useState<number>(() => {
+    try { const v = Number(localStorage.getItem(DOCK_KEY)); if (Number.isFinite(v) && v > 0) return v; } catch { /* storage blocked: use the default */ }
+    return 80;
+  });
+  useEffect(() => {
+    const fit = () => setDockTop((t) => clampDock(t));
+    fit();
+    window.addEventListener('resize', fit);
+    return () => window.removeEventListener('resize', fit);
+  }, []);
+  const onDockDown = (e: React.PointerEvent<HTMLButtonElement>) => {
+    if (e.pointerType === 'mouse' && e.button !== 0) return;
+    dockSkipClick.current = false;
+    dockDrag.current = { startY: e.clientY, startTop: dockTop, moved: false };
+    e.currentTarget.setPointerCapture(e.pointerId);
+  };
+  const onDockMove = (e: React.PointerEvent<HTMLButtonElement>) => {
+    const d = dockDrag.current;
+    if (!d) return;
+    const dy = e.clientY - d.startY;
+    if (!d.moved && Math.abs(dy) < 5) return;
+    d.moved = true;
+    setDockTop(clampDock(d.startTop + dy));
+  };
+  const onDockUp = (e: React.PointerEvent<HTMLButtonElement>) => {
+    const d = dockDrag.current;
+    dockDrag.current = null;
+    if (e.currentTarget.hasPointerCapture(e.pointerId)) e.currentTarget.releasePointerCapture(e.pointerId);
+    if (d?.moved) {
+      dockSkipClick.current = true;
+      try { localStorage.setItem(DOCK_KEY, String(dockTop)); } catch { /* storage blocked: position lasts until reload */ }
+    }
+  };
   useEffect(() => { homeService.myPhoto().then((r) => setPhoto(r.photo || '')).catch(() => undefined); }, [currentUser.id]);
   const choosePhoto = async (file?: File | null) => {
     if (!file) return;
@@ -248,10 +291,16 @@ export const HRAgentShell: React.FC<HRAgentShellProps> = ({
         {!isSidebarOpen && (
           <button
             id="btn-open-sidebar-docked"
+            ref={dockBtn}
             type="button"
-            onClick={onToggleSidebar}
-            className="hidden lg:flex fixed top-20 left-0 z-40 bg-white/95 backdrop-blur-xs border border-l-0 border-slate-200 shadow-md py-2 px-3 rounded-r-xl hover:bg-orange-50 hover:text-[#FA7014] hover:border-orange-300 items-center gap-2 text-xs font-bold text-slate-700 transition-all cursor-pointer group"
-            title="Open HR AI Agent side panel"
+            onClick={() => { if (dockSkipClick.current) { dockSkipClick.current = false; return; } onToggleSidebar?.(); }}
+            onPointerDown={onDockDown}
+            onPointerMove={onDockMove}
+            onPointerUp={onDockUp}
+            onPointerCancel={onDockUp}
+            style={{ top: dockTop }}
+            className="hidden lg:flex fixed left-0 z-40 touch-none select-none bg-white/95 backdrop-blur-xs border border-l-0 border-slate-200 shadow-md py-2 px-3 rounded-r-xl hover:bg-orange-50 hover:text-[#FA7014] hover:border-orange-300 items-center gap-2 text-xs font-bold text-slate-700 transition-colors cursor-pointer group"
+            title="Open HR AI Agent side panel (drag to move up or down)"
             aria-label="Open HR AI Agent side panel"
           >
             <PanelLeftOpen className="w-4 h-4 text-slate-500 group-hover:text-[#FA7014] transition-colors" />
