@@ -153,8 +153,7 @@ export const OnboardingModule: React.FC<{ currentUser: User }> = ({ currentUser 
     <div className="flex-1 w-full min-w-0 max-w-[1600px] mx-auto px-4 sm:px-6 xl:px-8 py-6 space-y-5 bg-[#F6F7F9]">
       <header className="flex flex-wrap items-start justify-between gap-4">
         <div>
-          <div className="text-sm text-slate-500">Talent Acquisition <span className="mx-1">/</span> <span className="font-semibold text-slate-800">Onboarding</span></div>
-          <h1 className="mt-2 text-3xl font-bold tracking-tight text-slate-950">Onboarding</h1>
+          <h1 className="text-3xl font-bold tracking-tight text-slate-950">Onboarding</h1>
           <p className="mt-1 text-sm text-slate-600">Manage new joiners, track document submission and set up accounts.</p>
         </div>
         <div className="flex items-center gap-2">

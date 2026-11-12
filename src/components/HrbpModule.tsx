@@ -40,7 +40,6 @@ export const HrbpModule: React.FC<{ currentUser: User; users: User[] }> = ({ cur
   useEffect(() => { hrbpNav.publish(items); }, [itemsKey]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => () => hrbpNav.publish([]), []);
   const section = hrbpNav.resolve(chosen, items) as Section;
-  const sectionLabel = items.find((i) => i.key === section)?.label || '';
 
   const Body = () => {
     switch (section) {
@@ -139,7 +138,6 @@ export const HrbpModule: React.FC<{ currentUser: User; users: User[] }> = ({ cur
     <div className="flex-1 min-w-0 overflow-y-auto">
       <div className="mx-auto w-full max-w-7xl space-y-4 p-4 md:p-6">
         <div>
-          <div className="mb-1 text-xs font-semibold text-slate-400">HR Business Partner{sectionLabel ? <> <span aria-hidden>&gt;</span> <span className="text-slate-700">{sectionLabel}</span></> : null}</div>
           <h1 className="text-2xl font-black tracking-tight text-slate-900">HR Business Partner</h1>
           <p className="text-xs text-slate-500 sm:text-sm">Organisation, talent, performance governance, engagement, learning and succession in one place.</p>
         </div>

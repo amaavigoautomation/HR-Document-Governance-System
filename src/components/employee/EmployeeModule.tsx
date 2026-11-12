@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { ChevronRight, ExternalLink, FileX } from 'lucide-react';
+import { ExternalLink, FileX } from 'lucide-react';
 import { User } from '../../types';
 import { peopleNav } from '../lifecycle/peopleNav';
 import { EMPLOYEE_ENTRIES, employeeNav, employeeNavItems } from './employeeNav';
@@ -34,10 +34,6 @@ export const EmployeeModule: React.FC<{ currentUser: User; canPick?: boolean; on
   return (
     <div className="flex-1 overflow-y-auto">
       <div className="max-w-5xl mx-auto w-full p-4 md:p-6 space-y-4">
-        <div className="flex items-center gap-1.5 text-xs font-semibold text-slate-400" aria-label="You are here">
-          <span>Employee</span><ChevronRight className="w-3.5 h-3.5" /><span className="text-slate-700">{entry ? entry.label : 'Overview'}</span>
-        </div>
-
         {!entry && (
           <div>
             <div className="flex gap-4 border-b border-slate-200 mb-4" role="tablist">

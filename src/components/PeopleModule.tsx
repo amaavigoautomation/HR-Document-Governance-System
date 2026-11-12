@@ -1,5 +1,4 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { ChevronRight } from 'lucide-react';
 import { User } from '../types';
 import { lifecycleService } from '../services/lifecycleService';
 import { Notice } from './leave/ui';
@@ -59,8 +58,7 @@ export const PeopleModule: React.FC<{ currentUser: User; inlineNav?: boolean }> 
           </div>
         ) : (
           <div aria-label="You are here">
-            <div className="text-sm text-slate-500">People <ChevronRight className="inline h-3.5 w-3.5" /> <span className="font-semibold text-slate-800">{activeLabel}</span></div>
-            <h1 className="mt-2 text-3xl font-bold tracking-tight text-slate-950">{active === 'directory' ? 'People' : activeLabel}</h1>
+            <h1 className="text-3xl font-bold tracking-tight text-slate-950">{active === 'directory' ? 'People' : activeLabel}</h1>
             {active === 'directory' && <p className="mt-1 text-sm text-slate-600">Explore and manage employee information across the organization.</p>}
           </div>
         )}

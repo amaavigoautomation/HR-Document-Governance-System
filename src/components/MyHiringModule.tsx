@@ -19,8 +19,7 @@ export const MyHiringModule: React.FC<{ currentUser: User }> = () => {
   return (
     <div className="flex-1 min-w-0 space-y-5 overflow-y-auto bg-[#F6F7F9] p-4 sm:p-6 xl:p-8">
       <header>
-        <div className="text-sm text-slate-500">Talent Acquisition <span className="mx-1">/</span> <span className="font-semibold text-slate-800">My Hiring</span></div>
-        <h1 className="mt-2 text-3xl font-bold tracking-tight text-slate-950">My Hiring</h1>
+        <h1 className="text-3xl font-bold tracking-tight text-slate-950">My Hiring</h1>
         <p className="mt-1 text-sm text-slate-600">Refer talented people and manage your interview assignments.</p>
       </header>
       <nav className="flex gap-1 border-b border-slate-200" role="tablist" aria-label="My hiring sections">

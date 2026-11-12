@@ -548,10 +548,7 @@ export const TalentAcquisitionOverview: React.FC<TalentAcquisitionOverviewProps>
       {/* ---------------------------------------------------- */}
       <div className="bg-transparent rounded-2xl py-1 flex flex-col lg:flex-row lg:items-end lg:justify-between gap-4">
         <div>
-          <nav aria-label="Breadcrumb" className="flex items-center gap-1.5 text-sm text-slate-500">
-            <span>Talent Acquisition</span><span aria-hidden>›</span><span className="font-semibold text-slate-800">Overview</span>
-          </nav>
-          <h1 className="text-[28px] leading-tight font-bold text-slate-900 tracking-tight mt-3">
+          <h1 className="text-[28px] leading-tight font-bold text-slate-900 tracking-tight">
             Talent Acquisition Overview
           </h1>
           <p className="text-sm text-slate-500 mt-1">

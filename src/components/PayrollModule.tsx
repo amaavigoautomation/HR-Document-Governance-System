@@ -1,5 +1,4 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { ChevronRight } from 'lucide-react';
 import { User } from '../types';
 import { payrollService } from '../services/payrollService';
 import { Notice } from './leave/ui';
@@ -41,7 +40,6 @@ export const PayrollModule: React.FC<{ currentUser: User; inlineNav?: boolean }>
 
   const navItems = payrollNavItems(me); // same list the menu shows, computed here so the first paint never lags the store
   const active = payrollNav.resolve(section, navItems.length ? navItems : items);
-  const activeLabel = navItems.find((i) => i.key === active)?.label || '';
 
   return (
     <div className="flex-1 overflow-y-auto">
@@ -52,10 +50,9 @@ export const PayrollModule: React.FC<{ currentUser: User; inlineNav?: boolean }>
           </div>
         ) : (
           <div aria-label="You are here">
-            <div className="text-sm text-slate-500">Payroll <ChevronRight className="inline h-3.5 w-3.5" /> <span className="font-semibold text-slate-800">{activeLabel}</span></div>
             {!OWN_HEAD.includes(active) && (
               <>
-                <h1 className="mt-2 text-3xl font-bold tracking-tight text-slate-950">Payroll</h1>
+                <h1 className="text-3xl font-bold tracking-tight text-slate-950">Payroll</h1>
                 <p className="mt-1 text-sm text-slate-600">{me.canManage ? 'Manage employee payroll, salary structure and payments.' : me.canView ? 'You can view payroll (read-only).' : 'Your payslips appear here once a month is finalised.'}</p>
               </>
             )}

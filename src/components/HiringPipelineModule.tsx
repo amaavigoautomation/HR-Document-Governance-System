@@ -40,8 +40,7 @@ export const HiringPipelineModule: React.FC<{ currentUser: User; users: User[]; 
     <div className="flex-1 min-w-0 space-y-4 overflow-y-auto bg-[#F6F7F9] p-4 sm:p-5 xl:p-6">
       <header className="flex flex-wrap items-start justify-between gap-4">
         <div>
-          <div className="text-sm text-slate-500">Talent Acquisition <span className="mx-1">/</span> <span className="font-semibold text-slate-800">Hiring Pipeline</span></div>
-          <h1 className="mt-1.5 text-2xl font-bold tracking-tight text-slate-950">Hiring Pipeline</h1>
+          <h1 className="text-2xl font-bold tracking-tight text-slate-950">Hiring Pipeline</h1>
           <p className="mt-0.5 text-[13px] text-slate-600">Track and manage candidates across all hiring stages.</p>
         </div>
         <div className="flex flex-wrap items-center gap-2">

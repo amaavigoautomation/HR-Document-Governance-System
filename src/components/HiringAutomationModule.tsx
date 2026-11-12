@@ -44,8 +44,7 @@ export const HiringAutomationModule: React.FC<{ currentUser: User; onNavigate: (
       <div className="flex-1 min-w-0 space-y-5 overflow-y-auto bg-[#F6F7F9] p-4 sm:p-6 xl:p-8">
         <header className="flex flex-wrap items-start justify-between gap-4">
           <div>
-            <div className="text-sm text-slate-500">Talent Acquisition <span className="mx-1">/</span> <span className="font-semibold text-slate-800">Hiring Automation</span></div>
-            <h1 className="mt-2 text-3xl font-bold tracking-tight text-slate-950">Hiring Automation</h1>
+            <h1 className="text-3xl font-bold tracking-tight text-slate-950">Hiring Automation</h1>
             <p className="mt-1 text-sm text-slate-600">Automate your hiring workflows, communications and candidate actions.</p>
           </div>
           {manage && <button type="button" onClick={() => toBuilder(null, true)} className="inline-flex h-11 cursor-pointer items-center gap-2 rounded-xl bg-[#4f46e5] px-5 text-sm font-bold text-white hover:bg-[#4338ca]"><Plus className="h-4 w-4" />Create Workflow</button>}

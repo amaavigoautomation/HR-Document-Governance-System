@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { AlertTriangle, BarChart3, CalendarCheck, CalendarDays, ChevronRight, ClipboardList, Gauge, ScrollText, Settings, Users, Wallet } from 'lucide-react';
+import { AlertTriangle, BarChart3, CalendarCheck, CalendarDays, ClipboardList, Gauge, ScrollText, Settings, Users, Wallet } from 'lucide-react';
 import { User } from '../types';
 import { hasPerm } from '../../shared/permissions';
 import { leaveService } from '../services/leaveService';
@@ -60,7 +60,6 @@ const LeaveScreens: React.FC<{ currentUser: User; inlineNav?: boolean }> = ({ cu
   const ok = me.configured;
   const navItems = leaveNavItems(me); // same list the menu shows, computed here so the first paint never lags the store
   const active: LeaveSection = resolveSection(section, navItems.length ? navItems : items);
-  const activeLabel = navItems.find((i) => i.key === active)?.label || '';
 
   const admins: { key: Admin; label: string; icon: React.FC<{ className?: string }>; show: boolean }[] = [
     { key: 'policies', label: 'Leave Policies', icon: ScrollText, show: me.canManage && ok },
@@ -88,13 +87,7 @@ const LeaveScreens: React.FC<{ currentUser: User; inlineNav?: boolean }> = ({ cu
   return (
     <div className="flex-1 overflow-y-auto bg-slate-50/60">
       <div className="max-w-7xl mx-auto w-full p-3 sm:p-4 md:p-6 space-y-4">
-        {inlineNav ? (
-          <LeaveSubNav variant="pills" />
-        ) : (
-          <div className="flex items-center gap-1.5 text-xs font-semibold text-slate-400" aria-label="You are here">
-            <span>Leave &amp; Attendance</span><ChevronRight className="w-3.5 h-3.5" /><span className="text-slate-700">{activeLabel}</span>
-          </div>
-        )}
+        {inlineNav && <LeaveSubNav variant="pills" />}
 
         {!ok && me.canManage && <Notice tone="warn">Leave is not set up yet. Pick a template below to start. Everyone else will see the leave screens once you save.</Notice>}
 
