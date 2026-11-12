@@ -607,7 +607,7 @@ export const TalentAcquisitionOverview: React.FC<TalentAcquisitionOverviewProps>
 
       <OverviewDashboard refreshKey={refreshCount} days={days} />
 
-      <h2 className="pt-4 text-xl font-bold text-slate-950">Sheet data</h2>
+      <h2 className="pt-4 text-lg font-bold text-slate-950">Sheet data</h2>
       <p className="-mt-3 text-sm text-slate-600">Recruitment numbers read from your connected Google Sheet.</p>
       <div className="flex flex-wrap items-center gap-2">
         {overviewData?.status === 'OK' && (
@@ -719,130 +719,34 @@ export const TalentAcquisitionOverview: React.FC<TalentAcquisitionOverviewProps>
       {/* ---------------------------------------------------- */}
       {/* 3. KPI CARDS SECTION                                 */}
       {/* ---------------------------------------------------- */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
-        {/* KPI 1: Open Positions */}
-        <div className="bg-white rounded-2xl p-5 border border-slate-200/80 shadow-sm flex flex-col justify-between min-h-[148px] hover:border-slate-300 hover:shadow-md transition-all">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-bold uppercase tracking-wider text-slate-500">
-              Open Positions
-            </span>
-            <div className="w-8 h-8 rounded-xl bg-orange-100 text-[#FA7014] flex items-center justify-center">
-              <Briefcase className="w-4 h-4" />
-            </div>
-          </div>
-          <div className="mt-4">
-            <div className="text-3xl font-black text-slate-900 tracking-tight">
-              {isLoading ? (
-                <span className="inline-block w-16 h-8 bg-slate-200 animate-pulse rounded-lg" />
-              ) : overviewData?.kpis?.openPositions !== null && overviewData?.kpis?.openPositions !== undefined ? (
-                overviewData.kpis.openPositions
-              ) : (
-                <span className="text-slate-400 text-lg font-bold">—</span>
-              )}
-            </div>
-            <p className="text-[11px] text-slate-500 font-medium mt-1 flex items-center gap-1">
-              <span className="w-1.5 h-1.5 rounded-full bg-[#FA7014]" />
-              <span>Active requisition postings</span>
-            </p>
-          </div>
-        </div>
-
-        {/* KPI 2: Total Vacancies */}
-        <div className="bg-white rounded-2xl p-5 border border-slate-200 shadow-xs flex flex-col justify-between hover:border-slate-300 transition-all">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-bold uppercase tracking-wider text-slate-500">
-              Total Vacancies
-            </span>
-            <div className="w-8 h-8 rounded-xl bg-blue-100 text-blue-600 flex items-center justify-center">
-              <Users className="w-4 h-4" />
-            </div>
-          </div>
-          <div className="mt-4">
-            <div className="text-3xl font-black text-slate-900 tracking-tight">
-              {isLoading ? (
-                <span className="inline-block w-16 h-8 bg-slate-200 animate-pulse rounded-lg" />
-              ) : overviewData?.kpis?.totalVacancies !== null && overviewData?.kpis?.totalVacancies !== undefined ? (
-                overviewData.kpis.totalVacancies
-              ) : (
-                <span className="text-slate-400 text-lg font-bold">—</span>
-              )}
-            </div>
-            <p className="text-[11px] text-slate-500 font-medium mt-1 flex items-center gap-1">
-              <span className="w-1.5 h-1.5 rounded-full bg-blue-500" />
-              <span>Total approved headcounts</span>
-            </p>
-          </div>
-        </div>
-
-        {/* KPI 3: Total Applications */}
-        <div className="bg-white rounded-2xl p-5 border border-slate-200 shadow-xs flex flex-col justify-between hover:border-slate-300 transition-all">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-bold uppercase tracking-wider text-slate-500">
-              Total Applications
-            </span>
-            <div className="w-8 h-8 rounded-xl bg-emerald-100 text-emerald-600 flex items-center justify-center">
-              <UserCheck className="w-4 h-4" />
-            </div>
-          </div>
-          <div className="mt-4">
-            <div className="text-3xl font-black text-slate-900 tracking-tight">
-              {isLoading ? (
-                <span className="inline-block w-16 h-8 bg-slate-200 animate-pulse rounded-lg" />
-              ) : selectedDesignation !== 'ALL' ? (
-                filteredMetrics.applicationsCount
-              ) : overviewData?.kpis?.totalApplications !== null && overviewData?.kpis?.totalApplications !== undefined ? (
-                overviewData.kpis.totalApplications
-              ) : (
-                <span className="text-slate-400 text-lg font-bold">—</span>
-              )}
-            </div>
-            <p className="text-[11px] text-slate-500 font-medium mt-1 flex items-center gap-1">
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
-              <span>
-                {selectedDesignation === 'ALL'
-                  ? 'All logged candidates'
-                  : `Filtered by: ${selectedDesignation}`}
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        {([
+          { label: 'Open Positions', icon: Briefcase, tone: 'from-violet-100/80 to-indigo-50', chip: 'bg-violet-100 text-violet-600', value: overviewData?.kpis?.openPositions, note: 'Active requisition postings' },
+          { label: 'Total Vacancies', icon: Users, tone: 'from-sky-100/80 to-blue-50', chip: 'bg-sky-100 text-sky-600', value: overviewData?.kpis?.totalVacancies, note: 'Total approved headcounts' },
+          { label: 'Total Applications', icon: UserCheck, tone: 'from-emerald-100/70 to-green-50', chip: 'bg-emerald-100 text-emerald-600', value: selectedDesignation !== 'ALL' ? filteredMetrics.applicationsCount : overviewData?.kpis?.totalApplications, note: selectedDesignation === 'ALL' ? 'All logged candidates' : `Filtered by: ${selectedDesignation}` },
+          { label: 'Hiring Departments', icon: Building2, tone: 'from-orange-100/80 to-amber-50', chip: 'bg-orange-100 text-[#F36B21]', value: overviewData?.kpis?.departmentsCount, note: 'Active business functions' },
+        ] as const).map((t) => (
+          <div key={t.label} className={`flex items-center gap-3 rounded-2xl border border-white bg-gradient-to-br px-4 py-3.5 ${t.tone}`}>
+            <span className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-full ${t.chip}`}><t.icon className="h-6 w-6" /></span>
+            <span className="min-w-0 flex-1">
+              <span className="block text-3xl font-bold leading-tight tabular-nums text-slate-950">
+                {isLoading ? <span className="inline-block h-8 w-16 animate-pulse rounded-lg bg-white/70" /> : t.value !== null && t.value !== undefined ? t.value : <span className="text-lg text-slate-400">—</span>}
               </span>
-            </p>
-          </div>
-        </div>
-
-        {/* KPI 4: Active Departments */}
-        <div className="bg-white rounded-2xl p-5 border border-slate-200 shadow-xs flex flex-col justify-between hover:border-slate-300 transition-all">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-bold uppercase tracking-wider text-slate-500">
-              Hiring Departments
+              <span className="block truncate text-sm text-slate-700">{t.label}</span>
+              <span className="block truncate text-[11px] text-slate-500">{t.note}</span>
             </span>
-            <div className="w-8 h-8 rounded-xl bg-purple-100 text-purple-600 flex items-center justify-center">
-              <Building2 className="w-4 h-4" />
-            </div>
           </div>
-          <div className="mt-4">
-            <div className="text-3xl font-black text-slate-900 tracking-tight">
-              {isLoading ? (
-                <span className="inline-block w-16 h-8 bg-slate-200 animate-pulse rounded-lg" />
-              ) : overviewData?.kpis?.departmentsCount !== null && overviewData?.kpis?.departmentsCount !== undefined ? (
-                overviewData.kpis.departmentsCount
-              ) : (
-                <span className="text-slate-400 text-lg font-bold">—</span>
-              )}
-            </div>
-            <p className="text-[11px] text-slate-500 font-medium mt-1 flex items-center gap-1">
-              <span className="w-1.5 h-1.5 rounded-full bg-purple-500" />
-              <span>Active business functions</span>
-            </p>
-          </div>
-        </div>
+        ))}
       </div>
 
       {/* ---------------------------------------------------- */}
       {/* 4. DESIGNATION FILTER & VISUAL ANALYTICS              */}
       {/* ---------------------------------------------------- */}
-      <div className="bg-white rounded-2xl p-5 sm:p-6 border border-slate-200/80 shadow-sm space-y-5">
+      <div className="bg-white rounded-2xl p-5 sm:p-6 border border-slate-200 shadow-sm space-y-5">
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 pb-4 border-b border-slate-100">
           <div>
-            <h2 className="text-base font-bold text-slate-900 flex items-center gap-2">
-              <BarChart3 className="w-4 h-4 text-[#FA7014]" />
+            <h2 className="text-lg font-bold text-slate-950 flex items-center gap-2">
+              <BarChart3 className="w-4 h-4 text-violet-600" />
               <span>Applications by Designation</span>
             </h2>
             <p className="text-xs text-slate-500 mt-0.5">
@@ -860,7 +764,7 @@ export const TalentAcquisitionOverview: React.FC<TalentAcquisitionOverviewProps>
               id="designation-filter-select"
               value={selectedDesignation}
               onChange={(e) => setSelectedDesignation(e.target.value)}
-              className="text-xs font-semibold text-slate-800 bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 focus:outline-none focus:ring-2 focus:ring-[#FA7014]/20 focus:border-[#FA7014] cursor-pointer"
+              className="text-xs font-semibold text-slate-800 bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 focus:outline-none focus:ring-2 focus:ring-violet-300/40 focus:border-violet-400 cursor-pointer"
             >
               <option value="ALL">
                 All Designations ({overviewData?.designations?.length || 0})
@@ -911,7 +815,7 @@ export const TalentAcquisitionOverview: React.FC<TalentAcquisitionOverviewProps>
                   <div className="h-2.5 w-full bg-slate-100 rounded-full overflow-hidden flex">
                     <div
                       className={`h-full rounded-full transition-all duration-500 ${
-                        isFilteredMatch ? 'bg-[#FA7014]' : 'bg-slate-700 hover:bg-[#FA7014]'
+                        isFilteredMatch ? 'bg-[#6d4cf0]' : 'bg-[#8b6cf3] hover:bg-[#6d4cf0]'
                       }`}
                       style={{ width: `${Math.max(percentage, 4)}%` }}
                     />
@@ -926,7 +830,7 @@ export const TalentAcquisitionOverview: React.FC<TalentAcquisitionOverviewProps>
         {overviewData?.status === 'OK' && (
           <div className="pt-4 border-t border-slate-100">
             {/* Department Breakdown */}
-            <div className="bg-slate-50/70 rounded-xl p-4 border border-slate-200/80">
+            <div className="bg-slate-50/70 rounded-2xl p-4 border border-slate-200">
               <h3 className="text-xs font-bold uppercase tracking-wider text-slate-700 mb-3 flex items-center justify-between">
                 <span>Positions by Department</span>
                 <Building2 className="w-3.5 h-3.5 text-slate-400" />
@@ -938,7 +842,7 @@ export const TalentAcquisitionOverview: React.FC<TalentAcquisitionOverviewProps>
                       <span className="font-medium text-slate-700 truncate">{dept.department}</span>
                       <div className="flex items-center space-x-2 font-mono text-[11px]">
                         <span className="text-slate-500">{dept.openPositions} pos</span>
-                        <span className="font-bold text-[#FA7014] bg-orange-50 px-1.5 py-0.5 rounded">
+                        <span className="font-bold text-violet-600 bg-orange-50 px-1.5 py-0.5 rounded">
                           {dept.vacancies} vac
                         </span>
                       </div>

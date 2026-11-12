@@ -767,12 +767,6 @@ export default function App() {
           {/* Module: Talent Acquisition Overview Dashboard (HR & Approver) */}
           {(hrAgentModule === 'talent-acquisition' || hrAgentModule === 'talent-acquisition-overview') && currentUser && (
             <div className="flex-1 flex flex-col min-w-0">
-              <TalentAcquisitionHeader
-                currentUser={currentUser}
-                onLogout={handleLogout}
-                isSidebarOpen={isSidebarOpen}
-                onToggleSidebar={handleToggleSidebar}
-              />
               <TalentAcquisitionOverview
                 currentUser={currentUser}
                 onLogout={handleLogout}
