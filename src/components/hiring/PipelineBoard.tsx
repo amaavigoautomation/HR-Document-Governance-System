@@ -40,7 +40,7 @@ const inWindow = (iso: string | undefined, from: number, to: number) => {
 
 export interface PipelineData {
   rows: any[]; all: any[]; reqs: Requisition[]; days: number; loading: boolean; error: string; reload: () => void;
-  trend: { candidates: number | null; reqs: number | null };
+  trend: { candidates: number | null; reqs: number | null; interviews: number | null; offers: number | null; joined: number | null };
 }
 
 /** One load of the candidate board and requisitions, narrowed to the chosen period. */
@@ -55,10 +55,15 @@ export const usePipelineData = (days: number, refreshKey: number): PipelineData 
   const span = days * 86400_000;
   const rows = days ? all.filter((r) => !r.createdAt || now - new Date(r.createdAt).getTime() <= span) : all;
   const pct = (cur: number, prev: number) => (prev > 0 ? Math.round(((cur - prev) / prev) * 100) : null);
+  const stageTrend = (n: number) => pct(
+    all.filter((r) => stageOf(r.status) === n && inWindow(r.createdAt, now - span, now + 1)).length,
+    all.filter((r) => stageOf(r.status) === n && inWindow(r.createdAt, now - 2 * span, now - span)).length);
   const trend = days ? {
     candidates: pct(all.filter((r) => inWindow(r.createdAt, now - span, now + 1)).length, all.filter((r) => inWindow(r.createdAt, now - 2 * span, now - span)).length),
     reqs: pct(reqs.filter((r) => inWindow(r.publishedAt || r.createdAt, now - span, now + 1)).length, reqs.filter((r) => inWindow(r.publishedAt || r.createdAt, now - 2 * span, now - span)).length),
-  } : { candidates: null, reqs: null };
+    // Stage trends compare candidates added in each period who are now at that stage.
+    interviews: stageTrend(2), offers: stageTrend(3), joined: stageTrend(4),
+  } : { candidates: null, reqs: null, interviews: null, offers: null, joined: null };
   return { rows, all, reqs, days, loading: board.loading, error: board.error || '', reload: board.reload, trend };
 };
 

@@ -32,6 +32,7 @@ import { User, UserRole } from '../types';
 import { CandidateEvaluationSection } from './CandidateEvaluationSection';
 
 import { OverviewDashboard } from './hiring/OverviewDashboard';
+import { PERIODS } from './hiring/PipelineBoard';
 
 interface TalentAcquisitionOverviewProps {
   currentUser: User;
@@ -51,6 +52,7 @@ export const TalentAcquisitionOverview: React.FC<TalentAcquisitionOverviewProps>
   // Filters
   const [selectedDesignation, setSelectedDesignation] = useState<string>('ALL');
   const [refreshCount, setRefreshCount] = useState<number>(0);
+  const [days, setDays] = useState<number>(30);
 
   // Sheet Explorer State
   const [activeSheetTab, setActiveSheetTab] = useState<string>('');
@@ -546,24 +548,9 @@ export const TalentAcquisitionOverview: React.FC<TalentAcquisitionOverviewProps>
       {/* ---------------------------------------------------- */}
       <div className="bg-transparent rounded-2xl py-1 flex flex-col lg:flex-row lg:items-end lg:justify-between gap-4">
         <div>
-          <div className="flex items-center space-x-2.5">
-            <span className="inline-flex items-center space-x-1.5 px-2.5 py-1 rounded-md text-xs font-bold bg-orange-100/90 text-[#FA7014]">
-              <Users className="w-3.5 h-3.5" />
-              <span>Talent Acquisition</span>
-            </span>
-            {overviewData?.status === 'OK' && (
-              <span className="inline-flex items-center space-x-1 px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
-                <CheckCircle2 className="w-3 h-3 text-emerald-600" />
-                <span>Live Google Sheet Connected</span>
-              </span>
-            )}
-            {overviewData?.status === 'NOT_CONFIGURED' && (
-              <span className="inline-flex items-center space-x-1 px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-amber-50 text-amber-700 border border-amber-200">
-                <AlertCircle className="w-3 h-3 text-amber-600" />
-                <span>Setup Pending</span>
-              </span>
-            )}
-          </div>
+          <nav aria-label="Breadcrumb" className="flex items-center gap-1.5 text-sm text-slate-500">
+            <span>Talent Acquisition</span><span aria-hidden>›</span><span className="font-semibold text-slate-800">Overview</span>
+          </nav>
           <h1 className="text-[28px] leading-tight font-bold text-slate-900 tracking-tight mt-3">
             Talent Acquisition Overview
           </h1>
@@ -574,6 +561,9 @@ export const TalentAcquisitionOverview: React.FC<TalentAcquisitionOverviewProps>
 
         {/* Action Controls & External Forms */}
         <div className="flex flex-wrap items-center gap-2.5">
+          <select value={days} onChange={(e) => setDays(Number(e.target.value))} aria-label="Period" className="h-10 rounded-xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-800 outline-none">
+            {PERIODS.map((p) => <option key={p.days} value={p.days}>{p.label}</option>)}
+          </select>
           {/* External Form Shortcuts */}
           <div className="hidden sm:flex items-center space-x-2 border-r border-slate-200 pr-3 mr-1">
             <button
@@ -615,10 +605,25 @@ export const TalentAcquisitionOverview: React.FC<TalentAcquisitionOverviewProps>
         </div>
       </div>
 
-      <OverviewDashboard refreshKey={refreshCount} />
+      <OverviewDashboard refreshKey={refreshCount} days={days} />
 
       <h2 className="pt-4 text-xl font-bold text-slate-950">Sheet data</h2>
       <p className="-mt-3 text-sm text-slate-600">Recruitment numbers read from your connected Google Sheet.</p>
+      <div className="flex flex-wrap items-center gap-2">
+        {overviewData?.status === 'OK' && (
+          <span className="inline-flex items-center space-x-1 px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
+            <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+            <span>Live Google Sheet Connected</span>
+          </span>
+        )}
+        {overviewData?.status === 'NOT_CONFIGURED' && (
+          <span className="inline-flex items-center space-x-1 px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-amber-50 text-amber-700 border border-amber-200">
+            <AlertCircle className="w-3 h-3 text-amber-600" />
+            <span>Setup Pending</span>
+          </span>
+        )}
+      </div>
+
 
       {/* ---------------------------------------------------- */}
       {/* 2. CONFIGURATION / STATUS BANNER                      */}

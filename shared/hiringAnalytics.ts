@@ -28,7 +28,7 @@ export interface Dashboard {
   positions: { open: number; closed: number; pendingApproval: number; openVacancies: number };
   vacanciesByDepartment: { department: string; vacancies: number; positions: number }[];
   pipeline: { stage: string; count: number }[];
-  timeToHire: { averageDays: number | null; sample: number; slowest: { position: string; days: number }[] };
+  timeToHire: { averageDays: number | null; sample: number; slowest: { position: string; days: number }[]; byMonth: { month: string; averageDays: number | null; hires: number }[]; changePct: number | null };
   offers: { total: number; byStatus: Record<string, number>; acceptanceRate: number | null; answered: number };
   costs: { total: number; hires: number; perHire: number | null; byCategory: { category: string; amount: number }[] };
   upcomingJoinings: { next30Days: number; list: { candidateName: string; designation: string; joiningDate: string; daysAway: number }[] };
@@ -58,13 +58,13 @@ export function computeDashboard(input: { requisitions: ReqRec[]; applications: 
   const pipeline = [...stages.map((s) => ({ stage: s, count: counts.get(s) || 0 })), ...[...counts.keys()].filter((k) => !stages.includes(k)).map((k) => ({ stage: k, count: counts.get(k)! }))];
 
   // ---- time to hire
-  const tth: { position: string; days: number }[] = [];
+  const tth: { position: string; days: number; month: string }[] = [];
   for (const o of offers) {
     if (!HIRED.includes(o.status) || !o.acceptedAt) continue;
     const r = o.requisitionId ? reqById.get(o.requisitionId) : undefined;
     const from = r?.founderApprovedAt || r?.createdAt;
     if (!from) continue;
-    tth.push({ position: o.designation || r?.positionTitle || 'Position', days: Math.max(0, diff(from, o.acceptedAt)) });
+    tth.push({ position: o.designation || r?.positionTitle || 'Position', days: Math.max(0, diff(from, o.acceptedAt)), month: day(o.acceptedAt).slice(0, 7) });
   }
 
   // ---- offers
@@ -129,6 +129,14 @@ export function computeDashboard(input: { requisitions: ReqRec[]; applications: 
     const when = (e.lastWorkingDay || e.completedAt || '').slice(0, 7);
     if (months.includes(when)) exitMonths.set(when, (exitMonths.get(when) || 0) + 1);
   }
+  const tthMonths = months.slice(-6).map((month) => {
+    const list = tth.filter((t) => t.month === month);
+    return { month, averageDays: list.length ? r1(list.reduce((a, c) => a + c.days, 0) / list.length) : null, hires: list.length };
+  });
+  // Change: latest month with hires against the month with hires before it (negative means faster).
+  const withHires = tthMonths.filter((m) => m.averageDays !== null);
+  const last2 = withHires.slice(-2);
+  const tthChange = last2.length === 2 && last2[0].averageDays! > 0 ? Math.round(((last2[1].averageDays! - last2[0].averageDays!) / last2[0].averageDays!) * 100) : null;
   const exits12 = [...exitMonths.values()].reduce((a, c) => a + c, 0);
 
   return {
@@ -141,7 +149,8 @@ export function computeDashboard(input: { requisitions: ReqRec[]; applications: 
     pipeline,
     timeToHire: {
       averageDays: tth.length ? r1(tth.reduce((a, c) => a + c.days, 0) / tth.length) : null, sample: tth.length,
-      slowest: [...tth].sort((a, b) => b.days - a.days).slice(0, 3),
+      slowest: [...tth].sort((a, b) => b.days - a.days).slice(0, 3).map(({ position, days }) => ({ position, days })),
+      byMonth: tthMonths, changePct: tthChange,
     },
     offers: { total: offers.length, byStatus, answered, acceptanceRate: answered ? r1((hires / answered) * 100) : null },
     costs: {
