@@ -87,26 +87,25 @@ export const HomePage: React.FC<Props> = ({ fallbackName, onOpen }) => {
 
         <h2 id="home-more" className="pt-2 text-base font-bold text-slate-950">More for you</h2>
 
-        {/* Main dashboard: personal workspace on the left, company updates on the right. */}
+        {/* Masonry: cards flow into two balanced columns on wide screens (CSS columns, so every card keeps its place in one parent and nothing remounts); one column below xl. */}
         {L && <>
-        <div className="grid gap-4 xl:grid-cols-[minmax(0,1.08fr)_minmax(380px,0.92fr)] items-start">
-          <div className="space-y-4 min-w-0">
-            <ProfileCard fallbackName={fallbackName || ''} refreshKey={tick} />
-            {show('attendance') && <AttendanceCard refreshKey={tick} onChanged={refresh} />}
-            {show('calendar') && <CalendarCard refreshKey={tick} />}
-            {show('mood') && <MoodCard showSummary={!!can?.moodSummary} />}
-            {show('quick-links') && <QuickLinksCard links={L?.quickLinks || []} onOpen={onOpen} />}
-            {show('quick-reports') && <QuickReportsCard reports={L?.quickReports || []} onOpen={onOpen} />}
-            {left.map((w) => <WidgetCard key={w.id} w={w} onOpen={onOpen} />)}
-          </div>
-
-          <div className="space-y-4 min-w-0">
-            {show('celebrations') && <CelebrationsCard refreshKey={tick} />}
-            {show('ceo-speak') && <AnnouncementsCard kind="CEO_SPEAK" canManage={!!can?.announce} onManage={() => setManage(true)} refreshKey={tick} />}
-            {show('announcements') && <AnnouncementsCard kind="ANNOUNCEMENT" canManage={!!can?.announce} onManage={() => setManage(true)} refreshKey={tick} />}
-            {show('login-summary') && can?.loginSummary && <LoginSummaryCard refreshKey={tick} />}
-            {show('acknowledgements') && can?.acknowledge && <AcksCard onOpen={onOpen} refreshKey={tick} />}
-          </div>
+        <div className="xl:columns-2 xl:gap-4">
+          {[
+            <ProfileCard key="profile" fallbackName={fallbackName || ''} refreshKey={tick} />,
+            show('attendance') && <AttendanceCard key="attendance" refreshKey={tick} onChanged={refresh} />,
+            show('celebrations') && <CelebrationsCard key="celebrations" refreshKey={tick} />,
+            show('ceo-speak') && <AnnouncementsCard key="ceo-speak" kind="CEO_SPEAK" canManage={!!can?.announce} onManage={() => setManage(true)} refreshKey={tick} />,
+            show('announcements') && <AnnouncementsCard key="announcements" kind="ANNOUNCEMENT" canManage={!!can?.announce} onManage={() => setManage(true)} refreshKey={tick} />,
+            show('calendar') && <CalendarCard key="calendar" refreshKey={tick} />,
+            show('mood') && <MoodCard key="mood" showSummary={!!can?.moodSummary} />,
+            show('login-summary') && can?.loginSummary && <LoginSummaryCard key="login-summary" refreshKey={tick} />,
+            show('acknowledgements') && can?.acknowledge && <AcksCard key="acknowledgements" onOpen={onOpen} refreshKey={tick} />,
+            show('quick-links') && <QuickLinksCard key="quick-links" links={L?.quickLinks || []} onOpen={onOpen} />,
+            show('quick-reports') && <QuickReportsCard key="quick-reports" reports={L?.quickReports || []} onOpen={onOpen} />,
+            ...left.map((w) => <WidgetCard key={w.id} w={w} onOpen={onOpen} />),
+          ].filter(Boolean).map((card, i) => (
+            <div key={(card as React.ReactElement).key ?? i} className="mb-4 break-inside-avoid">{card}</div>
+          ))}
         </div>
 
         {/* Company-wide availability is a useful scan across the full page width. */}
