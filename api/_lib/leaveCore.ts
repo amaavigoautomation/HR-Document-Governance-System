@@ -551,7 +551,8 @@ export async function audit(companyId: string, entity: string, entityId: string,
 export type ExceptionCategory =
   | 'YEAR_END_PENDING'
   | 'NO_MANAGER' | 'NO_POLICY' | 'MANAGER_AWAY' | 'OVERDUE_APPROVAL' | 'BALANCE_NEGATIVE' | 'ATTENDANCE_MISMATCH'
-  | 'PAYROLL_LOCKED_CHANGE' | 'POLICY_CHANGED' | 'RETRO_LEAVE' | 'EMERGENCY_REVIEW' | 'UNAUTHORIZED';
+  | 'PAYROLL_LOCKED_CHANGE' | 'POLICY_CHANGED' | 'RETRO_LEAVE' | 'EMERGENCY_REVIEW' | 'UNAUTHORIZED'
+  | 'FLAG_PAYROLL' | 'FLAG_LATE' | 'FLAG_LEAVE';
 
 export interface LeaveException {
   id: string;
@@ -567,6 +568,8 @@ export interface LeaveException {
   resolvedAt?: string;
   resolvedBy?: string;
   resolution?: string;
+  /** Set on flags (payroll checks, late marks, leave patterns); older exceptions have none of these. */
+  flag?: { code: string; name: string; month: string; evidence: string[]; facts: Record<string, number | string>; sig: string; explanation?: string };
 }
 
 /**

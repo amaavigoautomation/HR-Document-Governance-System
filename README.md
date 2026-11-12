@@ -198,3 +198,13 @@ Existing roles need the permissions `hrbp.manage`, `hrbp.view` and `hiring.budge
 ## Ask HR assistant
 
 A floating "Ask HR" button (all roles) opens a chat panel; Ctrl+K search also offers "Ask HR: ...". Read-only: it answers about the person's own leave, holidays, notice period, payslips and the published policies they may read. Code: `api/_lib/assistantApi.ts` (tools run as the caller through the existing routers), `shared/assistantEngine.ts`, `src/components/assistant/`. Logs in `assistantLogs`, daily counts in `assistantUsage` (server-only). Env: `OPENAI_ASSISTANT_MODEL` (optional), `ASSISTANT_DAILY_LIMIT` (per person, default 30); it also counts against `AI_MONTHLY_CALLS`. Test: `npx tsx tests/assistant.engine.test.ts`.
+
+## Flags (payroll checks, late marks, leave patterns)
+
+One list for HR to review, in Leave & Attendance > Flags (the old Exceptions screen, extended). Detection is plain arithmetic in `shared/anomalyEngine.ts`; AI is optional and only writes a one-line "what to check" for new flags (same number check as Ask HR). Nothing is deducted, changed or sent to employees because of a flag.
+
+- Payroll checks run each time a run is calculated (`payrollChecks` in `api/_lib/flagsApi.ts`) and compare with the previous month: net pay change, loss-of-pay jump, negative net, deductions over half of gross, large one-offs, people missing or new, shared bank account (compared as a hash, never stored or shown), total payroll change.
+- Late marks and leave patterns run in the daily leave cron (`/api/leave/cron`) and on "Scan now": late marks and streaks, missing check-outs, leave next to a weekend or holiday, short sick leaves, leave applied after the fact.
+- Stored in `leaveExceptions` (categories `FLAG_PAYROLL`, `FLAG_LATE`, `FLAG_LEAVE`); thresholds in `flagSettings/{companyId}` (server only). A reviewed flag stays quiet unless it gets worse or 90 days pass; a flag is closed automatically when a recalculation no longer finds it.
+- Who sees what: payroll flags need `payroll.view` (read) or `payroll.manage` (review); late and leave flags need `leave.report` (read) or `leave.manage` (review and thresholds). Employees and managers see nothing. No new Vercel function.
+- Tests: `npx tsx tests/anomaly.engine.test.ts`, `npx tsx tests/flags.api.test.ts`.

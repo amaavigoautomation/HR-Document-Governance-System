@@ -1642,29 +1642,15 @@ async function policyVersionView(who: Who, query: any): Promise<Result> {
 
 // ------------------------------------------------------------------ exceptions, audit trail, notifications, dashboard
 
+// Flags (payroll checks, late marks, leave patterns) share this list with the older exceptions; see flagsApi.ts.
+const flagsModule = () => import('./flagsApi.js');
+
 async function exceptionsList(who: Who): Promise<Result> {
-  needManage(who);
-  const [snap, people] = await Promise.all([db().collection('leaveExceptions').where('companyId', '==', who.cid).get(), loadPeople(who.cid)]);
-  const items = snap.docs.map((d) => d.data() as LeaveException)
-    .map((e) => ({ ...e, employee: nameOf(people, e.uid) }))
-    .sort((a, b) => (a.status === b.status ? b.createdAt.localeCompare(a.createdAt) : a.status === 'OPEN' ? -1 : 1))
-    .slice(0, 200);
-  return ok({ items, open: items.filter((e) => e.status === 'OPEN').length });
+  return (await flagsModule()).listAll(who);
 }
 
 async function exceptionResolve(who: Who, body: any): Promise<Result> {
-  needManage(who);
-  const c = await loadCtx(who);
-  const id = str(body?.id, 200);
-  const resolution = str(body?.resolution, 300);
-  if (!resolution) return fail(400, 'Say how it was resolved.');
-  const ref = db().collection('leaveExceptions').doc(id);
-  const e = (await ref.get()).data() as LeaveException | undefined;
-  if (!e || e.companyId !== who.cid) return fail(404, 'Not found.');
-  if (e.status === 'RESOLVED') return fail(409, 'Already resolved.');
-  await ref.update({ status: 'RESOLVED', resolvedAt: nowIso(), resolvedBy: c.me.name, resolution });
-  await audit(who.cid, 'leave-exception', id, 'EXCEPTION_RESOLVED', { name: c.me.name, uid: who.ctx.uid }, { category: e.category }, { resolution });
-  return ok({});
+  return (await flagsModule()).resolveAny(who, body);
 }
 
 async function auditLog(who: Who, q: any): Promise<Result> {
@@ -1862,7 +1848,9 @@ export async function runLeaveCron(): Promise<Result> {
           }
         }
       }
-      out.push({ companyId: cid, ...acc, escalated, reminded, noPolicy, mismatches });
+      // Repeated late marks and leave patterns (flags for HR to review; nothing is changed or sent).
+      const flagged = await (await flagsModule()).runFlagScan(cid).catch((e: any) => ({ error: String(e?.message || e) }));
+      out.push({ companyId: cid, ...acc, escalated, reminded, noPolicy, mismatches, flagged });
     } catch (err: any) {
       out.push({ companyId: cid, error: err?.message || String(err) });
     }
@@ -1926,6 +1914,9 @@ export async function routeLeave(r: LeaveRequestIn): Promise<Result> {
       case 'settings': if (GET) return await getSettings(who); break;
       case 'save-settings': if (POST) return await postSettings(who, body); break;
       case 'exceptions': if (GET) return await exceptionsList(who); break;
+      case 'flag-scan': if (POST) return await (await flagsModule()).scanNow(who); break;
+      case 'flag-settings': if (GET) return await (await flagsModule()).getSettings(who); break;
+      case 'flag-save-settings': if (POST) return await (await flagsModule()).saveSettings(who, body); break;
       case 'exception-resolve': if (POST) return await exceptionResolve(who, body); break;
       case 'audit-log': if (GET) return await auditLog(who, r.query); break;
       case 'notifications': if (GET) return await notificationsList(who); break;

@@ -32,6 +32,7 @@ import {
   money, needManage, needMonth, needOpenMonth, needView, num, ok, runId, runOf, slug, stripBank, structureId, whoIs,
   type InputRow, type LineDoc, type LoanDoc, type PayrollRequestIn, type Result, type RunDoc, type StructureDoc, type Who,
 } from './payrollKit.js';
+import { payrollChecks } from './flagsApi.js';
 import { dueRevisionCount, isLineManager, loadApprovedClaims, routeExtras, settledMap } from './payrollExtras.js';
 import {
   declarationFor, fullMonthFacts, getDeclaration, listDeclarations, loadDeclarations, monthlyTds, paidLinesInFy, saveDeclaration, sumPaid, taxPreview,
@@ -501,6 +502,8 @@ async function calculateRun(who: Who, month: string): Promise<{ run: RunDoc; lin
     events: [...(existing?.events || []), { at: now, by, action: 'CALCULATED', note: `${lines.length} people, net ${totalsOf(lines.map((l) => l.line)).net}` }].slice(-100),
   };
   await db().collection('payrollRuns').doc(runId(who.cid, month)).set(run);
+  // Compare with last month and raise flags for HR to review. A problem here never stops the run.
+  await payrollChecks(who.cid, month, lines, skipped).catch((e: any) => console.warn('[payroll] flag checks failed:', e?.message || e));
   return { run, lines };
 }
 

@@ -66,7 +66,7 @@ const LeaveScreens: React.FC<{ currentUser: User; inlineNav?: boolean }> = ({ cu
     { key: 'people', label: 'People', icon: Users, show: me.canManage && ok },
     { key: 'balances', label: 'Balances', icon: Wallet, show: me.canManage && ok },
     { key: 'reports', label: 'Reports', icon: BarChart3, show: me.canReport && ok },
-    { key: 'exceptions', label: 'Exceptions', icon: AlertTriangle, show: me.canManage && ok },
+    { key: 'exceptions', label: 'Flags', icon: AlertTriangle, show: me.canReport && ok },
     { key: 'yearend', label: 'Year end', icon: CalendarCheck, show: me.canManage && ok },
     { key: 'audit', label: 'Audit trail', icon: ScrollText, show: me.canManage && ok },
     { key: 'setup', label: 'Settings', icon: Settings, show: me.canManage },

@@ -1,52 +1,135 @@
-import React, { useCallback, useEffect, useState } from 'react';
-import { BellRing, CalendarCheck, CheckCircle2, ScrollText } from 'lucide-react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { BellRing, CalendarCheck, CheckCircle2, ChevronDown, RefreshCw, ScrollText, SlidersHorizontal } from 'lucide-react';
 import { leaveService } from '../../services/leaveService';
 import { Card, EmptyState, Notice, Skeleton, btnGhost, btnPrimary, input, niceDate, useRunner } from './ui';
 
 const CATEGORY: Record<string, string> = {
   NO_MANAGER: 'No manager', NO_POLICY: 'No policy', MANAGER_AWAY: 'Manager away', OVERDUE_APPROVAL: 'Overdue approval', BALANCE_NEGATIVE: 'Balance below zero',
   ATTENDANCE_MISMATCH: 'Attendance mismatch', PAYROLL_LOCKED_CHANGE: 'Payroll already locked', POLICY_CHANGED: 'Policy changed', RETRO_LEAVE: 'Applied after the fact',
-  EMERGENCY_REVIEW: 'Emergency leave', UNAUTHORIZED: 'Unauthorised access',
+  EMERGENCY_REVIEW: 'Emergency leave', UNAUTHORIZED: 'Unauthorised access', YEAR_END_PENDING: 'Year end',
+  FLAG_PAYROLL: 'Payroll check', FLAG_LATE: 'Late marks', FLAG_LEAVE: 'Leave pattern',
 };
 const SEVERITY: Record<string, string> = { HIGH: 'bg-rose-50 text-rose-700 border-rose-200', MEDIUM: 'bg-amber-50 text-amber-700 border-amber-200', LOW: 'bg-slate-100 text-slate-600 border-slate-200' };
+const BAR: Record<string, string> = { HIGH: 'bg-rose-500', MEDIUM: 'bg-amber-500', LOW: 'bg-slate-300' };
+const TYPES: [string, string][] = [['', 'All types'], ['FLAG_PAYROLL', 'Payroll'], ['FLAG_LATE', 'Late marks'], ['FLAG_LEAVE', 'Leave patterns'], ['OTHER', 'Other exceptions']];
+const monthLabel = (m: string) => {
+  const names = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  return `${names[parseInt(m.slice(5, 7), 10) - 1] || m} ${m.slice(0, 4)}`;
+};
+const sel = 'border border-slate-300 rounded-lg px-2.5 py-1.5 text-xs bg-white text-slate-700 focus:outline-none focus:ring-2 focus:ring-[#FA7014]/40';
 
-/** Business-rule problems that need a person: nothing is lost if they are ignored, but each one stays visible until resolved. */
-export const HrExceptions: React.FC = () => {
-  const [items, setItems] = useState<any[] | null>(null);
-  const [text, setText] = useState<Record<string, string>>({});
-  const [showDone, setShowDone] = useState(false);
+interface FlagSettings { payroll: boolean; late: boolean; leave: boolean; latePer30: number; lateStreak: number; payChangePct: number; totalChangePct: number; leaveAdjacent: number; shortSick: number }
+
+/** Thresholds, kept small and folded away: defaults are fine for most companies. */
+const Thresholds: React.FC<{ canEdit: boolean; onSaved: () => void }> = ({ canEdit, onSaved }) => {
+  const [open, setOpen] = useState(false);
+  const [s, setS] = useState<FlagSettings | null>(null);
   const { busy, note, run } = useRunner();
-  const load = useCallback(() => leaveService.exceptions().then((r) => setItems(r.items)).catch(() => setItems([])), []);
-  useEffect(() => { load(); }, [load]);
-  if (!items) return <Skeleton rows={4} />;
-  const open = items.filter((e) => e.status === 'OPEN');
-  const done = items.filter((e) => e.status !== 'OPEN');
+  useEffect(() => { leaveService.flagSettings().then((r) => setS(r.settings)).catch(() => setS(null)); }, []);
+  if (!s) return null;
+  const num = (k: keyof FlagSettings, label: string) => (
+    <label className="text-[11px] text-slate-600 flex flex-col gap-1">{label}
+      <input type="number" className={input} disabled={!canEdit} value={s[k] as number} onChange={(e) => setS({ ...s, [k]: Number(e.target.value) })} />
+    </label>
+  );
+  const tog = (k: 'payroll' | 'late' | 'leave', label: string) => (
+    <label className="inline-flex items-center gap-1.5 text-xs text-slate-700"><input type="checkbox" disabled={!canEdit} checked={s[k]} onChange={(e) => setS({ ...s, [k]: e.target.checked })} />{label}</label>
+  );
   return (
-    <div className="space-y-3">
-      {note && <Notice tone={note.tone === 'ok' ? 'ok' : 'error'}>{note.text}</Notice>}
-      {open.length === 0 ? <Card><EmptyState icon={CheckCircle2} title="Nothing needs attention" text="Problems such as a missing manager, an overdue approval or a mismatch with attendance appear here." /></Card> : open.map((e) => (
-        <Card key={e.id}>
-          <div className="flex flex-wrap items-center gap-2">
-            <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${SEVERITY[e.severity]}`}>{e.severity}</span>
-            <span className="text-xs font-bold text-slate-700">{CATEGORY[e.category] || e.category}</span>
-            <span className="text-[11px] text-slate-400">{niceDate(e.createdAt.slice(0, 10))}{e.employee ? ` · ${e.employee}` : ''}</span>
+    <div className="bg-slate-100/70 rounded-lg px-3 py-2 text-xs text-slate-600">
+      <button type="button" onClick={() => setOpen(!open)} className="w-full flex items-center gap-2 text-left">
+        <SlidersHorizontal className="w-3.5 h-3.5" />
+        <span>Thresholds: {s.latePer30} late marks per 30 days, {s.payChangePct}% pay change</span>
+        <span className="ml-auto text-[#FA7014] font-bold inline-flex items-center gap-1">{canEdit ? 'Edit' : 'View'}<ChevronDown className={`w-3.5 h-3.5 transition-transform ${open ? 'rotate-180' : ''}`} /></span>
+      </button>
+      {open && (
+        <div className="mt-3 space-y-3">
+          {note && <Notice tone={note.tone === 'ok' ? 'ok' : 'error'}>{note.text}</Notice>}
+          <div className="flex flex-wrap gap-4">{tog('payroll', 'Payroll checks')}{tog('late', 'Late marks')}{tog('leave', 'Leave patterns')}</div>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+            {num('payChangePct', 'Pay change (%)')}{num('totalChangePct', 'Total payroll change (%)')}{num('latePer30', 'Late marks in 30 days')}{num('lateStreak', 'Late days in a row')}
+            {num('leaveAdjacent', 'Leaves next to a weekend or holiday (90 days)')}{num('shortSick', 'Short sick leaves (60 days)')}
           </div>
-          <div className="mt-1.5 text-sm text-slate-800">{e.message}</div>
-          <div className="mt-2 flex flex-wrap gap-2">
-            <input className={`${input} max-w-sm`} placeholder="How was it resolved?" value={text[e.id] || ''} onChange={(ev) => setText({ ...text, [e.id]: ev.target.value })} />
-            <button className={btnPrimary} disabled={busy || !(text[e.id] || '').trim()} onClick={() => run(async () => { await leaveService.resolveException(e.id, text[e.id].trim()); await load(); }, 'Marked resolved.')}>Resolve</button>
-          </div>
-        </Card>
-      ))}
-      {done.length > 0 && (
-        <div>
-          <button className={btnGhost} onClick={() => setShowDone(!showDone)}>{showDone ? 'Hide' : 'Show'} resolved ({done.length})</button>
-          {showDone && <div className="mt-2 space-y-1.5">{done.map((e) => (
-            <div key={e.id} className="text-xs text-slate-500 bg-white border border-slate-200 rounded-lg px-3 py-2">
-              <b className="text-slate-700">{CATEGORY[e.category] || e.category}</b> · {e.message} <span className="text-slate-400">— {e.resolvedBy}: {e.resolution}</span>
-            </div>))}</div>}
+          {canEdit && <button className={btnPrimary} disabled={busy} onClick={() => run(async () => { await leaveService.saveFlagSettings(s as any); onSaved(); }, 'Thresholds saved. They apply from the next check.')}>Save thresholds</button>}
         </div>
       )}
+    </div>
+  );
+};
+
+/**
+ * One place for everything HR should look at: payroll checks, repeated late marks, leave patterns, and the older
+ * business-rule exceptions. A flag is a prompt to look, never a conclusion: each shows its evidence, and nothing is
+ * changed or sent to anyone because of it.
+ */
+export const HrExceptions: React.FC = () => {
+  const [data, setData] = useState<{ items: any[]; canSettings: boolean } | null>(null);
+  const [type, setType] = useState('');
+  const [severity, setSeverity] = useState('');
+  const [month, setMonth] = useState('');
+  const [status, setStatus] = useState<'OPEN' | 'RESOLVED'>('OPEN');
+  const [text, setText] = useState<Record<string, string>>({});
+  const { busy, note, run } = useRunner();
+  const load = useCallback(() => leaveService.exceptions().then((r) => setData({ items: r.items, canSettings: !!r.canSettings })).catch(() => setData({ items: [], canSettings: false })), []);
+  useEffect(() => { load(); }, [load]);
+  const items = data?.items;
+  const months = useMemo(() => Array.from(new Set((items || []).map((e) => e.flag?.month || String(e.createdAt).slice(0, 7)))).sort().reverse(), [items]);
+  if (!data || !items) return <Skeleton rows={4} />;
+  const monthOf = (e: any) => e.flag?.month || String(e.createdAt).slice(0, 7);
+  const shown = items.filter((e) => e.status === status
+    && (!type || (type === 'OTHER' ? !String(e.category).startsWith('FLAG_') : e.category === type))
+    && (!severity || e.severity === severity) && (!month || monthOf(e) === month));
+  const openCount = items.filter((e) => e.status === 'OPEN').length;
+  return (
+    <div className="space-y-3">
+      <div className="flex flex-wrap items-start justify-between gap-2">
+        <div>
+          <h2 className="text-base font-bold text-slate-900">Flags</h2>
+          <p className="text-xs text-slate-500">Things worth a second look before they cost money. A flag is a prompt to check, not a conclusion, and nothing here is automatic.</p>
+        </div>
+        {data.canSettings && <button className={btnGhost} disabled={busy} onClick={() => run(async () => { await leaveService.flagScan(); await load(); }, 'Checked. The list is up to date.')}><RefreshCw className="w-3.5 h-3.5" />Scan now</button>}
+      </div>
+      {note && <Notice tone={note.tone === 'ok' ? 'ok' : 'error'}>{note.text}</Notice>}
+      <div className="flex flex-wrap items-center gap-2">
+        <select className={sel} value={type} onChange={(e) => setType(e.target.value)} aria-label="Type">{TYPES.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select>
+        <select className={sel} value={severity} onChange={(e) => setSeverity(e.target.value)} aria-label="Severity"><option value="">All severity</option><option value="HIGH">High</option><option value="MEDIUM">Medium</option><option value="LOW">Low</option></select>
+        <select className={sel} value={month} onChange={(e) => setMonth(e.target.value)} aria-label="Month"><option value="">All months</option>{months.map((m) => <option key={m} value={m}>{monthLabel(m)}</option>)}</select>
+        <select className={sel} value={status} onChange={(e) => setStatus(e.target.value as 'OPEN' | 'RESOLVED')} aria-label="Status"><option value="OPEN">Open</option><option value="RESOLVED">Reviewed</option></select>
+        <span className="ml-auto text-xs text-slate-500">{openCount} open</span>
+      </div>
+      <Thresholds canEdit={data.canSettings} onSaved={load} />
+      {shown.length === 0 ? (
+        <Card><EmptyState icon={CheckCircle2} title={status === 'OPEN' ? 'Nothing needs attention' : 'Nothing reviewed yet'} text={status === 'OPEN' ? 'Payroll checks, repeated late marks, leave patterns and problems such as a missing manager or an overdue approval appear here.' : 'Reviewed flags and resolved exceptions are kept here.'} /></Card>
+      ) : shown.map((e) => {
+        const isFlag = String(e.category).startsWith('FLAG_');
+        return (
+          <section key={e.id} className={`bg-white border border-slate-200 rounded-2xl overflow-hidden flex ${e.status !== 'OPEN' ? 'opacity-70' : ''}`}>
+            <div className={`w-1 shrink-0 ${BAR[e.severity] || 'bg-slate-300'}`} />
+            <div className="p-4 min-w-0 flex-1">
+              <div className="flex flex-wrap items-center gap-2">
+                {e.employee && <span className="text-sm font-bold text-slate-900">{e.employee}</span>}
+                <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${SEVERITY[e.severity]}`}>{e.severity === 'HIGH' ? 'High' : e.severity === 'MEDIUM' ? 'Medium' : 'Low'}</span>
+                <span className="text-[11px] text-slate-500 bg-slate-100 rounded px-2 py-0.5">{CATEGORY[e.category] || e.category}{isFlag && e.category === 'FLAG_PAYROLL' ? `, ${monthLabel(monthOf(e))}` : ''}</span>
+                <span className="text-[11px] text-slate-400">{niceDate(String(e.createdAt).slice(0, 10))}</span>
+              </div>
+              <div className="mt-1.5 text-sm text-slate-800">{e.message}</div>
+              {e.flag?.explanation && <div className="mt-1 text-xs text-slate-500">What to check: {e.flag.explanation}</div>}
+              {e.flag?.evidence?.length > 0 && <div className="mt-2 flex flex-wrap gap-1.5">{e.flag.evidence.map((c: string, i: number) => <span key={i} className="text-[11px] bg-slate-100 text-slate-700 rounded px-2 py-0.5">{c}</span>)}</div>}
+              {e.status === 'OPEN' && e.canAct && (
+                isFlag ? (
+                  <div className="mt-3"><button className={btnGhost} disabled={busy} onClick={() => run(async () => { await leaveService.resolveException(e.id, text[e.id]?.trim() || 'Looks right'); await load(); }, 'Marked as reviewed.')}><CheckCircle2 className="w-3.5 h-3.5" />Looks right</button></div>
+                ) : (
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    <input className={`${input} max-w-sm`} placeholder="How was it resolved?" value={text[e.id] || ''} onChange={(ev) => setText({ ...text, [e.id]: ev.target.value })} />
+                    <button className={btnPrimary} disabled={busy || !(text[e.id] || '').trim()} onClick={() => run(async () => { await leaveService.resolveException(e.id, text[e.id].trim()); await load(); }, 'Marked resolved.')}>Resolve</button>
+                  </div>
+                )
+              )}
+              {e.status !== 'OPEN' && <div className="mt-2 text-[11px] text-slate-400">{e.resolvedBy}: {e.resolution}</div>}
+            </div>
+          </section>
+        );
+      })}
     </div>
   );
 };
@@ -108,7 +191,7 @@ export const HrDashboard: React.FC = () => {
         <Tile label="Overdue" value={d.overdue} tone={d.overdue ? 'bad' : undefined} />
         <Tile label="On leave today" value={d.onLeaveToday} />
         <Tile label="Staff available" value={`${d.availabilityPct}%`} />
-        <Tile label="Open exceptions" value={d.openExceptions} tone={d.openExceptions ? 'warn' : undefined} />
+        <Tile label="Open flags" value={d.openExceptions} tone={d.openExceptions ? 'warn' : undefined} />
         <Tile label="Attendance mismatches" value={d.attendanceMismatches} tone={d.attendanceMismatches ? 'warn' : undefined} />
         <Tile label="Payroll corrections" value={d.payrollPending} tone={d.payrollPending ? 'warn' : undefined} />
         <Tile label="People" value={d.headcount} />
