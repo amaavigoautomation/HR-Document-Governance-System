@@ -1,20 +1,26 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
-  BookOpen,
-  Search,
+  Building2,
+  Check,
   CheckCircle2,
   Clock,
   Download,
-  Eye,
-  FileText,
-  ShieldCheck,
-  AlertCircle,
-  Building,
-  Check,
   ExternalLink,
+  FileText,
   Layers,
-  Filter,
   MessageSquarePlus,
+  MoreHorizontal,
+  Search,
+  ShieldCheck,
+  SlidersHorizontal,
+  Tag,
+  AlertTriangle,
+  Eye,
+  CalendarDays,
+  Laptop,
+  Home,
+  Users,
+  BookOpen,
 } from 'lucide-react';
 import {
   AcknowledgementRecord,
@@ -30,7 +36,7 @@ import { formatISTDate } from '../utils/dateFormat';
 import { formatDDMMYYYY } from '../utils/documentHeaderFooter';
 import { downloadDocumentWithIntactFormat } from '../utils/documentStamper';
 import { SubmitSuggestionModal } from './SubmitSuggestionModal';
-import { KpiCard, KpiGrid, PageHeader, tbl } from './common/pageChrome';
+import { Chip, FilterField, KpiCard, KpiGrid, PageHeader, Pagination, UnderlineTabs, searchInput, tbl } from './common/pageChrome';
 
 interface EmployeePortalViewProps {
   currentUser: User;
@@ -41,6 +47,50 @@ interface EmployeePortalViewProps {
   activeTab?: 'acknowledgements' | 'all-documents';
   onTabChange?: (tab: 'acknowledgements' | 'all-documents') => void;
 }
+
+type PolicyTab = 'all' | 'acknowledged' | 'pending' | 'updates';
+type PolicyStatus = 'ACKNOWLEDGED' | 'PENDING' | 'ACTIVE';
+type DetailTab = 'overview' | 'history' | 'ack';
+
+interface PolicyRow {
+  doc: DocumentMaster;
+  ver?: DocumentVersion;
+  verNumber: string;
+  ack?: AcknowledgementRecord;
+  status: PolicyStatus;
+  updatedAt: string;
+  dueSoon: boolean;
+  recentlyUpdated: boolean;
+  signedOlderVersion: boolean;
+}
+
+const DAY = 24 * 60 * 60 * 1000;
+const PAGE_SIZE = 8;
+
+const STATUS_LABEL: Record<PolicyStatus, string> = { ACKNOWLEDGED: 'Acknowledged', PENDING: 'Pending', ACTIVE: 'Active' };
+const STATUS_TONE: Record<PolicyStatus, 'green' | 'amber'> = { ACKNOWLEDGED: 'green', PENDING: 'amber', ACTIVE: 'green' };
+
+const formatBytes = (n?: number) => {
+  if (!n || n <= 0) return 'Not available';
+  if (n < 1024 * 1024) return `${Math.max(1, Math.round(n / 1024))} KB`;
+  return `${(n / (1024 * 1024)).toFixed(1)} MB`;
+};
+
+const fileKind = (name?: string): { label: string; tile: string } => {
+  const ext = (name || '').split('.').pop()?.toLowerCase();
+  if (ext === 'pdf') return { label: 'PDF', tile: 'bg-rose-50 text-rose-500' };
+  if (ext === 'doc' || ext === 'docx') return { label: 'DOCX', tile: 'bg-sky-50 text-sky-600' };
+  return { label: (ext || 'File').toUpperCase(), tile: 'bg-violet-50 text-violet-600' };
+};
+
+const categoryIcon = (c: string) => {
+  const k = c.toLowerCase();
+  if (k.includes('it') || k.includes('security')) return Laptop;
+  if (k.includes('work')) return Home;
+  if (k.includes('hr')) return Users;
+  if (k.includes('compliance') || k.includes('legal')) return ShieldCheck;
+  return Tag;
+};
 
 const isOfflineSignOff = (ack?: AcknowledgementRecord | null): boolean => {
   if (!ack) return false;
@@ -56,12 +106,18 @@ export const EmployeePortalView: React.FC<EmployeePortalViewProps> = ({
   versions,
   acknowledgements,
   onOpenDocumentView,
-  activeTab = 'acknowledgements',
+  activeTab,
   onTabChange,
 }) => {
-  const [internalTab, setInternalTab] = useState<'acknowledgements' | 'all-documents'>(activeTab);
+  const toPolicyTab = (t?: 'acknowledgements' | 'all-documents'): PolicyTab => (t === 'acknowledgements' ? 'pending' : 'all');
+  const [tab, setTabState] = useState<PolicyTab>(toPolicyTab(activeTab));
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<string>('ALL');
+  const [selectedStatus, setSelectedStatus] = useState<string>('ALL');
+  const [page, setPage] = useState(1);
+  const [selectedDocId, setSelectedDocId] = useState<string | null>(null);
+  const [detailTab, setDetailTab] = useState<DetailTab>('overview');
+  const [menuDocId, setMenuDocId] = useState<string | null>(null);
   const [downloadingDocId, setDownloadingDocId] = useState<string | null>(null);
   const [selectedDocForSuggestion, setSelectedDocForSuggestion] = useState<DocumentMaster | null>(null);
   const [suggestionSuccessMsg, setSuggestionSuccessMsg] = useState<string | null>(null);
@@ -72,16 +128,16 @@ export const EmployeePortalView: React.FC<EmployeePortalViewProps> = ({
       : governanceEngine.getAcknowledgements();
   });
 
+  // The app can ask for a tab (for example from a notification); follow it.
   useEffect(() => {
-    if (activeTab) {
-      setInternalTab(activeTab);
-    }
+    if (activeTab) setTabState(toPolicyTab(activeTab));
   }, [activeTab]);
 
-  const currentTab = activeTab || internalTab;
-  const setTab = (tab: 'acknowledgements' | 'all-documents') => {
-    setInternalTab(tab);
-    onTabChange?.(tab);
+  const setTab = (t: PolicyTab) => {
+    setTabState(t);
+    setPage(1);
+    if (t === 'pending') onTabChange?.('acknowledgements');
+    else if (t === 'all') onTabChange?.('all-documents');
   };
 
   useEffect(() => {
@@ -193,410 +249,232 @@ export const EmployeePortalView: React.FC<EmployeePortalViewProps> = ({
     }
   };
 
-  // Pending documents for "Policy & SOP Acknowledgements":
-  // - Must require compliance acknowledgement (acknowledgementRequired === true)
-  // - Not yet acknowledged by this employee
-  // (If Employee Compliance is unchecked, do not create an acknowledgement card; it stays directly in All Documents)
-  const pendingAckDocs = useMemo(() => {
-    return publishedDocs.filter((doc) => {
-      if (!doc.acknowledgementRequired) return false;
-      const verNumber = doc.currentPublishedVersionNumber || '1.0';
-      const ack = userAcks.find(
-        (a) =>
-          a.documentId.toLowerCase() === doc.documentId.toLowerCase() &&
-          a.versionNumber === verNumber &&
-          a.status === 'ACKNOWLEDGED'
-      );
-      return !ack;
-    });
-  }, [publishedDocs, userAcks]);
+  const rows: PolicyRow[] = useMemo(() => {
+    const now = Date.now();
+    return publishedDocs.map((doc) => {
+      const ver = getPublishedVersionForDoc(doc);
+      const verNumber = doc.currentPublishedVersionNumber || ver?.versionNumber || '1.0';
+      const docAcks = userAcks.filter((a) => a.documentId.toLowerCase() === doc.documentId.toLowerCase() && a.status === 'ACKNOWLEDGED');
+      const ack = docAcks.find((a) => a.versionNumber === verNumber);
+      const required = !!doc.acknowledgementRequired;
+      const status: PolicyStatus = required ? (ack ? 'ACKNOWLEDGED' : 'PENDING') : 'ACTIVE';
+      const updatedAt = ver?.publishedAt || doc.updatedAt || ver?.createdAt || doc.createdAt;
+      const due = ver?.reviewDueDate ? new Date(ver.reviewDueDate).getTime() : NaN;
+      const upd = new Date(updatedAt).getTime();
+      return {
+        doc,
+        ver,
+        verNumber,
+        ack,
+        status,
+        updatedAt,
+        dueSoon: Number.isFinite(due) && due - now <= 30 * DAY,
+        recentlyUpdated: Number.isFinite(upd) && now - upd <= 30 * DAY,
+        signedOlderVersion: required && !ack && docAcks.length > 0,
+      };
+    }).sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
+  }, [publishedDocs, userAcks, versions]);
 
-  const pendingAcksCount = pendingAckDocs.length;
+  const counts = useMemo(() => ({
+    total: rows.length,
+    acknowledged: rows.filter((r) => r.status === 'ACKNOWLEDGED').length,
+    pending: rows.filter((r) => r.status === 'PENDING').length,
+    expiring: rows.filter((r) => r.dueSoon).length,
+    updates: rows.filter((r) => r.recentlyUpdated || r.signedOlderVersion).length,
+  }), [rows]);
 
-  // Filter pending acknowledgement cards by search term
-  const filteredPendingDocs = useMemo(() => {
+  const filtered = useMemo(() => {
     const q = searchTerm.toLowerCase().trim();
-    if (!q) return pendingAckDocs;
-    return pendingAckDocs.filter((doc) => {
+    return rows.filter((r) => {
+      if (tab === 'acknowledged' && r.status !== 'ACKNOWLEDGED') return false;
+      if (tab === 'pending' && r.status !== 'PENDING') return false;
+      if (tab === 'updates' && !(r.recentlyUpdated || r.signedOlderVersion)) return false;
+      if (selectedCategory !== 'ALL' && r.doc.category !== selectedCategory) return false;
+      if (selectedStatus !== 'ALL' && r.status !== selectedStatus) return false;
+      if (!q) return true;
       return (
-        doc.title.toLowerCase().includes(q) ||
-        doc.documentId.toLowerCase().includes(q) ||
-        doc.category.toLowerCase().includes(q) ||
-        doc.departmentName.toLowerCase().includes(q)
+        r.doc.title.toLowerCase().includes(q) ||
+        r.doc.documentId.toLowerCase().includes(q) ||
+        r.doc.category.toLowerCase().includes(q) ||
+        r.doc.departmentName.toLowerCase().includes(q) ||
+        (r.doc.description || '').toLowerCase().includes(q)
       );
     });
-  }, [pendingAckDocs, searchTerm]);
+  }, [rows, tab, searchTerm, selectedCategory, selectedStatus]);
 
-  // Filter All Documents table/list
-  const filteredAllDocs = useMemo(() => {
-    const q = searchTerm.toLowerCase().trim();
-    return publishedDocs.filter((doc) => {
-      const matchesSearch =
-        !q ||
-        doc.title.toLowerCase().includes(q) ||
-        doc.documentId.toLowerCase().includes(q) ||
-        doc.category.toLowerCase().includes(q) ||
-        doc.departmentName.toLowerCase().includes(q) ||
-        (doc.description && doc.description.toLowerCase().includes(q));
+  useEffect(() => { setPage(1); }, [searchTerm, selectedCategory, selectedStatus, tab]);
 
-      const matchesCategory = selectedCategory === 'ALL' || doc.category === selectedCategory;
+  const pageRows = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+  const selected = filtered.find((r) => r.doc.id === selectedDocId) || filtered[0];
+  const hasFilters = !!searchTerm || selectedCategory !== 'ALL' || selectedStatus !== 'ALL';
+  const resetFilters = () => { setSearchTerm(''); setSelectedCategory('ALL'); setSelectedStatus('ALL'); };
 
-      return matchesSearch && matchesCategory;
-    });
-  }, [publishedDocs, searchTerm, selectedCategory]);
+  const selectRow = (id: string) => { setSelectedDocId(id); setDetailTab('overview'); };
+
+  const historyFor = (doc: DocumentMaster) =>
+    versions
+      .filter((v) => (v.documentMasterId === doc.id || v.documentId === doc.documentId) && (v.status === VersionStatus.PUBLISHED || v.status === VersionStatus.SUPERSEDED))
+      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+
+  const tabs: { value: PolicyTab; label: React.ReactNode; badge?: number }[] = [
+    { value: 'all', label: 'All Policies', badge: counts.total },
+    { value: 'acknowledged', label: 'Acknowledged', badge: counts.acknowledged },
+    { value: 'pending', label: 'Pending', badge: counts.pending },
+    { value: 'updates', label: 'Updates', badge: counts.updates },
+  ];
+
+  const emptyText: Record<PolicyTab, [string, string]> = {
+    all: ['No policies found', 'Try changing your search or filters.'],
+    acknowledged: ['Nothing acknowledged yet', 'Policies you sign will appear here.'],
+    pending: ['You are all caught up', 'Every policy that needs your acknowledgement is signed.'],
+    updates: ['No recent updates', 'Policies changed in the last 30 days will appear here.'],
+  };
+
+  const sel = selected;
+  const selKind = fileKind(sel?.ver?.fileName);
 
   return (
-    <div className="space-y-6">
-      {/* HEADER SUMMARY */}
-      <div>
-        <PageHeader
-          icon={Layers}
-          title="My Policies"
-          subtitle={<>Live company policies and SOPs for <strong className="text-slate-800">{currentUser.departmentName || 'Operations'}</strong>: public ones and those for your department.</>}
-        />
-        <KpiGrid cols={3}>
-          <KpiCard icon={FileText} tone="violet" label="Total policies" value={publishedDocs.length} hint="Available to you" />
-          <KpiCard icon={CheckCircle2} tone="green" label="Acknowledged" value={Math.max(0, publishedDocs.length - pendingAcksCount)} hint="Up to date" />
-          <KpiCard icon={Clock} tone="amber" label="Awaiting you" value={pendingAcksCount} hint={pendingAcksCount ? 'Read and acknowledge' : 'Nothing pending'} onClick={pendingAcksCount ? () => setTab('acknowledgements') : undefined} />
-        </KpiGrid>
-      </div>
+    <div className="space-y-5">
+      <PageHeader
+        icon={Layers}
+        title="My Policies"
+        subtitle="View and acknowledge company policies applicable to you."
+      />
 
-      {/* TAB CONTENT: 1. POLICY & SOP ACKNOWLEDGEMENTS */}
-      {currentTab === 'acknowledgements' && (
-        <div className="space-y-4">
-          {/* If there are no pending acknowledgement cards, show required catch-up banner with button */}
-          {pendingAckDocs.length === 0 ? (
-            <div className="bg-white rounded-2xl p-12 text-center border border-slate-200 shadow-xs w-full">
-              <div className="w-16 h-16 bg-emerald-50 rounded-full flex items-center justify-center mx-auto mb-4 border border-emerald-200">
-                <CheckCircle2 className="w-8 h-8 text-emerald-600" />
-              </div>
-              <h2 className="text-xl font-bold text-slate-900 mb-2">You’re all caught up!</h2>
-              <p className="text-sm text-slate-600 mb-6 max-w-md mx-auto leading-relaxed">
-                All required documents have been acknowledged. View all available documents in All Documents.
-              </p>
-              <button
-                id="btn-view-all-documents"
-                type="button"
-                onClick={() => setTab('all-documents')}
-                className="inline-flex items-center space-x-2 bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold px-5 py-2.5 rounded-xl transition-all shadow-xs cursor-pointer"
-              >
-                <FileText className="w-4 h-4 text-amber-400" />
-                <span>View All Documents</span>
-              </button>
-            </div>
-          ) : (
-            <>
-              {/* Search Bar for Pending Cards */}
-              <div className="bg-white p-3.5 rounded-2xl border border-slate-200 shadow-xs">
-                <div className="relative">
-                  <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
-                  <input
-                    id="search-pending-docs"
-                    type="text"
-                    placeholder="Search pending documents awaiting your acknowledgement..."
-                    value={searchTerm}
-                    onChange={(e) => setSearchTerm(e.target.value)}
-                    className="w-full pl-9 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 focus:outline-hidden focus:ring-2 focus:ring-[#FA7014] focus:bg-white placeholder:text-slate-400 transition-colors"
-                  />
-                </div>
-              </div>
+      <KpiGrid cols={4}>
+        <KpiCard icon={FileText} tone="violet" label="Total Policies" value={counts.total} />
+        <KpiCard icon={CheckCircle2} tone="green" label="Acknowledged" value={counts.acknowledged} />
+        <KpiCard icon={Clock} tone="amber" label="Pending Acknowledgement" value={counts.pending} onClick={counts.pending ? () => setTab('pending') : undefined} />
+        <KpiCard icon={AlertTriangle} tone="rose" label="Expiring Soon" value={counts.expiring} hint="Review due in 30 days" />
+      </KpiGrid>
 
-              {/* Grid of Pending Acknowledgement Cards */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {filteredPendingDocs.length === 0 ? (
-                  <div className="col-span-2 bg-white rounded-2xl p-10 text-center text-slate-500 border border-slate-200 shadow-xs">
-                    <BookOpen className="w-10 h-10 mx-auto mb-2 text-slate-400" />
-                    <p className="text-sm">No pending documents found matching your search term.</p>
-                  </div>
-                ) : (
-                  filteredPendingDocs.map((doc) => {
-                    const pubVersion = getPublishedVersionForDoc(doc);
-                    const verNumber = doc.currentPublishedVersionNumber || pubVersion?.versionNumber || '1.0';
+      <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_380px] gap-5 items-start">
+        {/* LEFT: list */}
+        <div className="min-w-0 space-y-4">
+          <UnderlineTabs value={tab} onChange={setTab} options={tabs} />
 
-                    return (
-                      <div
-                        key={doc.id}
-                        className="bg-white rounded-2xl border border-amber-200 p-5 shadow-xs hover:border-amber-300 transition-all flex flex-col justify-between relative overflow-hidden"
-                      >
-                        {/* Top banner accent for pending compliance */}
-                        <div className="absolute top-0 left-0 right-0 h-1 bg-amber-500" />
-
-                        <div>
-                          <div className="flex items-start justify-between gap-2 mb-2">
-                            <div className="flex items-center space-x-2">
-                              <span className="font-mono text-xs font-bold text-slate-900 bg-slate-100 px-2.5 py-0.5 rounded-lg border border-slate-200">
-                                {doc.documentId}
-                              </span>
-                              <span className="font-bold text-xs text-amber-800 bg-amber-50 px-2.5 py-0.5 rounded-full border border-amber-200">
-                                v{verNumber} Live
-                              </span>
-                            </div>
-
-                            <span className="text-xs text-slate-600 bg-slate-100 px-2 py-0.5 rounded-md font-medium border border-slate-200">
-                              {doc.category}
-                            </span>
-                          </div>
-
-                          <h2 className="text-base font-bold text-slate-900 leading-snug">{doc.title}</h2>
-
-                          {doc.description && (
-                            <p className="text-xs text-slate-500 mt-1 line-clamp-2">{doc.description}</p>
-                          )}
-
-                          <div className="mt-4 pt-3 border-t border-slate-100 grid grid-cols-2 gap-2 text-xs text-slate-500">
-                            <div>
-                              <span className="text-slate-400 block text-[10px] uppercase font-bold">Department</span>
-                              <span className="text-slate-700 font-medium">{doc.departmentName}</span>
-                            </div>
-                            <div>
-                              <span className="text-slate-400 block text-[10px] uppercase font-bold">Effective Date</span>
-                              <span className="text-slate-700 font-medium">{pubVersion?.effectiveFrom || '2026-08-01'}</span>
-                            </div>
-                          </div>
-                        </div>
-
-                        <div className="mt-5 pt-3 border-t border-slate-100 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
-                          {/* Acknowledge Button */}
-                          <button
-                            id={`btn-ack-${doc.id}`}
-                            onClick={() => handleAcknowledge(doc, verNumber)}
-                            className="inline-flex items-center justify-center space-x-1.5 bg-[#FA7014] hover:bg-[#E65A05] text-white text-xs font-bold px-3.5 py-2 rounded-xl transition-all shadow-xs cursor-pointer"
-                          >
-                            <Check className="w-3.5 h-3.5 stroke-[3]" />
-                            <span>Acknowledge Policy v{verNumber}</span>
-                          </button>
-
-                          <div className="flex items-center gap-2">
-                            {/* Suggestion Button */}
-                            <button
-                              id={`btn-card-suggest-${doc.id}`}
-                              onClick={() => setSelectedDocForSuggestion(doc)}
-                              className="inline-flex items-center justify-center space-x-1.5 bg-white hover:bg-orange-50 text-slate-700 hover:text-[#FA7014] text-xs font-medium px-3 py-2 rounded-xl transition-colors border border-slate-200 hover:border-orange-300 cursor-pointer"
-                              title="Give feedback or suggest an improvement on this policy"
-                            >
-                              <MessageSquarePlus className="w-3.5 h-3.5 text-[#FA7014]" />
-                              <span>Give Suggestion</span>
-                            </button>
-
-                            {/* Read Document Button */}
-                            {pubVersion && (
-                              <button
-                                id={`btn-employee-read-${doc.id}`}
-                                onClick={() => onOpenDocumentView(pubVersion)}
-                                className="inline-flex items-center justify-center space-x-1.5 bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-semibold px-3.5 py-2 rounded-xl transition-colors border border-slate-200 cursor-pointer"
-                              >
-                                <Eye className="w-3.5 h-3.5 text-slate-600" />
-                                <span>Read Document</span>
-                              </button>
-                            )}
-                          </div>
-                        </div>
-                      </div>
-                    );
-                  })
-                )}
-              </div>
-            </>
-          )}
-        </div>
-      )}
-
-      {/* TAB CONTENT: 2. ALL DOCUMENTS (Clean table / list view of all documents available to employee) */}
-      {currentTab === 'all-documents' && (
-        <div className="space-y-4">
-          {/* SEARCH & CATEGORY FILTER */}
-          <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs flex flex-col md:flex-row md:items-center md:justify-between gap-3">
-            <div className="relative flex-1">
+          <div className="flex flex-col md:flex-row md:items-center gap-3">
+            <div className="relative flex-1 min-w-[200px]">
               <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
               <input
-                id="search-all-docs"
+                id="search-policies"
                 type="text"
-                placeholder="Search all documents by ID, title, department, or keyword..."
+                placeholder="Search policies..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                className="w-full pl-9 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 focus:outline-hidden focus:ring-2 focus:ring-[#FA7014] focus:bg-white placeholder:text-slate-400 transition-colors"
+                className={searchInput}
               />
             </div>
-
-            <div className="flex items-center space-x-2 shrink-0">
-              <label htmlFor="filter-employee-category" className="text-xs font-semibold text-slate-600 whitespace-nowrap">
-                Category:
-              </label>
+            <FilterField icon={Tag} label="Category:">
               <select
                 id="filter-employee-category"
                 value={selectedCategory}
                 onChange={(e) => setSelectedCategory(e.target.value)}
-                className="text-xs px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-slate-800 focus:outline-hidden focus:ring-2 focus:ring-[#FA7014] cursor-pointer"
+                className="bg-transparent font-bold text-slate-900 focus:outline-hidden cursor-pointer"
               >
-                <option value="ALL">All Categories</option>
+                <option value="ALL">All</option>
                 {Object.values(DocumentCategory).map((cat) => (
-                  <option key={cat} value={cat}>
-                    {cat}
-                  </option>
+                  <option key={cat} value={cat}>{cat}</option>
                 ))}
               </select>
-            </div>
+            </FilterField>
+            <FilterField icon={ShieldCheck} label="Status:">
+              <select
+                id="filter-employee-status"
+                value={selectedStatus}
+                onChange={(e) => setSelectedStatus(e.target.value)}
+                className="bg-transparent font-bold text-slate-900 focus:outline-hidden cursor-pointer"
+              >
+                <option value="ALL">All</option>
+                <option value="ACKNOWLEDGED">Acknowledged</option>
+                <option value="PENDING">Pending</option>
+                <option value="ACTIVE">Active (no sign-off)</option>
+              </select>
+            </FilterField>
+            <button
+              type="button"
+              onClick={resetFilters}
+              disabled={!hasFilters}
+              className="w-11 h-11 shrink-0 rounded-xl border border-slate-300 bg-white text-slate-600 hover:bg-slate-50 flex items-center justify-center cursor-pointer disabled:opacity-40 disabled:cursor-default"
+              title="Reset filters"
+              aria-label="Reset filters"
+            >
+              <SlidersHorizontal className="w-4 h-4" />
+            </button>
           </div>
 
-          {/* TABLE OF ALL DOCUMENTS */}
-          <div className="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden">
-            {filteredAllDocs.length === 0 ? (
+          <div className={tbl.wrap}>
+            {filtered.length === 0 ? (
               <div className="p-12 text-center text-slate-500">
-                <BookOpen className="w-12 h-12 mx-auto mb-2 text-slate-400" />
-                <p className="text-sm font-medium text-slate-700">No documents found</p>
-                <p className="text-xs text-slate-500 mt-1">Try changing your search term or category filter.</p>
+                <BookOpen className="w-10 h-10 mx-auto mb-2 text-slate-300" />
+                <p className="text-sm font-bold text-slate-700">{hasFilters ? 'No policies match your filters' : emptyText[tab][0]}</p>
+                <p className="text-xs text-slate-500 mt-1">{hasFilters ? 'Try changing your search or filters.' : emptyText[tab][1]}</p>
               </div>
             ) : (
               <div className="overflow-x-auto">
                 <table className={tbl.table}>
                   <thead>
                     <tr className={tbl.headRow}>
-                      <th className="py-3.5 px-4">Document ID & Category</th>
-                      <th className="py-3.5 px-4">Title & Scope</th>
-                      <th className="py-3.5 px-4">Department</th>
-                      <th className="py-3.5 px-4">Live Version</th>
-                      <th className="py-3.5 px-4">Compliance Status</th>
-                      <th className="py-3.5 px-4 text-right">Actions</th>
+                      <th className={tbl.th}>Policy Name</th>
+                      <th className={tbl.th}>Category</th>
+                      <th className={tbl.th}>Version</th>
+                      <th className={tbl.th}>Last Updated</th>
+                      <th className={tbl.th}>Status</th>
+                      <th className={`${tbl.th} w-12`}><span className="sr-only">Actions</span></th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-slate-100">
-                    {filteredAllDocs.map((doc) => {
-                      const pubVersion = getPublishedVersionForDoc(doc);
-                      const verNumber = doc.currentPublishedVersionNumber || pubVersion?.versionNumber || '1.0';
-
-                      const ack = userAcks.find(
-                        (a) =>
-                          a.documentId.toLowerCase() === doc.documentId.toLowerCase() &&
-                          a.versionNumber === verNumber &&
-                          a.status === 'ACKNOWLEDGED'
-                      );
-                      const isAcked = !!ack;
-
+                  <tbody className={tbl.body}>
+                    {pageRows.map((r) => {
+                      const kind = fileKind(r.ver?.fileName);
+                      const CatIcon = categoryIcon(r.doc.category);
+                      const isSel = sel?.doc.id === r.doc.id;
                       return (
-                        <tr key={doc.id} className="hover:bg-slate-50/80 transition-colors">
-                          {/* Document ID & Category */}
-                          <td className="py-3.5 px-4 align-top">
-                            <div className="flex flex-col gap-1">
-                              <span className="font-mono text-xs font-bold text-slate-900 bg-slate-100 px-2 py-0.5 rounded-md border border-slate-200 w-fit">
-                                {doc.documentId}
-                              </span>
-                              <span className="text-[11px] text-slate-600 font-medium">
-                                {doc.category}
-                              </span>
+                        <tr
+                          key={r.doc.id}
+                          onClick={() => selectRow(r.doc.id)}
+                          className={`${tbl.row} cursor-pointer ${isSel ? 'bg-violet-50/70' : ''}`}
+                        >
+                          <td className={tbl.td}>
+                            <div className="flex items-center gap-3 min-w-0">
+                              <span className={`w-9 h-9 rounded-lg flex items-center justify-center shrink-0 ${kind.tile}`}><FileText className="w-4 h-4" /></span>
+                              <div className="min-w-0">
+                                <div className="font-bold text-slate-900 truncate max-w-[16rem]" title={r.doc.title}>{r.doc.title}</div>
+                                <div className="text-[11px] text-slate-500">{r.doc.documentId}</div>
+                              </div>
                             </div>
                           </td>
-
-                          {/* Title & Scope */}
-                          <td className="py-3.5 px-4 align-top max-w-xs">
-                            <div className="font-bold text-slate-900 leading-snug">{doc.title}</div>
-                            {doc.description && (
-                              <p className="text-[11px] text-slate-500 mt-0.5 line-clamp-1">{doc.description}</p>
-                            )}
-                            <div className="mt-1 flex items-center gap-1.5">
-                              {doc.confidentiality === ConfidentialityLevel.PUBLIC ? (
-                                <span className="inline-flex items-center text-[10px] font-semibold text-slate-600 bg-slate-100 px-2 py-0.5 rounded-full border border-slate-200">
-                                  Public (All Employees)
-                                </span>
-                              ) : (
-                                <span className="inline-flex items-center text-[10px] font-semibold text-amber-800 bg-amber-50 px-2 py-0.5 rounded-full border border-amber-200">
-                                  Dept Specific ({doc.departmentName})
-                                </span>
-                              )}
-                            </div>
+                          <td className={tbl.td}>
+                            <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-slate-700 bg-slate-100 px-2.5 py-1 rounded-lg whitespace-nowrap">
+                              <CatIcon className="w-3.5 h-3.5 text-slate-500" />{r.doc.category}
+                            </span>
                           </td>
-
-                          {/* Department */}
-                          <td className="py-3.5 px-4 align-top text-slate-700 font-medium">
-                            {doc.departmentName}
-                          </td>
-
-                          {/* Live Version & Effective Date */}
-                          <td className="py-3.5 px-4 align-top">
-                            <div className="flex flex-col gap-0.5">
-                              <span className="font-bold text-slate-900 bg-slate-100 px-2 py-0.5 rounded-full border border-slate-200 w-fit text-[11px]">
-                                v{verNumber}
-                              </span>
-                              <span className="text-[10px] text-slate-500">
-                                Effective: {pubVersion?.effectiveFrom || '2026-08-01'}
-                              </span>
-                            </div>
-                          </td>
-
-                          {/* Compliance Status */}
-                          <td className="py-3.5 px-4 align-top">
-                            {doc.acknowledgementRequired ? (
-                              isAcked ? (
-                                <div className="flex flex-col gap-0.5">
-                                  <span className="inline-flex items-center space-x-1.5 text-xs font-semibold text-emerald-800 bg-emerald-50 px-2.5 py-1 rounded-lg border border-emerald-200 w-fit">
-                                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
-                                    <span>Acknowledged</span>
-                                  </span>
-                                  <span className="text-[10px] text-slate-500 pl-0.5">
-                                    {isOfflineSignOff(ack) ? 'Offline Attestation' : `v${verNumber}`}
-                                    {ack?.acknowledgedAt ? ` • ${formatISTDate(ack.acknowledgedAt)}` : ''}
-                                  </span>
+                          <td className={tbl.td}><Chip tone="violet">v{r.verNumber}</Chip></td>
+                          <td className={`${tbl.td} text-xs text-slate-700 whitespace-nowrap`}>{formatISTDate(r.updatedAt)}</td>
+                          <td className={tbl.td}><Chip tone={STATUS_TONE[r.status]}>{STATUS_LABEL[r.status]}</Chip></td>
+                          <td className={`${tbl.td} relative`} onClick={(e) => e.stopPropagation()}>
+                            <button
+                              type="button"
+                              onClick={() => setMenuDocId(menuDocId === r.doc.id ? null : r.doc.id)}
+                              className="w-8 h-8 rounded-lg border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 flex items-center justify-center cursor-pointer"
+                              aria-label="More actions"
+                              aria-haspopup="menu"
+                            >
+                              <MoreHorizontal className="w-4 h-4" />
+                            </button>
+                            {menuDocId === r.doc.id && (
+                              <>
+                                <div className="fixed inset-0 z-10" onClick={() => setMenuDocId(null)} />
+                                <div role="menu" className="absolute right-3 top-12 z-20 w-44 bg-white border border-slate-200 rounded-xl shadow-lg py-1 text-sm">
+                                  {r.ver && (
+                                    <button role="menuitem" type="button" id={`btn-table-read-${r.doc.id}`} onClick={() => { setMenuDocId(null); onOpenDocumentView(r.ver!); }} className="w-full flex items-center gap-2 px-3 py-2 hover:bg-slate-50 text-slate-700 cursor-pointer"><Eye className="w-4 h-4" />Read</button>
+                                  )}
+                                  {r.ver && (
+                                    <button role="menuitem" type="button" id={`btn-table-download-${r.doc.id}`} disabled={downloadingDocId === r.doc.id} onClick={() => { setMenuDocId(null); handleDownloadIntact(r.doc, r.ver!); }} className="w-full flex items-center gap-2 px-3 py-2 hover:bg-slate-50 text-slate-700 cursor-pointer disabled:opacity-50"><Download className="w-4 h-4" />Download</button>
+                                  )}
+                                  <button role="menuitem" type="button" id={`btn-table-suggest-${r.doc.id}`} onClick={() => { setMenuDocId(null); setSelectedDocForSuggestion(r.doc); }} className="w-full flex items-center gap-2 px-3 py-2 hover:bg-slate-50 text-slate-700 cursor-pointer"><MessageSquarePlus className="w-4 h-4" />Give suggestion</button>
                                 </div>
-                              ) : (
-                                <div className="flex flex-col gap-1.5">
-                                  <span className="inline-flex items-center space-x-1.5 text-xs font-semibold text-amber-800 bg-amber-50 px-2.5 py-1 rounded-lg border border-amber-200 w-fit">
-                                    <Clock className="w-3.5 h-3.5 text-amber-600 shrink-0 animate-pulse" />
-                                    <span>Pending Sign-off</span>
-                                  </span>
-                                  <button
-                                    id={`btn-table-ack-${doc.id}`}
-                                    onClick={() => handleAcknowledge(doc, verNumber)}
-                                    className="inline-flex items-center space-x-1 bg-[#FA7014] hover:bg-[#E65A05] text-white text-[11px] font-bold px-2 py-0.5 rounded-md transition-all shadow-xs cursor-pointer w-fit"
-                                  >
-                                    <Check className="w-3 h-3 stroke-[3]" />
-                                    <span>Sign-off</span>
-                                  </button>
-                                </div>
-                              )
-                            ) : (
-                              <span className="inline-flex items-center space-x-1 text-[11px] text-slate-600 bg-slate-100 px-2 py-1 rounded-lg border border-slate-200">
-                                <span>Compliance Not Required</span>
-                              </span>
+                              </>
                             )}
-                          </td>
-
-                          {/* Actions */}
-                          <td className="py-3.5 px-4 align-top text-right whitespace-nowrap">
-                            <div className="inline-flex items-center space-x-1.5">
-                              {/* Employee Suggestion Button */}
-                              <button
-                                id={`btn-table-suggest-${doc.id}`}
-                                onClick={() => setSelectedDocForSuggestion(doc)}
-                                className="inline-flex items-center space-x-1 bg-white hover:bg-orange-50 hover:text-[#FA7014] text-slate-700 text-xs font-semibold px-2.5 py-1.5 rounded-lg transition-colors border border-slate-200 hover:border-orange-300 cursor-pointer shadow-2xs"
-                                title="Give Suggestion or Feedback on this document"
-                              >
-                                <MessageSquarePlus className="w-3.5 h-3.5 text-[#FA7014]" />
-                                <span>Suggest</span>
-                              </button>
-
-                              {pubVersion && (
-                                <button
-                                  id={`btn-table-read-${doc.id}`}
-                                  onClick={() => onOpenDocumentView(pubVersion)}
-                                  className="inline-flex items-center space-x-1 bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-semibold px-2.5 py-1.5 rounded-lg transition-colors border border-slate-200 cursor-pointer"
-                                  title="Read Document"
-                                >
-                                  <Eye className="w-3.5 h-3.5 text-slate-600" />
-                                  <span>Read</span>
-                                </button>
-                              )}
-
-                              {pubVersion && (
-                                <button
-                                  id={`btn-table-download-${doc.id}`}
-                                  disabled={downloadingDocId === doc.id}
-                                  onClick={() => handleDownloadIntact(doc, pubVersion)}
-                                  className="inline-flex items-center space-x-1 bg-white hover:bg-slate-100 text-slate-700 text-xs font-medium px-2 py-1.5 rounded-lg transition-colors border border-slate-200 cursor-pointer disabled:opacity-50"
-                                  title="Download Document Intact"
-                                >
-                                  <Download className="w-3.5 h-3.5 text-slate-500" />
-                                </button>
-                              )}
-                            </div>
                           </td>
                         </tr>
                       );
@@ -605,9 +483,134 @@ export const EmployeePortalView: React.FC<EmployeePortalViewProps> = ({
                 </table>
               </div>
             )}
+            <Pagination page={page} pageSize={PAGE_SIZE} total={filtered.length} onPage={setPage} noun="policies" />
           </div>
         </div>
-      )}
+
+        {/* RIGHT: detail */}
+        <aside className="bg-white border border-slate-200 rounded-2xl shadow-[0_1px_2px_rgba(16,24,40,0.04)] p-5 xl:sticky xl:top-4 min-w-0">
+          {!sel ? (
+            <div className="py-16 text-center text-slate-500">
+              <FileText className="w-10 h-10 mx-auto mb-2 text-slate-300" />
+              <p className="text-sm font-bold text-slate-700">Select a policy</p>
+              <p className="text-xs mt-1">Its details and history show here.</p>
+            </div>
+          ) : (
+            <>
+              <div className="flex items-start gap-3">
+                <span className={`w-12 h-12 rounded-xl flex items-center justify-center shrink-0 ${selKind.tile}`}><FileText className="w-5 h-5" /></span>
+                <div className="min-w-0 flex-1">
+                  <h2 className="text-lg font-extrabold text-slate-900 leading-snug">{sel.doc.title}</h2>
+                  <div className="mt-1"><Chip tone="violet">Current Version: v{sel.verNumber}</Chip></div>
+                </div>
+                <div className="flex items-center gap-1.5 shrink-0">
+                  {sel.ver && (
+                    <button type="button" id={`btn-employee-read-${sel.doc.id}`} onClick={() => onOpenDocumentView(sel.ver!)} className="w-9 h-9 rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50 flex items-center justify-center cursor-pointer" title="Read document" aria-label="Read document"><ExternalLink className="w-4 h-4" /></button>
+                  )}
+                  {sel.ver && (
+                    <button type="button" disabled={downloadingDocId === sel.doc.id} onClick={() => handleDownloadIntact(sel.doc, sel.ver!)} className="w-9 h-9 rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50 flex items-center justify-center cursor-pointer disabled:opacity-50" title="Download" aria-label="Download"><Download className="w-4 h-4" /></button>
+                  )}
+                  <button type="button" id={`btn-card-suggest-${sel.doc.id}`} onClick={() => setSelectedDocForSuggestion(sel.doc)} className="w-9 h-9 rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50 flex items-center justify-center cursor-pointer" title="Give suggestion" aria-label="Give suggestion"><MessageSquarePlus className="w-4 h-4" /></button>
+                </div>
+              </div>
+
+              <div role="tablist" className="mt-4 grid grid-cols-3 border-b border-slate-200">
+                {([['overview', 'Overview'], ['history', 'Version History'], ['ack', 'Acknowledgement']] as const).map(([k, label]) => (
+                  <button key={k} type="button" role="tab" aria-selected={detailTab === k} onClick={() => setDetailTab(k)}
+                    className={`relative py-2.5 text-sm font-bold cursor-pointer ${detailTab === k ? 'text-[#6d4cf0]' : 'text-slate-700 hover:text-slate-900'}`}>
+                    {label}
+                    {detailTab === k && <span className="absolute left-0 right-0 -bottom-px h-0.5 rounded-full bg-[#6d4cf0]" />}
+                  </button>
+                ))}
+              </div>
+
+              <div className="mt-4 min-h-[15rem]">
+                {detailTab === 'overview' && (
+                  <>
+                    <p className="text-sm text-slate-600 leading-relaxed">{sel.doc.description || 'No description has been added for this policy.'}</p>
+                    <dl className="mt-4 rounded-xl border border-slate-200 divide-y divide-slate-100 text-sm">
+                      {[
+                        [Tag, 'Category', sel.doc.category],
+                        [ShieldCheck, 'Version', `v${sel.verNumber}`],
+                        [CalendarDays, 'Last Updated', formatISTDate(sel.updatedAt)],
+                        [Building2, 'Department', sel.doc.confidentiality === ConfidentialityLevel.PUBLIC ? `${sel.doc.departmentName} (all employees)` : sel.doc.departmentName],
+                        [FileText, 'Document Size', sel.ver ? `${formatBytes(sel.ver.fileSize)} (${selKind.label})` : 'Not available'],
+                        [Clock, 'Review Due', sel.ver?.reviewDueDate ? formatDDMMYYYY(sel.ver.reviewDueDate) : 'Not set'],
+                      ].map(([Icon, label, value]) => {
+                        const I = Icon as React.ComponentType<{ className?: string }>;
+                        return (
+                          <div key={label as string} className="flex items-center justify-between gap-3 px-3.5 py-3">
+                            <dt className="flex items-center gap-2.5 text-slate-600"><I className="w-4 h-4 text-slate-500" />{label as string}</dt>
+                            <dd className="font-semibold text-slate-900 text-right">{value as string}</dd>
+                          </div>
+                        );
+                      })}
+                    </dl>
+                  </>
+                )}
+
+                {detailTab === 'history' && (
+                  <ol className="space-y-3">
+                    {historyFor(sel.doc).length === 0 && <li className="text-sm text-slate-500">No earlier versions.</li>}
+                    {historyFor(sel.doc).map((v) => (
+                      <li key={v.id} className="rounded-xl border border-slate-200 p-3">
+                        <div className="flex items-center justify-between gap-2">
+                          <Chip tone="violet">v{v.versionNumber}</Chip>
+                          <Chip tone={v.status === VersionStatus.PUBLISHED ? 'green' : 'slate'}>{v.status === VersionStatus.PUBLISHED ? 'Live' : 'Superseded'}</Chip>
+                        </div>
+                        <div className="text-xs text-slate-500 mt-1.5">{formatISTDate(v.publishedAt || v.createdAt)}</div>
+                        {v.changeSummary && <p className="text-sm text-slate-700 mt-1">{v.changeSummary}</p>}
+                      </li>
+                    ))}
+                  </ol>
+                )}
+
+                {detailTab === 'ack' && (
+                  <div className="space-y-3 text-sm">
+                    {sel.status === 'ACKNOWLEDGED' && (
+                      <div className="rounded-xl bg-emerald-50 border border-emerald-100 p-4">
+                        <div className="flex items-center gap-2 font-bold text-emerald-800"><CheckCircle2 className="w-4 h-4" />Acknowledged v{sel.verNumber}</div>
+                        <div className="text-xs text-emerald-800/80 mt-1.5">
+                          {isOfflineSignOff(sel.ack) ? 'Offline attestation' : 'Signed electronically'}
+                          {sel.ack?.acknowledgedAt ? ` on ${formatISTDate(sel.ack.acknowledgedAt)}` : ''}
+                        </div>
+                      </div>
+                    )}
+                    {sel.status === 'PENDING' && (
+                      <div className="rounded-xl bg-orange-50 border border-orange-100 p-4">
+                        <div className="flex items-center gap-2 font-bold text-orange-800"><Clock className="w-4 h-4" />Waiting for you</div>
+                        <div className="text-xs text-orange-800/80 mt-1.5">
+                          Read the policy, then acknowledge v{sel.verNumber}.
+                          {sel.signedOlderVersion ? ' You signed an earlier version; this one has changed.' : ''}
+                        </div>
+                      </div>
+                    )}
+                    {sel.status === 'ACTIVE' && (
+                      <div className="rounded-xl bg-slate-50 border border-slate-200 p-4 text-slate-600">This policy does not need an acknowledgement.</div>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              {sel.status === 'PENDING' ? (
+                <button
+                  id={`btn-ack-${sel.doc.id}`}
+                  type="button"
+                  onClick={() => handleAcknowledge(sel.doc, sel.verNumber)}
+                  className="mt-4 w-full inline-flex items-center justify-center gap-2 bg-[#6d4cf0] hover:bg-[#5b3be0] text-white font-bold py-3 rounded-xl text-sm shadow-md shadow-violet-500/30 transition-all cursor-pointer"
+                >
+                  <Check className="w-4 h-4 stroke-[3]" />
+                  Acknowledge Policy
+                </button>
+              ) : sel.status === 'ACKNOWLEDGED' ? (
+                <div className="mt-4 w-full inline-flex items-center justify-center gap-2 bg-emerald-50 text-emerald-700 font-bold py-3 rounded-xl text-sm border border-emerald-100">
+                  <CheckCircle2 className="w-4 h-4" />Acknowledged
+                </div>
+              ) : null}
+            </>
+          )}
+        </aside>
+      </div>
 
       {/* SUCCESS TOAST FOR SUGGESTION */}
       {suggestionSuccessMsg && (
