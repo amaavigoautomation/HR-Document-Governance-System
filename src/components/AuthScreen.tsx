@@ -145,7 +145,7 @@ export const AuthScreen: React.FC = () => {
             <button
               type="submit"
               disabled={busy}
-              className="flex w-full items-center justify-center gap-2 rounded-xl bg-[#FA7014] py-2.5 text-sm font-bold text-white transition hover:bg-[#E65A05] disabled:opacity-60"
+              className="flex w-full items-center justify-center gap-2 rounded-xl bg-[#6d4cf0] py-2.5 text-sm font-bold text-white shadow-md shadow-violet-500/25 transition hover:bg-[#5b3be0] disabled:opacity-60"
             >
               {busy && <Loader2 className="h-4 w-4 animate-spin" />}
               {mode === 'signin' ? 'Sign in' : mode === 'signup' ? 'Register company' : 'Send reset link'}
