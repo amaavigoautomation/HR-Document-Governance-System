@@ -5,6 +5,7 @@ import {CandidateUploadPage} from './components/CandidateUploadPage.tsx';
 import {OfferResponsePage} from './components/OfferResponsePage.tsx';
 import {ScreeningLinkPage} from './components/ScreeningLinkPage.tsx';
 import {SkillTestPage} from './components/SkillTestPage.tsx';
+import '@fontsource-variable/inter';
 import './index.css';
 
 // Public candidate upload page (opened from the onboarding email). Bypasses the HR login.
