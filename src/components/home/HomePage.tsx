@@ -64,7 +64,7 @@ export const HomePage: React.FC<Props> = ({ fallbackName, onOpen }) => {
               <Settings2 className="w-3.5 h-3.5" />Customize
             </button>
           )}
-          <button type="button" className="inline-flex items-center justify-center gap-2 px-3.5 py-2 rounded-lg text-xs font-bold bg-[#F36B21] text-white hover:bg-[#df5d18] disabled:opacity-50 transition-colors shadow-sm" onClick={refresh} disabled={layout.loading || dash.loading}>
+          <button type="button" className="inline-flex items-center justify-center gap-2 px-3.5 py-2 rounded-lg text-xs font-bold bg-[#6d4cf0] text-white hover:bg-[#5b3be0] disabled:opacity-50 transition-colors shadow-sm" onClick={refresh} disabled={layout.loading || dash.loading}>
             <RefreshCw className={`w-3.5 h-3.5 ${layout.loading || dash.loading ? 'animate-spin' : ''}`} />Refresh
           </button>
         </>} />

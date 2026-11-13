@@ -593,7 +593,7 @@ export const TalentAcquisitionOverview: React.FC<TalentAcquisitionOverviewProps>
             className={`inline-flex items-center space-x-2 px-4 py-2.5 rounded-xl text-xs font-bold text-white transition-all shadow-xs cursor-pointer ${
               isLoading || isRefreshing
                 ? 'bg-slate-400 cursor-not-allowed'
-                : 'bg-[#FA7014] hover:bg-[#E65A05] active:scale-[0.99]'
+                : 'bg-[#6d4cf0] hover:bg-[#5b3be0] active:scale-[0.99]'
             }`}
           >
             <RefreshCw className={`w-3.5 h-3.5 ${isRefreshing || isLoading ? 'animate-spin' : ''}`} />

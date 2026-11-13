@@ -73,7 +73,7 @@ export const AskHrPanel: React.FC<{ userId: string }> = ({ userId }) => {
   return (
     <>
       {!open && (
-        <button type="button" onClick={() => setOpen(true)} aria-label="Open Ask HR" className="fixed bottom-5 right-5 z-40 flex items-center gap-2 rounded-full bg-[#FA7014] px-4 py-3 text-sm font-bold text-white shadow-lg hover:bg-[#e5650f] cursor-pointer">
+        <button type="button" onClick={() => setOpen(true)} aria-label="Open Ask HR" className="fixed bottom-5 right-5 z-40 flex items-center gap-2 rounded-full bg-[#6d4cf0] px-4 py-3 text-sm font-bold text-white shadow-lg hover:bg-[#5b3be0] cursor-pointer">
           <MessageCircle className="h-4 w-4" /> Ask HR
         </button>
       )}
