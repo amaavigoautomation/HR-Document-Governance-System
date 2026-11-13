@@ -1,13 +1,5 @@
 import React from 'react';
-import {
-  FileText,
-  Users,
-  MessageSquare,
-  History,
-  LogOut,
-  PanelLeftClose,
-  PanelLeftOpen,
-} from 'lucide-react';
+import { FileText, ShieldCheck, MessageSquareText, History, FileStack } from 'lucide-react';
 import { User } from '../types';
 import { AmaavigoLogo } from './AmaavigoLogo';
 
@@ -22,158 +14,57 @@ interface HRHeaderProps {
   onToggleSidebar?: () => void;
 }
 
-export const HRHeader: React.FC<HRHeaderProps> = ({
-  currentUser,
-  onLogout,
-  activeTab,
-  setActiveTab,
-  pendingComplianceCount = 0,
-  suggestionsCount = 0,
-  isSidebarOpen,
-  onToggleSidebar,
-}) => {
-  const displayId = currentUser.empId || currentUser.loginId || currentUser.id || '';
+type Tab = HRHeaderProps['activeTab'];
+
+/**
+ * Sub-bar for Document Version Control: product mark on the left, the four sections as a pill switcher.
+ * The account menu and log-out live in the top bar, so they are not repeated here.
+ */
+export const HRHeader: React.FC<HRHeaderProps> = ({ activeTab, setActiveTab, suggestionsCount = 0 }) => {
+  const tabs: { id: Tab; label: string; icon: React.ComponentType<{ className?: string }>; count?: number }[] = [
+    { id: 'creator', label: 'Creator Studio', icon: FileText },
+    { id: 'compliance', label: 'Compliance Tracker', icon: ShieldCheck },
+    { id: 'suggestions', label: 'Policy Requests', icon: MessageSquareText, count: suggestionsCount },
+    { id: 'audit', label: 'Audit Trail', icon: History },
+  ];
 
   return (
-    <header
-      id="hr-header"
-      className="bg-white/95 backdrop-blur-md border-b border-slate-200 text-slate-900 sticky top-0 z-40 shadow-xs"
-    >
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="flex items-center justify-between h-16">
-          {/* Logo & HR Studio Branding */}
-          <div className="flex items-center space-x-3 shrink-0">
-            {onToggleSidebar && (
-              <button
-                id="btn-hr-toggle-sidebar"
-                type="button"
-                onClick={onToggleSidebar}
-                className="hidden lg:flex p-2 rounded-xl text-slate-500 hover:text-slate-900 hover:bg-slate-100 transition-colors cursor-pointer mr-1"
-                title={isSidebarOpen ? "Close side panel" : "Open HR AI Agent side panel"}
-                aria-label={isSidebarOpen ? "Close side panel" : "Open HR AI Agent side panel"}
-              >
-                {isSidebarOpen ? (
-                  <PanelLeftClose className="w-5 h-5" />
-                ) : (
-                  <PanelLeftOpen className="w-5 h-5 text-[#FA7014]" />
-                )}
-              </button>
-            )}
-            <div className="flex items-center shrink-0">
-              <AmaavigoLogo size="md" variant="full" theme="light" height={48} className="shrink-0" />
+    <header id="hr-header" className="bg-white border-b border-slate-200 sticky top-0 z-30">
+      <div className="px-4 sm:px-6 lg:px-8">
+        <div className="flex items-center justify-between gap-4 h-[72px]">
+          <div className="flex items-center gap-3 shrink-0">
+            <FileStack className="w-7 h-7 text-slate-700 hidden sm:block" strokeWidth={1.6} />
+            <div className="leading-none">
+              <AmaavigoLogo size="sm" variant="full" theme="light" height={30} showTagline={false} className="shrink-0" />
+              <div className="text-xs text-slate-500 mt-0.5 hidden sm:block">HR Document Governance</div>
             </div>
           </div>
 
-          {/* HR-Specific Navigation Links */}
-          <nav
-            id="hr-navigation-bar"
-            className="hidden md:flex items-center space-x-1 bg-slate-100/90 p-1 rounded-xl border border-slate-200"
-          >
-            {/* Creator Studio Tab */}
-            <button
-              id="hr-nav-creator"
-              type="button"
-              onClick={() => setActiveTab('creator')}
-              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center space-x-1.5 ${
-                activeTab === 'creator'
-                  ? 'bg-[#FA7014] text-white shadow-sm'
-                  : 'text-slate-600 hover:bg-white hover:text-slate-900'
-              }`}
-            >
-              <FileText className="w-3.5 h-3.5" />
-              <span>Creator Studio</span>
-            </button>
-
-            {/* Compliance Tracker Tab */}
-            <button
-              id="hr-nav-compliance"
-              type="button"
-              onClick={() => setActiveTab('compliance')}
-              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center space-x-1.5 ${
-                activeTab === 'compliance'
-                  ? 'bg-slate-900 text-white shadow-sm'
-                  : 'text-slate-600 hover:bg-white hover:text-slate-900'
-              }`}
-            >
-              <Users className="w-3.5 h-3.5" />
-              <span>Compliance Tracker</span>
-            </button>
-
-            {/* Policy Suggestions Tab (Beside Compliance Tracker) */}
-            <button
-              id="hr-nav-suggestions"
-              type="button"
-              onClick={() => setActiveTab('suggestions')}
-              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center space-x-1.5 ${
-                activeTab === 'suggestions'
-                  ? 'bg-[#FA7014] text-white shadow-sm'
-                  : 'text-slate-600 hover:bg-white hover:text-slate-900'
-              }`}
-            >
-              <MessageSquare className="w-3.5 h-3.5" />
-              <span>Policy Suggestions</span>
-              {suggestionsCount > 0 && (
-                <span
-                  className={`text-[10px] px-1.5 py-0.2 rounded-full font-bold transition-colors ${
-                    activeTab === 'suggestions'
-                      ? 'bg-white/25 text-white'
-                      : 'bg-orange-100 text-[#FA7014]'
+          <nav id="hr-navigation-bar" className="hidden md:flex items-center gap-1 bg-slate-50 border border-slate-100 p-1.5 rounded-2xl">
+            {tabs.map((t) => {
+              const on = activeTab === t.id;
+              const I = t.icon;
+              return (
+                <button
+                  key={t.id}
+                  id={`hr-nav-${t.id}`}
+                  type="button"
+                  onClick={() => setActiveTab(t.id)}
+                  className={`px-4 py-2 rounded-xl text-sm font-bold transition-all flex items-center gap-2 cursor-pointer ${
+                    on ? 'bg-[#6d4cf0] text-white shadow-md shadow-violet-500/25' : 'text-slate-700 hover:bg-white hover:text-slate-900'
                   }`}
                 >
-                  {suggestionsCount}
-                </span>
-              )}
-            </button>
-
-            {/* Audit Trail Tab */}
-            <button
-              id="hr-nav-audit"
-              type="button"
-              onClick={() => setActiveTab('audit')}
-              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center space-x-1.5 ${
-                activeTab === 'audit'
-                  ? 'bg-slate-900 text-white shadow-sm'
-                  : 'text-slate-600 hover:bg-white hover:text-slate-900'
-              }`}
-            >
-              <History className="w-3.5 h-3.5" />
-              <span>Audit Trail</span>
-            </button>
+                  <I className="w-4 h-4" />
+                  <span>{t.label}</span>
+                  {!!t.count && t.count > 0 && (
+                    <span className={`text-[11px] min-w-[1.25rem] h-5 px-1.5 rounded-full font-bold flex items-center justify-center ${on ? 'bg-white/25 text-white' : 'bg-orange-100 text-orange-600'}`}>
+                      {t.count}
+                    </span>
+                  )}
+                </button>
+              );
+            })}
           </nav>
-
-          {/* Right actions: HR Profile & Logout */}
-          <div className="flex items-center space-x-2.5">
-            {/* HR Profile Details */}
-            <div className="flex items-center space-x-2 pl-2 border-l border-slate-200">
-              <div className="hidden sm:block text-left">
-                <div className="flex items-center space-x-1.5">
-                  <div className="text-xs font-bold text-slate-900 leading-tight">
-                    {currentUser.name || 'HR Author'}
-                  </div>
-                  <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-orange-50 text-[#FA7014] font-semibold border border-orange-200">
-                    {displayId}
-                  </span>
-                </div>
-                <div className="text-[10px] text-slate-500 flex items-center space-x-1.5 mt-0.5">
-                  <span className="inline-block w-2 h-2 rounded-full bg-[#FA7014]" />
-                  <span className="truncate max-w-[150px] font-medium" title={currentUser.title || 'HR Policy Lead'}>
-                    {currentUser.title || 'HR Policy & Governance Lead'}
-                  </span>
-                </div>
-              </div>
-
-              {/* Logout Button */}
-              <button
-                id="btn-hr-logout"
-                type="button"
-                onClick={onLogout}
-                className="p-1.5 text-slate-500 hover:text-rose-600 hover:bg-slate-100 rounded-lg transition-colors"
-                title="Logout from HR Studio"
-              >
-                <LogOut className="w-4 h-4" />
-              </button>
-            </div>
-          </div>
         </div>
       </div>
     </header>
