@@ -484,6 +484,10 @@ service cloud.firestore {
     match /pmReviews/{id} { allow read, write: if false; }
     match /pmDevPlans/{id} { allow read, write: if false; }
     match /pmLog/{id} { allow read, write: if false; }
+    // Task Management (boards, tasks, comments and activity): server only (api/_lib/taskApi.ts)
+    match /taskProjects/{id} { allow read, write: if false; }
+    match /taskItems/{id} { allow read, write: if false; }
+    match /taskLog/{id} { allow read, write: if false; }
     match /hrbpItems/{id} { allow read, write: if false; }
     match /leaveSettings/{id} { allow read, write: if false; }
     match /leaveProfiles/{id} { allow read, write: if false; }

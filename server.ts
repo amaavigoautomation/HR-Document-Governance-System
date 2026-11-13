@@ -10,6 +10,7 @@ import { dispatchLiveEmail, getEmailConfigStatus } from './src/services/serverEm
 import { routeHiring } from './api/_lib/hiringRouter.js';
 import { routeApply } from './api/_lib/applicationsApi';
 import { routeHrbp } from './api/_lib/hrbpApi.js';
+import { routeTasks } from './api/_lib/taskApi.js';
 import { routeAssistant } from './api/_lib/assistantApi.js';
 import { routePm } from './api/_lib/pmApi.js';
 import { routeLeave } from './api/_lib/leaveApi';
@@ -60,7 +61,7 @@ async function startServer() {
     /^\/api\/storage\/(file|download)\//, // protected by an HMAC token in the URL (see storageToken.ts)
   ];
   // These routers do their own, finer-grained authentication.
-  const SELF_AUTH_API = [/^\/api\/tenant\//, /^\/api\/onboarding\//, /^\/api\/recruitment\//, /^\/api\/applications\//, /^\/api\/careers\//, /^\/api\/leave\//, /^\/api\/pm\//, /^\/api\/hrbp\//, /^\/api\/assistant\//];
+  const SELF_AUTH_API = [/^\/api\/tenant\//, /^\/api\/onboarding\//, /^\/api\/recruitment\//, /^\/api\/applications\//, /^\/api\/careers\//, /^\/api\/leave\//, /^\/api\/pm\//, /^\/api\/tasks\//, /^\/api\/hrbp\//, /^\/api\/assistant\//];
 
   app.use('/api', async (req, res, next) => {
     const p = req.originalUrl.split('?')[0];
@@ -238,6 +239,17 @@ async function startServer() {
     } catch (err: any) {
       console.error('Error in /api/hrbp:', err);
       res.status(500).json({ success: false, error: err?.message || 'HR Business Partner request failed' });
+    }
+  });
+
+  // Task Management (tasks, boards, checklists, attachments, dashboards; the router checks identity and company; daily has its own key)
+  app.all('/api/tasks/:action', async (req, res) => {
+    try {
+      const { status, json } = await routeTasks({ method: req.method, action: req.params.action, query: req.query as Record<string, any>, body: req.body, headers: req.headers as Record<string, any> });
+      res.status(status).json(json);
+    } catch (err: any) {
+      console.error('Error in /api/tasks:', err);
+      res.status(500).json({ success: false, error: err?.message || 'Tasks request failed' });
     }
   });
 

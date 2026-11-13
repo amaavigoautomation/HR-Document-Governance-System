@@ -85,8 +85,8 @@ Everyone lands on Home after signing in. It shows a profile card (reporting and 
 
 ## Vercel function budget
 
-Vercel's Hobby plan allows 12 serverless functions. The app uses 10: `[...catchall]` (also answers `/api/health`), `apply/[webhookId]`,
-`assistant/[action]` (Ask HR), `email/[action]`, `hrbp/[action]`, `leave/[action]`, `onboarding/[action]`, `pm/[action]` (Performance), `recruitment/[action]` and `tenant/[action]`.
+Vercel's Hobby plan allows 12 serverless functions. The app uses 11: `[...catchall]` (also answers `/api/health`), `apply/[webhookId]`,
+`assistant/[action]` (Ask HR), `email/[action]`, `hrbp/[action]`, `leave/[action]`, `onboarding/[action]`, `pm/[action]` (Performance), `recruitment/[action]`, `tasks/[action]` (Tasks) and `tenant/[action]`.
 All hiring routes share `recruitment/[action]` through `api/_lib/hiringRouter.ts`, told apart by the action name:
 `app-<action>` (candidate applications, was `/api/applications/<action>`), `careers-publish` (was `/api/careers/publish`),
 `generate-jd` (was `/api/requisitions/generate-jd`), plus the overview and job-description actions.
@@ -143,6 +143,32 @@ Built from the "HR Performance Management Automation" specification, simplified 
 **Defaults used for open decisions:** HR approval is final (pm.manage or pm.approve, never the review's subject or manager); cycles are calendar quarters; after a mid-quarter role change the review scores the new plan only (the old plan and its evidence are kept).
 
 Tests: `npx tsx tests/pm.test.ts` walks a whole year and checks all 12 acceptance tests from section 14 of the spec.
+
+## Task Management
+
+Open **Tasks** in the sidebar. A ClickUp-style place for day-to-day work: **My tasks** (grouped by when they are due, with a quick-add), **Boards** (columns by status, drag a card to move it), **Dashboard** and **Projects**.
+
+**Who can give a task to whom:** anyone to themselves; a manager to everyone who reports up to them (their reports, and those people's reports); `task.manage` and company admins to anyone. Nobody gives work upwards or sideways.
+
+**Who sees what:** the person doing a task, who gave it, its reviewer and its watchers, every manager above the assignee, and `task.manage` / `task.view_all` see it. A task on a **project** is visible to everyone who may open that project. Projects are **company-wide** (created by `task.manage` or a company admin) or for **one department** (created by `task.manage`, the department head, or a manager in that department; used by people in that department). Tasks without a project stay between the people involved and their managers.
+
+**Review:** a task can need a review. The assignee sends it for review; only the reviewer (default: whoever gave the task, or the assignee's manager when they gave it to themselves) can approve it or send it back with a reason. Nobody approves their own work, not even an admin. A task linked to a **KPI** always needs a review.
+
+**Link to Performance:** when a KPI-linked task is approved, it is added to Performance as work evidence for that KPI (`pmEvidence`, source `TASK`). If the reviewer is the person's manager it is already verified; otherwise the manager verifies it like any other work item. Counts never turn into a rating. Reopening a task withdraws evidence nobody has verified yet.
+
+**Dashboards** show open work, what is late, what is in review, finished per week (everyone together) and open work per person. There is deliberately no "most tasks closed" ranking.
+
+**Attachments** (up to 10 per task, 10 MB each; pdf, images, Office files, csv, txt) go to Cloudinary for now. The browser uploads straight to Cloudinary with a short-lived signature from the server, files are stored as private (`authenticated`), and people open them through a link the server signs for five minutes, only for people who may see the task. The server checks the real size and that the file sits under `tasks/<companyId>/<taskId>/`. Set `CLOUDINARY_CLOUD_NAME`, `CLOUDINARY_API_KEY` and `CLOUDINARY_API_SECRET` (never commit them). Without them everything else works and the attach button explains it. To change storage later, implement the `AttachmentStore` interface in `api/_lib/taskCore.ts`; nothing else knows about Cloudinary.
+
+**Daily reminders:** `GET /api/tasks/daily` with `Authorization: Bearer <CRON_SECRET>` (call it from cronjob.org, like the other daily jobs; it is not in `vercel.json` because Hobby allows only two crons). One email per person: due today (once), late (every 3 days; the person who gave the task hears once a week), waiting for review for 2+ days (every 3 days). Running it twice sends nothing twice.
+
+**Permissions:** `task.manage` (Head HR by default) and `task.view_all` (Approver by default). Existing companies' roles are already seeded: add the permission to a role in Administration to use it.
+
+**Data:** three server-only collections, each record carrying `companyId`: `taskProjects`, `taskItems`, `taskLog` (comments and the activity trail). Code: `shared/taskEngine.ts` (rules, no database), `api/_lib/taskCore.ts` and `taskApi.ts`, `src/components/tasks/`.
+
+**Not in this version:** recurring tasks, task dependencies, custom statuses per project, sub-tasks as separate tasks (use the checklist), email for comments.
+
+Tests: `npx tsx tests/task.test.ts`. The Cloudinary calls were written from its documentation and are covered by a fake store in the tests; try one real upload after adding the keys.
 
 ## Hiring Flow builder (custom steps from applicant to onboarding)
 

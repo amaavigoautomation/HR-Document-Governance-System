@@ -49,6 +49,10 @@ export const PERMISSIONS: PermissionDef[] = [
   { key: 'pm.approve', label: 'Approve performance frameworks, KRA/KPI templates and final reviews; amend a final review', group: 'Performance' },
   { key: 'pm.view', label: 'View company-wide Performance dashboards (grouped, never individual scores)', group: 'Performance' },
 
+  // Task Management (everyone sees and works on their own tasks; managers assign to their reports automatically)
+  { key: 'task.manage', label: 'Manage all tasks and boards: see, edit and reassign any task, create company-wide boards', group: 'Tasks' },
+  { key: 'task.view_all', label: 'View every task and the company-wide Tasks dashboard (read-only)', group: 'Tasks' },
+
   // Leave and attendance (everyone can apply for leave and mark attendance; managers approve their own team)
   { key: 'leave.manage', label: 'Manage leave and attendance: policies, holidays, balances, all requests', group: 'Leave & Attendance' },
   { key: 'leave.report', label: 'View leave and attendance reports for everyone', group: 'Leave & Attendance' },
@@ -125,7 +129,7 @@ export const DEFAULT_ROLE_TEMPLATES: RoleTemplate[] = [
       'talent.view', 'candidate.evaluate', 'onboarding.manage', 'app.manage',
       'users.manage', 'departments.manage', 'doc.acknowledge', 'doc.suggest',
       'leave.manage', 'leave.report', 'lifecycle.manage', 'announce.manage', 'home.manage',
-      'hiring.budget.manage', 'hrbp.manage', 'hrbp.view', 'pm.manage', 'pm.approve', 'pm.view',
+      'hiring.budget.manage', 'hrbp.manage', 'hrbp.view', 'pm.manage', 'pm.approve', 'pm.view', 'task.manage',
     ],
   },
   {
@@ -149,7 +153,7 @@ export const DEFAULT_ROLE_TEMPLATES: RoleTemplate[] = [
       'doc.review', 'doc.publish', 'compliance.view', 'audit.view',
       'req.view_all', 'req.assign', 'req.founder_decide', 'talent.view',
       'doc.acknowledge', 'doc.suggest', 'leave.report', 'announce.manage',
-      'hiring.budget.manage', 'hrbp.view', 'pm.approve', 'pm.view',
+      'hiring.budget.manage', 'hrbp.view', 'pm.approve', 'pm.view', 'task.view_all',
     ],
   },
   {
