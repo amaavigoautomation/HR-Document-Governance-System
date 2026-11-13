@@ -107,3 +107,44 @@ export const Pagination: React.FC<{ page: number; pageSize: number; total: numbe
     </div>
   );
 };
+
+/** Big header card for the Document Governance screens: title, badge, line of text, illustration and actions. */
+export const HeroCard: React.FC<{ icon: Icon; title: React.ReactNode; badge?: React.ReactNode; subtitle?: React.ReactNode; actions?: React.ReactNode }> = ({ icon: I, title, badge, subtitle, actions }) => (
+  <div className="relative overflow-hidden bg-gradient-to-r from-white via-white to-violet-50 rounded-2xl p-6 border border-slate-200 shadow-[0_1px_2px_rgba(16,24,40,0.04)] flex flex-col lg:flex-row lg:items-center lg:justify-between gap-5">
+    <div className="relative z-10 min-w-0 max-w-2xl">
+      <div className="flex items-center flex-wrap gap-3">
+        <h1 className="text-3xl font-extrabold text-slate-900 tracking-tight">{title}</h1>
+        {badge && <span className="bg-violet-100 text-violet-700 text-xs px-3 py-1 rounded-full font-bold">{badge}</span>}
+      </div>
+      {subtitle && <p className="text-sm text-slate-600 mt-2">{subtitle}</p>}
+    </div>
+    <div className="relative z-10 flex flex-wrap items-center gap-3 lg:ml-auto">
+      <div className="hidden xl:block relative w-36 h-28 shrink-0">
+      <svg aria-hidden="true" viewBox="0 0 150 120" className="w-full h-full">
+        <g transform="rotate(-8 60 60)">
+          <rect x="20" y="14" width="78" height="96" rx="9" fill="#ede9fe" stroke="#ddd6fe" />
+          <rect x="30" y="26" width="58" height="9" rx="4" fill="#c4b5fd" opacity=".7" />
+          <rect x="30" y="44" width="58" height="5" rx="2.5" fill="#c4b5fd" opacity=".55" />
+          <rect x="30" y="56" width="46" height="5" rx="2.5" fill="#c4b5fd" opacity=".55" />
+          <rect x="30" y="68" width="52" height="5" rx="2.5" fill="#c4b5fd" opacity=".55" />
+        </g>
+        <circle cx="104" cy="82" r="22" fill="#6d4cf0" />
+      </svg>
+      <span className="absolute w-6 h-6 text-white -translate-x-1/2 -translate-y-1/2" style={{ left: '69.3%', top: '68.3%' }}><I className="w-6 h-6" /></span>
+      </div>
+      {actions}
+    </div>
+  </div>
+);
+
+/** A labelled select / date field in the filter row (icon, label, bold value). */
+export const FilterField: React.FC<{ icon: Icon; label: string; children: React.ReactNode }> = ({ icon: I, label, children }) => (
+  <label className="flex items-center gap-2 h-11 bg-white border border-slate-300 rounded-xl px-3.5 text-sm text-slate-600 focus-within:border-[#6d4cf0]">
+    <I className="w-4 h-4 text-slate-500" />
+    <span>{label}</span>
+    {children}
+  </label>
+);
+
+export const filterCard = 'bg-white p-4 rounded-2xl border border-slate-200 shadow-[0_1px_2px_rgba(16,24,40,0.04)] flex flex-col lg:flex-row items-stretch lg:items-center gap-3';
+export const searchInput = 'w-full h-11 pl-10 pr-4 bg-white border border-slate-300 rounded-xl text-sm text-slate-900 focus:outline-hidden focus:ring-2 focus:ring-[#6d4cf0]/25 focus:border-[#6d4cf0] placeholder:text-slate-400 transition-all';

@@ -20,6 +20,7 @@ import {
   Inbox,
   AlertCircle,
   BellRing,
+  Tag,
 } from 'lucide-react';
 import {
   DocumentMaster,
@@ -34,6 +35,7 @@ import {
 import { governanceEngine } from '../services/governance';
 import { formatISTDate } from '../utils/dateFormat';
 import { formatDDMMYYYY } from '../utils/documentHeaderFooter';
+import { FilterField, HeroCard, KpiCard, KpiGrid, filterCard, searchInput } from './common/pageChrome';
 
 interface PolicySuggestionsDashboardProps {
   currentUser: User;
@@ -46,7 +48,7 @@ interface PolicySuggestionsDashboardProps {
 }
 
 const CATEGORY_COLORS: Record<SuggestionCategory, { bg: string; text: string; border: string }> = {
-  IMPROVEMENT: { bg: 'bg-orange-50', text: 'text-[#FA7014]', border: 'border-orange-200' },
+  IMPROVEMENT: { bg: 'bg-violet-50', text: 'text-violet-700', border: 'border-violet-200' },
   CLARITY: { bg: 'bg-blue-50', text: 'text-blue-700', border: 'border-blue-200' },
   OPERATIONAL: { bg: 'bg-emerald-50', text: 'text-emerald-700', border: 'border-emerald-200' },
   TYPO_CORRECTION: { bg: 'bg-purple-50', text: 'text-purple-700', border: 'border-purple-200' },
@@ -266,47 +268,37 @@ export const PolicySuggestionsDashboard: React.FC<PolicySuggestionsDashboardProp
   return (
     <div className="space-y-6">
       {/* HEADER & TITLE */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div>
-          <div className="flex items-center space-x-2">
-            <span className="text-[10px] font-bold uppercase tracking-wider text-[#FA7014] bg-orange-50 px-2 py-0.5 rounded-full border border-orange-200">
-              Employee Feedback & Governance Lifecycle
-            </span>
-          </div>
-          <h1 className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight mt-1 flex items-center gap-2">
-            <MessageSquare className="w-6 h-6 text-[#FA7014]" />
-            <span>Policy Suggestions & Re-Review Tracker</span>
-          </h1>
-          <p className="text-xs text-slate-500 mt-1 max-w-2xl">
-            Real-time feed of employee feedback, clarity requests, and suggestions across company policies. Automated 2-day reminder emails synthesize these suggestions directly to HR prior to scheduled re-review dates.
-          </p>
-        </div>
-
-        {/* Action Controls */}
-        <div className="flex items-center space-x-2.5 shrink-0">
-          <button
-            type="button"
-            onClick={() => handleDispatchReminders(true)}
-            disabled={dispatching}
-            className="inline-flex items-center space-x-2 bg-gradient-to-r from-slate-900 to-slate-800 hover:from-slate-800 hover:to-slate-700 text-white px-3.5 py-2 rounded-xl text-xs font-bold transition-all shadow-sm hover:shadow-md cursor-pointer disabled:opacity-50"
-            title="Dispatch 2-day re-review notification emails with employee feedback to HR"
-          >
-            <Mail className="w-3.5 h-3.5 text-[#FA7014]" />
-            <span>{dispatching ? 'Dispatching...' : 'Dispatch Re-Review Email to HR'}</span>
-          </button>
-
-          {onRefreshData && (
+      <HeroCard
+        icon={MessageSquare}
+        title="Policy Requests"
+        badge="Employee Feedback & Re-Review"
+        subtitle="Live feed of employee feedback, clarity requests and suggestions on company policies. A reminder email goes to HR 2 days before each scheduled re-review."
+        actions={
+          <>
+            {onRefreshData && (
+              <button
+                type="button"
+                onClick={onRefreshData}
+                className="w-11 h-11 bg-white border border-slate-300 text-slate-700 hover:bg-slate-50 rounded-xl transition-colors flex items-center justify-center cursor-pointer"
+                title="Refresh suggestions data"
+                aria-label="Refresh suggestions data"
+              >
+                <RefreshCw className="w-4 h-4" />
+              </button>
+            )}
             <button
               type="button"
-              onClick={onRefreshData}
-              className="p-2 bg-white border border-slate-200 text-slate-600 hover:text-slate-900 hover:bg-slate-50 rounded-xl transition-colors shadow-2xs cursor-pointer"
-              title="Refresh suggestions data"
+              onClick={() => handleDispatchReminders(true)}
+              disabled={dispatching}
+              className="inline-flex items-center gap-2 bg-[#6d4cf0] hover:bg-[#5b3be0] text-white font-bold px-5 py-3 rounded-xl text-sm transition-all shadow-md shadow-violet-500/30 cursor-pointer disabled:opacity-50"
+              title="Dispatch 2-day re-review notification emails with employee feedback to HR"
             >
-              <RefreshCw className="w-4 h-4" />
+              <Mail className="w-4 h-4" />
+              <span>{dispatching ? 'Dispatching...' : 'Dispatch Re-Review Email to HR'}</span>
             </button>
-          )}
-        </div>
-      </div>
+          </>
+        }
+      />
 
       {/* DISPATCH RESULT BANNER */}
       {dispatchResult && (
@@ -341,73 +333,26 @@ export const PolicySuggestionsDashboard: React.FC<PolicySuggestionsDashboardProp
       )}
 
       {/* TOP METRICS SUMMARY */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
-        <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs">
-          <div className="flex items-center justify-between">
-            <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">
-              Total Suggestions
-            </span>
-            <div className="w-8 h-8 rounded-xl bg-orange-50 text-[#FA7014] flex items-center justify-center">
-              <MessageSquare className="w-4 h-4" />
-            </div>
-          </div>
-          <div className="text-2xl font-black text-slate-900 mt-2">{totalSuggestions}</div>
-          <p className="text-[11px] text-slate-500 mt-0.5">Across {docsWithSuggestionsCount} policies</p>
-        </div>
-
-        <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs">
-          <div className="flex items-center justify-between">
-            <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">
-              Policies With Feedback
-            </span>
-            <div className="w-8 h-8 rounded-xl bg-blue-50 text-blue-700 flex items-center justify-center">
-              <FileText className="w-4 h-4" />
-            </div>
-          </div>
-          <div className="text-2xl font-black text-blue-700 mt-2">{docsWithSuggestionsCount}</div>
-          <p className="text-[11px] text-slate-500 mt-0.5">Active documents receiving input</p>
-        </div>
-
-        <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs">
-          <div className="flex items-center justify-between">
-            <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">
-              Due in ≤ 2 Days
-            </span>
-            <div className="w-8 h-8 rounded-xl bg-rose-50 text-rose-700 flex items-center justify-center">
-              <Calendar className="w-4 h-4" />
-            </div>
-          </div>
-          <div className="text-2xl font-black text-rose-700 mt-2">{upcomingReReviews.length}</div>
-          <p className="text-[11px] text-slate-500 mt-0.5">Scheduled periodic re-reviews</p>
-        </div>
-
-        <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs">
-          <div className="flex items-center justify-between">
-            <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">
-              Feedback Categories
-            </span>
-            <div className="w-8 h-8 rounded-xl bg-emerald-50 text-emerald-700 flex items-center justify-center">
-              <Layers className="w-4 h-4" />
-            </div>
-          </div>
-          <div className="text-2xl font-black text-emerald-700 mt-2">{distinctCategoriesCount}</div>
-          <p className="text-[11px] text-slate-500 mt-0.5">Diverse improvement areas</p>
-        </div>
-      </div>
+      <KpiGrid cols={4}>
+        <KpiCard tone="violet" icon={MessageSquare} label="Total Suggestions" value={totalSuggestions} hint={`Across ${docsWithSuggestionsCount} policies`} />
+        <KpiCard tone="blue" icon={FileText} label="Policies With Feedback" value={docsWithSuggestionsCount} hint="Active documents receiving input" />
+        <KpiCard tone="rose" icon={Calendar} label="Due in ≤ 2 Days" value={upcomingReReviews.length} hint="Scheduled periodic re-reviews" />
+        <KpiCard tone="green" icon={Layers} label="Feedback Categories" value={distinctCategoriesCount} hint="Diverse improvement areas" />
+      </KpiGrid>
 
       {/* 2-DAY RE-REVIEW AUTOMATED REMINDER CARD */}
-      <div className="bg-gradient-to-r from-orange-500/10 via-amber-500/5 to-white border-2 border-orange-200 rounded-3xl p-5 shadow-xs">
+      <div className="bg-gradient-to-r from-violet-50 via-white to-white border border-violet-100 rounded-2xl p-5 shadow-[0_1px_2px_rgba(16,24,40,0.04)]">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
           <div className="flex items-start space-x-3.5">
-            <div className="w-10 h-10 rounded-2xl bg-[#FA7014] text-white flex items-center justify-center shrink-0 shadow-sm mt-0.5">
+            <div className="w-11 h-11 rounded-full bg-violet-100 text-violet-600 flex items-center justify-center shrink-0 mt-0.5">
               <BellRing className="w-5 h-5" />
             </div>
             <div>
               <div className="flex items-center space-x-2">
-                <span className="text-xs font-black uppercase tracking-wider text-[#FA7014]">
+                <span className="text-xs font-extrabold uppercase tracking-wider text-[#6d4cf0]">
                   Automated Re-Review Reminder Protocol
                 </span>
-                <span className="text-[10px] font-mono bg-white px-2 py-0.5 rounded-full border border-orange-200 text-slate-700 font-semibold">
+                <span className="text-[10px] bg-violet-100 px-2 py-0.5 rounded-full text-violet-700 font-bold">
                   T-2 Days Notification Rule
                 </span>
               </div>
@@ -425,7 +370,7 @@ export const PolicySuggestionsDashboard: React.FC<PolicySuggestionsDashboardProp
               type="button"
               onClick={() => handleDispatchReminders(false)}
               disabled={dispatching}
-              className="inline-flex items-center space-x-2 bg-white hover:bg-orange-50 text-[#FA7014] border border-orange-200 px-4 py-2.5 rounded-xl text-xs font-bold transition-all shadow-2xs hover:shadow-xs cursor-pointer disabled:opacity-50"
+              className="inline-flex items-center space-x-2 bg-white hover:bg-slate-50 text-slate-900 border border-slate-300 px-5 py-3 rounded-xl text-sm font-bold transition-all cursor-pointer disabled:opacity-50"
             >
               <Send className="w-3.5 h-3.5" />
               <span>Run Automated 2-Day Check</span>
@@ -435,7 +380,7 @@ export const PolicySuggestionsDashboard: React.FC<PolicySuggestionsDashboardProp
 
         {/* UPCOMING RE-REVIEWS SUMMARY STRIP */}
         {docsWithReReviewInfo.length > 0 && (
-          <div className="mt-4 pt-4 border-t border-orange-200/60 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
+          <div className="mt-4 pt-4 border-t border-violet-100 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
             {docsWithReReviewInfo.slice(0, 3).map((item) => (
               <div
                 key={item.doc.id}
@@ -479,39 +424,38 @@ export const PolicySuggestionsDashboard: React.FC<PolicySuggestionsDashboardProp
       </div>
 
       {/* FILTER & VIEW CONTROLS */}
-      <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-3">
-        <div className="flex-1 flex flex-wrap items-center gap-2.5">
-          {/* Search */}
-          <div className="relative flex-1 min-w-[220px]">
-            <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
-            <input
-              type="text"
-              placeholder="Search suggestions, documents, employees, keywords..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full pl-9 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 focus:outline-hidden focus:ring-2 focus:ring-[#FA7014] focus:bg-white placeholder:text-slate-400 transition-colors"
-            />
-          </div>
+      <div className={filterCard}>
+        <div className="relative flex-1 min-w-[220px]">
+          <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+          <input
+            type="text"
+            placeholder="Search suggestions, documents, employees, keywords..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            className={searchInput}
+          />
+        </div>
 
-          {/* Document Filter (Published Documents Only) */}
+        <FilterField icon={FileText} label="Document:">
           <select
             value={selectedDocFilter}
             onChange={(e) => setSelectedDocFilter(e.target.value)}
-            className="text-xs p-2 bg-slate-50 border border-slate-200 text-slate-800 rounded-xl focus:outline-hidden focus:ring-2 focus:ring-[#FA7014] cursor-pointer"
+            className="bg-transparent font-bold text-slate-900 focus:outline-hidden cursor-pointer max-w-[12rem] truncate"
           >
-            <option value="ALL">All Published Documents</option>
+            <option value="ALL">All Published</option>
             {publishedDocuments.map((d) => (
               <option key={d.id} value={d.documentId}>
                 {d.documentId} — {d.title}
               </option>
             ))}
           </select>
+        </FilterField>
 
-          {/* Category Filter */}
+        <FilterField icon={Tag} label="Category:">
           <select
             value={selectedCategory}
             onChange={(e) => setSelectedCategory(e.target.value)}
-            className="text-xs p-2 bg-slate-50 border border-slate-200 text-slate-800 rounded-xl focus:outline-hidden focus:ring-2 focus:ring-[#FA7014] cursor-pointer"
+            className="bg-transparent font-bold text-slate-900 focus:outline-hidden cursor-pointer"
           >
             <option value="ALL">All Categories</option>
             <option value="IMPROVEMENT">Process Improvement</option>
@@ -521,28 +465,21 @@ export const PolicySuggestionsDashboard: React.FC<PolicySuggestionsDashboardProp
             <option value="POLICY_CHANGE">Policy Change</option>
             <option value="GENERAL">General</option>
           </select>
-        </div>
+        </FilterField>
 
-        {/* View mode toggle */}
-        <div className="flex items-center space-x-1 bg-slate-100 p-1 rounded-xl shrink-0">
-          <button
-            type="button"
-            onClick={() => setViewMode('grouped')}
-            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-              viewMode === 'grouped' ? 'bg-white text-slate-900 shadow-2xs' : 'text-slate-600 hover:text-slate-900'
-            }`}
-          >
-            Group by Document
-          </button>
-          <button
-            type="button"
-            onClick={() => setViewMode('feed')}
-            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-              viewMode === 'feed' ? 'bg-white text-slate-900 shadow-2xs' : 'text-slate-600 hover:text-slate-900'
-            }`}
-          >
-            All Suggestions ({filteredSuggestions.length})
-          </button>
+        <div className="flex items-center gap-1 bg-slate-50 border border-slate-100 p-1 rounded-xl shrink-0">
+          {([['grouped', 'Group by Document'], ['feed', `All Suggestions (${filteredSuggestions.length})`]] as const).map(([mode, label]) => (
+            <button
+              key={mode}
+              type="button"
+              onClick={() => setViewMode(mode)}
+              className={`px-3.5 py-2 rounded-lg text-sm font-bold transition-all cursor-pointer ${
+                viewMode === mode ? 'bg-[#6d4cf0] text-white shadow-md shadow-violet-500/25' : 'text-slate-700 hover:bg-white'
+              }`}
+            >
+              {label}
+            </button>
+          ))}
         </div>
       </div>
 
@@ -573,12 +510,12 @@ export const PolicySuggestionsDashboard: React.FC<PolicySuggestionsDashboardProp
               return (
                 <div
                   key={docId}
-                  className="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden transition-all"
+                  className="bg-white rounded-2xl border border-slate-200 shadow-[0_1px_2px_rgba(16,24,40,0.04)] overflow-hidden transition-all"
                 >
                   {/* DOCUMENT CARD HEADER */}
                   <div
                     onClick={() => toggleDocExpand(docId)}
-                    className="p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-slate-50/60 hover:bg-slate-50 cursor-pointer transition-colors border-b border-slate-200/80"
+                    className="p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-violet-50/40 hover:bg-violet-50/70 cursor-pointer transition-colors border-b border-slate-200/80"
                   >
                     <div className="flex items-center space-x-3 min-w-0">
                       <button
@@ -590,7 +527,7 @@ export const PolicySuggestionsDashboard: React.FC<PolicySuggestionsDashboardProp
 
                       <div className="min-w-0">
                         <div className="flex items-center space-x-2">
-                          <span className="font-mono text-xs font-bold text-slate-900 bg-white border border-slate-200 px-2.5 py-0.5 rounded-md shadow-2xs">
+                          <span className="text-xs font-bold text-violet-700 bg-violet-100 px-2.5 py-1 rounded-lg">
                             {docId}
                           </span>
                           <span className="text-[11px] font-semibold text-slate-500">
@@ -622,7 +559,7 @@ export const PolicySuggestionsDashboard: React.FC<PolicySuggestionsDashboardProp
 
                       {/* Suggestions count badge */}
                       <span className={`px-2.5 py-1 rounded-full text-xs font-bold flex items-center space-x-1.5 ${
-                        sugs.length > 0 ? 'bg-orange-100 text-[#FA7014]' : 'bg-slate-100 text-slate-500'
+                        sugs.length > 0 ? 'bg-violet-100 text-violet-700' : 'bg-slate-100 text-slate-500'
                       }`}>
                         <MessageSquare className="w-3.5 h-3.5" />
                         <span>{sugs.length} Suggestion{sugs.length === 1 ? '' : 's'}</span>
@@ -636,7 +573,7 @@ export const PolicySuggestionsDashboard: React.FC<PolicySuggestionsDashboardProp
                             e.stopPropagation();
                             onOpenCreateVersion(doc);
                           }}
-                          className="inline-flex items-center space-x-1 text-xs font-bold bg-[#FA7014] hover:bg-[#E65A05] text-white px-3 py-1.5 rounded-xl transition-all shadow-2xs cursor-pointer"
+                          className="inline-flex items-center space-x-1 text-xs font-bold bg-[#6d4cf0] hover:bg-[#5b3be0] text-white px-3.5 py-2 rounded-xl transition-all shadow-sm cursor-pointer"
                           title="Author next revision incorporating employee suggestions"
                         >
                           <GitBranch className="w-3.5 h-3.5" />
@@ -713,12 +650,12 @@ const SuggestionCard: React.FC<SuggestionCardProps> = ({
   const catStyle = CATEGORY_COLORS[suggestion.category] || CATEGORY_COLORS.GENERAL;
 
   return (
-    <div className="bg-slate-50/70 border border-slate-200/90 rounded-2xl p-4 sm:p-5 space-y-3 shadow-2xs hover:border-slate-300 transition-colors">
+    <div className="bg-white border border-slate-200 rounded-2xl p-4 sm:p-5 space-y-3 hover:border-violet-200 transition-colors">
       {/* CARD TOP INFO */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
         <div className="flex flex-wrap items-center gap-2">
           {showDocumentHeader && (
-            <span className="font-mono text-xs font-bold text-slate-900 bg-white border border-slate-200 px-2 py-0.5 rounded">
+            <span className="text-xs font-bold text-violet-700 bg-violet-100 px-2.5 py-1 rounded-lg">
               {suggestion.documentId}
             </span>
           )}
@@ -750,7 +687,7 @@ const SuggestionCard: React.FC<SuggestionCardProps> = ({
       {/* EMPLOYEE INFO FOOTER */}
       <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-slate-500 pt-2 border-t border-slate-200/60">
         <div className="flex items-center space-x-2">
-          <div className="w-5 h-5 rounded-full bg-orange-100 text-[#FA7014] flex items-center justify-center text-[10px] font-bold">
+          <div className="w-6 h-6 rounded-full bg-violet-100 text-violet-700 flex items-center justify-center text-[10px] font-bold">
             {suggestion.employeeName.charAt(0)}
           </div>
           <span>
