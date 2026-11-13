@@ -138,7 +138,7 @@ export const LandingPage: React.FC = () => {
                     <div className="ama-avatar-stack"><i>HR</i><i>OP</i><i>+4</i></div>
                   </div>
                   <div className="ama-stat-grid">
-                    <div className="ama-stat-card"><span className="ama-stat-icon orange"><FileText size={16} /></span><small>Documents</small><strong>128</strong><em>Across your workspace</em></div>
+                    <div className="ama-stat-card"><span className="ama-stat-icon accent"><FileText size={16} /></span><small>Documents</small><strong>128</strong><em>Across your workspace</em></div>
                     <div className="ama-stat-card"><span className="ama-stat-icon green"><ClipboardCheck size={16} /></span><small>Approvals</small><strong>12</strong><em>In review</em></div>
                     <div className="ama-stat-card"><span className="ama-stat-icon blue"><Users size={16} /></span><small>Employees</small><strong>246</strong><em>Team directory</em></div>
                   </div>
