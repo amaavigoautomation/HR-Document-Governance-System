@@ -589,6 +589,7 @@ export default function App() {
           onRefreshData={refreshData}
           pendingPolicyCount={employeePendingCount}
           onOpenNotifications={() => setIsNotifDrawerOpen(true)}
+          notificationCount={notificationCount}
         >
           {hrAgentModule === 'home' && (
             <div className="flex-1 min-w-0 overflow-y-auto">

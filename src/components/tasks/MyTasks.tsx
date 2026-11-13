@@ -1,5 +1,6 @@
 import React, { useMemo, useState } from 'react';
-import { CheckCircle2, ChevronDown, ChevronRight, Plus, Search } from 'lucide-react';
+import { CheckCircle2, ChevronDown, ChevronRight, ListChecks, Plus, Search } from 'lucide-react';
+import { PageHeader } from '../common/pageChrome';
 import { sortForList } from '../../../shared/taskEngine';
 import { taskService } from '../../services/taskService';
 import { Loading, useLoad } from '../common/loadUi';
@@ -39,13 +40,9 @@ export const MyTasks: React.FC = () => {
 
   return (
     <div>
-      <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
-        <div>
-          <h2 className="text-lg font-extrabold text-slate-900">My tasks</h2>
-          <p className="text-sm text-slate-600">{meta.counts.open} open{meta.counts.overdue ? ` · ${meta.counts.overdue} overdue` : ''}{meta.counts.review ? ` · ${meta.counts.review} waiting for your review` : ''}</p>
-        </div>
-        <button className={btnPrimary} onClick={() => newTask()}><Plus className="w-4 h-4" />New task</button>
-      </div>
+      <PageHeader icon={ListChecks} title="My Tasks"
+        subtitle={`${meta.counts.open} open${meta.counts.overdue ? ` · ${meta.counts.overdue} overdue` : ''}${meta.counts.review ? ` · ${meta.counts.review} waiting for your review` : ''}`}
+        actions={<button className={btnPrimary} onClick={() => newTask()}><Plus className="w-4 h-4" />New task</button>} />
       <div className="flex flex-wrap items-center gap-2 mb-3">
         <Segmented<Tab> value={tab} onChange={setTab} options={[{ value: 'mine', label: 'Assigned to me' }, { value: 'created', label: 'I gave' }, { value: 'review', label: <>To review{meta.counts.review ? ` (${meta.counts.review})` : ''}</> }]} />
         <div className="relative flex-1 min-w-[10rem] max-w-xs">

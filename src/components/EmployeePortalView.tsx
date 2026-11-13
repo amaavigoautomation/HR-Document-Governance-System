@@ -30,6 +30,7 @@ import { formatISTDate } from '../utils/dateFormat';
 import { formatDDMMYYYY } from '../utils/documentHeaderFooter';
 import { downloadDocumentWithIntactFormat } from '../utils/documentStamper';
 import { SubmitSuggestionModal } from './SubmitSuggestionModal';
+import { KpiCard, KpiGrid, PageHeader, tbl } from './common/pageChrome';
 
 interface EmployeePortalViewProps {
   currentUser: User;
@@ -247,32 +248,17 @@ export const EmployeePortalView: React.FC<EmployeePortalViewProps> = ({
   return (
     <div className="space-y-6">
       {/* HEADER SUMMARY */}
-      <div className="bg-white rounded-2xl p-6 shadow-xs flex flex-col md:flex-row md:items-center md:justify-between gap-4 border border-slate-200">
-        <div>
-          <div className="flex items-center space-x-2.5 flex-wrap gap-y-1">
-            <h1 className="text-2xl font-bold text-slate-900 tracking-tight">Employee Document Portal</h1>
-            <span className="bg-amber-50 text-amber-700 text-xs px-3 py-0.5 rounded-full font-semibold border border-amber-300">
-              Live Company Policies & SOPs
-            </span>
-          </div>
-          <p className="text-xs text-slate-500 mt-1">
-            Department: <strong className="text-slate-700">{currentUser.departmentName || 'Operations'}</strong> • Access scope includes Public and Department-specific policies.
-          </p>
-        </div>
-
-        {pendingAcksCount > 0 ? (
-          <div className="bg-amber-50/90 border border-amber-200 px-4 py-2.5 rounded-xl flex items-center space-x-2.5 text-xs text-amber-900 shadow-xs">
-            <Clock className="w-4 h-4 text-amber-600 animate-pulse shrink-0" />
-            <span>
-              You have <strong className="text-amber-700 font-bold">{pendingAcksCount} document(s)</strong> awaiting your compliance acknowledgement.
-            </span>
-          </div>
-        ) : (
-          <div className="bg-emerald-50 border border-emerald-200 px-4 py-2.5 rounded-xl flex items-center space-x-2.5 text-xs text-emerald-900 shadow-xs">
-            <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-            <span>All active policy acknowledgements up to date!</span>
-          </div>
-        )}
+      <div>
+        <PageHeader
+          icon={Layers}
+          title="My Policies"
+          subtitle={<>Live company policies and SOPs for <strong className="text-slate-800">{currentUser.departmentName || 'Operations'}</strong>: public ones and those for your department.</>}
+        />
+        <KpiGrid cols={3}>
+          <KpiCard icon={FileText} tone="violet" label="Total policies" value={publishedDocs.length} hint="Available to you" />
+          <KpiCard icon={CheckCircle2} tone="green" label="Acknowledged" value={Math.max(0, publishedDocs.length - pendingAcksCount)} hint="Up to date" />
+          <KpiCard icon={Clock} tone="amber" label="Awaiting you" value={pendingAcksCount} hint={pendingAcksCount ? 'Read and acknowledge' : 'Nothing pending'} onClick={pendingAcksCount ? () => setTab('acknowledgements') : undefined} />
+        </KpiGrid>
       </div>
 
       {/* TAB CONTENT: 1. POLICY & SOP ACKNOWLEDGEMENTS */}
@@ -462,9 +448,9 @@ export const EmployeePortalView: React.FC<EmployeePortalViewProps> = ({
               </div>
             ) : (
               <div className="overflow-x-auto">
-                <table className="w-full text-left text-xs border-collapse">
+                <table className={tbl.table}>
                   <thead>
-                    <tr className="bg-slate-50/90 text-slate-600 font-bold border-b border-slate-200 uppercase tracking-wider text-[10px]">
+                    <tr className={tbl.headRow}>
                       <th className="py-3.5 px-4">Document ID & Category</th>
                       <th className="py-3.5 px-4">Title & Scope</th>
                       <th className="py-3.5 px-4">Department</th>

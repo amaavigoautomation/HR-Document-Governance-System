@@ -5,17 +5,10 @@ import { Loading, useLoad } from '../common/loadUi';
 import { Card, EmptyState, Notice, Segmented, input, shortDate } from '../leave/ui';
 import { TaskRow } from './TaskRow';
 import { Avatar, STATUS_LOOK, useTasks } from './common';
-import { CheckCircle2 } from 'lucide-react';
+import { AlertTriangle, CalendarDays, CheckCircle2, Eye, LayoutDashboard, ListChecks } from 'lucide-react';
+import { KpiCard, KpiGrid, PageHeader } from '../common/pageChrome';
 
 type View = 'me' | 'team' | 'project' | 'company';
-
-const Tile: React.FC<{ label: string; value: number | string; tone?: string; hint?: string }> = ({ label, value, tone = 'text-slate-900', hint }) => (
-  <div className="bg-white border border-slate-200 rounded-2xl px-4 py-3 shadow-[0_1px_2px_rgba(16,24,40,0.04)]">
-    <div className="text-xs font-semibold text-slate-500">{label}</div>
-    <div className={`text-2xl font-extrabold mt-0.5 ${tone}`}>{value}</div>
-    {hint && <div className="text-[11px] text-slate-400 mt-0.5">{hint}</div>}
-  </div>
-);
 
 /** Numbers about the work, not about people: who has a lot on, what is late, how much gets finished. There is no ranking of who finished the most. */
 export const Dashboard: React.FC = () => {
@@ -35,8 +28,8 @@ export const Dashboard: React.FC = () => {
 
   return (
     <div className="space-y-4">
+      <PageHeader icon={LayoutDashboard} title="Task Dashboard" subtitle="Numbers about the work, not about people." />
       <div className="flex flex-wrap items-center gap-3">
-        <h2 className="text-lg font-extrabold text-slate-900 mr-2">Dashboard</h2>
         <Segmented<View> value={view} onChange={setView} options={views} />
         {view === 'project' && <select className={`${input} !w-auto max-w-[14rem]`} value={projectId} onChange={(e) => setProjectId(e.target.value)} aria-label="Board">{meta.projects.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}</select>}
         {d && <span className="text-sm text-slate-500">{d.label}</span>}
@@ -45,11 +38,13 @@ export const Dashboard: React.FC = () => {
         <Card><EmptyState icon={CheckCircle2} title="No tasks here yet" text="Numbers appear as soon as tasks are created." /></Card>
       ) : (
         <>
-          <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
-            <Tile label="Open" value={s.open} /><Tile label="Due this week" value={s.dueThisWeek} hint={s.dueToday ? `${s.dueToday} today` : undefined} />
-            <Tile label="Overdue" value={s.overdue} tone={s.overdue ? 'text-rose-600' : 'text-slate-900'} /><Tile label="In review" value={s.inReview} />
-            <Tile label="Done" value={s.done} tone="text-emerald-600" hint={s.avgDaysToFinish !== null ? `about ${s.avgDaysToFinish} days each` : undefined} />
-          </div>
+          <KpiGrid cols={5}>
+            <KpiCard icon={ListChecks} tone="violet" label="Open" value={s.open} hint="Not finished yet" />
+            <KpiCard icon={CalendarDays} tone="blue" label="Due this week" value={s.dueThisWeek} hint={s.dueToday ? `${s.dueToday} today` : 'Nothing due today'} />
+            <KpiCard icon={AlertTriangle} tone="rose" label="Overdue" value={s.overdue} hint={s.overdue ? 'Past the due date' : 'Nothing late'} />
+            <KpiCard icon={Eye} tone="amber" label="In review" value={s.inReview} hint="Waiting for a reviewer" />
+            <KpiCard icon={CheckCircle2} tone="green" label="Done" value={s.done} hint={s.avgDaysToFinish !== null ? `about ${s.avgDaysToFinish} days each` : 'Finished tasks'} />
+          </KpiGrid>
 
           <div className="grid md:grid-cols-2 gap-4">
             <Card title="By status">
