@@ -15,7 +15,9 @@ export interface NavCounts {
 }
 
 const EMPTY: NavCounts = { leave: { today: 0, my: 0, approvals: 0 }, payroll: { approvals: 0 }, people: { tasks: 0 }, employee: { acknowledgement: 0 } };
-const POLL_MS = 60_000;
+// Background polling is paused (0 = off). Badges still refresh on first load, when the tab comes back into view, and after any save.
+// To turn polling back on, set this to 60_000.
+const POLL_MS = 0;
 
 let state: NavCounts = EMPTY;
 const listeners = new Set<() => void>();
@@ -56,10 +58,10 @@ export function useNavBadges(enabled = true): NavCounts {
     const tick = () => { if (visible()) void refreshNavBadges(); };
     const soon = () => { clearTimeout(debounce); debounce = setTimeout(() => void refreshNavBadges(true), 700); };
     tick();
-    const timer = setInterval(tick, POLL_MS);
+    const timer = POLL_MS > 0 ? setInterval(tick, POLL_MS) : undefined;
     window.addEventListener('badges:refresh', soon);
     document.addEventListener('visibilitychange', tick);
-    return () => { clearInterval(timer); clearTimeout(debounce); window.removeEventListener('badges:refresh', soon); document.removeEventListener('visibilitychange', tick); };
+    return () => { if (timer) clearInterval(timer); clearTimeout(debounce); window.removeEventListener('badges:refresh', soon); document.removeEventListener('visibilitychange', tick); };
   }, [enabled]);
   return useSyncExternalStore((l) => { listeners.add(l); return () => { listeners.delete(l); }; }, () => state, () => state);
 }
