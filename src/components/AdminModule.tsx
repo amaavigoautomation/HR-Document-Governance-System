@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
-  AlertCircle, Building2, CalendarDays, CheckCircle2, Copy, Loader2, Mail, Pencil, Plus, ShieldCheck, Trash2, Upload, UserPlus, Users, X,
+  AlertCircle, Building2, CalendarDays, CheckCircle2, Copy, Download, Loader2, Mail, MoreHorizontal, Pencil, Plus, Puzzle, Search, ShieldCheck, Tag, Trash2, Upload, UserPlus, Users, X,
 } from 'lucide-react';
 import type { Company, Department, User } from '../types';
 import { adminApi, parseCsv, subscribeToDepartments, subscribeToRoles } from '../services/adminService';
@@ -8,6 +8,7 @@ import { pipelineService } from '../services/pipelineService';
 import { firestoreService } from '../services/firestoreService';
 import { PERMISSIONS, hasPerm, type RoleDef } from '../../shared/permissions';
 import { ToastProvider, useToast } from './leave/ui';
+import { Chip, FilterField, KpiCard, KpiGrid, PageHeader, Pagination, searchInput, tbl } from './common/pageChrome';
 
 type Tab = 'users' | 'departments' | 'roles' | 'integrations';
 
@@ -17,11 +18,24 @@ const readGoogleFlash = (): { result: string; reason: string } | null => {
 };
 
 const input =
-  'w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 focus:border-[#FA7014] focus:outline-none focus:ring-2 focus:ring-[#FA7014]/20';
+  'w-full rounded-xl border border-slate-300 bg-white px-3.5 py-2.5 text-sm text-slate-900 focus:border-[#6d4cf0] focus:outline-none focus:ring-2 focus:ring-[#6d4cf0]/25';
 const primaryBtn =
-  'inline-flex items-center gap-2 rounded-xl bg-[#FA7014] px-3.5 py-2 text-xs font-bold text-white hover:bg-[#E65A05] disabled:opacity-60';
+  'inline-flex items-center justify-center gap-2 rounded-xl bg-[#6d4cf0] px-4 py-2.5 text-sm font-bold text-white shadow-md shadow-violet-500/25 hover:bg-[#5b3be0] disabled:opacity-60 cursor-pointer';
 const ghostBtn =
-  'inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-bold text-slate-700 hover:bg-slate-50 disabled:opacity-50';
+  'inline-flex items-center justify-center gap-1.5 rounded-xl border border-slate-300 bg-white px-3.5 py-2.5 text-sm font-bold text-slate-800 hover:bg-slate-50 disabled:opacity-50 cursor-pointer';
+const iconBtn =
+  'inline-flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 cursor-pointer';
+
+/** Title and one line on the left, buttons on the right, at the top of a tab. */
+const SectionHead: React.FC<{ title: string; subtitle?: string; actions?: React.ReactNode }> = ({ title, subtitle, actions }) => (
+  <div className="flex flex-wrap items-start justify-between gap-3">
+    <div>
+      <h2 className="text-xl font-extrabold text-slate-900">{title}</h2>
+      {subtitle && <p className="mt-0.5 text-sm text-slate-600">{subtitle}</p>}
+    </div>
+    {actions && <div className="flex flex-wrap items-center gap-2">{actions}</div>}
+  </div>
+);
 
 const PORTALS = [
   { value: 'EMPLOYEE', label: 'Employee portal', hint: 'Reads and acknowledges documents' },
@@ -73,10 +87,10 @@ export const AdminModule: React.FC<Props> = ({ currentUser, company }) => {
 
   const tabs = useMemo(
     () => [
-      canUsers && { key: 'users' as Tab, label: 'People', icon: <Users className="h-3.5 w-3.5" /> },
-      canDepts && { key: 'departments' as Tab, label: 'Departments', icon: <Building2 className="h-3.5 w-3.5" /> },
-      canRoles && { key: 'roles' as Tab, label: 'Roles & permissions', icon: <ShieldCheck className="h-3.5 w-3.5" /> },
-      canIntegrations && { key: 'integrations' as Tab, label: 'Integrations', icon: <CalendarDays className="h-3.5 w-3.5" /> },
+      canUsers && { key: 'users' as Tab, label: 'People', icon: <Users className="h-4 w-4" /> },
+      canDepts && { key: 'departments' as Tab, label: 'Departments', icon: <Building2 className="h-4 w-4" /> },
+      canRoles && { key: 'roles' as Tab, label: 'Roles & Permissions', icon: <ShieldCheck className="h-4 w-4" /> },
+      canIntegrations && { key: 'integrations' as Tab, label: 'Integrations', icon: <Puzzle className="h-4 w-4" /> },
     ].filter(Boolean) as { key: Tab; label: string; icon: React.ReactNode }[],
     [canUsers, canDepts, canRoles, canIntegrations]
   );
@@ -85,6 +99,12 @@ export const AdminModule: React.FC<Props> = ({ currentUser, company }) => {
   const [users, setUsers] = useState<User[]>([]);
   const [departments, setDepartments] = useState<Department[]>([]);
   const [roles, setRoles] = useState<RoleDef[]>([]);
+  const [activeIntegrations, setActiveIntegrations] = useState(0);
+
+  useEffect(() => {
+    if (!canIntegrations) return;
+    pipelineService.googleStatus().then((r) => setActiveIntegrations(r.connected ? 1 : 0)).catch(() => setActiveIntegrations(0));
+  }, [canIntegrations]);
 
   useEffect(() => {
     const offs = [
@@ -101,25 +121,33 @@ export const AdminModule: React.FC<Props> = ({ currentUser, company }) => {
 
   return (
     <ToastProvider>
-    <div className="min-w-0 flex-1 space-y-4 p-4 sm:p-6">
-      <div>
-        <h1 className="text-2xl font-black tracking-tight text-slate-900">Administration</h1>
-        <p className="text-xs text-slate-500 sm:text-sm">
-          Manage people, departments and roles for <b>{company.name}</b>.
-        </p>
-      </div>
+    <div className="min-w-0 flex-1 space-y-5 p-4 sm:p-6">
+      <PageHeader
+        icon={Users}
+        title="Administration"
+        subtitle={<>Manage people, departments, roles, permissions and system integrations for <b>{company.name}</b>.</>}
+      />
 
-      <div className="inline-flex flex-wrap rounded-xl border border-slate-200 bg-white p-0.5 text-xs font-bold">
+      <div className={`grid grid-cols-2 gap-3 ${tabs.length >= 4 ? 'lg:grid-cols-4' : tabs.length === 3 ? 'lg:grid-cols-3' : 'lg:grid-cols-2'}`}>
         {tabs.map((t) => (
           <button
             key={t.key}
             onClick={() => setTab(t.key)}
-            className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 ${tab === t.key ? 'bg-[#FA7014] text-white' : 'text-slate-600 hover:bg-slate-50'}`}
+            className={`inline-flex items-center justify-center gap-2 rounded-xl border px-4 py-3 text-sm font-bold transition-all cursor-pointer ${
+              tab === t.key ? 'border-[#6d4cf0] bg-[#6d4cf0] text-white shadow-md shadow-violet-500/25' : 'border-slate-200 bg-white text-slate-800 hover:bg-slate-50'
+            }`}
           >
             {t.icon} {t.label}
           </button>
         ))}
       </div>
+
+      <KpiGrid cols={4}>
+        <KpiCard icon={Users} tone="violet" label="Total People" value={users.length} hint={`${users.filter((u) => u.active !== false).length} active`} />
+        <KpiCard icon={Building2} tone="green" label="Departments" value={departments.length} />
+        <KpiCard icon={ShieldCheck} tone="amber" label="Roles" value={roles.length} />
+        <KpiCard icon={Puzzle} tone="blue" label="Active Integrations" value={activeIntegrations} hint={activeIntegrations ? 'Google Calendar' : 'None connected'} />
+      </KpiGrid>
 
       {tab === 'users' && canUsers && <PeopleTab users={users} departments={departments} roles={roles} currentUser={currentUser} />}
       {tab === 'departments' && canDepts && <DepartmentsTab users={users} departments={departments} />}
@@ -166,10 +194,10 @@ const IntegrationsTab: React.FC = () => {
   return (
     <div className="space-y-3">
       {flash && <Banner kind={flash.kind}>{flash.text}</Banner>}
-      <div className="rounded-2xl border border-slate-200 bg-white p-4">
+      <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-[0_1px_2px_rgba(16,24,40,0.04)]">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div className="min-w-0">
-            <div className="text-sm font-black text-slate-900">Google Calendar and Google Meet</div>
+            <div className="text-base font-extrabold text-slate-900">Google Calendar and Google Meet</div>
             <p className="mt-1 max-w-xl text-xs text-slate-500">
               Connect the Google account that should own your interviews (for example hr@yourcompany.com). When HR schedules a video interview, a calendar event with a
               Google Meet link is created on that account, and the candidate, interviewers and guests get the schedule email. Without it, HR pastes a meeting link as before.
@@ -205,6 +233,11 @@ const PeopleTab: React.FC<{ users: User[]; departments: Department[]; roles: Rol
   users, departments, roles, currentUser,
 }) => {
   const [search, setSearch] = useState('');
+  const [deptFilter, setDeptFilter] = useState('ALL');
+  const [roleFilter, setRoleFilter] = useState('ALL');
+  const [statusFilter, setStatusFilter] = useState('ALL');
+  const [page, setPage] = useState(1);
+  const [menuId, setMenuId] = useState<string | null>(null);
   const [editing, setEditing] = useState<User | 'new' | null>(null);
   const [showImport, setShowImport] = useState(false);
   const [flash, setFlash] = useState<{ kind: 'error' | 'success'; text: string } | null>(null);
@@ -213,8 +246,24 @@ const PeopleTab: React.FC<{ users: User[]; departments: Department[]; roles: Rol
     const q = search.trim().toLowerCase();
     return users
       .filter((u) => !q || [u.name, u.email, u.empId, u.departmentName, ...(u.roleNames || [])].join(' ').toLowerCase().includes(q))
+      .filter((u) => deptFilter === 'ALL' || u.departmentId === deptFilter)
+      .filter((u) => roleFilter === 'ALL' || (u.roleIds || []).includes(roleFilter))
+      .filter((u) => statusFilter === 'ALL' || (statusFilter === 'ACTIVE' ? u.active !== false : u.active === false))
       .sort((a, b) => a.name.localeCompare(b.name));
-  }, [users, search]);
+  }, [users, search, deptFilter, roleFilter, statusFilter]);
+  useEffect(() => { setPage(1); }, [search, deptFilter, roleFilter, statusFilter]);
+  const pageRows = rows.slice((page - 1) * 8, page * 8);
+
+  const exportCsv = () => {
+    const esc = (v: unknown) => `"${String(v ?? '').replace(/"/g, '""')}"`;
+    const lines = [['name', 'email', 'employee id', 'department', 'roles', 'status'].join(',')].concat(
+      rows.map((u) => [u.name, u.email, u.empId, u.departmentName, (u.roleNames || []).join(';'), u.active === false ? 'Inactive' : 'Active'].map(esc).join(','))
+    );
+    const url = URL.createObjectURL(new Blob([lines.join('\n')], { type: 'text/csv' }));
+    const a = document.createElement('a');
+    a.href = url; a.download = 'people.csv'; a.click();
+    URL.revokeObjectURL(url);
+  };
 
   const toast = useToast();
   const resend = async (u: User) => {
@@ -237,66 +286,119 @@ const PeopleTab: React.FC<{ users: User[]; departments: Department[]; roles: Rol
 
   return (
     <div className="space-y-3">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <input className={`${input} max-w-xs`} placeholder="Search people..." value={search} onChange={(e) => setSearch(e.target.value)} />
-        <div className="flex gap-2">
-          <button className={ghostBtn} onClick={() => setShowImport(true)}>
-            <Upload className="h-3.5 w-3.5" /> Import CSV
-          </button>
-          <button className={primaryBtn} onClick={() => setEditing('new')}>
-            <UserPlus className="h-3.5 w-3.5" /> Add person
-          </button>
-        </div>
-      </div>
-
       {flash && <Banner kind={flash.kind}>{flash.text}</Banner>}
 
-      <div className="overflow-x-auto rounded-2xl border border-slate-200 bg-white">
-        <table className="w-full min-w-[640px] text-left text-xs">
-          <thead className="bg-slate-50 text-[11px] font-black uppercase tracking-wide text-slate-500">
-            <tr>
-              <th className="px-3 py-2.5">Person</th>
-              <th className="px-3 py-2.5">ID</th>
-              <th className="px-3 py-2.5">Department</th>
-              <th className="px-3 py-2.5">Roles</th>
-              <th className="px-3 py-2.5">Status</th>
-              <th className="px-3 py-2.5 text-right">Actions</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-slate-100">
-            {rows.map((u) => (
-              <tr key={u.id} className="hover:bg-slate-50/60">
-                <td className="px-3 py-2.5">
-                  <div className="font-bold text-slate-900">{u.name}</div>
-                  <div className="text-slate-500">{u.email}</div>
-                </td>
-                <td className="px-3 py-2.5 font-mono text-slate-600">{u.empId}</td>
-                <td className="px-3 py-2.5 text-slate-700">{u.departmentName || '-'}</td>
-                <td className="px-3 py-2.5">
-                  <div className="flex flex-wrap gap-1">
-                    {(u.roleNames || []).map((n) => (
-                      <span key={n} className="rounded-full bg-orange-50 px-2 py-0.5 text-[10px] font-bold text-[#C2570C]">{n}</span>
-                    ))}
-                  </div>
-                </td>
-                <td className="px-3 py-2.5">
-                  <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${u.active === false ? 'bg-slate-100 text-slate-500' : 'bg-emerald-50 text-emerald-700'}`}>
-                    {u.active === false ? 'Inactive' : 'Active'}
-                  </span>
-                </td>
-                <td className="px-3 py-2.5">
-                  <div className="flex justify-end gap-1.5">
-                    <button className={ghostBtn} title="Resend invite" onClick={() => resend(u)}><Mail className="h-3.5 w-3.5" /></button>
-                    <button className={ghostBtn} onClick={() => setEditing(u)}><Pencil className="h-3.5 w-3.5" /> Edit</button>
-                  </div>
-                </td>
+      <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-[0_1px_2px_rgba(16,24,40,0.04)] sm:p-6">
+        <SectionHead
+          title="People Management"
+          subtitle="Add, update and manage employee records, roles and access."
+          actions={
+            <>
+              <button className={ghostBtn} onClick={exportCsv} disabled={!rows.length}><Download className="h-4 w-4" /> Export</button>
+              <button className={ghostBtn} onClick={() => setShowImport(true)}><Upload className="h-4 w-4" /> Import CSV</button>
+              <button className={primaryBtn} onClick={() => setEditing('new')}><Plus className="h-4 w-4" /> Add Person</button>
+            </>
+          }
+        />
+
+        <div className="mt-5 flex flex-col gap-3 lg:flex-row lg:items-center">
+          <div className="relative min-w-[200px] flex-1">
+            <Search className="absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+            <input className={searchInput} placeholder="Search by name, email or employee ID..." value={search} onChange={(e) => setSearch(e.target.value)} />
+          </div>
+          <FilterField icon={Building2} label="Department:">
+            <select className="bg-transparent font-bold text-slate-900 focus:outline-hidden cursor-pointer" value={deptFilter} onChange={(e) => setDeptFilter(e.target.value)}>
+              <option value="ALL">All Departments</option>
+              {departments.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
+            </select>
+          </FilterField>
+          <FilterField icon={Tag} label="Role:">
+            <select className="bg-transparent font-bold text-slate-900 focus:outline-hidden cursor-pointer" value={roleFilter} onChange={(e) => setRoleFilter(e.target.value)}>
+              <option value="ALL">All Roles</option>
+              {roles.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
+            </select>
+          </FilterField>
+          <FilterField icon={ShieldCheck} label="Status:">
+            <select className="bg-transparent font-bold text-slate-900 focus:outline-hidden cursor-pointer" value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
+              <option value="ALL">All Status</option>
+              <option value="ACTIVE">Active</option>
+              <option value="INACTIVE">Inactive</option>
+            </select>
+          </FilterField>
+        </div>
+
+        <div className="mt-4 overflow-x-auto">
+          <table className={`${tbl.table} min-w-[760px]`}>
+            <thead>
+              <tr className={tbl.headRow}>
+                <th className={`${tbl.th} rounded-l-xl`}>Employee</th>
+                <th className={tbl.th}>Employee ID</th>
+                <th className={tbl.th}>Department</th>
+                <th className={tbl.th}>Role</th>
+                <th className={tbl.th}>Status</th>
+                <th className={`${tbl.th} rounded-r-xl text-right`}>Actions</th>
               </tr>
-            ))}
-            {!rows.length && (
-              <tr><td colSpan={6} className="px-3 py-8 text-center text-slate-400">No people found.</td></tr>
-            )}
-          </tbody>
-        </table>
+            </thead>
+            <tbody className={tbl.body}>
+              {pageRows.map((u) => (
+                <tr key={u.id} className={tbl.row}>
+                  <td className={tbl.td}>
+                    <div className="flex items-center gap-3">
+                      {u.avatar ? (
+                        <img src={u.avatar} alt="" className="h-10 w-10 shrink-0 rounded-full object-cover" />
+                      ) : (
+                        <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-violet-100 text-xs font-bold text-violet-700">
+                          {(u.name || '?').split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0]).join('').toUpperCase()}
+                        </span>
+                      )}
+                      <div className="min-w-0">
+                        <div className="font-bold text-slate-900">{u.name}</div>
+                        <div className="truncate text-xs text-slate-500">{u.email}</div>
+                      </div>
+                    </div>
+                  </td>
+                  <td className={tbl.td}>{u.empId ? <Chip tone="violet">{u.empId}</Chip> : <span className="text-slate-400">-</span>}</td>
+                  <td className={`${tbl.td} text-slate-700`}>
+                    {u.departmentName ? (
+                      <span className="inline-flex items-center gap-2 text-sm font-medium"><Building2 className="h-4 w-4 text-slate-500" />{u.departmentName}</span>
+                    ) : '-'}
+                  </td>
+                  <td className={tbl.td}>
+                    <div className="flex flex-wrap gap-1">
+                      {(u.roleNames || []).map((n) => <Chip key={n} tone="violet">{n}</Chip>)}
+                    </div>
+                  </td>
+                  <td className={tbl.td}>
+                    <Chip tone={u.active === false ? 'slate' : 'green'}>
+                      <span className={`h-1.5 w-1.5 rounded-full ${u.active === false ? 'bg-slate-400' : 'bg-emerald-500'}`} />
+                      {u.active === false ? 'Inactive' : 'Active'}
+                    </Chip>
+                  </td>
+                  <td className={`${tbl.td} relative`}>
+                    <div className="flex justify-end gap-1.5">
+                      <button className={iconBtn} title="Edit" aria-label={`Edit ${u.name}`} onClick={() => setEditing(u)}><Pencil className="h-4 w-4" /></button>
+                      <button className={iconBtn} title="More" aria-label="More actions" aria-haspopup="menu" onClick={() => setMenuId(menuId === u.id ? null : u.id)}><MoreHorizontal className="h-4 w-4" /></button>
+                    </div>
+                    {menuId === u.id && (
+                      <>
+                        <div className="fixed inset-0 z-10" onClick={() => setMenuId(null)} />
+                        <div role="menu" className="absolute right-3 top-14 z-20 w-44 rounded-xl border border-slate-200 bg-white py-1 text-sm shadow-lg">
+                          <button role="menuitem" className="flex w-full items-center gap-2 px-3 py-2 text-slate-700 hover:bg-slate-50 cursor-pointer" onClick={() => { setMenuId(null); resend(u); }}>
+                            <Mail className="h-4 w-4" /> Resend invite
+                          </button>
+                        </div>
+                      </>
+                    )}
+                  </td>
+                </tr>
+              ))}
+              {!rows.length && (
+                <tr><td colSpan={6} className="px-3 py-10 text-center text-slate-400">No people found.</td></tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+        <Pagination page={page} pageSize={8} total={rows.length} onPage={setPage} noun="people" />
       </div>
 
       {editing && (
@@ -419,7 +521,7 @@ const UserModal: React.FC<{
             {(user ? roles : assignable).map((r) => {
               const allowed = assignable.some((a) => a.id === r.id) || (user?.roleIds || []).includes(r.id);
               return (
-                <label key={r.id} className={`flex items-center gap-2 rounded-lg border px-2.5 py-1.5 text-xs ${roleIds.includes(r.id) ? 'border-[#FA7014] bg-orange-50' : 'border-slate-200'} ${allowed ? '' : 'opacity-40'}`}>
+                <label key={r.id} className={`flex items-center gap-2 rounded-lg border px-2.5 py-1.5 text-xs ${roleIds.includes(r.id) ? 'border-[#6d4cf0] bg-violet-50' : 'border-slate-200'} ${allowed ? '' : 'opacity-40'}`}>
                   <input type="checkbox" checked={roleIds.includes(r.id)} disabled={!allowed} onChange={() => toggle(r.id)} />
                   <span className="font-bold text-slate-800">{r.name}</span>
                 </label>
@@ -564,27 +666,36 @@ const DepartmentsTab: React.FC<{ users: User[]; departments: Department[] }> = (
 
   return (
     <div className="space-y-3">
-      <div className="flex items-center justify-end gap-2">
-        <button className={ghostBtn} disabled={applying} onClick={applyHeads} title="Make every person report to the head of their department. Managers picked by hand are kept.">
-          {applying && <Loader2 className="h-3.5 w-3.5 animate-spin" />} Apply department heads
-        </button>
-        <button className={primaryBtn} onClick={() => setEditing('new')}><Plus className="h-3.5 w-3.5" /> Add department</button>
-      </div>
+      <SectionHead
+        title="Departments"
+        subtitle="Group people and choose who leads each department."
+        actions={
+          <>
+            <button className={ghostBtn} disabled={applying} onClick={applyHeads} title="Make every person report to the head of their department. Managers picked by hand are kept.">
+              {applying && <Loader2 className="h-4 w-4 animate-spin" />} Apply department heads
+            </button>
+            <button className={primaryBtn} onClick={() => setEditing('new')}><Plus className="h-4 w-4" /> Add Department</button>
+          </>
+        }
+      />
       {flash && <Banner kind={flash.kind}>{flash.text}</Banner>}
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
         {departments.map((d) => {
           const head = users.find((u) => u.id === d.headUserId);
           return (
-            <div key={d.id} className="rounded-2xl border border-slate-200 bg-white p-4">
+            <div key={d.id} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-[0_1px_2px_rgba(16,24,40,0.04)]">
               <div className="flex items-start justify-between gap-2">
-                <div>
-                  <div className="text-sm font-black text-slate-900">{d.name}</div>
-                  <div className="text-xs text-slate-500">{counts.get(d.id) || 0} people</div>
-                  <div className="mt-1 text-xs text-slate-500">Head: {head ? head.name : 'Not set'}</div>
+                <div className="flex min-w-0 items-start gap-3">
+                  <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-emerald-100 text-emerald-600"><Building2 className="h-5 w-5" /></span>
+                  <div className="min-w-0">
+                    <div className="text-base font-extrabold text-slate-900">{d.name}</div>
+                    <div className="text-xs text-slate-500">{counts.get(d.id) || 0} {(counts.get(d.id) || 0) === 1 ? 'person' : 'people'}</div>
+                    <div className="mt-1 text-xs text-slate-600">Head: <span className="font-semibold">{head ? head.name : 'Not set'}</span></div>
+                  </div>
                 </div>
-                <div className="flex gap-1">
-                  <button className={ghostBtn} onClick={() => setEditing(d)}><Pencil className="h-3.5 w-3.5" /></button>
-                  <button className={ghostBtn} onClick={() => remove(d)}><Trash2 className="h-3.5 w-3.5 text-rose-600" /></button>
+                <div className="flex gap-1.5">
+                  <button className={iconBtn} aria-label={`Edit ${d.name}`} onClick={() => setEditing(d)}><Pencil className="h-4 w-4" /></button>
+                  <button className={iconBtn} aria-label={`Delete ${d.name}`} onClick={() => remove(d)}><Trash2 className="h-4 w-4 text-rose-600" /></button>
                 </div>
               </div>
             </div>
@@ -664,28 +775,33 @@ const RolesTab: React.FC<{ roles: RoleDef[]; users: User[]; company: Company; cu
 
   return (
     <div className="space-y-3">
-      <div className="flex justify-end">
-        <button className={primaryBtn} onClick={() => setEditing('new')}><Plus className="h-3.5 w-3.5" /> New role</button>
-      </div>
+      <SectionHead
+        title="Roles & Permissions"
+        subtitle="Build roles from a permission checklist. Nobody can grant a permission they do not hold."
+        actions={<button className={primaryBtn} onClick={() => setEditing('new')}><Plus className="h-4 w-4" /> New Role</button>}
+      />
       {flash && <Banner kind={flash.kind}>{flash.text}</Banner>}
       <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
         {roles.map((r) => (
-          <div key={r.id} className="rounded-2xl border border-slate-200 bg-white p-4">
+          <div key={r.id} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-[0_1px_2px_rgba(16,24,40,0.04)]">
             <div className="flex items-start justify-between gap-2">
-              <div className="min-w-0">
-                <div className="flex items-center gap-2">
-                  <span className="text-sm font-black text-slate-900">{r.name}</span>
-                  {r.isAdmin && <span className="rounded-full bg-slate-900 px-2 py-0.5 text-[10px] font-bold text-white">Full access</span>}
+              <div className="flex min-w-0 items-start gap-3">
+                <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-orange-100 text-orange-500"><ShieldCheck className="h-5 w-5" /></span>
+                <div className="min-w-0">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="text-base font-extrabold text-slate-900">{r.name}</span>
+                    {r.isAdmin && <Chip tone="violet">Full access</Chip>}
+                  </div>
+                  {r.description && <p className="text-xs text-slate-600">{r.description}</p>}
+                  <p className="mt-1 text-xs text-slate-500">
+                    {PORTALS.find((p) => p.value === r.portal)?.label} · {r.isAdmin ? 'all' : r.permissions.length} permissions · {holders(r.id)} {holders(r.id) === 1 ? 'person' : 'people'}
+                  </p>
                 </div>
-                {r.description && <p className="text-xs text-slate-500">{r.description}</p>}
-                <p className="mt-1 text-[11px] text-slate-400">
-                  {PORTALS.find((p) => p.value === r.portal)?.label} · {r.isAdmin ? 'all' : r.permissions.length} permissions · {holders(r.id)} {holders(r.id) === 1 ? 'person' : 'people'}
-                </p>
               </div>
               {!r.isAdmin && (
-                <div className="flex gap-1">
-                  <button className={ghostBtn} onClick={() => setEditing(r)}><Pencil className="h-3.5 w-3.5" /></button>
-                  <button className={ghostBtn} onClick={() => remove(r)}><Trash2 className="h-3.5 w-3.5 text-rose-600" /></button>
+                <div className="flex gap-1.5">
+                  <button className={iconBtn} aria-label={`Edit ${r.name}`} onClick={() => setEditing(r)}><Pencil className="h-4 w-4" /></button>
+                  <button className={iconBtn} aria-label={`Delete ${r.name}`} onClick={() => remove(r)}><Trash2 className="h-4 w-4 text-rose-600" /></button>
                 </div>
               )}
             </div>
@@ -765,7 +881,7 @@ const RoleModal: React.FC<{ role: RoleDef | null; company: Company; currentUser:
                   const moduleOff = p.module && !company.modules.includes(p.module);
                   const disabled = !canGrant(p.key);
                   return (
-                    <label key={p.key} className={`flex items-start gap-2 rounded-lg px-2 py-1.5 text-xs ${selected.includes(p.key) ? 'bg-orange-50' : ''} ${disabled ? 'opacity-40' : ''}`}>
+                    <label key={p.key} className={`flex items-start gap-2 rounded-lg px-2 py-1.5 text-xs ${selected.includes(p.key) ? 'bg-violet-50' : ''} ${disabled ? 'opacity-40' : ''}`}>
                       <input type="checkbox" className="mt-0.5" checked={selected.includes(p.key)} disabled={disabled} onChange={() => toggle(p.key)} />
                       <span>
                         <span className="font-semibold text-slate-800">{p.label}</span>
