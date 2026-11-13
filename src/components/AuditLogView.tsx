@@ -19,6 +19,7 @@ import { AuditAction, AuditLogEntry, User, UserRole } from '../types';
 import { auditService } from '../services/audit';
 import { governanceEngine } from '../services/governance';
 import { formatIST } from '../utils/dateFormat';
+import { FilterField, HeroCard, filterCard, searchInput, tbl } from './common/pageChrome';
 
 interface AuditLogViewProps {
   users?: User[];
@@ -154,21 +155,21 @@ export const AuditLogView: React.FC<AuditLogViewProps> = ({ users }) => {
     switch (action) {
       case AuditAction.VERSION_PUBLISHED:
       case AuditAction.REVIEW_APPROVED:
-        return 'bg-slate-900 text-white border-slate-900';
+        return 'bg-emerald-100 text-emerald-800 border-emerald-200';
       case AuditAction.REVIEW_REJECTED:
       case AuditAction.REVISION_REQUESTED:
-        return 'bg-orange-50 text-orange-950 border-orange-200';
+        return 'bg-orange-100 text-orange-800 border-orange-200';
       case AuditAction.DOCUMENT_DELETED:
       case AuditAction.ALL_DOCUMENTS_CLEARED:
         return 'bg-rose-50 text-rose-700 border-rose-300';
       case AuditAction.REVIEW_STARTED:
-        return 'bg-blue-50 text-blue-700 border-blue-200';
+        return 'bg-sky-100 text-sky-800 border-sky-200';
       case AuditAction.VERSION_SUPERSEDED:
       case AuditAction.VERSION_ARCHIVED:
         return 'bg-slate-100 text-slate-500 border-slate-200';
       case AuditAction.DOCUMENT_CREATED:
       case AuditAction.VERSION_CREATED:
-        return 'bg-[#FA7014]/10 text-[#FA7014] border-[#FA7014]/30';
+        return 'bg-violet-100 text-violet-800 border-violet-200';
       case AuditAction.NOTIFICATION_SENT:
         return 'bg-slate-100 text-slate-800 border-slate-200';
       default:
@@ -197,30 +198,24 @@ export const AuditLogView: React.FC<AuditLogViewProps> = ({ users }) => {
   return (
     <div className="space-y-6">
       {/* HEADER */}
-      <div className="bg-white rounded-2xl p-6 shadow-sm flex flex-col md:flex-row md:items-center md:justify-between gap-4 border border-slate-200">
-        <div>
-          <div className="flex items-center space-x-2.5">
-            <h1 className="text-2xl font-bold text-slate-900 tracking-tight">Compliance & Governance Audit Trail</h1>
-            <span className="bg-[#FA7014]/10 text-[#FA7014] text-xs px-3 py-0.5 rounded-full font-semibold border border-[#FA7014]/30">
-              Immutable Ledger
-            </span>
-          </div>
-          <p className="text-sm text-slate-500 mt-1.5">
-            Permanent event logging for all lifecycle transitions: document creations, reviewer approvals, rejection reasons, auto-publishing, superseding, and employee broadcasts.
-          </p>
-        </div>
-
-        <button
-          onClick={exportAuditJson}
-          className="inline-flex items-center space-x-2 bg-slate-900 hover:bg-slate-800 text-white text-xs font-semibold px-4 py-2.5 rounded-xl transition-colors border border-slate-900 shadow-sm"
-        >
-          <Download className="w-4 h-4 text-[#FA7014]" />
-          <span>Export Audit Log (JSON)</span>
-        </button>
-      </div>
+      <HeroCard
+        icon={History}
+        title="Audit Trail"
+        badge="Immutable Ledger"
+        subtitle="Permanent event logging for every lifecycle step: document creations, reviewer approvals, rejection reasons, auto-publishing, superseding and employee broadcasts."
+        actions={
+          <button
+            onClick={exportAuditJson}
+            className="inline-flex items-center gap-2 bg-[#6d4cf0] hover:bg-[#5b3be0] text-white font-bold px-5 py-3 rounded-xl text-sm transition-all shadow-md shadow-violet-500/30 cursor-pointer"
+          >
+            <Download className="w-4 h-4" />
+            <span>Export Audit Log (JSON)</span>
+          </button>
+        }
+      />
 
       {/* FILTER & SEARCH */}
-      <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3">
+      <div className={filterCard}>
         <div className="relative flex-1">
           <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
           <input
@@ -228,85 +223,73 @@ export const AuditLogView: React.FC<AuditLogViewProps> = ({ users }) => {
             placeholder="Search by Document ID, Performer Name, Reason..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
-            className="w-full pl-9 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 focus:outline-hidden focus:ring-2 focus:ring-[#FA7014] focus:bg-white placeholder:text-slate-400 transition-colors"
+            className={searchInput}
           />
         </div>
 
-        <div className="flex flex-wrap items-center gap-2">
-          {/* Event Action Filter */}
-          <div className="flex items-center space-x-1.5 bg-slate-50 border border-slate-200 rounded-xl px-3 py-1.5 text-xs text-slate-700">
-            <Filter className="w-3.5 h-3.5 text-slate-400" />
-            <span className="text-slate-500">Event Action:</span>
-            <select
-              value={selectedAction}
-              onChange={(e) => setSelectedAction(e.target.value)}
-              className="bg-transparent font-semibold text-slate-900 focus:outline-hidden cursor-pointer"
-            >
-              <option value="ALL">All Actions ({allLogs.length})</option>
-              {Object.values(AuditAction)
-                .filter((act) => !EXCLUDED_AUDIT_ACTIONS.has(act))
-                .map((act) => (
-                  <option key={act} value={act}>
-                    {act}
-                  </option>
-                ))}
-            </select>
-          </div>
+        <FilterField icon={Filter} label="Event Action:">
+          <select
+            value={selectedAction}
+            onChange={(e) => setSelectedAction(e.target.value)}
+            className="bg-transparent font-bold text-slate-900 focus:outline-hidden cursor-pointer"
+          >
+            <option value="ALL">All Actions ({allLogs.length})</option>
+            {Object.values(AuditAction)
+              .filter((act) => !EXCLUDED_AUDIT_ACTIONS.has(act))
+              .map((act) => (
+                <option key={act} value={act}>
+                  {act}
+                </option>
+              ))}
+          </select>
+        </FilterField>
 
-          {/* Date Filter (beside event action) */}
-          <div className="flex items-center space-x-1.5 bg-slate-50 border border-slate-200 rounded-xl px-3 py-1.5 text-xs text-slate-700">
-            <Calendar className="w-3.5 h-3.5 text-[#FA7014]" />
-            <span className="text-slate-500">Event Date:</span>
-            <input
-              type="date"
-              value={selectedDate}
-              onChange={(e) => setSelectedDate(e.target.value)}
-              className="bg-transparent font-semibold text-slate-900 focus:outline-hidden cursor-pointer text-xs"
-              title="Filter audit logs by specific date"
-            />
-            {selectedDate && (
-              <button
-                type="button"
-                onClick={() => setSelectedDate('')}
-                className="ml-1 text-slate-400 hover:text-rose-600 p-0.5 rounded-md hover:bg-slate-200/60 transition-colors cursor-pointer"
-                title="Clear date filter"
-              >
-                <X className="w-3.5 h-3.5" />
-              </button>
-            )}
-          </div>
-
-          {/* Clear Filters Button */}
-          {(searchTerm || selectedAction !== 'ALL' || selectedDate) && (
+        <FilterField icon={Calendar} label="Event Date:">
+          <input
+            type="date"
+            value={selectedDate}
+            onChange={(e) => setSelectedDate(e.target.value)}
+            className="bg-transparent font-bold text-slate-900 focus:outline-hidden cursor-pointer text-sm"
+            title="Filter audit logs by specific date"
+          />
+          {selectedDate && (
             <button
               type="button"
-              onClick={() => {
-                setSearchTerm('');
-                setSelectedAction('ALL');
-                setSelectedDate('');
-              }}
-              className="text-xs text-slate-500 hover:text-rose-600 font-medium px-2.5 py-1.5 rounded-xl hover:bg-slate-100 border border-transparent hover:border-slate-200 transition-colors cursor-pointer"
-              title="Reset all active filters"
+              onClick={() => setSelectedDate('')}
+              className="ml-1 text-slate-400 hover:text-rose-600 p-0.5 rounded-md hover:bg-slate-100 transition-colors cursor-pointer"
+              title="Clear date filter"
             >
-              Reset Filters
+              <X className="w-3.5 h-3.5" />
             </button>
           )}
-        </div>
+        </FilterField>
+
+        {(searchTerm || selectedAction !== 'ALL' || selectedDate) && (
+          <button
+            type="button"
+            onClick={() => {
+              setSearchTerm('');
+              setSelectedAction('ALL');
+              setSelectedDate('');
+            }}
+            className="h-11 text-sm text-slate-600 hover:text-rose-600 font-semibold px-3.5 rounded-xl hover:bg-slate-50 border border-slate-200 transition-colors cursor-pointer"
+            title="Reset all active filters"
+          >
+            Reset Filters
+          </button>
+        )}
       </div>
 
       {/* AUDIT LOG TABLE */}
-      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-        <div className="px-6 py-4 border-b border-slate-200 flex flex-wrap items-center justify-between gap-3">
+      <div className={tbl.wrap}>
+        <div className="px-6 pt-5 pb-3 flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center space-x-2.5 flex-wrap gap-2">
-            <div className="flex items-center space-x-2">
-              <History className="w-4 h-4 text-[#FA7014]" />
-              <h2 className="text-sm font-bold text-slate-900">Logged Security & Governance Events</h2>
-            </div>
-            <span className="bg-slate-100 text-slate-800 text-xs px-2.5 py-0.5 rounded-full font-mono font-semibold border border-slate-200">
+            <h2 className="text-xl font-extrabold text-slate-900">Logged Security &amp; Governance Events</h2>
+            <span className="bg-slate-100 text-slate-700 text-xs px-3 py-1 rounded-full font-bold">
               {filteredLogs.length} events
             </span>
             {selectedDate && (
-              <span className="bg-orange-50 text-[#FA7014] text-xs px-2.5 py-0.5 rounded-full font-mono font-semibold border border-orange-200 flex items-center space-x-1">
+              <span className="bg-violet-100 text-violet-700 text-xs px-2.5 py-1 rounded-full font-semibold flex items-center space-x-1">
                 <Calendar className="w-3 h-3" />
                 <span>Date: {selectedDate}</span>
                 <button
@@ -322,19 +305,19 @@ export const AuditLogView: React.FC<AuditLogViewProps> = ({ users }) => {
           </div>
         </div>
 
-        <div className="overflow-x-auto">
-          <table className="min-w-full divide-y divide-slate-200 text-xs">
-            <thead className="bg-slate-50 text-slate-500 uppercase tracking-wider font-semibold">
-              <tr>
-                <th scope="col" className="px-6 py-3.5 text-left">Action</th>
-                <th scope="col" className="px-6 py-3.5 text-left">Document & Version</th>
-                <th scope="col" className="px-6 py-3.5 text-left">Performer</th>
-                <th scope="col" className="px-6 py-3.5 text-left">Event Details & Reason</th>
-                <th scope="col" className="px-6 py-3.5 text-left">Source & IP</th>
-                <th scope="col" className="px-6 py-3.5 text-right">Timestamp (IST)</th>
+        <div className="overflow-x-auto px-3 pb-3">
+          <table className={`${tbl.table} text-xs`}>
+            <thead>
+              <tr className={tbl.headRow}>
+                <th scope="col" className={`${tbl.th} rounded-l-xl uppercase tracking-wide`}>Action</th>
+                <th scope="col" className={`${tbl.th} uppercase tracking-wide`}>Document & Version</th>
+                <th scope="col" className={`${tbl.th} uppercase tracking-wide`}>Performer</th>
+                <th scope="col" className={`${tbl.th} uppercase tracking-wide`}>Event Details & Reason</th>
+                <th scope="col" className={`${tbl.th} uppercase tracking-wide`}>Source & IP</th>
+                <th scope="col" className={`${tbl.th} rounded-r-xl uppercase tracking-wide text-right`}>Timestamp (IST)</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-100">
+            <tbody className={tbl.body}>
               {filteredLogs.length === 0 ? (
                 <tr>
                   <td colSpan={6} className="px-6 py-12 text-center text-slate-400">
@@ -352,7 +335,7 @@ export const AuditLogView: React.FC<AuditLogViewProps> = ({ users }) => {
                           setSelectedAction('ALL');
                           setSelectedDate('');
                         }}
-                        className="mt-3 inline-flex items-center space-x-1 text-xs text-[#FA7014] hover:underline font-semibold cursor-pointer"
+                        className="mt-3 inline-flex items-center space-x-1 text-xs text-[#6d4cf0] hover:underline font-semibold cursor-pointer"
                       >
                         <span>Clear all active filters</span>
                       </button>
@@ -363,8 +346,8 @@ export const AuditLogView: React.FC<AuditLogViewProps> = ({ users }) => {
                 filteredLogs.map((log) => {
                   const performer = resolvePerformer(log);
                   return (
-                    <tr key={log.id} className="hover:bg-slate-50/80 transition-colors">
-                      <td className="px-6 py-4 whitespace-nowrap">
+                    <tr key={log.id} className={tbl.row}>
+                      <td className="py-3.5 px-4 whitespace-nowrap">
                         <span
                           className={`font-mono text-[11px] font-bold px-2.5 py-1 rounded-lg border inline-block ${getActionBadgeColor(
                             log.action
@@ -374,7 +357,7 @@ export const AuditLogView: React.FC<AuditLogViewProps> = ({ users }) => {
                         </span>
                       </td>
 
-                      <td className="px-6 py-4 whitespace-nowrap">
+                      <td className="py-3.5 px-4 whitespace-nowrap">
                         {log.documentId ? (
                           <div>
                             {log.action === AuditAction.DOCUMENT_DELETED || log.newValue === 'DELETED' ? (
@@ -398,12 +381,12 @@ export const AuditLogView: React.FC<AuditLogViewProps> = ({ users }) => {
                         )}
                       </td>
 
-                      <td className="px-6 py-4 whitespace-nowrap">
+                      <td className="py-3.5 px-4 whitespace-nowrap">
                         <div className="font-semibold text-slate-900">{performer.name}</div>
                         <div className="text-[11px] text-slate-500">{performer.role}</div>
                       </td>
 
-                      <td className="px-6 py-4 max-w-md">
+                      <td className="py-3.5 px-4 max-w-md">
                         <div className="text-slate-700 leading-relaxed">
                           {log.reason || 'Event executed.'}
                         </div>
@@ -411,17 +394,17 @@ export const AuditLogView: React.FC<AuditLogViewProps> = ({ users }) => {
                           <div className="text-[11px] text-slate-500 mt-1 font-mono">
                             {log.oldValue && <span className="line-through text-slate-400">{log.oldValue}</span>}
                             {log.oldValue && log.newValue && <span> → </span>}
-                            {log.newValue && <span className="font-bold text-[#FA7014]">{log.newValue}</span>}
+                            {log.newValue && <span className="font-bold text-[#6d4cf0]">{log.newValue}</span>}
                           </div>
                         )}
                       </td>
 
-                      <td className="px-6 py-4 whitespace-nowrap text-slate-600 font-mono text-[11px]">
+                      <td className="py-3.5 px-4 whitespace-nowrap text-slate-600 font-mono text-[11px]">
                         <div className="text-slate-900">{log.source}</div>
                         <div className="text-[10px] text-slate-400">{log.ipAddress}</div>
                       </td>
 
-                      <td className="px-6 py-4 whitespace-nowrap text-right text-slate-600 font-mono text-[11px] font-medium">
+                      <td className="py-3.5 px-4 whitespace-nowrap text-right text-slate-600 font-mono text-[11px] font-medium">
                         {formatIST(log.performedAt)}
                       </td>
                     </tr>

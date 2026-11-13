@@ -34,6 +34,7 @@ import {
 } from '../types';
 import { governanceEngine, isEmployeeInDepartment } from '../services/governance';
 import { formatIST, formatISTDate } from '../utils/dateFormat';
+import { HeroCard, KpiCard, KpiGrid } from './common/pageChrome';
 
 interface EmployeeComplianceModuleProps {
   currentUser: User;
@@ -443,56 +444,36 @@ export const EmployeeComplianceModule: React.FC<EmployeeComplianceModuleProps> =
   return (
     <div className="space-y-6">
       {/* HEADER & CONTROLS */}
-      <div className="bg-white rounded-2xl p-6 shadow-sm flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4 border border-slate-200">
-        <div>
-          <div className="flex items-center space-x-3 flex-wrap gap-y-2">
-            <div className="p-2.5 bg-[#FA7014]/10 border border-[#FA7014]/30 rounded-xl text-[#FA7014]">
-              <ShieldCheck className="w-6 h-6" />
-            </div>
-            <div>
-              <h1 className="text-2xl font-bold text-slate-900 tracking-tight flex items-center space-x-2">
-                <span>Employee Compliance & Acknowledgements</span>
-                <span className="text-xs px-2.5 py-0.5 rounded-full bg-[#FA7014]/10 text-[#FA7014] font-semibold border border-[#FA7014]/30">
-                  Live Audit Roster
-                </span>
-              </h1>
-              <p className="text-sm text-slate-500 mt-1">
-                Monitor mandatory policy sign-offs, track individual employee acknowledgement status, and dispatch live compliance reminders.
-              </p>
-            </div>
-          </div>
-        </div>
-
-        {/* Global Action Buttons */}
-        <div className="flex items-center space-x-2.5 flex-wrap gap-y-2">
+      <HeroCard
+        icon={ShieldCheck}
+        title="Compliance Tracker"
+        badge="Live Audit Roster"
+        subtitle="Monitor mandatory policy sign-offs, track each employee's acknowledgement status, and send live compliance reminders."
+        actions={
           <button
             id="btn-batch-remind-pending"
             onClick={() => handleBatchRemind()}
             disabled={totalPendingGlobal === 0 || actionLoadingId === 'batch'}
-            className="px-4 py-2 rounded-xl bg-[#FA7014] hover:bg-[#E65A05] disabled:opacity-50 disabled:cursor-not-allowed text-white text-xs font-semibold shadow-md shadow-[#FA7014]/20 flex items-center space-x-2 transition-all"
+            className="inline-flex items-center gap-2 bg-[#6d4cf0] hover:bg-[#5b3be0] disabled:opacity-50 disabled:cursor-not-allowed text-white font-bold px-5 py-3 rounded-xl text-sm shadow-md shadow-violet-500/30 transition-all cursor-pointer"
           >
-            {actionLoadingId === 'batch' ? (
-              <RefreshCw className="w-4 h-4 animate-spin" />
-            ) : (
-              <Mail className="w-4 h-4" />
-            )}
+            {actionLoadingId === 'batch' ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Mail className="w-4 h-4" />}
             <span>Remind All Pending ({totalPendingGlobal})</span>
           </button>
-        </div>
-      </div>
+        }
+      />
 
       {/* FEEDBACK TOAST */}
       {feedbackMessage && (
         <div
           className={`p-4 rounded-xl border flex items-center justify-between transition-all ${
             feedbackMessage.type === 'success'
-              ? 'bg-slate-50 border-slate-200 text-slate-900'
+              ? 'bg-emerald-50 border-emerald-200 text-emerald-900'
               : 'bg-orange-50 border-orange-200 text-orange-950'
           }`}
         >
           <div className="flex items-center space-x-3">
             {feedbackMessage.type === 'success' ? (
-              <CheckCircle2 className="w-5 h-5 text-[#FA7014] shrink-0" />
+              <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />
             ) : (
               <AlertCircle className="w-5 h-5 text-orange-600 shrink-0" />
             )}
@@ -508,88 +489,26 @@ export const EmployeeComplianceModule: React.FC<EmployeeComplianceModuleProps> =
       )}
 
       {/* KPI METRIC CARDS */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
-        <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">Total Workforce</span>
-            <Users className="w-4 h-4 text-slate-900" />
-          </div>
-          <div className="mt-3 flex items-baseline space-x-2">
-            <span className="text-2xl font-bold text-slate-900">{allEmployees.length}</span>
-            <span className="text-xs text-slate-500 font-medium">Employees</span>
-          </div>
-          <p className="text-xs text-slate-500 mt-1.5">Active assigned personnel</p>
-        </div>
-
-        <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">Overall Compliance</span>
-            <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-slate-100 text-slate-900 border border-slate-200">
-              {globalComplianceRate}%
-            </span>
-          </div>
-          <div className="mt-3 flex items-baseline space-x-2">
-            <span className="text-2xl font-bold text-slate-900">{globalComplianceRate}%</span>
-            <span className="text-xs text-slate-500 font-medium">Signed</span>
-          </div>
-          {/* Progress bar */}
-          <div className="w-full bg-slate-100 h-1.5 rounded-full mt-2.5 overflow-hidden">
-            <div
-              className="h-full rounded-full transition-all duration-500 bg-[#FA7014]"
-              style={{ width: `${globalComplianceRate}%` }}
-            />
-          </div>
-        </div>
-
-        <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">Total Assignments</span>
-            <FileText className="w-4 h-4 text-slate-900" />
-          </div>
-          <div className="mt-3 flex items-baseline space-x-2">
-            <span className="text-2xl font-bold text-slate-900">{totalAssignedGlobal}</span>
-            <span className="text-xs text-slate-500 font-medium">Required sign-offs</span>
-          </div>
-          <p className="text-xs text-slate-500 mt-1.5">Across {publishedDocs.length} mandatory policies</p>
-        </div>
-
-        <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold uppercase tracking-wider text-slate-600">Acknowledged</span>
-            <CheckCircle2 className="w-4 h-4 text-[#FA7014]" />
-          </div>
-          <div className="mt-3 flex items-baseline space-x-2">
-            <span className="text-2xl font-bold text-slate-900">{totalAckedGlobal}</span>
-            <span className="text-xs text-slate-500 font-medium">Completed</span>
-          </div>
-          <p className="text-xs text-slate-500 mt-1.5">Electronically verified</p>
-        </div>
-
-        <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold uppercase tracking-wider text-slate-600">Pending Sign-off</span>
-            <Clock className="w-4 h-4 text-[#FA7014]" />
-          </div>
-          <div className="mt-3 flex items-baseline space-x-2">
-            <span className="text-2xl font-bold text-[#FA7014]">{totalPendingGlobal}</span>
-            <span className="text-xs text-slate-500 font-medium">Awaiting action</span>
-          </div>
-          <p className="text-xs text-slate-500 mt-1.5">Actionable reminders ready</p>
-        </div>
-      </div>
+      <KpiGrid cols={5}>
+        <KpiCard tone="violet" icon={Users} label="Total Workforce" value={allEmployees.length} hint="Active assigned personnel" />
+        <KpiCard tone="blue" icon={ShieldCheck} label="Overall Compliance" value={`${globalComplianceRate}%`} hint="Policies signed so far" />
+        <KpiCard tone="violet" icon={FileText} label="Total Assignments" value={totalAssignedGlobal} hint={`Across ${publishedDocs.length} mandatory policies`} />
+        <KpiCard tone="green" icon={CheckCircle2} label="Acknowledged" value={totalAckedGlobal} hint="Electronically verified" />
+        <KpiCard tone="amber" icon={Clock} label="Pending Sign-off" value={totalPendingGlobal} hint="Reminders ready to send" />
+      </KpiGrid>
 
       {/* FILTER & VIEW TOGGLE BAR */}
-      <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm space-y-4">
+      <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-[0_1px_2px_rgba(16,24,40,0.04)] space-y-4">
         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
           {/* View Switcher Tabs */}
-          <div className="inline-flex p-1 bg-slate-100 rounded-xl border border-slate-200">
+          <div className="inline-flex p-1.5 bg-slate-50 rounded-2xl border border-slate-100">
             <button
               id="tab-view-employees"
               onClick={() => setViewMode('employees')}
-              className={`px-4 py-2 rounded-lg text-xs font-semibold transition-all flex items-center space-x-2 ${
+              className={`px-4 py-2 rounded-xl text-sm font-bold transition-all flex items-center space-x-2 cursor-pointer ${
                 viewMode === 'employees'
-                  ? 'bg-slate-900 text-white shadow-sm'
-                  : 'text-slate-600 hover:text-slate-900'
+                  ? 'bg-[#6d4cf0] text-white shadow-md shadow-violet-500/25'
+                  : 'text-slate-700 hover:bg-white hover:text-slate-900'
               }`}
             >
               <Users className="w-4 h-4" />
@@ -598,10 +517,10 @@ export const EmployeeComplianceModule: React.FC<EmployeeComplianceModuleProps> =
             <button
               id="tab-view-documents"
               onClick={() => setViewMode('documents')}
-              className={`px-4 py-2 rounded-lg text-xs font-semibold transition-all flex items-center space-x-2 ${
+              className={`px-4 py-2 rounded-xl text-sm font-bold transition-all flex items-center space-x-2 cursor-pointer ${
                 viewMode === 'documents'
-                  ? 'bg-slate-900 text-white shadow-sm'
-                  : 'text-slate-600 hover:text-slate-900'
+                  ? 'bg-[#6d4cf0] text-white shadow-md shadow-violet-500/25'
+                  : 'text-slate-700 hover:bg-white hover:text-slate-900'
               }`}
             >
               <FileCheck className="w-4 h-4" />
@@ -622,14 +541,14 @@ export const EmployeeComplianceModule: React.FC<EmployeeComplianceModuleProps> =
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-2 border-t border-slate-100">
           {/* Search Box */}
           <div className="relative">
-            <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+            <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
             <input
               id="input-search-compliance"
               type="text"
               placeholder={viewMode === 'employees' ? 'Search employee, email, ID...' : 'Search policy, SOP title...'}
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full bg-slate-50 border border-slate-200 rounded-xl pl-9 pr-4 py-2 text-xs text-slate-900 placeholder-slate-400 focus:outline-hidden focus:ring-2 focus:ring-[#FA7014] focus:bg-white transition-colors"
+              className="w-full h-11 bg-white border border-slate-300 rounded-xl pl-10 pr-4 text-sm text-slate-900 placeholder-slate-400 focus:outline-hidden focus:ring-2 focus:ring-[#6d4cf0]/25 focus:border-[#6d4cf0] transition-all"
             />
           </div>
 
@@ -639,7 +558,7 @@ export const EmployeeComplianceModule: React.FC<EmployeeComplianceModuleProps> =
               id="select-status-filter"
               value={selectedStatus}
               onChange={(e) => setSelectedStatus(e.target.value as any)}
-              className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs text-slate-900 focus:outline-hidden focus:ring-2 focus:ring-[#FA7014] transition-colors"
+              className="w-full h-11 bg-white border border-slate-300 rounded-xl px-3.5 text-sm font-semibold text-slate-900 focus:outline-hidden focus:ring-2 focus:ring-[#6d4cf0]/25 focus:border-[#6d4cf0] transition-all"
             >
               <option value="ALL">All Statuses (Pending & Acked)</option>
               <option value="PENDING">Pending Sign-off Only</option>
@@ -653,7 +572,7 @@ export const EmployeeComplianceModule: React.FC<EmployeeComplianceModuleProps> =
               id="select-doc-filter"
               value={selectedDocId}
               onChange={(e) => setSelectedDocId(e.target.value)}
-              className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs text-slate-900 focus:outline-hidden focus:ring-2 focus:ring-[#FA7014] transition-colors truncate"
+              className="w-full h-11 bg-white border border-slate-300 rounded-xl px-3.5 text-sm font-semibold text-slate-900 focus:outline-hidden focus:ring-2 focus:ring-[#6d4cf0]/25 focus:border-[#6d4cf0] transition-all truncate"
             >
               <option value="ALL">All Mandatory Policies</option>
               {publishedDocs.map((doc) => (
@@ -684,7 +603,7 @@ export const EmployeeComplianceModule: React.FC<EmployeeComplianceModuleProps> =
                 <div
                   key={employee.id}
                   id={`emp-card-${employee.id}`}
-                  className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-sm transition-all hover:border-slate-300"
+                  className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-[0_1px_2px_rgba(16,24,40,0.04)] transition-all hover:border-violet-200"
                 >
                   {/* Summary Row */}
                   <div
@@ -693,8 +612,8 @@ export const EmployeeComplianceModule: React.FC<EmployeeComplianceModuleProps> =
                   >
                     {/* Employee Profile */}
                     <div className="flex items-center space-x-3.5">
-                      <div className="w-10 h-10 rounded-xl bg-slate-100 border border-slate-200 flex items-center justify-center text-slate-600 shrink-0">
-                        <UserIcon className="w-5 h-5 text-slate-600" />
+                      <div className="w-10 h-10 rounded-full bg-violet-100 flex items-center justify-center text-violet-600 shrink-0">
+                        <UserIcon className="w-5 h-5" />
                       </div>
                       <div>
                         <div className="flex items-center space-x-2 flex-wrap gap-y-1">
@@ -724,7 +643,7 @@ export const EmployeeComplianceModule: React.FC<EmployeeComplianceModuleProps> =
                         </div>
                         <div className="w-full bg-slate-100 h-2 rounded-full overflow-hidden">
                           <div
-                            className="h-full rounded-full transition-all duration-300 bg-[#FA7014]"
+                            className="h-full rounded-full transition-all duration-300 bg-[#6d4cf0]"
                             style={{ width: `${complianceRate}%` }}
                           />
                         </div>
@@ -733,12 +652,12 @@ export const EmployeeComplianceModule: React.FC<EmployeeComplianceModuleProps> =
                       {/* Status Badge */}
                       {pendingCount === 0 ? (
                         <div className="bg-slate-100 border border-slate-200 px-3 py-1.5 rounded-xl flex items-center space-x-1.5 text-xs font-semibold text-slate-900">
-                          <CheckCircle2 className="w-4 h-4 text-[#FA7014]" />
+                          <CheckCircle2 className="w-4 h-4 text-emerald-600" />
                           <span>100% Compliant</span>
                         </div>
                       ) : (
-                        <div className="bg-[#FA7014]/10 border border-[#FA7014]/30 px-3 py-1.5 rounded-xl flex items-center space-x-1.5 text-xs font-semibold text-[#FA7014]">
-                          <Clock className="w-4 h-4 text-[#FA7014]" />
+                        <div className="bg-orange-100 px-3 py-1.5 rounded-xl flex items-center space-x-1.5 text-xs font-bold text-orange-700">
+                          <Clock className="w-4 h-4 text-orange-500" />
                           <span>{pendingCount} Pending</span>
                         </div>
                       )}
@@ -801,7 +720,7 @@ export const EmployeeComplianceModule: React.FC<EmployeeComplianceModuleProps> =
                                 <div className="flex items-center space-x-3 text-xs text-slate-500">
                                   {isAcked ? (
                                     <span className="text-slate-900 flex items-center space-x-1 font-medium">
-                                      <CheckCircle2 className="w-3.5 h-3.5 text-[#FA7014]" />
+                                      <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
                                       <span>
                                         {isOfflineSignOff(ack)
                                           ? `Record Offline Sign-off on ${formatIST(ack.acknowledgedAt || '')}`
@@ -809,7 +728,7 @@ export const EmployeeComplianceModule: React.FC<EmployeeComplianceModuleProps> =
                                       </span>
                                     </span>
                                   ) : (
-                                    <span className="text-[#FA7014] flex items-center space-x-1 font-medium">
+                                    <span className="text-orange-600 flex items-center space-x-1 font-medium">
                                       <Clock className="w-3.5 h-3.5" />
                                       <span>
                                         {prevAck
@@ -852,7 +771,7 @@ export const EmployeeComplianceModule: React.FC<EmployeeComplianceModuleProps> =
                                       id={`btn-remind-${ack.id}`}
                                       onClick={() => handleSendReminder(ack)}
                                       disabled={actionLoadingId === ack.id}
-                                      className="px-3 py-1.5 rounded-lg bg-[#FA7014]/10 hover:bg-[#FA7014]/20 text-[#FA7014] text-xs font-semibold border border-[#FA7014]/30 flex items-center space-x-1.5 transition-colors disabled:opacity-50"
+                                      className="px-3 py-1.5 rounded-lg bg-violet-100 hover:bg-violet-200 text-violet-700 text-xs font-bold flex items-center space-x-1.5 transition-colors disabled:opacity-50"
                                       title="Send an automated email reminder"
                                     >
                                       {actionLoadingId === ack.id ? (
@@ -927,7 +846,7 @@ export const EmployeeComplianceModule: React.FC<EmployeeComplianceModuleProps> =
                 <div
                   key={document.id}
                   id={`doc-card-${document.id}`}
-                  className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-sm transition-all hover:border-slate-300"
+                  className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-[0_1px_2px_rgba(16,24,40,0.04)] transition-all hover:border-violet-200"
                 >
                   {/* Summary Row */}
                   <div
@@ -961,7 +880,7 @@ export const EmployeeComplianceModule: React.FC<EmployeeComplianceModuleProps> =
                         </div>
                         <div className="w-full bg-slate-100 h-2 rounded-full overflow-hidden">
                           <div
-                            className="h-full rounded-full transition-all duration-300 bg-[#FA7014]"
+                            className="h-full rounded-full transition-all duration-300 bg-[#6d4cf0]"
                             style={{ width: `${complianceRate}%` }}
                           />
                         </div>
@@ -974,7 +893,7 @@ export const EmployeeComplianceModule: React.FC<EmployeeComplianceModuleProps> =
                             e.stopPropagation();
                             handleBatchRemind(document.documentId);
                           }}
-                          className="px-3 py-1.5 rounded-lg bg-[#FA7014]/10 hover:bg-[#FA7014]/20 text-[#FA7014] text-xs font-semibold border border-[#FA7014]/30 flex items-center space-x-1.5 transition-colors"
+                          className="px-3 py-1.5 rounded-lg bg-violet-100 hover:bg-violet-200 text-violet-700 text-xs font-bold flex items-center space-x-1.5 transition-colors"
                         >
                           <Mail className="w-3.5 h-3.5" />
                           <span>Remind Pending ({pendingCount})</span>
@@ -1025,7 +944,7 @@ export const EmployeeComplianceModule: React.FC<EmployeeComplianceModuleProps> =
 
                               <div className="shrink-0">
                                 {isAcked ? (
-                                  <span className="p-1 rounded-full bg-slate-100 text-[#FA7014] inline-block border border-slate-200" title={`Signed v${ack.versionNumber}`}>
+                                  <span className="p-1 rounded-full bg-slate-100 text-[#6d4cf0] inline-block border border-slate-200" title={`Signed v${ack.versionNumber}`}>
                                     <CheckCircle2 className="w-4 h-4" />
                                   </span>
                                 ) : (
@@ -1033,7 +952,7 @@ export const EmployeeComplianceModule: React.FC<EmployeeComplianceModuleProps> =
                                     id={`btn-remind-emp-${ack.id}`}
                                     onClick={() => handleSendReminder(ack)}
                                     disabled={actionLoadingId === ack.id}
-                                    className="p-1.5 rounded-lg bg-[#FA7014]/10 hover:bg-[#FA7014]/20 text-[#FA7014] text-xs border border-[#FA7014]/30 transition-colors"
+                                    className="p-1.5 rounded-lg bg-violet-100 hover:bg-violet-200 text-violet-700 text-xs transition-colors"
                                     title={`Send Email Reminder for v${ack.versionNumber}`}
                                   >
                                     <Send className="w-3.5 h-3.5" />
@@ -1059,7 +978,7 @@ export const EmployeeComplianceModule: React.FC<EmployeeComplianceModuleProps> =
           <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-2xl max-w-lg w-full space-y-4">
             <div className="flex items-center justify-between border-b border-slate-200 pb-3">
               <div className="flex items-center space-x-2 text-slate-900">
-                <PenTool className="w-5 h-5 text-[#FA7014]" />
+                <PenTool className="w-5 h-5 text-[#6d4cf0]" />
                 <h3 className="text-base font-bold text-slate-900">Record Manual Physical Sign-Off</h3>
               </div>
               <button
@@ -1093,7 +1012,7 @@ export const EmployeeComplianceModule: React.FC<EmployeeComplianceModuleProps> =
                 placeholder="e.g., Physical signature signed on onboarding paper packet / Confirmed during orientation."
                 value={manualSignOffNotes}
                 onChange={(e) => setManualSignOffNotes(e.target.value)}
-                className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-xs text-slate-900 placeholder-slate-400 focus:outline-hidden focus:ring-2 focus:ring-[#FA7014] focus:bg-white"
+                className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-xs text-slate-900 placeholder-slate-400 focus:outline-hidden focus:ring-2 focus:ring-[#6d4cf0]/25 focus:border-[#6d4cf0] focus:bg-white"
               />
             </div>
 
@@ -1108,7 +1027,7 @@ export const EmployeeComplianceModule: React.FC<EmployeeComplianceModuleProps> =
                 id="btn-confirm-manual-signoff"
                 onClick={handleConfirmManualSignOff}
                 disabled={actionLoadingId === manualSignOffAck.id}
-                className="px-4 py-2 rounded-xl bg-[#FA7014] hover:bg-[#E65A05] text-white text-xs font-semibold shadow-md shadow-[#FA7014]/20 flex items-center space-x-1.5 transition-colors disabled:opacity-50"
+                className="px-4 py-2 rounded-xl bg-[#6d4cf0] hover:bg-[#5b3be0] text-white text-xs font-bold shadow-md shadow-violet-500/30 flex items-center space-x-1.5 transition-colors disabled:opacity-50"
               >
                 {actionLoadingId === manualSignOffAck.id ? (
                   <RefreshCw className="w-4 h-4 animate-spin" />

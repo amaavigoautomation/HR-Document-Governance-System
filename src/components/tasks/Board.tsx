@@ -1,5 +1,6 @@
 import React, { useMemo, useState } from 'react';
-import { Plus, Search, Target } from 'lucide-react';
+import { Columns3, Plus, Search, Target } from 'lucide-react';
+import { PageHeader } from '../common/pageChrome';
 import { STATUSES } from '../../../shared/taskEngine';
 import { taskService } from '../../services/taskService';
 import { Loading, useLoad } from '../common/loadUi';
@@ -44,8 +45,8 @@ export const Board: React.FC = () => {
 
   return (
     <div>
+      <PageHeader icon={Columns3} title="Boards" subtitle="Drag cards between columns to change their status." />
       <div className="flex flex-wrap items-center gap-2 mb-3">
-        <h2 className="text-lg font-extrabold text-slate-900 mr-2">Boards</h2>
         <select className={`${input} !w-auto max-w-[14rem]`} value={scope} onChange={(e) => { pick(e.target.value); setWho(''); }} aria-label="Board">
           {options.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
         </select>

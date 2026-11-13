@@ -17,21 +17,21 @@ export const StatusBadge: React.FC<StatusBadgeProps> = ({
     switch (status) {
       case VersionStatus.PUBLISHED:
         return {
-          bg: 'bg-slate-900 text-white border-slate-900',
+          bg: 'bg-emerald-100 text-emerald-800 border-emerald-200',
           label: 'PUBLISHED (LIVE)',
-          icon: <CheckCircle2 className="w-3.5 h-3.5 text-[#FA7014] shrink-0" />,
+          icon: <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />,
         };
       case VersionStatus.IN_REVIEW:
         return {
-          bg: 'bg-[#FA7014]/10 text-[#FA7014] border-[#FA7014]/30',
+          bg: 'bg-violet-100 text-violet-800 border-violet-200',
           label: 'IN REVIEW',
-          icon: <Clock className="w-3.5 h-3.5 text-[#FA7014] shrink-0" />,
+          icon: <Clock className="w-3.5 h-3.5 text-violet-600 shrink-0" />,
         };
       case VersionStatus.REVISION_REQUIRED:
         return {
-          bg: 'bg-orange-50 text-orange-950 border-orange-200',
+          bg: 'bg-orange-100 text-orange-800 border-orange-200',
           label: 'REVISION REQUIRED',
-          icon: <AlertTriangle className="w-3.5 h-3.5 text-[#FA7014] shrink-0" />,
+          icon: <AlertTriangle className="w-3.5 h-3.5 text-orange-500 shrink-0" />,
         };
       case VersionStatus.REJECTED:
         return {

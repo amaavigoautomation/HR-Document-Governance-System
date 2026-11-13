@@ -21,9 +21,14 @@ import {
   Trash2,
   RotateCcw,
   Ban,
+  Tag,
+  SlidersHorizontal,
+  Folder,
+  CalendarDays,
 } from 'lucide-react';
 import { ConfidentialityLevel, DocumentCategory, DocumentMaster, DocumentVersion, User, VersionStatus } from '../types';
 import { StatusBadge } from './StatusBadge';
+import { Chip, KpiCard, KpiGrid, tbl } from './common/pageChrome';
 import { governanceEngine } from '../services/governance';
 import { formatISTDate } from '../utils/dateFormat';
 import { formatDDMMYYYY } from '../utils/documentHeaderFooter';
@@ -137,34 +142,42 @@ export const CreatorDashboard: React.FC<CreatorDashboardProps> = ({
 
   return (
     <div className="space-y-6">
-      {/* Top Header & Welcome */}
-      <div className="bg-white rounded-2xl p-6 shadow-sm border border-slate-200 flex flex-col md:flex-row md:items-center md:justify-between gap-4">
-        <div>
-          <div className="flex items-center space-x-2.5">
-            <h1 className="text-2xl font-bold text-slate-900 tracking-tight">HR Creator Studio</h1>
-            <span className="bg-[#FA7014]/10 text-[#FA7014] text-xs px-3 py-0.5 rounded-full font-semibold border border-[#FA7014]/30">
-              Authoring & Revisions
-            </span>
+      {/* Header card */}
+      <div className="relative overflow-hidden bg-gradient-to-r from-white via-white to-violet-50 rounded-2xl p-6 border border-slate-200 shadow-[0_1px_2px_rgba(16,24,40,0.04)] flex flex-col lg:flex-row lg:items-center lg:justify-between gap-5">
+        <div className="relative z-10 min-w-0 max-w-2xl">
+          <div className="flex items-center flex-wrap gap-3">
+            <h1 className="text-3xl font-extrabold text-slate-900 tracking-tight">HR Creator Studio</h1>
+            <span className="bg-violet-100 text-violet-700 text-xs px-3 py-1 rounded-full font-bold">Authoring &amp; Versioning</span>
           </div>
-          <p className="text-sm text-slate-500 mt-1.5">
-            Logged in as <span className="font-semibold text-slate-900">{currentUser.name}</span> ({currentUser.title}) • Maintain permanent Document Masters and draft structured version revisions.
+          <p className="text-sm text-slate-600 mt-2">
+            Logged in as <span className="font-bold text-slate-900">{currentUser.name}</span> ({currentUser.title}) • Maintain permanent Document Masters and draft controlled version releases.
           </p>
         </div>
 
-        <div className="flex flex-wrap items-center gap-2.5">
+        <div className="relative z-10 flex flex-wrap items-center gap-3 lg:ml-auto">
+          <svg aria-hidden="true" viewBox="0 0 150 120" className="hidden xl:block w-36 h-28 shrink-0">
+            <g transform="rotate(-8 60 60)">
+              <rect x="20" y="14" width="78" height="96" rx="9" fill="#ede9fe" stroke="#ddd6fe" />
+              <rect x="30" y="26" width="58" height="9" rx="4" fill="#c4b5fd" opacity=".7" />
+              <rect x="30" y="44" width="58" height="5" rx="2.5" fill="#c4b5fd" opacity=".55" />
+              <rect x="30" y="56" width="46" height="5" rx="2.5" fill="#c4b5fd" opacity=".55" />
+              <rect x="30" y="68" width="52" height="5" rx="2.5" fill="#c4b5fd" opacity=".55" />
+            </g>
+            <circle cx="104" cy="82" r="22" fill="#6d4cf0" />
+            <path d="M94 82a10 10 0 1 0 3-7.2M94 70v6h6" fill="none" stroke="#fff" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
           <button
             id="btn-open-create-version"
             onClick={() => onOpenCreateVersion()}
-            className="inline-flex items-center space-x-2 bg-slate-900 hover:bg-slate-800 text-white font-semibold px-4 py-2.5 rounded-xl text-xs transition-all shadow-sm"
+            className="inline-flex items-center gap-2 bg-white hover:bg-slate-50 text-slate-900 font-bold px-5 py-3 rounded-xl text-sm transition-all border border-slate-300 cursor-pointer"
           >
-            <GitBranch className="w-4 h-4 text-[#FA7014]" />
+            <GitBranch className="w-4 h-4" />
             <span>Create New Version</span>
           </button>
-
           <button
             id="btn-open-create-document"
             onClick={onOpenCreateDocument}
-            className="inline-flex items-center space-x-2 bg-[#FA7014] hover:bg-[#E65A05] text-white font-semibold px-4 py-2.5 rounded-xl text-xs transition-all shadow-md shadow-[#FA7014]/20 border border-orange-500/30"
+            className="inline-flex items-center gap-2 bg-[#6d4cf0] hover:bg-[#5b3be0] text-white font-bold px-5 py-3 rounded-xl text-sm transition-all shadow-md shadow-violet-500/30 cursor-pointer"
           >
             <Plus className="w-4 h-4" />
             <span>New Document Master</span>
@@ -172,60 +185,21 @@ export const CreatorDashboard: React.FC<CreatorDashboardProps> = ({
         </div>
       </div>
 
-      {/* METRICS CARDS */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4">
-        <div className="bg-white p-5 rounded-2xl shadow-sm border border-slate-200">
-          <div className="flex items-center justify-between text-slate-500 text-xs font-semibold uppercase tracking-wider">
-            <span>Total Masters</span>
-            <FileText className="w-4 h-4 text-slate-900" />
-          </div>
-          <div className="mt-2 text-2xl font-extrabold text-slate-900">{totalDocs}</div>
-          <div className="text-[11px] text-slate-500 mt-1">Permanent Logical Records</div>
-        </div>
-
-        <div className="bg-white p-5 rounded-2xl shadow-sm border border-slate-200">
-          <div className="flex items-center justify-between text-slate-600 text-xs font-semibold uppercase tracking-wider">
-            <span>Published (Live)</span>
-            <CheckCircle2 className="w-4 h-4 text-[#FA7014]" />
-          </div>
-          <div className="mt-2 text-2xl font-extrabold text-slate-900">{publishedDocs}</div>
-          <div className="text-[11px] text-slate-500 mt-1">Active Operational Copies</div>
-        </div>
-
-        <div className="bg-white p-5 rounded-2xl shadow-sm border border-slate-200">
-          <div className="flex items-center justify-between text-slate-600 text-xs font-semibold uppercase tracking-wider">
-            <span>In Review</span>
-            <Clock className="w-4 h-4 text-slate-700" />
-          </div>
-          <div className="mt-2 text-2xl font-extrabold text-slate-900">{inReviewVersions.length}</div>
-          <div className="text-[11px] text-slate-500 mt-1">Waiting in Reviewer Queue</div>
-        </div>
-
-        <div className="bg-white p-5 rounded-2xl shadow-sm border border-slate-200">
-          <div className="flex items-center justify-between text-slate-600 text-xs font-semibold uppercase tracking-wider">
-            <span>Revision Required</span>
-            <AlertTriangle className="w-4 h-4 text-[#FA7014]" />
-          </div>
-          <div className="mt-2 text-2xl font-extrabold text-[#FA7014]">{revisionRequiredVersions.length}</div>
-          <div className="text-[11px] text-slate-500 mt-1">Reviewer Feedback Pending</div>
-        </div>
-
-        <div className="bg-white p-5 rounded-2xl shadow-sm border border-slate-200">
-          <div className="flex items-center justify-between text-slate-500 text-xs font-semibold uppercase tracking-wider">
-            <span>Superseded</span>
-            <Layers className="w-4 h-4 text-slate-400" />
-          </div>
-          <div className="mt-2 text-2xl font-extrabold text-slate-900">{supersededVersions.length}</div>
-          <div className="text-[11px] text-slate-500 mt-1">Preserved Historical Revisions</div>
-        </div>
-      </div>
+      {/* Number cards */}
+      <KpiGrid cols={5}>
+        <KpiCard tone="violet" icon={Layers} label="Total Masters" value={totalDocs} hint="Permanent document records" />
+        <KpiCard tone="green" icon={CheckCircle2} label="Published (Live)" value={publishedDocs} hint="Active versions (in use)" />
+        <KpiCard tone="blue" icon={Eye} label="In Review" value={inReviewVersions.length} hint="Waiting for review & approval" />
+        <KpiCard tone="amber" icon={AlertTriangle} label="Revision Required" value={revisionRequiredVersions.length} hint="Needs changes before publishing" />
+        <KpiCard tone="rose" icon={RotateCcw} label="Superseded" value={supersededVersions.length} hint="Previous versions (not in use)" />
+      </KpiGrid>
 
       {/* REVISION REQUIRED CALLOUT BANNER IF ANY EXIST */}
       {revisionRequiredVersions.length > 0 && (
-        <div id="banner-revision-required" className="bg-white border-l-4 border-l-[#FA7014] border-slate-200 rounded-2xl p-5 shadow-sm">
+        <div id="banner-revision-required" className="bg-white border-l-4 border-l-orange-400 border-slate-200 rounded-2xl p-5 shadow-sm">
           <div className="flex items-start justify-between">
             <div className="flex items-start space-x-3 w-full">
-              <div className="w-9 h-9 rounded-xl bg-[#FA7014]/10 border border-[#FA7014]/30 flex items-center justify-center shrink-0 mt-0.5 text-[#FA7014]">
+              <div className="w-9 h-9 rounded-xl bg-orange-100 flex items-center justify-center shrink-0 mt-0.5 text-orange-500">
                 <AlertTriangle className="w-5 h-5" />
               </div>
               <div className="flex-1">
@@ -250,13 +224,13 @@ export const CreatorDashboard: React.FC<CreatorDashboardProps> = ({
                               {rev.documentId}
                             </span>
                             <span className="font-semibold text-sm text-slate-900">{rev.documentTitle}</span>
-                            <span className="text-xs bg-[#FA7014]/10 text-[#FA7014] font-bold px-2 py-0.5 rounded border border-[#FA7014]/30">
+                            <span className="text-xs bg-orange-100 text-orange-700 font-bold px-2 py-0.5 rounded-lg">
                               v{rev.versionNumber} Revision Requested
                             </span>
                           </div>
                           {rev.reviewerComments && (
                             <div className="mt-2 text-xs text-slate-700 flex items-start space-x-2 bg-white p-2.5 rounded-lg border border-slate-200">
-                              <MessageSquare className="w-3.5 h-3.5 text-[#FA7014] shrink-0 mt-0.5" />
+                              <MessageSquare className="w-3.5 h-3.5 text-orange-500 shrink-0 mt-0.5" />
                               <div>
                                 <span className="font-semibold text-slate-900">
                                   Reviewer {rev.reviewedByName ? `(${rev.reviewedByName})` : ''} Comment:
@@ -270,7 +244,7 @@ export const CreatorDashboard: React.FC<CreatorDashboardProps> = ({
                         <button
                           id={`btn-revise-${rev.id}`}
                           onClick={() => onOpenCreateVersion(parentMaster)}
-                          className="bg-[#FA7014] hover:bg-[#E65A05] text-white text-xs font-semibold px-3.5 py-2 rounded-xl transition-all flex items-center space-x-1.5 shrink-0 shadow-sm"
+                          className="bg-[#6d4cf0] hover:bg-[#5b3be0] text-white text-xs font-bold px-3.5 py-2 rounded-xl transition-all flex items-center space-x-1.5 shrink-0 shadow-sm"
                         >
                           <GitBranch className="w-3.5 h-3.5" />
                           <span>Author Next Version</span>
@@ -286,7 +260,7 @@ export const CreatorDashboard: React.FC<CreatorDashboardProps> = ({
       )}
 
       {/* FILTER & SEARCH BAR */}
-      <div className="bg-white p-4 rounded-2xl shadow-sm border border-slate-200 flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3">
+      <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-[0_1px_2px_rgba(16,24,40,0.04)] flex flex-col lg:flex-row items-stretch lg:items-center gap-3">
         <div className="relative flex-1">
           <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
           <input
@@ -295,72 +269,69 @@ export const CreatorDashboard: React.FC<CreatorDashboardProps> = ({
             placeholder="Search by Document ID, Title, Category, Department..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
-            className="w-full pl-9 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 focus:bg-white focus:outline-hidden focus:ring-2 focus:ring-[#FA7014] focus:border-[#FA7014] placeholder:text-slate-400 transition-all"
+            className="w-full h-11 pl-10 pr-4 bg-white border border-slate-300 rounded-xl text-sm text-slate-900 focus:outline-hidden focus:ring-2 focus:ring-[#6d4cf0]/25 focus:border-[#6d4cf0] placeholder:text-slate-400 transition-all"
           />
         </div>
 
-        <div className="flex items-center space-x-2">
-          <div className="flex items-center space-x-1.5 bg-slate-50 border border-slate-200 rounded-xl px-3 py-1.5 text-xs text-slate-600">
-            <Filter className="w-3.5 h-3.5 text-slate-500" />
-            <span>Category:</span>
-            <select
-              id="filter-category-creator"
-              value={selectedCategory}
-              onChange={(e) => setSelectedCategory(e.target.value)}
-              className="bg-transparent font-medium text-slate-900 focus:outline-hidden cursor-pointer"
-            >
-              <option value="ALL">All Categories</option>
-              {Object.values(DocumentCategory).map((cat) => (
-                <option key={cat} value={cat}>
-                  {cat}
-                </option>
-              ))}
-            </select>
-          </div>
+        <label className="flex items-center gap-2 h-11 bg-white border border-slate-300 rounded-xl px-3.5 text-sm text-slate-600 focus-within:border-[#6d4cf0]">
+          <Tag className="w-4 h-4 text-slate-500" />
+          <span>Category:</span>
+          <select
+            id="filter-category-creator"
+            value={selectedCategory}
+            onChange={(e) => setSelectedCategory(e.target.value)}
+            className="bg-transparent font-bold text-slate-900 focus:outline-hidden cursor-pointer"
+          >
+            <option value="ALL">All Categories</option>
+            {Object.values(DocumentCategory).map((cat) => (
+              <option key={cat} value={cat}>
+                {cat}
+              </option>
+            ))}
+          </select>
+        </label>
 
-          <div className="flex items-center space-x-1.5 bg-slate-50 border border-slate-200 rounded-xl px-3 py-1.5 text-xs text-slate-600">
-            <span>Status:</span>
-            <select
-              id="filter-status-creator"
-              value={selectedStatus}
-              onChange={(e) => setSelectedStatus(e.target.value)}
-              className="bg-transparent font-medium text-slate-900 focus:outline-hidden cursor-pointer"
-            >
-              <option value="ALL">All Statuses</option>
-              <option value={VersionStatus.PUBLISHED}>Published (Live)</option>
-              <option value={VersionStatus.IN_REVIEW}>In Review</option>
-              <option value={VersionStatus.REVISION_REQUIRED}>Revision Required</option>
-              <option value={VersionStatus.SUPERSEDED}>Superseded</option>
-            </select>
-          </div>
-        </div>
+        <label className="flex items-center gap-2 h-11 bg-white border border-slate-300 rounded-xl px-3.5 text-sm text-slate-600 focus-within:border-[#6d4cf0]">
+          <SlidersHorizontal className="w-4 h-4 text-slate-500" />
+          <span>Status:</span>
+          <select
+            id="filter-status-creator"
+            value={selectedStatus}
+            onChange={(e) => setSelectedStatus(e.target.value)}
+            className="bg-transparent font-bold text-slate-900 focus:outline-hidden cursor-pointer"
+          >
+            <option value="ALL">All Statuses</option>
+            <option value={VersionStatus.PUBLISHED}>Published (Live)</option>
+            <option value={VersionStatus.IN_REVIEW}>In Review</option>
+            <option value={VersionStatus.REVISION_REQUIRED}>Revision Required</option>
+            <option value={VersionStatus.SUPERSEDED}>Superseded</option>
+          </select>
+        </label>
       </div>
 
       {/* PRIMARY DOCUMENT MASTERS TABLE */}
-      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-        <div className="px-6 py-4 border-b border-slate-200 flex items-center justify-between flex-wrap gap-2">
-          <div className="flex items-center space-x-2">
-            <h2 className="text-base font-bold text-slate-900">Document Masters Directory</h2>
-            <span className="bg-slate-100 text-slate-800 text-xs px-2.5 py-0.5 rounded-full font-mono font-semibold border border-slate-200">
-              {filteredDocs.length} records
-            </span>
-          </div>
+      <div className={tbl.wrap}>
+        <div className="px-6 pt-5 pb-3 flex items-center gap-3 flex-wrap">
+          <h2 className="text-xl font-extrabold text-slate-900">Document Masters Directory</h2>
+          <span className="bg-slate-100 text-slate-700 text-xs px-3 py-1 rounded-full font-bold">
+            {filteredDocs.length} {filteredDocs.length === 1 ? 'record' : 'records'}
+          </span>
         </div>
 
-        <div className="overflow-x-auto">
-          <table className="min-w-full divide-y divide-slate-200">
-            <thead className="bg-slate-50 text-slate-700 text-xs uppercase tracking-wider font-semibold">
-              <tr>
-                <th scope="col" className="px-6 py-3.5 text-left">Document ID</th>
-                <th scope="col" className="px-6 py-3.5 text-left">Title & Category</th>
-                <th scope="col" className="px-6 py-3.5 text-left">Current Published</th>
-                <th scope="col" className="px-6 py-3.5 text-left">Status</th>
-                <th scope="col" className="px-6 py-3.5 text-left">Department & Owner</th>
-                <th scope="col" className="px-6 py-3.5 text-left">Last Updated</th>
-                <th scope="col" className="px-6 py-3.5 text-right">Actions</th>
+        <div className="overflow-x-auto px-3 pb-3">
+          <table className={tbl.table}>
+            <thead>
+              <tr className={tbl.headRow}>
+                <th scope="col" className={`${tbl.th} rounded-l-xl uppercase tracking-wide`}>Document ID</th>
+                <th scope="col" className={`${tbl.th} uppercase tracking-wide`}>Title &amp; Category</th>
+                <th scope="col" className={`${tbl.th} uppercase tracking-wide`}>Current Published</th>
+                <th scope="col" className={`${tbl.th} uppercase tracking-wide`}>Status</th>
+                <th scope="col" className={`${tbl.th} uppercase tracking-wide`}>Department &amp; Owner</th>
+                <th scope="col" className={`${tbl.th} uppercase tracking-wide`}>Last Updated</th>
+                <th scope="col" className={`${tbl.th} rounded-r-xl uppercase tracking-wide text-right`}>Actions</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-100 text-sm">
+            <tbody className={tbl.body}>
               {filteredDocs.length === 0 ? (
                 <tr>
                   <td colSpan={7} className="px-6 py-12 text-center text-slate-500">
@@ -378,66 +349,57 @@ export const CreatorDashboard: React.FC<CreatorDashboardProps> = ({
                   const isDocRejected =
                     doc.currentStatus === VersionStatus.REJECTED ||
                     docVersions.some((v) => v.status === VersionStatus.REJECTED && !doc.currentPublishedVersionId);
+                  const reviseBlocked = !!inReview || doc.currentStatus === VersionStatus.IN_REVIEW || isDocRejected;
+                  const owner = doc.processOwnerName || '';
+                  const initials = owner.split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0]).join('').toUpperCase() || '–';
+                  const iconBtn = 'w-10 h-10 rounded-xl border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 flex items-center justify-center transition-colors cursor-pointer';
 
                   return (
-                    <tr key={doc.id} className="hover:bg-slate-50/80 transition-colors">
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <div className="font-mono text-xs font-bold text-slate-900 bg-slate-100 px-2.5 py-1 rounded-lg inline-block border border-slate-200">
-                          {doc.documentId}
-                        </div>
+                    <tr key={doc.id} className={tbl.row}>
+                      <td className={`${tbl.td} whitespace-nowrap`}>
+                        <Chip tone="violet">{doc.documentId}</Chip>
                       </td>
 
-                      <td className="px-6 py-4">
-                        <div className="font-semibold text-slate-900">{doc.title}</div>
-                        <div className="flex items-center space-x-2 mt-1">
-                          <span className="text-xs text-slate-600 bg-slate-100 px-2 py-0.5 rounded font-medium border border-slate-200">
-                            {doc.category}
-                          </span>
+                      <td className={tbl.td}>
+                        <div className="font-bold text-slate-900">{doc.title}</div>
+                        <div className="flex items-center flex-wrap gap-x-3 gap-y-1 mt-1 text-xs text-slate-600">
+                          <span className="inline-flex items-center gap-1.5"><Folder className="w-3.5 h-3.5 text-slate-500" />{doc.category}</span>
                           {doc.confidentiality === ConfidentialityLevel.INTERNAL ? (
-                            <span className="text-[11px] text-amber-800 bg-amber-50 border border-amber-200/80 px-2 py-0.5 rounded-md font-medium">
-                              🔒 Internal Company (HR/Approver Only)
-                            </span>
+                            <span className="text-[11px] text-amber-800 bg-amber-50 px-2 py-0.5 rounded-md font-medium">Internal (HR/Approver only)</span>
                           ) : (
-                            <span className="text-[11px] text-emerald-800 bg-emerald-50 border border-emerald-200/80 px-2 py-0.5 rounded-md font-medium">
-                              📢 Public (All Employees)
-                            </span>
+                            <span className="text-[11px] text-emerald-800 bg-emerald-50 px-2 py-0.5 rounded-md font-medium">Public (all employees)</span>
                           )}
                         </div>
                       </td>
 
-                      <td className="px-6 py-4 whitespace-nowrap">
+                      <td className={`${tbl.td} whitespace-nowrap`}>
                         {doc.currentPublishedVersionNumber ? (
-                          <div className="inline-flex items-center space-x-1.5 bg-slate-100 text-slate-900 border border-slate-200 px-2.5 py-1 rounded-full text-xs font-bold">
-                            <CheckCircle2 className="w-3.5 h-3.5 text-[#FA7014]" />
-                            <span>v{doc.currentPublishedVersionNumber} (Live)</span>
-                          </div>
+                          <Chip tone="violet">v{doc.currentPublishedVersionNumber}</Chip>
                         ) : (
-                          <span className="text-xs text-slate-500 italic">None Published Yet</span>
+                          <span className="text-xs text-slate-500 italic">None published yet</span>
                         )}
                         {inReview ? (
-                          <div className="text-[11px] text-[#FA7014] mt-1 flex items-center space-x-1 font-medium">
-                            <Clock className="w-3 h-3 text-[#FA7014]" />
+                          <div className="text-[11px] text-violet-700 mt-1.5 flex items-center gap-1 font-semibold">
+                            <Clock className="w-3 h-3" />
                             <span>
                               v{inReview.versionNumber} in review{' '}
-                              <span className="text-slate-500 font-mono font-normal">
-                                (Eff: {formatDDMMYYYY(inReview.effectiveFrom || inReview.createdAt)})
-                              </span>
+                              <span className="text-slate-500 font-normal">(Eff: {formatDDMMYYYY(inReview.effectiveFrom || inReview.createdAt)})</span>
                             </span>
                           </div>
                         ) : needsRevision ? (
-                          <div className="text-[11px] text-[#FA7014] mt-1 flex items-center space-x-1 font-semibold">
-                            <AlertTriangle className="w-3 h-3 text-[#FA7014]" />
+                          <div className="text-[11px] text-orange-600 mt-1.5 flex items-center gap-1 font-semibold">
+                            <AlertTriangle className="w-3 h-3" />
                             <span>v{needsRevision.versionNumber} revision requested</span>
                           </div>
                         ) : isDocRejected ? (
-                          <div className="text-[11px] text-rose-600 mt-1 flex items-center space-x-1 font-semibold">
-                            <Ban className="w-3 h-3 text-rose-600" />
-                            <span>Permanently rejected (Closed)</span>
+                          <div className="text-[11px] text-rose-600 mt-1.5 flex items-center gap-1 font-semibold">
+                            <Ban className="w-3 h-3" />
+                            <span>Permanently rejected (closed)</span>
                           </div>
                         ) : null}
                       </td>
 
-                      <td className="px-6 py-4 whitespace-nowrap">
+                      <td className={`${tbl.td} whitespace-nowrap`}>
                         <StatusBadge
                           status={
                             inReview
@@ -451,79 +413,67 @@ export const CreatorDashboard: React.FC<CreatorDashboardProps> = ({
                         />
                       </td>
 
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <div className="text-xs font-medium text-slate-900">{doc.departmentName}</div>
-                        <div className="text-xs text-slate-500">Owner: {doc.processOwnerName}</div>
+                      <td className={`${tbl.td} whitespace-nowrap`}>
+                        <div className="flex items-center gap-1.5 text-sm font-medium text-slate-800"><Users className="w-4 h-4 text-slate-500" />{doc.departmentName}</div>
+                        <div className="flex items-center gap-2 mt-1.5 text-sm text-slate-700">
+                          <span className="w-7 h-7 rounded-full bg-violet-100 text-violet-700 text-[11px] font-bold flex items-center justify-center">{initials}</span>
+                          {owner}
+                        </div>
                       </td>
 
-                      <td className="px-6 py-4 whitespace-nowrap text-xs text-slate-500">
-                        {formatISTDate(doc.updatedAt)}
+                      <td className={`${tbl.td} whitespace-nowrap text-sm text-slate-700`}>
+                        <span className="inline-flex items-center gap-2"><CalendarDays className="w-4 h-4 text-slate-500" />{formatISTDate(doc.updatedAt)}</span>
                       </td>
 
-                      <td className="px-6 py-4 whitespace-nowrap text-right space-x-2">
-                        <button
-                          id={`btn-view-doc-${doc.id}`}
-                          onClick={() => onOpenDocumentDetail(doc)}
-                          className="inline-flex items-center space-x-1 text-xs font-semibold text-slate-800 hover:text-slate-950 bg-slate-100 hover:bg-slate-200 px-2.5 py-1.5 rounded-lg transition-colors border border-slate-200 cursor-pointer"
-                          title="View Complete Permanent Version History"
-                        >
-                          <Eye className="w-3.5 h-3.5" />
-                          <span>History ({docVersions.length})</span>
-                        </button>
-
-                        <button
-                          id={`btn-new-version-${doc.id}`}
-                          onClick={() => onOpenCreateVersion(doc)}
-                          disabled={!!inReview || doc.currentStatus === VersionStatus.IN_REVIEW || isDocRejected}
-                          className={`inline-flex items-center space-x-1 text-xs font-semibold px-2.5 py-1.5 rounded-lg transition-colors shadow-xs ${
-                            inReview || doc.currentStatus === VersionStatus.IN_REVIEW || isDocRejected
-                              ? 'bg-slate-100 text-slate-400 border border-slate-200 cursor-not-allowed opacity-60'
-                              : needsRevision
-                              ? 'text-white bg-[#FA7014] hover:bg-[#E65A05] ring-2 ring-[#FA7014]/20 cursor-pointer'
-                              : 'text-white bg-slate-900 hover:bg-slate-800 cursor-pointer'
-                          }`}
-                          title={
-                            isDocRejected
-                              ? 'Document has been permanently rejected. No further revisions permitted.'
-                              : inReview || doc.currentStatus === VersionStatus.IN_REVIEW
-                              ? `Cannot revise: Version v${inReview?.versionNumber || ''} is currently under review`
-                              : needsRevision
-                              ? `Author next revision addressing reviewer feedback on v${needsRevision.versionNumber}`
-                              : 'Create New Revision (Minor/Major)'
-                          }
-                        >
-                          {isDocRejected ? (
-                            <Ban className="w-3.5 h-3.5 text-slate-400" />
-                          ) : (
-                            <GitBranch
-                              className={`w-3.5 h-3.5 ${
-                                inReview || doc.currentStatus === VersionStatus.IN_REVIEW
-                                  ? 'text-slate-400'
-                                  : needsRevision
-                                  ? 'text-white'
-                                  : 'text-[#FA7014]'
-                              }`}
-                            />
-                          )}
-                          <span>
-                            {isDocRejected
-                              ? 'Rejected'
-                              : needsRevision
-                              ? `Author v${needsRevision.versionNumber} Fix`
-                              : 'Revise'}
-                          </span>
-                        </button>
-
-                        {onDeleteDocument && (
+                      <td className={`${tbl.td} whitespace-nowrap`}>
+                        <div className="flex items-center justify-end gap-2">
                           <button
-                            id={`btn-delete-doc-${doc.id}`}
-                            onClick={() => setConfirmDeleteId(doc.id)}
-                            className="inline-flex items-center space-x-1 text-xs font-semibold text-rose-700 hover:text-rose-900 bg-rose-50 hover:bg-rose-100 px-2.5 py-1.5 rounded-lg transition-colors border border-rose-200"
-                            title="Delete this Document Master and revisions"
+                            id={`btn-view-doc-${doc.id}`}
+                            onClick={() => onOpenDocumentDetail(doc)}
+                            className={iconBtn}
+                            title={`View complete version history (${docVersions.length})`}
+                            aria-label="View version history"
                           >
-                            <Trash2 className="w-3.5 h-3.5" />
+                            <Eye className="w-4 h-4" />
                           </button>
-                        )}
+
+                          <button
+                            id={`btn-new-version-${doc.id}`}
+                            onClick={() => onOpenCreateVersion(doc)}
+                            disabled={reviseBlocked}
+                            className={`${iconBtn} ${
+                              reviseBlocked
+                                ? 'opacity-50 cursor-not-allowed hover:bg-white text-slate-400'
+                                : needsRevision
+                                ? '!bg-[#6d4cf0] !text-white !border-[#6d4cf0] hover:!bg-[#5b3be0] ring-2 ring-violet-200'
+                                : ''
+                            }`}
+                            aria-label={needsRevision ? `Author v${needsRevision.versionNumber} fix` : 'Create new version'}
+                            title={
+                              isDocRejected
+                                ? 'Document has been permanently rejected. No further revisions permitted.'
+                                : reviseBlocked
+                                ? `Cannot revise: Version v${inReview?.versionNumber || ''} is currently under review`
+                                : needsRevision
+                                ? `Author next revision addressing reviewer feedback on v${needsRevision.versionNumber}`
+                                : 'Create new revision (minor/major)'
+                            }
+                          >
+                            {isDocRejected ? <Ban className="w-4 h-4" /> : <GitBranch className="w-4 h-4" />}
+                          </button>
+
+                          {onDeleteDocument && (
+                            <button
+                              id={`btn-delete-doc-${doc.id}`}
+                              onClick={() => setConfirmDeleteId(doc.id)}
+                              className={`${iconBtn} hover:!bg-rose-50 hover:!text-rose-600 hover:!border-rose-200`}
+                              title="Delete this Document Master and revisions"
+                              aria-label="Delete document master"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          )}
+                        </div>
                       </td>
                     </tr>
                   );

@@ -17,7 +17,6 @@ import type { HRAgentModule } from '../HRAgentShell';
 
 /** Screens that already exist elsewhere in the app. The rest show a "not set up yet" page until they are built. */
 const EXISTING: Record<string, { label: string; open: (go: (m: HRAgentModule) => void) => void }> = {
-  acknowledgement: { label: 'Open my policies', open: (go) => go('policies') },
 };
 
 export const EmployeeModule: React.FC<{ currentUser: User; canPick?: boolean; onOpenModule: (m: HRAgentModule) => void }> = ({ canPick = false, onOpenModule }) => {

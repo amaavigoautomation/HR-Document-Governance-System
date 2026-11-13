@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Archive, FolderKanban, Pencil, Plus, RotateCcw } from 'lucide-react';
 import { taskService } from '../../services/taskService';
+import { PageHeader } from '../common/pageChrome';
 import { Loading, Pill, useLoad } from '../common/loadUi';
 import { Card, EmptyState, Field, Notice, Segmented, btnGhost, btnPrimary, input, useRunner } from '../leave/ui';
 import { Sheet, useTasks } from './common';
@@ -43,10 +44,8 @@ export const Projects: React.FC = () => {
 
   return (
     <div>
-      <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
-        <div><h2 className="text-lg font-extrabold text-slate-900">Projects</h2><p className="text-sm text-slate-600">Shared boards for a team or the whole company. Everyone who can open a board sees its tasks.</p></div>
-        {canAny && <button className={btnPrimary} onClick={() => setEditing('new')}><Plus className="w-4 h-4" />New project</button>}
-      </div>
+      <PageHeader icon={FolderKanban} title="Projects" subtitle="Shared boards for a team or the whole company. Everyone who can open a board sees its tasks."
+        actions={canAny ? <button className={btnPrimary} onClick={() => setEditing('new')}><Plus className="w-4 h-4" />New project</button> : undefined} />
       {note && <div className="mb-3"><Notice tone={note.tone}>{note.text}</Notice></div>}
       {!data ? <Loading error={error} loading={loading} /> : data.items.length === 0 ? (
         <Card><EmptyState icon={FolderKanban} title="No projects yet" text={canAny ? 'Create one to plan work together on a board.' : 'Your managers or HR can create boards for your team.'} /></Card>

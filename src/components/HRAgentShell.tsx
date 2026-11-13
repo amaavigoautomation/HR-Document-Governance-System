@@ -91,6 +91,8 @@ interface HRAgentShellProps {
   pendingPolicyCount?: number;
   /** Opens the notifications drawer (the bell in the top bar). */
   onOpenNotifications?: () => void;
+  /** Unread notifications: shows a dot on the bell. */
+  notificationCount?: number;
   children: React.ReactNode;
 }
 
@@ -105,6 +107,7 @@ export const HRAgentShell: React.FC<HRAgentShellProps> = ({
   onRefreshData,
   pendingPolicyCount = 0,
   onOpenNotifications,
+  notificationCount = 0,
   children,
 }) => {
   const isHR = currentUser.role === UserRole.CREATOR;
@@ -1109,14 +1112,14 @@ export const HRAgentShell: React.FC<HRAgentShellProps> = ({
         {/* ============================================================ */}
         <div className="flex-1 min-w-0 h-full flex flex-col">
           {/* TOP BAR (desktop): page title, jump-to-page search, notifications, account */}
-          <header className="hidden lg:flex shrink-0 h-11 items-center gap-3 px-5 bg-white border-b border-slate-200">
+          <header className="hidden lg:flex shrink-0 h-14 items-center gap-4 px-6 bg-white border-b border-slate-200">
             <div className="flex-1 basis-0 min-w-0">
             {crumb && (
               <nav aria-label="Breadcrumb" className="min-w-0">
-                <ol className="flex items-center gap-1.5 text-[13px] min-w-0">
+                <ol className="flex items-center gap-2 text-sm min-w-0">
                   {crumb.page ? (
                     <>
-                      <li className="text-slate-500 truncate">{crumb.section}</li>
+                      <li className="text-slate-600 truncate">{crumb.section}</li>
                       <li aria-hidden className="shrink-0 text-slate-400"><ChevronRight className="w-3.5 h-3.5" /></li>
                       <li aria-current="page" className="font-semibold text-slate-900 truncate">{crumb.page}</li>
                     </>
@@ -1127,8 +1130,8 @@ export const HRAgentShell: React.FC<HRAgentShellProps> = ({
               </nav>
             )}
             </div>
-            <div className="relative w-full max-w-sm shrink-0">
-              <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" aria-hidden />
+            <div className="relative w-full max-w-[25rem] shrink-0">
+              <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" aria-hidden />
               <input
                 id="topbar-page-search"
                 type="search"
@@ -1138,13 +1141,13 @@ export const HRAgentShell: React.FC<HRAgentShellProps> = ({
                   if (e.key === 'Enter' && pageMatches[0]) { onSelectModule(pageMatches[0].id); setPageQuery(''); }
                   if (e.key === 'Escape') setPageQuery('');
                 }}
-                placeholder="Go to a page..."
-                aria-label="Go to a page"
-                className="w-full h-8 pl-9 pr-20 rounded-xl border border-slate-200 bg-white text-[13px] text-slate-800 placeholder:text-slate-400 focus:outline-none focus:border-[#FA7014] focus:ring-2 focus:ring-[#FA7014]/20"
+                placeholder="Search pages or ask HR…"
+                aria-label="Search pages or ask HR (Ctrl + K)"
+                title="Press Ctrl + K to search from anywhere"
+                className="w-full h-10 pl-10 pr-3 rounded-xl border border-slate-200 bg-white text-sm text-slate-800 placeholder:text-slate-500 shadow-[0_1px_2px_rgba(16,24,40,0.03)] focus:outline-none focus:border-[#6d4cf0] focus:ring-2 focus:ring-[#6d4cf0]/20"
               />
-              {!pageQuery && <kbd className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 rounded-md border border-slate-200 bg-slate-50 px-1.5 py-0.5 text-[10px] font-medium text-slate-500">Ctrl + K</kbd>}
               {pageQuery.trim().length > 1 && (
-                <ul className="absolute left-0 right-0 top-9 z-50 rounded-xl border border-slate-200 bg-white shadow-lg py-1 overflow-hidden">
+                <ul className="absolute left-0 right-0 top-11 z-50 rounded-xl border border-slate-200 bg-white shadow-lg py-1 overflow-hidden">
                   {pageMatches.map((p) => (
                     <li key={p.id}>
                       <button type="button" onClick={() => { onSelectModule(p.id); setPageQuery(''); }} className="w-full text-left px-3 py-2 text-sm text-slate-700 hover:bg-orange-50 hover:text-[#FA7014] cursor-pointer">{p.label}</button>
@@ -1156,16 +1159,17 @@ export const HRAgentShell: React.FC<HRAgentShellProps> = ({
                 </ul>
               )}
             </div>
-            <div className="flex-1 basis-0 min-w-0 flex items-center justify-end gap-3">
+            <div className="shrink-0 flex items-center gap-4">
             {onOpenNotifications && (
-              <button type="button" onClick={onOpenNotifications} aria-label="Notifications" title="Notifications" className="w-8 h-8 rounded-lg border border-slate-200 bg-white flex items-center justify-center text-slate-600 hover:text-[#FA7014] hover:border-orange-200 cursor-pointer">
-                <Bell className="w-[18px] h-[18px]" />
+              <button type="button" onClick={onOpenNotifications} aria-label={notificationCount > 0 ? `Notifications (${notificationCount} unread)` : 'Notifications'} title="Notifications" className="relative w-10 h-10 rounded-xl flex items-center justify-center text-slate-700 hover:bg-slate-100 cursor-pointer">
+                <Bell className="w-[22px] h-[22px]" />
+                {notificationCount > 0 && <span aria-hidden className="absolute top-2 right-2.5 w-2.5 h-2.5 rounded-full bg-[#6d4cf0] ring-2 ring-white" />}
               </button>
             )}
             <div className="relative shrink-0">
-              <button type="button" onClick={() => setIsAccountOpen((v) => !v)} aria-haspopup="menu" aria-expanded={isAccountOpen} aria-label="Account menu" title={currentUser.name || 'Account'} className="flex items-center gap-2.5 cursor-pointer">
-                <span className="hidden xl:block text-right leading-tight"><span className="block max-w-[10rem] truncate text-[13px] font-bold text-slate-900">{currentUser.name || 'User'}</span>{currentUser.title && <span className="block max-w-[10rem] truncate text-[11px] text-slate-500">{currentUser.title}</span>}</span>
-                <span className="w-8 h-8 rounded-full bg-orange-100 text-[#FA7014] font-bold text-[13px] flex items-center justify-center overflow-hidden">{photo ? <img src={photo} alt="" className="h-full w-full object-cover" /> : initial}</span>
+              <button type="button" onClick={() => setIsAccountOpen((v) => !v)} aria-haspopup="menu" aria-expanded={isAccountOpen} aria-label="Account menu" title={currentUser.name || 'Account'} className="flex items-center gap-1.5 cursor-pointer rounded-xl pr-1 hover:bg-slate-50">
+                <span className="w-10 h-10 rounded-full bg-violet-100 text-[#6d4cf0] font-bold text-sm flex items-center justify-center overflow-hidden ring-2 ring-white shadow-sm">{photo ? <img src={photo} alt="" className="h-full w-full object-cover" /> : initial}</span>
+                <ChevronDown aria-hidden className="w-4 h-4 text-slate-600" />
               </button>
               {isAccountOpen && (
                 <>
