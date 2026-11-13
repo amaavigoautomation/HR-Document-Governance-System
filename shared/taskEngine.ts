@@ -2,7 +2,7 @@
  * Task Management: the rules, with no database and no screen in them (so they are easy to test).
  * Used by api/_lib/taskApi.ts and by the Tasks screens.
  */
-import { addDays, isDate } from './pmEngine';
+import { addDays, isDate } from './pmEngine.js';
 
 // ------------------------------------------------------------------ vocabulary
 
