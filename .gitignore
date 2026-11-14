@@ -5,7 +5,7 @@ coverage/
 .DS_Store
 *.log
 .env*
-!.env.example
+.env.example
 migration-password-links.csv
 *service-account*.json
 hr.json
