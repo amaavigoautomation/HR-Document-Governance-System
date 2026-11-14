@@ -1,5 +1,5 @@
 /** Client wrappers for the company-admin and platform-admin APIs (api/_lib/tenantAdmin.ts). */
-import { collection, onSnapshot, query, where } from 'firebase/firestore';
+import { collection, onSnapshot, query, where } from './dataStore';
 import { db } from './firebase';
 import { apiJson } from './apiClient';
 import { getCompanyId } from './tenant';

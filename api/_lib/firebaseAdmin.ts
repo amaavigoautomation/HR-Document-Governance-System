@@ -11,6 +11,7 @@ import { join } from 'node:path';
 import { applicationDefault, cert, getApp, getApps, initializeApp, type App } from 'firebase-admin/app';
 import { getAuth, type Auth } from 'firebase-admin/auth';
 import { getFirestore, type Firestore } from 'firebase-admin/firestore';
+import { isMongoConfigured, mongoDb } from './mongoFirestore.js';
 
 const fileConfig: Record<string, any> = (() => {
   try {
@@ -104,8 +105,13 @@ function lenient(db: Firestore): Firestore {
   return db;
 }
 
+/**
+ * The database every server module uses. With MONGODB_URI set it is MongoDB (through a Firestore-shaped adapter,
+ * see mongoFirestore.ts); otherwise it is Firestore. Firebase Authentication is used either way.
+ */
 export function adminDb(): Firestore {
   if (fake?.db) return fake.db;
+  if (isMongoConfigured()) return mongoDb() as unknown as Firestore;
   const databaseId = resolveDatabaseId();
   return lenient(databaseId && databaseId !== '(default)' ? getFirestore(adminApp(), databaseId) : getFirestore(adminApp()));
 }

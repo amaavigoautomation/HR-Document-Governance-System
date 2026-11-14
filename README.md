@@ -1,7 +1,8 @@
 # HR Portal (multi-tenant)
 
 Companies sign themselves up, wait for approval, then onboard their own employees, departments and
-custom roles. Built on Vite + React, Express / Vercel functions, Firestore and Firebase Authentication.
+custom roles. Built on Vite + React, Express / Vercel functions, **MongoDB** (data) and Firebase Authentication (logins).
+(Branch `mongodb`: data lives in MongoDB; see "Database: MongoDB" below. Without `MONGODB_URI` the server still falls back to Firestore.)
 
 ## How it works
 
@@ -25,6 +26,29 @@ custom roles. Built on Vite + React, Express / Vercel functions, Firestore and F
 4. Make yourself platform admin (can approve companies):
    `npx tsx scripts/make-platform-admin.ts you@example.com --create 'a-strong-password'`
 5. `npm install && npm run dev` (or deploy to Vercel with the same env vars).
+
+## Database: MongoDB
+
+All data lives in MongoDB. Firebase is used only for **Authentication** (logins and the `cid / cs / perms` claims).
+
+- **Setup**: create a MongoDB Atlas cluster and set `MONGODB_URI` (and optionally `MONGODB_DB`) in `.env` / Vercel.
+  Use a paid tier such as Flex before real data goes in, so you get backups (the free M0 tier has none).
+  Items 1 and 2 of Setup above still apply (Authentication, service account); skip step 3 (Firestore rules).
+- **How the server talks to it**: every API module calls `adminDb()`, which with `MONGODB_URI` set is a Firestore-shaped
+  adapter over MongoDB (`api/_lib/mongoFirestore.ts`): one MongoDB collection per old Firestore collection, document id
+  stored as `_id`. Transactions use MongoDB transactions (Atlas is a replica set, so they work); on a standalone mongod it
+  falls back to a one-at-a-time lock inside the server process.
+- **How the browser talks to it**: it cannot reach MongoDB. The few collections the browser used to read directly
+  (companies, employees, departments, roles, documents, versions, audit logs, acknowledgments, notifications,
+  document suggestions, requisitions) now go through `POST /api/tenant/data-*` (`api/_lib/dataApi.ts`), which enforces
+  the same company and permission checks as `firestore.rules`, using the signed-in user's token. `src/services/dataStore.ts`
+  gives the browser the same function names it used with Firestore.
+- **Live screens**: Firestore pushed changes; MongoDB does not, so open screens re-check every 20 seconds (`POLL_MS` in
+  `dataStore.ts`), when the tab regains focus, and straight after the user's own saves.
+- **Moving existing data**: `npm run migrate:mongo -- --dry-run`, then without `--dry-run`. It copies every Firestore
+  collection into MongoDB and never deletes anything. Run it while the app is quiet, then deploy with `MONGODB_URI` set.
+- **Tests**: `TEST_DB=mongo npx tsx tests/<name>.test.ts` runs a test against the MongoDB adapter (on an in-memory stand-in
+  for the driver); `tests/mongoFirestore.test.ts` and `tests/data.api.test.ts` cover the adapter and the browser gateway.
 
 ### Migrating the existing single company
 

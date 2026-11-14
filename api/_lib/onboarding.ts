@@ -21,7 +21,7 @@
  * Candidate documents are stored in Firestore (chunked) instead of Firebase Storage.
  */
 import { randomBytes } from 'node:crypto';
-import { FieldValue } from 'firebase-admin/firestore';
+import { FieldValue } from './fieldValue.js';
 import { adminDb } from './firebaseAdmin.js';
 import { dispatchLiveEmail } from './serverEmail.js';
 import { getApplicationRecord } from './serverSheets.js';

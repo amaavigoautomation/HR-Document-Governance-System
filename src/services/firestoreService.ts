@@ -10,7 +10,7 @@ import {
   where,
   orderBy,
   onSnapshot,
-} from 'firebase/firestore';
+} from './dataStore';
 import { db } from './firebase';
 import { getCompanyId, tryGetCompanyId } from './tenant';
 import { ensurePersistentMedia } from './mediaStorage';

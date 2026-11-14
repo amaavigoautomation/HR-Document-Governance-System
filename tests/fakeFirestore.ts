@@ -51,7 +51,7 @@ class Collection extends Query {
   doc(id?: string) { return new DocRef(this.s, id ?? `auto${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}${this.n++}`); }
 }
 
-export class FakeFirestore {
+class InMemoryFirestore {
   stores = new Map<string, Map<string, Doc>>();
   private store(name: string) { if (!this.stores.has(name)) this.stores.set(name, new Map()); return this.stores.get(name)!; }
   collection(name: string) { return new Collection(this.store(name)); }
@@ -86,3 +86,25 @@ export class FakeFirestore {
   seed(name: string, id: string, data: Doc) { this.store(name).set(id, structuredClone(data)); }
   all(name: string): Record<string, any>[] { return [...this.store(name).entries()].map(([id, d]) => ({ id, ...d })); }
 }
+
+/**
+ * `TEST_DB=mongo npx tsx tests/<name>.test.ts` runs the same test against the MongoDB adapter (api/_lib/mongoFirestore.ts)
+ * on top of an in-memory stand-in for the driver, instead of the plain in-memory fake above.
+ */
+import { MongoFirestore } from '../api/_lib/mongoFirestore.ts';
+import { StubMongoDb } from './mongoStub.ts';
+
+class MongoBackedFake extends MongoFirestore {
+  stub = new StubMongoDb();
+  constructor() {
+    const stub = new StubMongoDb();
+    super(stub as any);
+    this.stub = stub;
+  }
+  get stores() { return new Map([...this.stub.cols].map(([name, c]) => [name, (c as any).rows as Map<string, Doc>])); }
+  seed(name: string, id: string, data: Doc) { (this.stub.collection(name) as any).rows.set(id, { _id: id, ...structuredClone(data) }); }
+  all(name: string): Record<string, any>[] { return [...(this.stub.collection(name) as any).rows.values()].map(({ _id, ...d }: any) => ({ id: _id, ...d })); }
+}
+
+export type FakeFirestore = InMemoryFirestore;
+export const FakeFirestore = (process.env.TEST_DB === 'mongo' ? MongoBackedFake : InMemoryFirestore) as unknown as typeof InMemoryFirestore;

@@ -11,7 +11,7 @@ import {
   signOut,
   type User as FirebaseUser,
 } from 'firebase/auth';
-import { doc, getDoc } from 'firebase/firestore';
+import { doc, getDoc } from './dataStore';
 import { auth, db } from './firebase';
 import { apiJson } from './apiClient';
 import { firestoreService } from './firestoreService';

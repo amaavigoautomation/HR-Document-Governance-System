@@ -10,7 +10,9 @@
  * but it can never write users, roles, departments or companies - only this file can.
  */
 import { randomBytes } from 'node:crypto';
-import { FieldValue, type DocumentReference, type Firestore, type Query } from 'firebase-admin/firestore';
+import type { DocumentReference, Firestore, Query } from 'firebase-admin/firestore';
+import { FieldValue } from './fieldValue.js';
+import { routeData } from './dataApi.js';
 import { adminApp, adminAuth, adminDb, isAdminConfigured } from './firebaseAdmin.js';
 import { authenticate, requirePermission, requirePlatformAdmin, authErrorResponse, AuthError, type AuthContext } from './authContext.js';
 import { dispatchLiveEmail } from './serverEmail.js';
@@ -969,6 +971,10 @@ export async function routeTenant(r: TenantRequest): Promise<TenantResult> {
     }
     const { action, body, headers, origin } = r;
     const b = body && typeof body === 'object' ? body : {};
+
+    // Browser data access (used instead of direct Firestore reads/writes when the database is MongoDB).
+    // Lives under /api/tenant so it does not use up another Vercel function slot.
+    if (action.startsWith('data-')) return await routeData({ method: r.method, action, body, headers });
 
     if (r.method === 'POST' && action === 'signup') return await signup(b, origin);
     if (r.method === 'GET' && action === 'me') return await me(headers);

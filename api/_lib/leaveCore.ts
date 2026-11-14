@@ -9,7 +9,7 @@
  *   leaveAttendance/{companyId__uid__date}
  *   leaveRegularizations/{id}        missed-swipe corrections waiting for approval
  */
-import { FieldValue } from 'firebase-admin/firestore';
+import { FieldValue } from './fieldValue.js';
 import { adminDb } from './firebaseAdmin.js';
 import { dispatchLiveEmail } from './serverEmail.js';
 import {

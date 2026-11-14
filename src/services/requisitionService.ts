@@ -1,4 +1,4 @@
-import { collection, doc, onSnapshot, query, setDoc, where } from 'firebase/firestore';
+import { collection, doc, onSnapshot, query, setDoc, where } from './dataStore';
 import { db } from './firebase';
 import { getCompanyId, tryGetCompanyId } from './tenant';
 import { apiFetch, apiJson } from './apiClient';
