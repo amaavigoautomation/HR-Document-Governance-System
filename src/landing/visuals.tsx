@@ -21,7 +21,7 @@ import { CountUp, Reveal, prefersReducedMotion, useInView, useParallax } from '.
 import { MODULES, type IconType } from './data';
 import type { ModuleKey } from './routes';
 
-const HUES = ['#6d4cf0', '#2f9e77', '#d98324', '#3b82c4', '#d4577c', '#1f9aa3', '#64748b'];
+const HUES = ['#fa7014', '#2f9e77', '#d4a017', '#3b82c4', '#d4577c', '#1f9aa3', '#64748b'];
 
 export const Avatar: React.FC<{ name: string; size?: number; i?: number }> = ({ name, size = 28, i = 0 }) => {
   const initials = name
